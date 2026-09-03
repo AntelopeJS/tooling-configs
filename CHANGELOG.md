@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.0.2
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.0.1...v0.0.2)
+
+### 🩹 Fixes
+
+- Leave the generated changelog alone ([26de107](https://github.com/AntelopeJS/tooling-configs/commit/26de107))
+- Build before checking ([99b2d2d](https://github.com/AntelopeJS/tooling-configs/commit/99b2d2d))
+- Lint from source, so releasing does not need a build first ([14572c7](https://github.com/AntelopeJS/tooling-configs/commit/14572c7))
+
+### 🏡 Chore
+
+- Stop committing dist ([b8b2089](https://github.com/AntelopeJS/tooling-configs/commit/b8b2089))
+
+### ❤️ Contributors
+
+- MrSociety404 <fabrice@altab.be>
+
 ## v0.0.1
 
 
