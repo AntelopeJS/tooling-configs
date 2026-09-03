@@ -5,7 +5,8 @@ the vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules), [oxfmt](
 and [Knip](https://knip.dev).
 
 Together they replace Biome outright — lint, format and import order — and Prettier in the
-Nuxt layers, since oxfmt formats `.vue` and sorts Tailwind classes natively.
+Nuxt layers, since oxfmt formats `.vue` and sorts Tailwind classes natively. The front end
+keeps ESLint for linting, from a shared config here.
 
 ## Requirements
 
@@ -161,6 +162,27 @@ Per repository: delete `biome.json` and the `@biomejs/biome` dependency, point `
 that the preset does not (`noRestrictedImports` guards become `import/no-cycle`). Reformat
 in its own commit and record it in `.git-blame-ignore-revs`, which GitHub honours, so the
 pass does not bury the history.
+
+## ESLint (Nuxt layers)
+
+oxlint does not lint `.vue` files yet, so the front end stays on ESLint:
+
+```js
+// nuxt-layer/eslint.config.mjs
+import { antelopeNuxtConfig } from "@antelopejs/tooling-configs/eslint";
+
+export default antelopeNuxtConfig({ dirs: ["./playground"] });
+```
+
+`@nuxt/eslint` supplies the Vue and TypeScript rules; the preset only records where
+AntelopeJS layers differ from it — single-word page components, `any` and `{}` as
+load-bearing types in the interface layer, `_`-prefixed unused bindings, and import order
+left to the formatter.
+
+Formatting rules are deliberately absent, `vue/max-attributes-per-line` included: oxfmt
+formats `.vue`, and a lint rule that also reflows markup would fight it on every save.
+Declare `@nuxt/eslint-config` explicitly — nine layers use it today through
+`@nuxt/eslint` without declaring it.
 
 ## Knip
 

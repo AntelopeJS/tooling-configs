@@ -6,6 +6,7 @@ export default defineConfig({
     "./src/oxc/fmt.ts",
     "./src/oxc/anti-slop/index.ts",
     "./src/knip.ts",
+    "./src/eslint.ts",
   ],
   outDir: "dist",
   format: ["esm"],

@@ -22,7 +22,8 @@
     "./oxc/lint": "./dist/oxc/lint.mjs",
     "./oxc/fmt": "./dist/oxc/fmt.mjs",
     "./oxc/anti-slop": "./dist/oxc/anti-slop/index.mjs",
-    "./knip": "./dist/knip.mjs"
+    "./knip": "./dist/knip.mjs",
+    "./eslint": "./dist/eslint.mjs"
   },
   "publishConfig": {
     "access": "public"
@@ -43,6 +44,7 @@
     "eslint-plugin-perfectionist": "^5.11.0"
   },
   "devDependencies": {
+    "@nuxt/eslint-config": "^1.17.0",
     "@types/node": "^24.0.0",
     "oxfmt": "^0.66.0",
     "oxlint": "1.81.0",
@@ -50,6 +52,7 @@
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
+    "@nuxt/eslint-config": ">=1.2.0",
     "knip": ">=6.0.0",
     "oxfmt": "^0.66.0",
     "oxlint": "1.81.0"
@@ -62,6 +65,9 @@
       "optional": true
     },
     "oxfmt": {
+      "optional": true
+    },
+    "@nuxt/eslint-config": {
       "optional": true
     }
   },
