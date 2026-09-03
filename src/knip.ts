@@ -41,11 +41,14 @@ const DEFAULT_IGNORE = [
 ];
 
 /**
- * Every layer's CI runs `cd nuxt-layer && pnpm typecheck`. Knip parses the
- * workflow, sees a binary it cannot resolve, and reports it: the script lives in
- * the layer's own package.json, outside the analysed project.
+ * Binaries Knip sees invoked but cannot resolve:
+ *
+ * - `typecheck` is a script in the Nuxt layer's own manifest, outside the
+ *   analysed project, and every layer's CI runs it.
+ * - `ajs` is the AntelopeJS CLI, installed globally rather than as a dependency
+ *   (`npm i -g @antelopejs/core` in every workflow).
  */
-const DEFAULT_IGNORE_BINARIES = ["typecheck"];
+const DEFAULT_IGNORE_BINARIES = ["typecheck", "ajs"];
 
 export function antelopeKnipConfig(
   options: AntelopeKnipOptions = {},
