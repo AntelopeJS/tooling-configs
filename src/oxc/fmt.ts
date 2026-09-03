@@ -26,6 +26,12 @@ export interface AntelopeFmtOptions extends Partial<OxfmtOptions> {
    * path to the stylesheet that declares the theme, as the Nuxt layers do.
    */
   tailwindStylesheet?: string;
+  /**
+   * Extra paths to leave alone. These are **added** to the shared ignores, not
+   * substituted for them: a repository adopting oxfmt in stages needs to park
+   * `nuxt-layer/**` for a while without also un-ignoring its own build output.
+   */
+  ignorePatterns?: string[];
 }
 
 /**
@@ -44,7 +50,7 @@ export interface AntelopeFmtOptions extends Partial<OxfmtOptions> {
  * ```
  */
 export function antelopeFmtPreset(options: AntelopeFmtOptions = {}) {
-  const { tailwindStylesheet, ...overrides } = options;
+  const { tailwindStylesheet, ignorePatterns = [], ...overrides } = options;
   const tailwind =
     tailwindStylesheet === undefined
       ? {}
@@ -57,8 +63,12 @@ export function antelopeFmtPreset(options: AntelopeFmtOptions = {}) {
 
   return defineConfig({
     ...ANTELOPE_STYLE,
-    ignorePatterns: [...IGNORE_PATTERNS, ...AGENT_IGNORE_PATTERNS],
     ...tailwind,
     ...overrides,
+    ignorePatterns: [
+      ...IGNORE_PATTERNS,
+      ...AGENT_IGNORE_PATTERNS,
+      ...ignorePatterns,
+    ],
   });
 }

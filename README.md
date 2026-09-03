@@ -147,6 +147,13 @@ Import order is not part of it: `perfectionist/sort-imports` owns that on the li
 Enabling oxfmt's `sortImports` as well would have two tools sorting the same imports
 differently, each undoing the other on every save.
 
+Extra ignores are **added** to the shared ones rather than replacing them, so a repository
+adopting oxfmt in stages can park a directory without losing the rest:
+
+```ts
+export default antelopeFmtPreset({ ignorePatterns: ["nuxt-layer/**"] });
+```
+
 In a Nuxt layer, pass the theme stylesheet to replace `prettier-plugin-tailwindcss`:
 
 ```ts

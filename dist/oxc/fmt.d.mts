@@ -22,6 +22,12 @@ interface AntelopeFmtOptions extends Partial<OxfmtOptions> {
    * path to the stylesheet that declares the theme, as the Nuxt layers do.
    */
   tailwindStylesheet?: string;
+  /**
+   * Extra paths to leave alone. These are **added** to the shared ignores, not
+   * substituted for them: a repository adopting oxfmt in stages needs to park
+   * `nuxt-layer/**` for a while without also un-ignoring its own build output.
+   */
+  ignorePatterns?: string[];
 }
 /**
  * The shared AntelopeJS oxfmt preset.
@@ -39,6 +45,7 @@ interface AntelopeFmtOptions extends Partial<OxfmtOptions> {
  * ```
  */
 declare function antelopeFmtPreset(options?: AntelopeFmtOptions): {
+  ignorePatterns: string[];
   arrowParens?: import("oxfmt").ArrowParensConfig | undefined;
   bracketSameLine?: boolean | undefined;
   bracketSpacing?: boolean | undefined;
@@ -46,7 +53,6 @@ declare function antelopeFmtPreset(options?: AntelopeFmtOptions): {
   endOfLine?: import("oxfmt").EndOfLineConfig | undefined;
   experimentalOperatorPosition?: import("oxfmt").OperatorPositionConfig | undefined;
   htmlWhitespaceSensitivity?: import("oxfmt").HtmlWhitespaceSensitivityConfig | undefined;
-  ignorePatterns: string[];
   insertFinalNewline?: boolean | undefined;
   jsdoc?: import("oxfmt").JsdocUserConfig | undefined;
   jsxSingleQuote?: boolean | undefined;
@@ -67,6 +73,7 @@ declare function antelopeFmtPreset(options?: AntelopeFmtOptions): {
   useTabs: boolean;
   vueIndentScriptAndStyle?: boolean | undefined;
 } | {
+  ignorePatterns: string[];
   arrowParens?: import("oxfmt").ArrowParensConfig | undefined;
   bracketSameLine?: boolean | undefined;
   bracketSpacing?: boolean | undefined;
@@ -74,7 +81,6 @@ declare function antelopeFmtPreset(options?: AntelopeFmtOptions): {
   endOfLine?: import("oxfmt").EndOfLineConfig | undefined;
   experimentalOperatorPosition?: import("oxfmt").OperatorPositionConfig | undefined;
   htmlWhitespaceSensitivity?: import("oxfmt").HtmlWhitespaceSensitivityConfig | undefined;
-  ignorePatterns: string[];
   insertFinalNewline?: boolean | undefined;
   jsdoc?: import("oxfmt").JsdocUserConfig | undefined;
   jsxSingleQuote?: boolean | undefined;

@@ -32,16 +32,20 @@ const ANTELOPE_STYLE = {
 * ```
 */
 function antelopeFmtPreset(options = {}) {
-	const { tailwindStylesheet, ...overrides } = options;
+	const { tailwindStylesheet, ignorePatterns = [], ...overrides } = options;
 	const tailwind = tailwindStylesheet === void 0 ? {} : { sortTailwindcss: {
 		stylesheet: tailwindStylesheet,
 		functions: ["clsx", "cn"]
 	} };
 	return defineConfig({
 		...ANTELOPE_STYLE,
-		ignorePatterns: [...IGNORE_PATTERNS, ...AGENT_IGNORE_PATTERNS],
 		...tailwind,
-		...overrides
+		...overrides,
+		ignorePatterns: [
+			...IGNORE_PATTERNS,
+			...AGENT_IGNORE_PATTERNS,
+			...ignorePatterns
+		]
 	});
 }
 //#endregion
