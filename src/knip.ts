@@ -50,6 +50,13 @@ const DEFAULT_IGNORE = [
  */
 const DEFAULT_IGNORE_BINARIES = ["typecheck", "ajs"];
 
+/**
+ * The AntelopeJS runtime loads modules by name, from the antelope config rather
+ * than through an import, so nothing in the source points at them and Knip reads
+ * every one as dead weight.
+ */
+const DEFAULT_IGNORE_DEPENDENCIES = ["@antelopejs/.*"];
+
 export function antelopeKnipConfig(
   options: AntelopeKnipOptions = {},
 ): KnipConfig {
@@ -57,7 +64,10 @@ export function antelopeKnipConfig(
     entry: [...DEFAULT_ENTRY, ...(options.entry ?? [])],
     project: [...DEFAULT_PROJECT, ...(options.project ?? [])],
     ignore: [...DEFAULT_IGNORE, ...(options.ignore ?? [])],
-    ignoreDependencies: options.ignoreDependencies ?? [],
+    ignoreDependencies: [
+      ...DEFAULT_IGNORE_DEPENDENCIES,
+      ...(options.ignoreDependencies ?? []),
+    ],
     ignoreBinaries: [
       ...DEFAULT_IGNORE_BINARIES,
       ...(options.ignoreBinaries ?? []),
