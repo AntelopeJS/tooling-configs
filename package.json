@@ -38,7 +38,6 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test \"src/oxc/anti-slop/rules/*.test.ts\"",
     "checks": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test",
-    "check:dist": "pnpm run build && git diff --exit-code dist",
     "format:check": "oxfmt --check ."
   },
   "dependencies": {

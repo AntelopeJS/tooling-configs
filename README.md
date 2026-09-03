@@ -15,10 +15,8 @@ executing TypeScript, which earlier runtimes cannot do.
 
 ## Install
 
-The package is not on npm yet. Until it is, consume it straight from this repository:
-
 ```bash
-pnpm add -D oxlint@1.81.0 oxfmt "github:AntelopeJS/tooling-configs"
+pnpm add -D oxlint@1.81.0 oxfmt @antelopejs/tooling-configs
 ```
 
 Add `eslint-plugin-perfectionist` too unless you turn import sorting off — it is an
@@ -28,16 +26,9 @@ optional peer dependency because it pulls ESLint and typescript-eslint along wit
 pnpm add -D eslint-plugin-perfectionist
 ```
 
-`dist/` is committed for exactly as long as that install path lasts: pnpm 11 refuses to
-run a git dependency's build unless every consumer allowlists it by commit hash, which
-would break on every push here. CI fails if the committed build is stale. When the
-package reaches npm, delete `dist/` from git, restore the `prepare` script, and change
-consumers from `github:AntelopeJS/tooling-configs` to a version range — the import
-specifiers never change.
-
 Pin `oxlint` to the exact version this package depends on for `@oxlint/plugins`
 (currently **1.81.0**). The JS plugin API is still alpha and the two packages must move
-together. Once the package is published, this becomes a normal version range.
+together.
 
 ## oxlint
 
