@@ -98,7 +98,8 @@ export interface AntelopePresetOptions {
   typeAware?: boolean;
 }
 
-const ANTI_SLOP_RULES = [
+/** Every generic anti-slop rule, exported so this package can lint itself. */
+export const ANTI_SLOP_RULES = [
   "no-chained-type-assertions",
   "no-conditional-empty-object-spread",
   "no-known-value-widening",
@@ -155,6 +156,17 @@ function basePreset(cycleSeverity: Severity) {
       "import/no-duplicates": "error",
     },
   });
+}
+
+/**
+ * The anti-slop rules at one severity. Exported for this repository's own config:
+ * it registers the plugin from source rather than through the package exports,
+ * so linting never waits on a build.
+ */
+export function antiSlopRules(severity: Severity): Record<string, Severity> {
+  return Object.fromEntries(
+    ANTI_SLOP_RULES.map((rule) => [`anti-slop/${rule}`, severity]),
+  );
 }
 
 function antiSlopPreset(severity: Severity) {

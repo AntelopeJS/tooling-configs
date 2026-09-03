@@ -37,7 +37,7 @@
     "release": "pnpm run lint && pnpm run prepack && release-it",
     "typecheck": "tsc --noEmit",
     "test": "node --test \"src/oxc/anti-slop/rules/*.test.ts\"",
-    "checks": "pnpm run build && pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test",
+    "checks": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test",
     "format:check": "oxfmt --check ."
   },
   "dependencies": {

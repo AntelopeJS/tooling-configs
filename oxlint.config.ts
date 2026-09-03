@@ -1,9 +1,17 @@
 import { defineConfig } from "oxlint";
 
-import { ANTELOPE_IGNORE_PATTERNS, antelopePreset } from "./src/oxc/lint.ts";
+import {
+  ANTELOPE_IGNORE_PATTERNS,
+  antelopePreset,
+  antiSlopRules,
+} from "./src/oxc/lint.ts";
 
 export default defineConfig({
-  // The vendored plugin is upstream's source, kept byte-identical for diffing.
+  // The plugin is registered from source, not through this package's own
+  // exports: resolving those would mean building before every lint, which
+  // breaks a fresh clone, `pnpm release`, and CI alike.
+  extends: [antelopePreset({ antiSlop: false, typeAware: false })],
   ignorePatterns: [...ANTELOPE_IGNORE_PATTERNS, "src/oxc/anti-slop/**"],
-  extends: [antelopePreset({ typeAware: false })],
+  jsPlugins: [{ name: "anti-slop", specifier: "./src/oxc/anti-slop/index.ts" }],
+  rules: antiSlopRules("warn"),
 });
