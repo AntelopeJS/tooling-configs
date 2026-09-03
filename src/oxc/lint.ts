@@ -151,6 +151,12 @@ function basePreset(cycleSeverity: Severity) {
           caughtErrorsIgnorePattern: "^_",
         },
       ],
+      // Biome's recommended set blocked these and oxlint's correctness category
+      // does not, so dropping Biome quietly removed them. `== null` stays
+      // allowed, as it was there: it is the idiomatic nullish check.
+      "eslint/eqeqeq": ["error", "always", { null: "ignore" }],
+      "eslint/radix": "error",
+      "eslint/prefer-regex-literals": "error",
       "import/no-cycle": cycleSeverity,
       "import/no-self-import": "error",
       "import/no-duplicates": "error",
