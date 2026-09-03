@@ -13,12 +13,18 @@ executing TypeScript, which earlier runtimes cannot do.
 
 ## Install
 
-The package is not on npm yet. Until it is, consume it straight from this repository —
-pnpm clones it and runs its `prepare` build:
+The package is not on npm yet. Until it is, consume it straight from this repository:
 
 ```bash
 pnpm add -D oxlint@1.81.0 "github:AntelopeJS/tooling-configs"
 ```
+
+`dist/` is committed for exactly as long as that install path lasts: pnpm 11 refuses to
+run a git dependency's build unless every consumer allowlists it by commit hash, which
+would break on every push here. CI fails if the committed build is stale. When the
+package reaches npm, delete `dist/` from git, restore the `prepare` script, and change
+consumers from `github:AntelopeJS/tooling-configs` to a version range — the import
+specifiers never change.
 
 Pin `oxlint` to the exact version this package depends on for `@oxlint/plugins`
 (currently **1.81.0**). The JS plugin API is still alpha and the two packages must move

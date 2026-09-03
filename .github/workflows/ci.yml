@@ -18,4 +18,6 @@ jobs:
           cache: pnpm
       - run: pnpm install
       - run: pnpm run checks
-      - run: pnpm run build
+      # `dist` is committed while consumers install this package straight from
+      # git; a stale build would ship silently. Drop with the git-install path.
+      - run: pnpm run check:dist
