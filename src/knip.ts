@@ -20,7 +20,8 @@ export interface AntelopeKnipOptions {
 }
 
 const DEFAULT_ENTRY = [
-  "src/index.ts",
+  // `src/index.ts` is not listed: Knip already reads it from package.json, and
+  // repeating it there is reported as a redundant pattern.
   // Public API: consumers import these through the package's `exports` subpaths.
   "src/interfaces/**/*.ts",
   // Run by `ajs module test`, which Knip has no plugin for.

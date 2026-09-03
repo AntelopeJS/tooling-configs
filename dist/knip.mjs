@@ -1,6 +1,5 @@
 //#region src/knip.ts
 const DEFAULT_ENTRY = [
-	"src/index.ts",
 	"src/interfaces/**/*.ts",
 	"src/test/**/*.test.ts",
 	"scripts/**/*.{ts,mjs}"
