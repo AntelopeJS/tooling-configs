@@ -106,6 +106,11 @@ declare function antelopePreset(options?: AntelopePresetOptions): {
     ignorePatterns: string[];
     plugins: ("eslint" | "typescript" | "oxc" | "import" | "promise" | "node")[];
     rules: {
+      "eslint/no-unused-vars": ["error", {
+        argsIgnorePattern: "^_";
+        varsIgnorePattern: "^_";
+        caughtErrorsIgnorePattern: "^_";
+      }];
       "import/no-cycle": Severity;
       "import/no-self-import": "error";
       "import/no-duplicates": "error";

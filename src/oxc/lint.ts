@@ -140,6 +140,16 @@ function basePreset(cycleSeverity: Severity) {
     ignorePatterns: ANTELOPE_IGNORE_PATTERNS,
     plugins: ["eslint", "typescript", "node", "oxc", "import", "promise"],
     rules: {
+      // `_` marks a parameter kept for the signature's shape, which is the same
+      // convention the Nuxt layers' ESLint config already encodes.
+      "eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
       "import/no-cycle": cycleSeverity,
       "import/no-self-import": "error",
       "import/no-duplicates": "error",

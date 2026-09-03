@@ -59,6 +59,11 @@ function basePreset(cycleSeverity) {
 			"promise"
 		],
 		rules: {
+			"eslint/no-unused-vars": ["error", {
+				argsIgnorePattern: "^_",
+				varsIgnorePattern: "^_",
+				caughtErrorsIgnorePattern: "^_"
+			}],
 			"import/no-cycle": cycleSeverity,
 			"import/no-self-import": "error",
 			"import/no-duplicates": "error"
