@@ -96,6 +96,24 @@ function complexityPreset(thresholds, severity) {
 		"eslint/complexity": [severity, { max: thresholds.complexity }]
 	} });
 }
+/**
+* Turning on type information enables a whole family of rules, not just the one
+* worth the setup. `no-floating-promises` catches a promise whose rejection is
+* lost, which is why type-aware linting is worth running at all; the rest report
+* until a repository has worked through them, like every other backlog here.
+*/
+function typeAwarePreset() {
+	return defineConfig({ rules: {
+		"typescript/no-floating-promises": "error",
+		"typescript/await-thenable": "warn",
+		"typescript/unbound-method": "warn",
+		"typescript/no-meaningless-void-operator": "warn",
+		"typescript/no-misused-spread": "warn",
+		"typescript/no-redundant-type-constituents": "warn",
+		"typescript/restrict-template-expressions": "warn",
+		"typescript/require-array-sort-compare": "warn"
+	} });
+}
 function importSortingPreset() {
 	return defineConfig({
 		jsPlugins: ["eslint-plugin-perfectionist"],
@@ -149,6 +167,7 @@ function antelopePreset(options = {}) {
 	return defineConfig({
 		extends: [
 			basePreset(severityOf(options.importCycles, "error")),
+			options.typeAware === false ? null : typeAwarePreset(),
 			antiSlopSeverity === "off" ? null : antiSlopPreset(antiSlopSeverity),
 			complexitySeverity === "off" ? null : complexityPreset(complexityThresholds, complexitySeverity),
 			options.importSorting === false ? null : importSortingPreset()

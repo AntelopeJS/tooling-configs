@@ -116,6 +116,17 @@ declare function antelopePreset(options?: AntelopePresetOptions): {
       "import/no-duplicates": "error";
     };
   } | {
+    rules: {
+      "typescript/no-floating-promises": "error";
+      "typescript/await-thenable": "warn";
+      "typescript/unbound-method": "warn";
+      "typescript/no-meaningless-void-operator": "warn";
+      "typescript/no-misused-spread": "warn";
+      "typescript/no-redundant-type-constituents": "warn";
+      "typescript/restrict-template-expressions": "warn";
+      "typescript/require-array-sort-compare": "warn";
+    };
+  } | {
     jsPlugins: {
       name: string;
       specifier: string;
