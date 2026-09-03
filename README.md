@@ -21,6 +21,13 @@ The package is not on npm yet. Until it is, consume it straight from this reposi
 pnpm add -D oxlint@1.81.0 oxfmt "github:AntelopeJS/tooling-configs"
 ```
 
+Add `eslint-plugin-perfectionist` too unless you turn import sorting off — it is an
+optional peer dependency because it pulls ESLint and typescript-eslint along with it:
+
+```bash
+pnpm add -D eslint-plugin-perfectionist
+```
+
 `dist/` is committed for exactly as long as that install path lasts: pnpm 11 refuses to
 run a git dependency's build unless every consumer allowlists it by commit hash, which
 would break on every push here. CI fails if the committed build is stale. When the
@@ -85,6 +92,10 @@ antelopePreset({
   typeAware: false, // no tsgolint in this repository
 });
 ```
+
+`correctness` is raised to error deliberately. oxlint reports it as warnings, and warnings
+do not fail the command — a preset that left it alone could never fail a pipeline, while
+Biome was failing the build on the same rules.
 
 `antiSlop` and `complexity` default to warnings on purpose: a repository adopting them
 has findings to work through, and a red pipeline on day one teaches the team to ignore

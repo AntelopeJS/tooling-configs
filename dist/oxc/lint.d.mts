@@ -56,6 +56,11 @@ interface AntelopePresetOptions {
    * `oxlint --fix`. Repositories that still let Biome organize imports must
    * leave this off until they drop that assist, or the two tools fight.
    *
+   * The plugin is an optional peer dependency: it pulls ESLint and
+   * typescript-eslint in with it, which a repository that turns this off has no
+   * reason to install. Add `eslint-plugin-perfectionist` alongside this package
+   * when leaving it on.
+   *
    * @default true
    */
   importSorting?: boolean;
@@ -95,6 +100,9 @@ interface AntelopePresetOptions {
  */
 declare function antelopePreset(options?: AntelopePresetOptions): {
   extends: ({
+    categories: {
+      correctness: "error";
+    };
     ignorePatterns: string[];
     plugins: ("eslint" | "typescript" | "oxc" | "import" | "promise" | "node")[];
     rules: {

@@ -72,6 +72,11 @@ export interface AntelopePresetOptions {
    * `oxlint --fix`. Repositories that still let Biome organize imports must
    * leave this off until they drop that assist, or the two tools fight.
    *
+   * The plugin is an optional peer dependency: it pulls ESLint and
+   * typescript-eslint in with it, which a repository that turns this off has no
+   * reason to install. Add `eslint-plugin-perfectionist` alongside this package
+   * when leaving it on.
+   *
    * @default true
    */
   importSorting?: boolean;
@@ -127,6 +132,11 @@ function severityOf(
 
 function basePreset(cycleSeverity: Severity) {
   return defineConfig({
+    // oxlint reports `correctness` as warnings, and warnings do not fail the
+    // command. Left alone, nothing this preset finds could ever fail CI -- and
+    // these are the rules that catch duplicate object keys and unused bindings,
+    // which Biome was failing the build on before.
+    categories: { correctness: "error" },
     ignorePatterns: ANTELOPE_IGNORE_PATTERNS,
     plugins: ["eslint", "typescript", "node", "oxc", "import", "promise"],
     rules: {

@@ -48,6 +48,7 @@ function severityOf(option, fallback) {
 }
 function basePreset(cycleSeverity) {
 	return defineConfig({
+		categories: { correctness: "error" },
 		ignorePatterns: ANTELOPE_IGNORE_PATTERNS,
 		plugins: [
 			"eslint",

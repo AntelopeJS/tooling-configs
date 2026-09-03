@@ -11,9 +11,6 @@ importers:
       '@oxlint/plugins':
         specifier: 1.81.0
         version: 1.81.0
-      eslint-plugin-perfectionist:
-        specifier: ^5.11.0
-        version: 5.11.0(eslint@10.9.1(jiti@2.7.0))(typescript@5.9.3)
       knip:
         specifier: '>=6.0.0'
         version: 6.34.0
@@ -22,8 +19,11 @@ importers:
         specifier: ^1.17.0
         version: 1.17.0(@typescript-eslint/utils@8.69.0(eslint@10.9.1(jiti@2.7.0))(typescript@5.9.3))(@vue/compiler-sfc@3.5.42)(eslint@10.9.1(jiti@2.7.0))(typescript@5.9.3)
       '@types/node':
-        specifier: ^24.0.0
+        specifier: ^24.13.3
         version: 24.13.3
+      eslint-plugin-perfectionist:
+        specifier: ^5.11.0
+        version: 5.11.0(eslint@10.9.1(jiti@2.7.0))(typescript@5.9.3)
       oxfmt:
         specifier: ^0.66.0
         version: 0.66.0
@@ -1667,8 +1667,8 @@ packages:
     resolution: {integrity: sha512-KvvtD7SrlBP7dlgkBghEE3r84CABm5SmV2aNcG4oCA+qDnJ/tvKonFVvwWAyyWUEwxuNawdfEAZKP9zM3oZ2Uw==}
     engines: {node: '>=4'}
 
-  postcss@8.5.26:
-    resolution: {integrity: sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ==}
+  postcss@8.5.27:
+    resolution: {integrity: sha512-79Iho8QeYyooJ8e9lCRyTVlyTAkS/kXBYKff6TMzS3kEWGQ8Ds5UEtXpGrSUDLUWok6QTvxeYy0GO8fopHnaSA==}
     engines: {node: ^10 || ^12 || >=14}
 
   prelude-ls@1.2.1:
@@ -2645,7 +2645,7 @@ snapshots:
       '@vue/shared': 3.5.42
       estree-walker: 2.0.2
       magic-string: 0.30.21
-      postcss: 8.5.26
+      postcss: 8.5.27
       source-map-js: 1.2.1
 
   '@vue/compiler-ssr@3.5.42':
@@ -3370,7 +3370,7 @@ snapshots:
       cssesc: 3.0.0
       util-deprecate: 1.0.2
 
-  postcss@8.5.26:
+  postcss@8.5.27:
     dependencies:
       nanoid: 3.3.18
       picocolors: 1.1.1
