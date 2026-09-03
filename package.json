@@ -1,0 +1,54 @@
+{
+  "name": "@antelopejs/tooling-configs",
+  "version": "0.1.0",
+  "description": "Shared tooling presets for AntelopeJS projects: oxlint (incl. vendored anti-slop) and Knip",
+  "keywords": ["oxc", "oxlint", "knip", "anti-slop", "antelopejs"],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AntelopeJS/tooling-configs.git"
+  },
+  "type": "module",
+  "files": ["dist"],
+  "exports": {
+    "./oxc/lint": "./dist/oxc/lint.mjs",
+    "./oxc/anti-slop": "./dist/oxc/anti-slop/index.mjs",
+    "./knip": "./dist/knip.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "packageManager": "pnpm@10.2.0",
+  "scripts": {
+    "build": "tsdown",
+    "prepare": "pnpm run build",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "format": "biome format --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"src/oxc/anti-slop/rules/*.test.ts\"",
+    "checks": "pnpm run typecheck && pnpm run lint && pnpm run test"
+  },
+  "dependencies": {
+    "@oxlint/plugins": "1.81.0",
+    "eslint-plugin-perfectionist": "^5.11.0"
+  },
+  "peerDependencies": {
+    "knip": ">=6.0.0",
+    "oxlint": "1.81.0"
+  },
+  "peerDependenciesMeta": {
+    "knip": { "optional": true },
+    "oxlint": { "optional": true }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.2",
+    "@types/node": "^24.0.0",
+    "oxlint": "1.81.0",
+    "tsdown": "^0.22.14",
+    "typescript": "^5.9.3"
+  }
+}
