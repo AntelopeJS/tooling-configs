@@ -37,6 +37,10 @@ export const ANTELOPE_NUXT_RULES: NuxtRules = {
   "@typescript-eslint/no-explicit-any": "off",
   "@typescript-eslint/no-empty-object-type": "off",
 
+  // Emits are declared one line per event, each with a comment explaining what
+  // the parent does with it; merging the signatures throws that away.
+  "@typescript-eslint/unified-signatures": "off",
+
   // Underscore-prefixed bindings are the convention for a deliberately unused
   // parameter, which the default rule reports.
   "@typescript-eslint/no-unused-vars": [
