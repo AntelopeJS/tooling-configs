@@ -17,6 +17,8 @@ export interface AntelopeKnipOptions {
   ignoreDependencies?: string[];
   /** Paths to leave out entirely. */
   ignore?: string[];
+  /** Binaries Knip cannot resolve, appended to the AntelopeJS defaults. */
+  ignoreBinaries?: string[];
 }
 
 const DEFAULT_ENTRY = [
@@ -38,6 +40,13 @@ const DEFAULT_IGNORE = [
   ".antelope/**",
 ];
 
+/**
+ * Every layer's CI runs `cd nuxt-layer && pnpm typecheck`. Knip parses the
+ * workflow, sees a binary it cannot resolve, and reports it: the script lives in
+ * the layer's own package.json, outside the analysed project.
+ */
+const DEFAULT_IGNORE_BINARIES = ["typecheck"];
+
 export function antelopeKnipConfig(
   options: AntelopeKnipOptions = {},
 ): KnipConfig {
@@ -46,5 +55,9 @@ export function antelopeKnipConfig(
     project: [...DEFAULT_PROJECT, ...(options.project ?? [])],
     ignore: [...DEFAULT_IGNORE, ...(options.ignore ?? [])],
     ignoreDependencies: options.ignoreDependencies ?? [],
+    ignoreBinaries: [
+      ...DEFAULT_IGNORE_BINARIES,
+      ...(options.ignoreBinaries ?? []),
+    ],
   };
 }

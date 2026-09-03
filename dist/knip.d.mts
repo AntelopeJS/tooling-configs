@@ -17,6 +17,8 @@ interface AntelopeKnipOptions {
   ignoreDependencies?: string[];
   /** Paths to leave out entirely. */
   ignore?: string[];
+  /** Binaries Knip cannot resolve, appended to the AntelopeJS defaults. */
+  ignoreBinaries?: string[];
 }
 declare function antelopeKnipConfig(options?: AntelopeKnipOptions): KnipConfig;
 //#endregion
