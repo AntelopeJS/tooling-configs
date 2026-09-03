@@ -15,7 +15,10 @@ import { AGENT_IGNORE_PATTERNS, IGNORE_PATTERNS } from "./shared.ts";
  * });
  * ```
  */
-export const ANTELOPE_IGNORE_PATTERNS = [...IGNORE_PATTERNS, ...AGENT_IGNORE_PATTERNS];
+export const ANTELOPE_IGNORE_PATTERNS = [
+  ...IGNORE_PATTERNS,
+  ...AGENT_IGNORE_PATTERNS,
+];
 
 type Severity = "off" | "warn" | "error";
 
@@ -61,7 +64,9 @@ export interface AntelopePresetOptions {
    *
    * @default "warn" with {@link DEFAULT_COMPLEXITY_THRESHOLDS}
    */
-  complexity?: boolean | (Partial<ComplexityThresholds> & { severity?: Severity });
+  complexity?:
+    | boolean
+    | (Partial<ComplexityThresholds> & { severity?: Severity });
   /**
    * Import sorting through `eslint-plugin-perfectionist`, autofixed by
    * `oxlint --fix`. Repositories that still let Biome organize imports must
@@ -107,9 +112,14 @@ const ANTI_SLOP_RULES = [
 ] as const;
 
 /** Shared empty override set, so the threshold spread is never conditional. */
-const EMPTY_THRESHOLDS: Partial<ComplexityThresholds> & { severity?: Severity } = {};
+const EMPTY_THRESHOLDS: Partial<ComplexityThresholds> & {
+  severity?: Severity;
+} = {};
 
-function severityOf(option: boolean | Severity | undefined, fallback: Severity): Severity {
+function severityOf(
+  option: boolean | Severity | undefined,
+  fallback: Severity,
+): Severity {
   if (option === undefined || option === true) return fallback;
   if (option === false) return "off";
   return option;
@@ -130,19 +140,31 @@ function basePreset(cycleSeverity: Severity) {
 function antiSlopPreset(severity: Severity) {
   return defineConfig({
     jsPlugins: [
-      { name: "anti-slop", specifier: "@antelopejs/tooling-configs/oxc/anti-slop" },
+      {
+        name: "anti-slop",
+        specifier: "@antelopejs/tooling-configs/oxc/anti-slop",
+      },
     ],
-    rules: Object.fromEntries(ANTI_SLOP_RULES.map((rule) => [`anti-slop/${rule}`, severity])),
+    rules: Object.fromEntries(
+      ANTI_SLOP_RULES.map((rule) => [`anti-slop/${rule}`, severity]),
+    ),
   });
 }
 
-function complexityPreset(thresholds: ComplexityThresholds, severity: Severity) {
+function complexityPreset(
+  thresholds: ComplexityThresholds,
+  severity: Severity,
+) {
   return defineConfig({
     rules: {
       "eslint/max-params": [severity, { max: thresholds.maxParams }],
       "eslint/max-lines-per-function": [
         severity,
-        { max: thresholds.maxLinesPerFunction, skipBlankLines: true, skipComments: true },
+        {
+          max: thresholds.maxLinesPerFunction,
+          skipBlankLines: true,
+          skipComments: true,
+        },
       ],
       "eslint/max-lines": [
         severity,
@@ -167,7 +189,15 @@ function importSortingPreset() {
           groups: [
             ["side-effect", "side-effect-style"],
             ["builtin", "external"],
-            ["internal", "subpath", "parent", "sibling", "index", "style", "unknown"],
+            [
+              "internal",
+              "subpath",
+              "parent",
+              "sibling",
+              "index",
+              "style",
+              "unknown",
+            ],
           ],
         },
       ],
@@ -210,11 +240,14 @@ export function antelopePreset(options: AntelopePresetOptions = {}) {
     extends: [
       basePreset(severityOf(options.importCycles, "error")),
       antiSlopSeverity === "off" ? null : antiSlopPreset(antiSlopSeverity),
-      complexitySeverity === "off" ? null : complexityPreset(complexityThresholds, complexitySeverity),
+      complexitySeverity === "off"
+        ? null
+        : complexityPreset(complexityThresholds, complexitySeverity),
       options.importSorting === false ? null : importSortingPreset(),
     ].filter((config) => config !== null),
     rules: {
-      "typescript/no-floating-promises": options.typeAware === false ? "off" : "error",
+      "typescript/no-floating-promises":
+        options.typeAware === false ? "off" : "error",
     },
   });
 }

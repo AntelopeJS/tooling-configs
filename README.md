@@ -1,10 +1,11 @@
 # @antelopejs/tooling-configs
 
-Shared tooling presets for AntelopeJS repositories: an [oxlint](https://oxc.rs) preset
-(including the vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules) and a
-[Knip](https://knip.dev) preset for dead code.
+Shared tooling presets for AntelopeJS repositories: [oxlint](https://oxc.rs) (including
+the vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules), [oxfmt](https://oxc.rs)
+and [Knip](https://knip.dev).
 
-Formatting is deliberately **not** covered yet: repositories keep Biome for that.
+Together they replace Biome outright — lint, format and import order — and Prettier in the
+Nuxt layers, since oxfmt formats `.vue` and sorts Tailwind classes natively.
 
 ## Requirements
 
@@ -16,7 +17,7 @@ executing TypeScript, which earlier runtimes cannot do.
 The package is not on npm yet. Until it is, consume it straight from this repository:
 
 ```bash
-pnpm add -D oxlint@1.81.0 "github:AntelopeJS/tooling-configs"
+pnpm add -D oxlint@1.81.0 oxfmt "github:AntelopeJS/tooling-configs"
 ```
 
 `dist/` is committed for exactly as long as that install path lasts: pnpm 11 refuses to
@@ -49,8 +50,8 @@ export default defineConfig({
 {
   "scripts": {
     "lint": "oxlint",
-    "lint:fix": "oxlint --fix"
-  }
+    "lint:fix": "oxlint --fix",
+  },
 }
 ```
 
@@ -62,25 +63,25 @@ pnpm add -D oxlint-tsgolint
 
 ### What the preset turns on
 
-| Group | Contents |
-| --- | --- |
-| oxc defaults | the `correctness` category, plus the `eslint`, `typescript`, `node`, `oxc`, `import` and `promise` plugins |
-| imports | `import/no-cycle`, `import/no-self-import`, `import/no-duplicates` as errors |
-| | (a repository with existing cycles starts with `importCycles: "warn"`) |
-| import sorting | `perfectionist/sort-imports`, autofixed by `oxlint --fix` |
-| complexity | `max-params` 5, `max-lines-per-function` 120, `max-lines` 500, `max-depth` 4, `complexity` 20 — as warnings |
-| anti-slop | all 15 generic rules, as warnings |
-| type-aware | `typescript/no-floating-promises` as an error |
+| Group          | Contents                                                                                                    |
+| -------------- | ----------------------------------------------------------------------------------------------------------- |
+| oxc defaults   | the `correctness` category, plus the `eslint`, `typescript`, `node`, `oxc`, `import` and `promise` plugins  |
+| imports        | `import/no-cycle`, `import/no-self-import`, `import/no-duplicates` as errors                                |
+|                | (a repository with existing cycles starts with `importCycles: "warn"`)                                      |
+| import sorting | `perfectionist/sort-imports`, autofixed by `oxlint --fix`                                                   |
+| complexity     | `max-params` 5, `max-lines-per-function` 120, `max-lines` 500, `max-depth` 4, `complexity` 20 — as warnings |
+| anti-slop      | all 15 generic rules, as warnings                                                                           |
+| type-aware     | `typescript/no-floating-promises` as an error                                                               |
 
 ### Options
 
 ```ts
 antelopePreset({
-  antiSlop: "error",              // "warn" (default) | "error" | false
-  importCycles: "warn",           // "error" (default) | "warn" | false
-  complexity: { maxParams: 8 },   // override thresholds, or false
-  importSorting: false,           // leave imports alone
-  typeAware: false,               // no tsgolint in this repository
+  antiSlop: "error", // "warn" (default) | "error" | false
+  importCycles: "warn", // "error" (default) | "warn" | false
+  complexity: { maxParams: 8 }, // override thresholds, or false
+  importSorting: false, // leave imports alone
+  typeAware: false, // no tsgolint in this repository
 });
 ```
 
@@ -94,7 +95,10 @@ oxlint does not merge `ignorePatterns` across `extends`. A root config that decl
 own **replaces** the preset's, so spread them:
 
 ```ts
-import { ANTELOPE_IGNORE_PATTERNS, antelopePreset } from "@antelopejs/tooling-configs/oxc/lint";
+import {
+  ANTELOPE_IGNORE_PATTERNS,
+  antelopePreset,
+} from "@antelopejs/tooling-configs/oxc/lint";
 
 export default defineConfig({
   extends: [antelopePreset()],
@@ -102,14 +106,61 @@ export default defineConfig({
 });
 ```
 
-### Adopting it next to Biome
+## oxfmt
 
-While a repository still formats with Biome:
+```ts
+// oxfmt.config.ts
+import { antelopeFmtPreset } from "@antelopejs/tooling-configs/oxc/fmt";
 
-- turn off Biome's import assist (`assist.actions.source.organizeImports`), otherwise it
-  and `perfectionist/sort-imports` will each undo the other's work on every save;
-- turn off Biome's linter (`linter.enabled: false`) and keep only `biome format`, so a
-  rule never gets enforced twice with two different opinions.
+export default antelopeFmtPreset();
+```
+
+```jsonc
+// package.json
+{
+  "scripts": {
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+  },
+}
+```
+
+### The house style
+
+| Option                 | Value      |
+| ---------------------- | ---------- |
+| `printWidth`           | 80         |
+| `tabWidth` / `useTabs` | 2 / spaces |
+| `semi`                 | true       |
+| `singleQuote`          | false      |
+| `trailingComma`        | `"all"`    |
+
+Every field is set explicitly, including those that already match oxfmt's defaults.
+Repositories carry `.editorconfig` files that contradict each other — five declare tabs,
+two declare spaces, which is why the codebases drifted apart in the first place — and
+oxfmt falls back to `.editorconfig` for any field a config leaves unset. Stating all of
+them is what makes the style identical everywhere. Fix the repository's `.editorconfig`
+to match anyway, so editors agree with the formatter.
+
+Import order is not part of it: `perfectionist/sort-imports` owns that on the lint side.
+Enabling oxfmt's `sortImports` as well would have two tools sorting the same imports
+differently, each undoing the other on every save.
+
+In a Nuxt layer, pass the theme stylesheet to replace `prettier-plugin-tailwindcss`:
+
+```ts
+export default antelopeFmtPreset({
+  tailwindStylesheet: "./assets/css/main.css",
+});
+```
+
+### Replacing Biome
+
+Per repository: delete `biome.json` and the `@biomejs/biome` dependency, point `lint`,
+`lint:fix` and `format` at oxlint and oxfmt, and port anything the Biome config carried
+that the preset does not (`noRestrictedImports` guards become `import/no-cycle`). Reformat
+in its own commit and record it in `.git-blame-ignore-revs`, which GitHub honours, so the
+pass does not bury the history.
 
 ## Knip
 

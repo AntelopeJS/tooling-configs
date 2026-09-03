@@ -3,49 +3,55 @@
   "version": "0.1.0",
   "description": "Shared tooling presets for AntelopeJS projects: oxlint (incl. vendored anti-slop) and Knip",
   "keywords": [
-    "oxc",
-    "oxlint",
-    "knip",
+    "antelopejs",
     "anti-slop",
-    "antelopejs"
+    "knip",
+    "oxc",
+    "oxlint"
   ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/AntelopeJS/tooling-configs.git"
   },
-  "type": "module",
   "files": [
     "dist"
   ],
+  "type": "module",
   "exports": {
     "./oxc/lint": "./dist/oxc/lint.mjs",
+    "./oxc/fmt": "./dist/oxc/fmt.mjs",
     "./oxc/anti-slop": "./dist/oxc/anti-slop/index.mjs",
     "./knip": "./dist/knip.mjs"
   },
   "publishConfig": {
     "access": "public"
   },
-  "engines": {
-    "node": ">=22.18.0"
-  },
-  "packageManager": "pnpm@10.2.0",
   "scripts": {
     "build": "tsdown",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "format": "biome format --write .",
+    "format": "oxfmt .",
     "typecheck": "tsc --noEmit",
     "test": "node --test \"src/oxc/anti-slop/rules/*.test.ts\"",
-    "checks": "pnpm run typecheck && pnpm run lint && pnpm run test",
-    "check:dist": "pnpm run build && git diff --exit-code dist"
+    "checks": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test",
+    "check:dist": "pnpm run build && git diff --exit-code dist",
+    "format:check": "oxfmt --check ."
   },
   "dependencies": {
     "@oxlint/plugins": "1.81.0",
     "eslint-plugin-perfectionist": "^5.11.0"
   },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "oxfmt": "^0.66.0",
+    "oxlint": "1.81.0",
+    "tsdown": "^0.22.14",
+    "typescript": "^5.9.3"
+  },
   "peerDependencies": {
     "knip": ">=6.0.0",
+    "oxfmt": "^0.66.0",
     "oxlint": "1.81.0"
   },
   "peerDependenciesMeta": {
@@ -54,13 +60,13 @@
     },
     "oxlint": {
       "optional": true
+    },
+    "oxfmt": {
+      "optional": true
     }
   },
-  "devDependencies": {
-    "@biomejs/biome": "2.3.2",
-    "@types/node": "^24.0.0",
-    "oxlint": "1.81.0",
-    "tsdown": "^0.22.14",
-    "typescript": "^5.9.3"
-  }
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "packageManager": "pnpm@10.2.0"
 }

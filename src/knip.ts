@@ -37,7 +37,9 @@ const DEFAULT_IGNORE = [
   ".antelope/**",
 ];
 
-export function antelopeKnipConfig(options: AntelopeKnipOptions = {}): KnipConfig {
+export function antelopeKnipConfig(
+  options: AntelopeKnipOptions = {},
+): KnipConfig {
   return {
     entry: [...DEFAULT_ENTRY, ...(options.entry ?? [])],
     project: [...DEFAULT_PROJECT, ...(options.project ?? [])],

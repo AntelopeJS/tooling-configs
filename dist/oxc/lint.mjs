@@ -1,31 +1,5 @@
+import { n as IGNORE_PATTERNS, t as AGENT_IGNORE_PATTERNS } from "../shared-DYvliWWW.mjs";
 import { defineConfig } from "oxlint";
-//#region src/oxc/shared.ts
-/** Paths every AntelopeJS project generates or vendors, and that no linter should read. */
-const IGNORE_PATTERNS = [
-	"**/node_modules/**",
-	"**/dist/**",
-	"**/build/**",
-	"**/coverage/**",
-	"**/.antelope/**",
-	"**/.nuxt/**",
-	"**/.output/**",
-	"**/output/**",
-	"**/generated-layers.json",
-	"**/i18n-registry.generated.ts"
-];
-/** Agent tooling directories: assets we install, not source we own. */
-const AGENT_IGNORE_PATTERNS = [
-	".agent/**",
-	".agents/**",
-	".amp/**",
-	".claude/**",
-	".codex/**",
-	".cursor/**",
-	".gemini/**",
-	".opencode/**",
-	".windsurf/**"
-];
-//#endregion
 //#region src/oxc/lint.ts
 /**
 * The paths the preset ignores. oxlint does not merge `ignorePatterns` across
