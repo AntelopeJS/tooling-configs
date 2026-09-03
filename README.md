@@ -66,6 +66,7 @@ pnpm add -D oxlint-tsgolint
 | --- | --- |
 | oxc defaults | the `correctness` category, plus the `eslint`, `typescript`, `node`, `oxc`, `import` and `promise` plugins |
 | imports | `import/no-cycle`, `import/no-self-import`, `import/no-duplicates` as errors |
+| | (a repository with existing cycles starts with `importCycles: "warn"`) |
 | import sorting | `perfectionist/sort-imports`, autofixed by `oxlint --fix` |
 | complexity | `max-params` 5, `max-lines-per-function` 120, `max-lines` 500, `max-depth` 4, `complexity` 20 — as warnings |
 | anti-slop | all 15 generic rules, as warnings |
@@ -76,6 +77,7 @@ pnpm add -D oxlint-tsgolint
 ```ts
 antelopePreset({
   antiSlop: "error",              // "warn" (default) | "error" | false
+  importCycles: "warn",           // "error" (default) | "warn" | false
   complexity: { maxParams: 8 },   // override thresholds, or false
   importSorting: false,           // leave imports alone
   typeAware: false,               // no tsgolint in this repository

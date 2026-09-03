@@ -46,6 +46,14 @@ interface AntelopePresetOptions {
    */
   importSorting?: boolean;
   /**
+   * Severity of `import/no-cycle`. A cycle only shows up at runtime, in a
+   * consumer's process, so it ships as an error — but a repository that already
+   * has cycles needs to see them without a red pipeline while it untangles them.
+   *
+   * @default "error"
+   */
+  importCycles?: boolean | Severity;
+  /**
    * `typescript/no-floating-promises`, which needs type information. The
    * consuming repository must also set `options.typeAware` in its own root
    * config: oxlint only reads that field there, never from an extended preset.
@@ -76,7 +84,7 @@ declare function antelopePreset(options?: AntelopePresetOptions): {
     ignorePatterns: string[];
     plugins: ("eslint" | "typescript" | "oxc" | "import" | "promise" | "node")[];
     rules: {
-      "import/no-cycle": "error";
+      "import/no-cycle": Severity;
       "import/no-self-import": "error";
       "import/no-duplicates": "error";
     };

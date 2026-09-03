@@ -58,7 +58,7 @@ function severityOf(option, fallback) {
 	if (option === false) return "off";
 	return option;
 }
-function basePreset() {
+function basePreset(cycleSeverity) {
 	return defineConfig({
 		ignorePatterns: [...IGNORE_PATTERNS, ...AGENT_IGNORE_PATTERNS],
 		plugins: [
@@ -70,7 +70,7 @@ function basePreset() {
 			"promise"
 		],
 		rules: {
-			"import/no-cycle": "error",
+			"import/no-cycle": cycleSeverity,
 			"import/no-self-import": "error",
 			"import/no-duplicates": "error"
 		}
@@ -154,7 +154,7 @@ function antelopePreset(options = {}) {
 	const antiSlopSeverity = severityOf(options.antiSlop, "warn");
 	return defineConfig({
 		extends: [
-			basePreset(),
+			basePreset(severityOf(options.importCycles, "error")),
 			antiSlopSeverity === "off" ? null : antiSlopPreset(antiSlopSeverity),
 			complexitySeverity === "off" ? null : complexityPreset(complexityThresholds, complexitySeverity),
 			options.importSorting === false ? null : importSortingPreset()

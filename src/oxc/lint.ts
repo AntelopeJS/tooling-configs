@@ -56,6 +56,14 @@ export interface AntelopePresetOptions {
    */
   importSorting?: boolean;
   /**
+   * Severity of `import/no-cycle`. A cycle only shows up at runtime, in a
+   * consumer's process, so it ships as an error — but a repository that already
+   * has cycles needs to see them without a red pipeline while it untangles them.
+   *
+   * @default "error"
+   */
+  importCycles?: boolean | Severity;
+  /**
    * `typescript/no-floating-promises`, which needs type information. The
    * consuming repository must also set `options.typeAware` in its own root
    * config: oxlint only reads that field there, never from an extended preset.
@@ -92,14 +100,12 @@ function severityOf(option: boolean | Severity | undefined, fallback: Severity):
   return option;
 }
 
-function basePreset() {
+function basePreset(cycleSeverity: Severity) {
   return defineConfig({
     ignorePatterns: [...IGNORE_PATTERNS, ...AGENT_IGNORE_PATTERNS],
     plugins: ["eslint", "typescript", "node", "oxc", "import", "promise"],
     rules: {
-      // Cheap to keep green, and the ones that actually bite in a module graph
-      // this size: a cycle only surfaces at runtime, in a consumer's process.
-      "import/no-cycle": "error",
+      "import/no-cycle": cycleSeverity,
       "import/no-self-import": "error",
       "import/no-duplicates": "error",
     },
@@ -187,7 +193,7 @@ export function antelopePreset(options: AntelopePresetOptions = {}) {
 
   return defineConfig({
     extends: [
-      basePreset(),
+      basePreset(severityOf(options.importCycles, "error")),
       antiSlopSeverity === "off" ? null : antiSlopPreset(antiSlopSeverity),
       complexitySeverity === "off" ? null : complexityPreset(complexityThresholds, complexitySeverity),
       options.importSorting === false ? null : importSortingPreset(),
