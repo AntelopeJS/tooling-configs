@@ -41,14 +41,14 @@ const DEFAULT_IGNORE = [
 ];
 
 /**
- * Binaries Knip sees invoked but cannot resolve:
+ * `typecheck` is a script in the Nuxt layer's own manifest, outside the analysed
+ * project, and every layer's CI runs it.
  *
- * - `typecheck` is a script in the Nuxt layer's own manifest, outside the
- *   analysed project, and every layer's CI runs it.
- * - `ajs` is the AntelopeJS CLI, installed globally rather than as a dependency
- *   (`npm i -g @antelopejs/core` in every workflow).
+ * The AntelopeJS CLIs are deliberately absent: a repository that invokes `ajs`
+ * or `acms` declares the package providing it, so Knip resolves them and an
+ * ignore would only hide a missing dependency.
  */
-const DEFAULT_IGNORE_BINARIES = ["typecheck", "ajs"];
+const DEFAULT_IGNORE_BINARIES = ["typecheck"];
 
 /**
  * The AntelopeJS runtime loads modules by name, from the antelope config rather
