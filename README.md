@@ -88,6 +88,20 @@ antelopePreset({
 has findings to work through, and a red pipeline on day one teaches the team to ignore
 the pipeline. Raise them to `"error"` once the backlog is clear.
 
+### Adding your own ignore patterns
+
+oxlint does not merge `ignorePatterns` across `extends`. A root config that declares its
+own **replaces** the preset's, so spread them:
+
+```ts
+import { ANTELOPE_IGNORE_PATTERNS, antelopePreset } from "@antelopejs/tooling-configs/oxc/lint";
+
+export default defineConfig({
+  extends: [antelopePreset()],
+  ignorePatterns: [...ANTELOPE_IGNORE_PATTERNS, "playground/**"],
+});
+```
+
 ### Adopting it next to Biome
 
 While a repository still formats with Biome:

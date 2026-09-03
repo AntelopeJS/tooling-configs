@@ -27,6 +27,20 @@ const AGENT_IGNORE_PATTERNS = [
 ];
 //#endregion
 //#region src/oxc/lint.ts
+/**
+* The paths the preset ignores. oxlint does not merge `ignorePatterns` across
+* `extends`: a root config that declares its own **replaces** these, so spread
+* them when a repository adds patterns of its own.
+*
+* @example
+* ```ts
+* export default defineConfig({
+*   extends: [antelopePreset()],
+*   ignorePatterns: [...ANTELOPE_IGNORE_PATTERNS, "playground/**"],
+* });
+* ```
+*/
+const ANTELOPE_IGNORE_PATTERNS = [...IGNORE_PATTERNS, ...AGENT_IGNORE_PATTERNS];
 const DEFAULT_COMPLEXITY_THRESHOLDS = {
 	maxParams: 5,
 	maxLinesPerFunction: 120,
@@ -60,7 +74,7 @@ function severityOf(option, fallback) {
 }
 function basePreset(cycleSeverity) {
 	return defineConfig({
-		ignorePatterns: [...IGNORE_PATTERNS, ...AGENT_IGNORE_PATTERNS],
+		ignorePatterns: ANTELOPE_IGNORE_PATTERNS,
 		plugins: [
 			"eslint",
 			"typescript",
@@ -163,4 +177,4 @@ function antelopePreset(options = {}) {
 	});
 }
 //#endregion
-export { DEFAULT_COMPLEXITY_THRESHOLDS, antelopePreset };
+export { ANTELOPE_IGNORE_PATTERNS, DEFAULT_COMPLEXITY_THRESHOLDS, antelopePreset };

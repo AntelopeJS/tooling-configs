@@ -2,6 +2,21 @@ import { defineConfig } from "oxlint";
 
 import { AGENT_IGNORE_PATTERNS, IGNORE_PATTERNS } from "./shared.ts";
 
+/**
+ * The paths the preset ignores. oxlint does not merge `ignorePatterns` across
+ * `extends`: a root config that declares its own **replaces** these, so spread
+ * them when a repository adds patterns of its own.
+ *
+ * @example
+ * ```ts
+ * export default defineConfig({
+ *   extends: [antelopePreset()],
+ *   ignorePatterns: [...ANTELOPE_IGNORE_PATTERNS, "playground/**"],
+ * });
+ * ```
+ */
+export const ANTELOPE_IGNORE_PATTERNS = [...IGNORE_PATTERNS, ...AGENT_IGNORE_PATTERNS];
+
 type Severity = "off" | "warn" | "error";
 
 /**
@@ -102,7 +117,7 @@ function severityOf(option: boolean | Severity | undefined, fallback: Severity):
 
 function basePreset(cycleSeverity: Severity) {
   return defineConfig({
-    ignorePatterns: [...IGNORE_PATTERNS, ...AGENT_IGNORE_PATTERNS],
+    ignorePatterns: ANTELOPE_IGNORE_PATTERNS,
     plugins: ["eslint", "typescript", "node", "oxc", "import", "promise"],
     rules: {
       "import/no-cycle": cycleSeverity,

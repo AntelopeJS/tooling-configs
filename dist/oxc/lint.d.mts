@@ -1,4 +1,18 @@
 //#region src/oxc/lint.d.ts
+/**
+ * The paths the preset ignores. oxlint does not merge `ignorePatterns` across
+ * `extends`: a root config that declares its own **replaces** these, so spread
+ * them when a repository adds patterns of its own.
+ *
+ * @example
+ * ```ts
+ * export default defineConfig({
+ *   extends: [antelopePreset()],
+ *   ignorePatterns: [...ANTELOPE_IGNORE_PATTERNS, "playground/**"],
+ * });
+ * ```
+ */
+declare const ANTELOPE_IGNORE_PATTERNS: string[];
 type Severity = "off" | "warn" | "error";
 /**
  * Thresholds for the complexity rules. The defaults are deliberately looser than
@@ -134,4 +148,4 @@ declare function antelopePreset(options?: AntelopePresetOptions): {
   };
 };
 //#endregion
-export { AntelopePresetOptions, ComplexityThresholds, DEFAULT_COMPLEXITY_THRESHOLDS, antelopePreset };
+export { ANTELOPE_IGNORE_PATTERNS, AntelopePresetOptions, ComplexityThresholds, DEFAULT_COMPLEXITY_THRESHOLDS, antelopePreset };
