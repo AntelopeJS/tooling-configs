@@ -222,6 +222,7 @@ function typeAwarePreset() {
       "typescript/unbound-method": "warn",
       "typescript/no-meaningless-void-operator": "warn",
       "typescript/no-misused-spread": "warn",
+      "typescript/no-base-to-string": "warn",
       "typescript/no-redundant-type-constituents": "warn",
       "typescript/restrict-template-expressions": "warn",
       "typescript/require-array-sort-compare": "warn",
