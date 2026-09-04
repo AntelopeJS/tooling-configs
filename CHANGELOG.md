@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.4
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.0.3...v0.0.4)
+
+### 🚀 Enhancements
+
+- Leave seven anti-slop rules off by default ([#3](https://github.com/AntelopeJS/tooling-configs/pull/3))
+
+### ❤️ Contributors
+
+- Fabrice Cst <fabrice@altab.be>
+
 ## v0.0.3
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.0.2...v0.0.3)

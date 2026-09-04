@@ -1,6 +1,6 @@
 {
   "name": "@antelopejs/tooling-configs",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Shared tooling presets for AntelopeJS projects: oxlint (incl. vendored anti-slop) and Knip",
   "keywords": [
     "antelopejs",
