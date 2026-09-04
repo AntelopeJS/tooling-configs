@@ -26,7 +26,8 @@
     "./eslint": "./dist/eslint.mjs"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
     "build": "tsdown",
