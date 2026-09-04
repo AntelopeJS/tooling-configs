@@ -286,9 +286,15 @@ function importSortingPreset() {
         {
           type: "line-length",
           order: "asc",
+          // A side-effect import in an AntelopeJS module is a registration:
+          // `import "./components"` is what puts the decorated classes in the
+          // registry. Moving one changes when it evaluates relative to the
+          // values it may read, so they stay exactly where the author put them
+          // -- which also means no `side-effect` group here, since listing one
+          // is what relocates them.
+          sortSideEffects: false,
           internalPattern: ["^@/.*", "^~/.*"],
           groups: [
-            ["side-effect", "side-effect-style"],
             ["builtin", "external"],
             [
               "internal",
