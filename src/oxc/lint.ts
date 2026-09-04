@@ -99,6 +99,50 @@ export interface AntelopePresetOptions {
 }
 
 /** Every generic anti-slop rule, exported so this package can lint itself. */
+/**
+ * The anti-slop rules left off by default.
+ *
+ * Measured across the sixteen cms/dms repositories: these seven produced 3038
+ * of the 3429 anti-slop findings, and every sample we read was either the
+ * correct idiom or a design change well beyond a lint pass.
+ *
+ * - `require-safety-comment-for-type-assertion` (1283) is satisfied by writing
+ *   a comment, so at that volume it manufactures the noise it exists to fight.
+ *   Removing assertions is the goal; annotating them is not.
+ * - `no-unknown-parameters` (566) and `no-unknown-returns` (104) fire on catch
+ *   handlers, where `unknown` is the only correct type, and on the parsers
+ *   whose whole job is to take unknown in and hand typed values out.
+ * - `no-runtime-typeof` (460) assumes a validation layer above the check. In a
+ *   CMS reading Vault responses, WebSocket frames and user-defined rows, the
+ *   `typeof` *is* that layer.
+ * - `no-unsafe-dictionary-type` (442) is right in a business application and
+ *   wrong here: tables and columns defined at run time have no compile-time
+ *   schema, which is the product, not a typing gap.
+ * - `no-shape-in-symbol-names` (104) matches a substring in identifiers and
+ *   catches domain words such as `BlueGreenShape`.
+ * - `no-module-mocking` (79) is a test-architecture position, not cleanup.
+ * - `no-known-value-widening` (201) is the near miss. Of 174 sampled, 96 are
+ *   `return accumulator` where the object was filled in a loop from run-time
+ *   keys, so the open dictionary is the honest type and there is no evidence to
+ *   preserve; the rule reads them as stable consts because assigning a property
+ *   is not a write to the binding. The 53 real ones -- annotated object
+ *   literals that should use `satisfies` -- are worth fixing by hand, and are,
+ *   but not at the price of 96 suppressions. Narrowing the rule to literals
+ *   would make it worth turning back on.
+ *
+ * A repository that wants one back enables it in its own `rules` block.
+ */
+export const ANTI_SLOP_RULES_OFF_BY_DEFAULT = [
+  "no-known-value-widening",
+  "no-module-mocking",
+  "no-runtime-typeof",
+  "no-shape-in-symbol-names",
+  "no-unknown-parameters",
+  "no-unknown-returns",
+  "no-unsafe-dictionary-type",
+  "require-safety-comment-for-type-assertion",
+] as const;
+
 export const ANTI_SLOP_RULES = [
   "no-chained-type-assertions",
   "no-conditional-empty-object-spread",
@@ -149,6 +193,10 @@ function basePreset(cycleSeverity: Severity) {
           argsIgnorePattern: "^_",
           varsIgnorePattern: "^_",
           caughtErrorsIgnorePattern: "^_",
+          // `const { secret: _secret, ...rest } = row` is the idiom for
+          // dropping a key; without this every repository invents its own
+          // underscore rename for it.
+          ignoreRestSiblings: true,
         },
       ],
       // Biome's recommended set blocked these and oxlint's correctness category
@@ -170,8 +218,12 @@ function basePreset(cycleSeverity: Severity) {
  * so linting never waits on a build.
  */
 export function antiSlopRules(severity: Severity): Record<string, Severity> {
+  const off = new Set<string>(ANTI_SLOP_RULES_OFF_BY_DEFAULT);
   return Object.fromEntries(
-    ANTI_SLOP_RULES.map((rule) => [`anti-slop/${rule}`, severity]),
+    ANTI_SLOP_RULES.map((rule) => [
+      `anti-slop/${rule}`,
+      off.has(rule) ? "off" : severity,
+    ]),
   );
 }
 
@@ -183,9 +235,7 @@ function antiSlopPreset(severity: Severity) {
         specifier: "@antelopejs/tooling-configs/oxc/anti-slop",
       },
     ],
-    rules: Object.fromEntries(
-      ANTI_SLOP_RULES.map((rule) => [`anti-slop/${rule}`, severity]),
-    ),
+    rules: antiSlopRules(severity),
   });
 }
 
@@ -245,9 +295,15 @@ function importSortingPreset() {
         {
           type: "line-length",
           order: "asc",
+          // A side-effect import in an AntelopeJS module is a registration:
+          // `import "./components"` is what puts the decorated classes in the
+          // registry. Moving one changes when it evaluates relative to the
+          // values it may read, so they stay exactly where the author put them
+          // -- which also means no `side-effect` group here, since listing one
+          // is what relocates them.
+          sortSideEffects: false,
           internalPattern: ["^@/.*", "^~/.*"],
           groups: [
-            ["side-effect", "side-effect-style"],
             ["builtin", "external"],
             [
               "internal",
