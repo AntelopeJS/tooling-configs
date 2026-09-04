@@ -99,6 +99,41 @@ export interface AntelopePresetOptions {
 }
 
 /** Every generic anti-slop rule, exported so this package can lint itself. */
+/**
+ * The anti-slop rules left off by default.
+ *
+ * Measured across the sixteen cms/dms repositories: these seven produced 3038
+ * of the 3429 anti-slop findings, and every sample we read was either the
+ * correct idiom or a design change well beyond a lint pass.
+ *
+ * - `require-safety-comment-for-type-assertion` (1283) is satisfied by writing
+ *   a comment, so at that volume it manufactures the noise it exists to fight.
+ *   Removing assertions is the goal; annotating them is not.
+ * - `no-unknown-parameters` (566) and `no-unknown-returns` (104) fire on catch
+ *   handlers, where `unknown` is the only correct type, and on the parsers
+ *   whose whole job is to take unknown in and hand typed values out.
+ * - `no-runtime-typeof` (460) assumes a validation layer above the check. In a
+ *   CMS reading Vault responses, WebSocket frames and user-defined rows, the
+ *   `typeof` *is* that layer.
+ * - `no-unsafe-dictionary-type` (442) is right in a business application and
+ *   wrong here: tables and columns defined at run time have no compile-time
+ *   schema, which is the product, not a typing gap.
+ * - `no-shape-in-symbol-names` (104) matches a substring in identifiers and
+ *   catches domain words such as `BlueGreenShape`.
+ * - `no-module-mocking` (79) is a test-architecture position, not cleanup.
+ *
+ * A repository that wants one back enables it in its own `rules` block.
+ */
+export const ANTI_SLOP_RULES_OFF_BY_DEFAULT = [
+  "no-module-mocking",
+  "no-runtime-typeof",
+  "no-shape-in-symbol-names",
+  "no-unknown-parameters",
+  "no-unknown-returns",
+  "no-unsafe-dictionary-type",
+  "require-safety-comment-for-type-assertion",
+] as const;
+
 export const ANTI_SLOP_RULES = [
   "no-chained-type-assertions",
   "no-conditional-empty-object-spread",
@@ -149,6 +184,10 @@ function basePreset(cycleSeverity: Severity) {
           argsIgnorePattern: "^_",
           varsIgnorePattern: "^_",
           caughtErrorsIgnorePattern: "^_",
+          // `const { secret: _secret, ...rest } = row` is the idiom for
+          // dropping a key; without this every repository invents its own
+          // underscore rename for it.
+          ignoreRestSiblings: true,
         },
       ],
       // Biome's recommended set blocked these and oxlint's correctness category
@@ -170,8 +209,12 @@ function basePreset(cycleSeverity: Severity) {
  * so linting never waits on a build.
  */
 export function antiSlopRules(severity: Severity): Record<string, Severity> {
+  const off = new Set<string>(ANTI_SLOP_RULES_OFF_BY_DEFAULT);
   return Object.fromEntries(
-    ANTI_SLOP_RULES.map((rule) => [`anti-slop/${rule}`, severity]),
+    ANTI_SLOP_RULES.map((rule) => [
+      `anti-slop/${rule}`,
+      off.has(rule) ? "off" : severity,
+    ]),
   );
 }
 
@@ -183,9 +226,7 @@ function antiSlopPreset(severity: Severity) {
         specifier: "@antelopejs/tooling-configs/oxc/anti-slop",
       },
     ],
-    rules: Object.fromEntries(
-      ANTI_SLOP_RULES.map((rule) => [`anti-slop/${rule}`, severity]),
-    ),
+    rules: antiSlopRules(severity),
   });
 }
 
