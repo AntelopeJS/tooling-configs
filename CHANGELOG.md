@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.0.3
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.0.2...v0.0.3)
+
+### 🚀 Enhancements
+
+- Ignore the ajs binary by default ([a5ef9e2](https://github.com/AntelopeJS/tooling-configs/commit/a5ef9e2))
+- Stage no-base-to-string too ([4f31de3](https://github.com/AntelopeJS/tooling-configs/commit/4f31de3))
+- Ignore the antelopejs scope by default ([52646de](https://github.com/AntelopeJS/tooling-configs/commit/52646de))
+- Restore the rules Biome blocked and correctness does not ([8d9d531](https://github.com/AntelopeJS/tooling-configs/commit/8d9d531))
+- Ignore the ajs binary by default" ([924ee36](https://github.com/AntelopeJS/tooling-configs/commit/924ee36))
+- Leave Vue emit signatures alone ([8898c4f](https://github.com/AntelopeJS/tooling-configs/commit/8898c4f))
+
+### 🤖 CI
+
+- Add npm release workflow ([#2](https://github.com/AntelopeJS/tooling-configs/pull/2))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli <rizzitelli.antony@pm.me>
+- MrSociety404 <fabrice@altab.be>
+
 ## v0.0.2
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.0.1...v0.0.2)
