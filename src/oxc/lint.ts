@@ -121,10 +121,19 @@ export interface AntelopePresetOptions {
  * - `no-shape-in-symbol-names` (104) matches a substring in identifiers and
  *   catches domain words such as `BlueGreenShape`.
  * - `no-module-mocking` (79) is a test-architecture position, not cleanup.
+ * - `no-known-value-widening` (201) is the near miss. Of 174 sampled, 96 are
+ *   `return accumulator` where the object was filled in a loop from run-time
+ *   keys, so the open dictionary is the honest type and there is no evidence to
+ *   preserve; the rule reads them as stable consts because assigning a property
+ *   is not a write to the binding. The 53 real ones -- annotated object
+ *   literals that should use `satisfies` -- are worth fixing by hand, and are,
+ *   but not at the price of 96 suppressions. Narrowing the rule to literals
+ *   would make it worth turning back on.
  *
  * A repository that wants one back enables it in its own `rules` block.
  */
 export const ANTI_SLOP_RULES_OFF_BY_DEFAULT = [
+  "no-known-value-widening",
   "no-module-mocking",
   "no-runtime-typeof",
   "no-shape-in-symbol-names",
