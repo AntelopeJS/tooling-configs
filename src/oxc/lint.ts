@@ -69,15 +69,30 @@ export interface AntelopePresetOptions {
     | (Partial<ComplexityThresholds> & { severity?: Severity });
   /**
    * Import sorting through `eslint-plugin-perfectionist`, autofixed by
-   * `oxlint --fix`. Repositories that still let Biome organize imports must
-   * leave this off until they drop that assist, or the two tools fight.
+   * `oxlint --fix`.
+   *
+   * Off by default, because the sort moves value imports across side-effect
+   * imports and module evaluation order is load-bearing in an AntelopeJS
+   * module: `import "./components"` is what puts the decorated classes in the
+   * registry. Running it over the cms/dms repositories moved
+   * `import { CORE_SCHEMA_NAME } from ".../constants"` from before
+   * `import "./db"` to after `import "./routes"` -- in a file whose comment
+   * says the position is deliberate -- and broke the package at require time.
+   * Nothing in a typecheck or a build catches it.
+   *
+   * `sortSideEffects: false` is not enough: it keeps side-effect imports in
+   * place (verified across 1402 files, none moved) but lets everything else
+   * cross them. `partitionByNewLine`, which would fix that, is refused by
+   * perfectionist 5.11 -- it conflicts with both `newlinesBetween` and
+   * `newlinesInside`. Turn this back on when the rule can guarantee that no
+   * import crosses a side-effect import.
    *
    * The plugin is an optional peer dependency: it pulls ESLint and
-   * typescript-eslint in with it, which a repository that turns this off has no
+   * typescript-eslint in with it, which a repository leaving this off has no
    * reason to install. Add `eslint-plugin-perfectionist` alongside this package
-   * when leaving it on.
+   * when turning it on.
    *
-   * @default true
+   * @default false
    */
   importSorting?: boolean;
   /**
@@ -360,7 +375,7 @@ export function antelopePreset(options: AntelopePresetOptions = {}) {
       complexitySeverity === "off"
         ? null
         : complexityPreset(complexityThresholds, complexitySeverity),
-      options.importSorting === false ? null : importSortingPreset(),
+      options.importSorting === true ? importSortingPreset() : null,
     ].filter((config) => config !== null),
     rules: {
       "typescript/no-floating-promises":
