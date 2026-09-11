@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.0.5
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.0.4...v0.0.5)
+
+### 🚀 Enhancements
+
+- Leave import sorting off by default ([#4](https://github.com/AntelopeJS/tooling-configs/pull/4))
+
+### 🩹 Fixes
+
+- Leave GitHub's legacy issue templates alone ([#5](https://github.com/AntelopeJS/tooling-configs/pull/5))
+
+### ❤️ Contributors
+
+- Thomas ([@Thomasims](http://github.com/Thomasims))
+- Fabrice Cst <fabrice@altab.be>
+
 ## v0.0.4
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.0.3...v0.0.4)
