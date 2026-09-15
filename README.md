@@ -1,5 +1,12 @@
 # @antelopejs/tooling-configs
 
+<div align="center">
+<a href="https://www.npmjs.com/package/@antelopejs/tooling-configs"><img alt="NPM version" src="https://img.shields.io/npm/v/@antelopejs/tooling-configs.svg?style=for-the-badge&labelColor=000000"></a>
+<a href="./LICENSE"><img alt="License" src="https://img.shields.io/npm/l/@antelopejs/tooling-configs.svg?style=for-the-badge&labelColor=000000"></a>
+<a href="https://discord.gg/sjK28QHrA7"><img src="https://img.shields.io/badge/Discord-18181B?logo=discord&style=for-the-badge&color=000000" alt="Discord"></a>
+<a href="https://antelopejs.com"><img src="https://img.shields.io/badge/Docs-18181B?style=for-the-badge&color=000000" alt="Documentation"></a>
+</div>
+
 Shared tooling presets for AntelopeJS repositories: [oxlint](https://oxc.rs) (including
 the vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules), [oxfmt](https://oxc.rs)
 and [Knip](https://knip.dev).
