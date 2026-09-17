@@ -33,19 +33,14 @@ const DEFAULT_ENTRY = [
 
 const DEFAULT_PROJECT = ["src/**/*.ts", "scripts/**/*.{ts,mjs}"];
 
-const DEFAULT_IGNORE = [
-  "dist/**",
-  "nuxt-layer/**",
-  "playground/**",
-  ".antelope/**",
-];
+const DEFAULT_IGNORE = ["dist/**", "playground/**", ".antelope/**"];
 
 /**
- * `typecheck` is a script in the Nuxt layer's own manifest, outside the analysed
- * project, and every layer's CI runs it.
+ * `typecheck` is a script in the front end's own manifest, outside the analysed
+ * project, and every front end's CI runs it.
  *
  * The AntelopeJS CLIs are deliberately absent: a repository that invokes `ajs`
- * or `acms` declares the package providing it, so Knip resolves them and an
+ * or `ajs-dms` declares the package providing it, so Knip resolves them and an
  * ignore would only hide a missing dependency.
  */
 const DEFAULT_IGNORE_BINARIES = ["typecheck"];

@@ -160,10 +160,10 @@ Extra ignores are **added** to the shared ones rather than replacing them, so a 
 adopting oxfmt in stages can park a directory without losing the rest:
 
 ```ts
-export default antelopeFmtPreset({ ignorePatterns: ["nuxt-layer/**"] });
+export default antelopeFmtPreset({ ignorePatterns: ["frontend-vue/**"] });
 ```
 
-In a Nuxt layer, pass the theme stylesheet to replace `prettier-plugin-tailwindcss`:
+In a front end, pass the theme stylesheet to replace `prettier-plugin-tailwindcss`:
 
 ```ts
 export default antelopeFmtPreset({
@@ -179,12 +179,12 @@ that the preset does not (`noRestrictedImports` guards become `import/no-cycle`)
 in its own commit and record it in `.git-blame-ignore-revs`, which GitHub honours, so the
 pass does not bury the history.
 
-## ESLint (Nuxt layers)
+## ESLint (front ends)
 
 oxlint does not lint `.vue` files yet, so the front end stays on ESLint:
 
 ```js
-// nuxt-layer/eslint.config.mjs
+// frontend-vue/eslint.config.mjs
 import { antelopeNuxtConfig } from "@antelopejs/tooling-configs/eslint";
 
 export default antelopeNuxtConfig({ dirs: ["./playground"] });
