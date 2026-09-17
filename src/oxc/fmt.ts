@@ -29,7 +29,7 @@ export interface AntelopeFmtOptions extends Partial<OxfmtOptions> {
   /**
    * Extra paths to leave alone. These are **added** to the shared ignores, not
    * substituted for them: a repository adopting oxfmt in stages needs to park
-   * `nuxt-layer/**` for a while without also un-ignoring its own build output.
+   * `frontend-vue/**` for a while without also un-ignoring its own build output.
    */
   ignorePatterns?: string[];
 }

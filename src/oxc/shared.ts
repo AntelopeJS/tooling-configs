@@ -8,7 +8,6 @@ export const IGNORE_PATTERNS = [
   "**/.nuxt/**",
   "**/.output/**",
   "**/output/**",
-  "**/generated-layers.json",
   "**/i18n-registry.generated.ts",
   // GitHub's legacy issue templates are Markdown with YAML frontmatter saved
   // under a .yml extension, so a YAML formatter cannot parse them.

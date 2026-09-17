@@ -21,31 +21,39 @@ export interface AntelopeKnipOptions {
   ignoreBinaries?: string[];
 }
 
+/**
+ * `src/index.ts` is deliberately absent: Knip derives the module entry from
+ * package.json before any ignore applies, mapping `main`/`bin`
+ * (`dist/index.js`) back onto `src/index.{ts,...}`, so `dist/**` in
+ * {@link DEFAULT_IGNORE} does not hide it. Listing it here is reported as a
+ * redundant pattern instead.
+ *
+ * The front end is absent too: {@link DEFAULT_PROJECT} only reaches `src/`, so
+ * `frontend-vue/` is outside the analysis unless a repository opts it in
+ * through Knip's `workspaces`, which an ignore here would then override.
+ */
 const DEFAULT_ENTRY = [
-  // `src/index.ts` is not listed: Knip already reads it from package.json, and
-  // repeating it there is reported as a redundant pattern.
   // Public API: consumers import these through the package's `exports` subpaths.
   "src/interfaces/**/*.ts",
-  // Run by `ajs module test`, which Knip has no plugin for.
-  "src/test/**/*.test.ts",
+  // The test tree, run by `ajs module test`, which Knip has no plugin for. The
+  // whole directory rather than `*.test.ts`: the harness and its fixtures are
+  // loaded by the runner, not imported by a test.
+  "src/test/**",
+  // The `ajs module test` harness manifest, when a module keeps one at its root.
+  "antelope.test.ts",
   "scripts/**/*.{ts,mjs}",
 ];
 
 const DEFAULT_PROJECT = ["src/**/*.ts", "scripts/**/*.{ts,mjs}"];
 
-const DEFAULT_IGNORE = [
-  "dist/**",
-  "nuxt-layer/**",
-  "playground/**",
-  ".antelope/**",
-];
+const DEFAULT_IGNORE = ["dist/**", "playground/**", ".antelope/**"];
 
 /**
- * `typecheck` is a script in the Nuxt layer's own manifest, outside the analysed
- * project, and every layer's CI runs it.
+ * `typecheck` is a script in the front end's own manifest, outside the analysed
+ * project, and every front end's CI runs it.
  *
  * The AntelopeJS CLIs are deliberately absent: a repository that invokes `ajs`
- * or `acms` declares the package providing it, so Knip resolves them and an
+ * or `ajs-dms` declares the package providing it, so Knip resolves them and an
  * ignore would only hide a missing dependency.
  */
 const DEFAULT_IGNORE_BINARIES = ["typecheck"];

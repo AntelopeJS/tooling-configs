@@ -160,10 +160,10 @@ Extra ignores are **added** to the shared ones rather than replacing them, so a 
 adopting oxfmt in stages can park a directory without losing the rest:
 
 ```ts
-export default antelopeFmtPreset({ ignorePatterns: ["nuxt-layer/**"] });
+export default antelopeFmtPreset({ ignorePatterns: ["frontend-vue/**"] });
 ```
 
-In a Nuxt layer, pass the theme stylesheet to replace `prettier-plugin-tailwindcss`:
+In a front end, pass the theme stylesheet to replace `prettier-plugin-tailwindcss`:
 
 ```ts
 export default antelopeFmtPreset({
@@ -179,12 +179,12 @@ that the preset does not (`noRestrictedImports` guards become `import/no-cycle`)
 in its own commit and record it in `.git-blame-ignore-revs`, which GitHub honours, so the
 pass does not bury the history.
 
-## ESLint (Nuxt layers)
+## ESLint (front ends)
 
 oxlint does not lint `.vue` files yet, so the front end stays on ESLint:
 
 ```js
-// nuxt-layer/eslint.config.mjs
+// frontend-vue/eslint.config.mjs
 import { antelopeNuxtConfig } from "@antelopejs/tooling-configs/eslint";
 
 export default antelopeNuxtConfig({ dirs: ["./playground"] });
@@ -209,10 +209,18 @@ import { antelopeKnipConfig } from "@antelopejs/tooling-configs/knip";
 export default antelopeKnipConfig();
 ```
 
-The defaults declare what Knip cannot infer for an AntelopeJS module: `src/index.ts` and
-the interface subpaths as public API, and `src/test/**/*.test.ts` as entry points, since
-`ajs module test` is not a runner Knip has a plugin for. Without them, Knip reports the
-whole test suite as dead code.
+The defaults declare what Knip cannot infer for an AntelopeJS module: the interface
+subpaths as public API, and `src/test/**` plus a root `antelope.test.ts` as entry points,
+since `ajs module test` is not a runner Knip has a plugin for. Without them, Knip reports
+the whole test suite as dead code.
+
+`src/index.ts` is not among them on purpose: Knip already maps the `main`/`bin` of
+package.json (`dist/index.js`) back onto `src/index.ts`, ahead of the `dist/**` ignore, so
+repeating it only earns a "redundant pattern" hint.
+
+The front end is left out of `project` rather than ignored, so a repository that wants
+`frontend-vue/` analysed can add it under Knip's `workspaces` without the preset
+overriding the choice.
 
 ## Vendored anti-slop
 
