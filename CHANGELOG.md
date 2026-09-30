@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.0.7
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.0.6...v0.0.7)
+
+### 🚀 Enhancements
+
+- Add antelopejs-check-interface-ranges ([#12](https://github.com/AntelopeJS/tooling-configs/pull/12))
+
+### 🏡 Chore
+
+- Align community files with the organization defaults ([#9](https://github.com/AntelopeJS/tooling-configs/pull/9))
+
+### 🤖 CI
+
+- **release:** Release next from a dedicated branch and restore requireCommits ([#10](https://github.com/AntelopeJS/tooling-configs/pull/10))
+- **release:** Reference the shared release workflows through v1 ([#11](https://github.com/AntelopeJS/tooling-configs/pull/11))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli <rizzitelli.antony@pm.me>
+
 ## v0.0.6
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.0.5...v0.0.6)
