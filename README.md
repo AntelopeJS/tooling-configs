@@ -222,6 +222,38 @@ The front end is left out of `project` rather than ignored, so a repository that
 `frontend-vue/` analysed can add it under Knip's `workspaces` without the preset
 overriding the choice.
 
+## Interface ranges
+
+`@antelopejs/core` keeps one copy of each `@antelopejs/interface-*` package at startup, the
+one its implementing module installed, and refuses to start when a loaded module declares a
+range that copy falls outside. An exact pin (`0.1.7`) or a 0.x caret (`^0.1.2` stops at
+`0.2.0`) therefore breaks a module's startup at the next interface release, with no change to
+the module.
+
+`antelopejs-check-interface-ranges` fails on such a range in `dependencies` or
+`optionalDependencies`, in every `package.json` git tracks in the repository (playgrounds and
+front-end layers included), whatever directory it runs from:
+
+| The package…                                      | must declare                                 |
+| ------------------------------------------------- | -------------------------------------------- |
+| consumes the interface                            | `>=<floor> <1.0.0` (`<next major>` from 1.0) |
+| implements it (listed in `antelopeJs.implements`) | `>=<floor> <0.<minor + 1>.0` while it is 0.x |
+
+An implementer is the opposite case on purpose: it must never be handed a breaking minor it
+does not implement. When the implemented interface sits in the same repository, its version is
+the floor to use. `workspace:`, `file:` and `link:` specs are left alone.
+
+```jsonc
+// package.json
+{
+  "scripts": {
+    "lint": "oxlint && antelopejs-check-interface-ranges",
+  },
+}
+```
+
+Pass paths to check only those manifests.
+
 ## Vendored anti-slop
 
 `src/oxc/anti-slop/` is a copy of upstream, kept byte-identical so it can be diffed

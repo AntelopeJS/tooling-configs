@@ -14,6 +14,9 @@
     "type": "git",
     "url": "git+https://github.com/AntelopeJS/tooling-configs.git"
   },
+  "bin": {
+    "antelopejs-check-interface-ranges": "./dist/bin/check-interface-ranges.mjs"
+  },
   "files": [
     "dist"
   ],
@@ -37,7 +40,7 @@
     "prepack": "pnpm run build",
     "release": "pnpm run lint && pnpm run prepack && release-it",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"src/oxc/anti-slop/rules/*.test.ts\"",
+    "test": "node --test \"src/oxc/anti-slop/rules/*.test.ts\" \"src/*.test.ts\"",
     "checks": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test",
     "format:check": "oxfmt --check ."
   },
