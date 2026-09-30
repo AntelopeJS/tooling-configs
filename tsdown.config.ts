@@ -7,6 +7,7 @@ export default defineConfig({
     "./src/oxc/anti-slop/index.ts",
     "./src/knip.ts",
     "./src/eslint.ts",
+    "./src/bin/check-interface-ranges.ts",
   ],
   outDir: "dist",
   format: ["esm"],
