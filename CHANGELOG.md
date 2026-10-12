@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.8
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.0.7...v0.0.8)
+
+### 🩹 Fixes
+
+- **fmt:** Ignore CHANGELOG.md in the oxfmt preset ([#13](https://github.com/AntelopeJS/tooling-configs/pull/13))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli <rizzitelli.antony@pm.me>
+
 ## v0.0.7
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.0.6...v0.0.7)
