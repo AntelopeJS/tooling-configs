@@ -156,6 +156,10 @@ Import order is not part of it: `perfectionist/sort-imports` owns that on the li
 Enabling oxfmt's `sortImports` as well would have two tools sorting the same imports
 differently, each undoing the other on every save.
 
+The preset also leaves `CHANGELOG.md` alone. changelogen writes it during a release and
+the release commit lands unformatted, so checking it would turn the default branch red
+after every release with a breaking change.
+
 Extra ignores are **added** to the shared ones rather than replacing them, so a repository
 adopting oxfmt in stages can park a directory without losing the rest:
 

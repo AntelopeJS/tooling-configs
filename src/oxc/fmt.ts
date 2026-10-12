@@ -20,6 +20,13 @@ export const ANTELOPE_STYLE = {
   trailingComma: "all",
 } as const;
 
+/**
+ * Files that release tooling writes and commits without formatting them.
+ * changelogen puts two spaces after the ⚠️ of a breaking change, so the first
+ * release with one leaves the default branch failing `oxfmt --check`.
+ */
+const GENERATED_IGNORE_PATTERNS = ["**/CHANGELOG.md"];
+
 export interface AntelopeFmtOptions extends Partial<OxfmtOptions> {
   /**
    * Sort Tailwind classes, replacing `prettier-plugin-tailwindcss`. Pass the
@@ -68,6 +75,7 @@ export function antelopeFmtPreset(options: AntelopeFmtOptions = {}) {
     ignorePatterns: [
       ...IGNORE_PATTERNS,
       ...AGENT_IGNORE_PATTERNS,
+      ...GENERATED_IGNORE_PATTERNS,
       ...ignorePatterns,
     ],
   });
