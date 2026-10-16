@@ -1,14 +1,20 @@
 {
   "name": "@antelopejs/tooling-configs",
   "version": "0.0.8",
-  "description": "Shared tooling presets for AntelopeJS projects: oxlint (incl. vendored anti-slop) and Knip",
+  "description": "Shared tooling presets for AntelopeJS repositories: oxlint (with the vendored anti-slop rules), oxfmt, ESLint for Nuxt layers, Knip, and an interface range check",
   "keywords": [
     "antelopejs",
     "anti-slop",
+    "eslint",
     "knip",
     "oxc",
+    "oxfmt",
     "oxlint"
   ],
+  "homepage": "https://github.com/AntelopeJS/tooling-configs#readme",
+  "bugs": {
+    "url": "https://github.com/AntelopeJS/tooling-configs/issues"
+  },
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
