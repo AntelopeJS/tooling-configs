@@ -203,6 +203,15 @@ An implementer must never be handed a breaking minor it does not implement. `wor
 
 `src/oxc/anti-slop/` is a byte-identical copy of upstream, so it can be diffed against new releases; `src/oxc/anti-slop/VENDORED.md` records the commit and any local edit. This repository does not format or lint it. Upstream is MIT (`src/oxc/anti-slop/LICENSE`).
 
+## Documentation guardrail
+
+The [documentation action](./docs/documentation-checks.md) checks local Markdown
+links and explicitly labeled compatibility tables. Consumers can also opt in
+complete TypeScript examples and reference-page export coverage. Pin
+`AntelopeJS/tooling-configs/actions/docs` to a full commit SHA; no npm release is
+required. The guide includes CI and local commands, annotation syntax, and the
+checks that remain the author's responsibility.
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md). `pnpm install`, then `pnpm checks` runs the typecheck, lint, format check and tests.
