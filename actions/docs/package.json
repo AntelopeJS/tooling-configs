@@ -1,0 +1,20 @@
+{
+  "name": "antelopejs-docs-action",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test check.test.mjs"
+  },
+  "dependencies": {
+    "entities": "8.1.0",
+    "github-slugger": "2.0.0",
+    "marked": "18.1.1",
+    "semver": "7.8.5"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}

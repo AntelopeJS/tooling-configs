@@ -1,0 +1,25 @@
+name: Check documentation
+description: Check local Markdown links and explicit compatibility, example, and API contracts
+inputs:
+  files:
+    description: Newline-separated Markdown files or directories, relative to the consumer checkout (no globs)
+    default: |
+      README.md
+      docs
+  typescript-project:
+    description: Consumer tsconfig for docs-check fences and docs-api declarations; requires consumer TypeScript
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Install the guardrail's locked dependencies
+      shell: bash
+      run: npm ci --prefix "$GITHUB_ACTION_PATH" --omit=dev --ignore-scripts --no-audit --no-fund
+    - name: Check documentation
+      shell: bash
+      env:
+        DOCS_FILES: ${{ inputs.files }}
+        DOCS_TYPESCRIPT_PROJECT: ${{ inputs.typescript-project }}
+      run: |
+        cd "$GITHUB_WORKSPACE"
+        node "$GITHUB_ACTION_PATH/check.mjs" --files "$DOCS_FILES" --typescript-project "$DOCS_TYPESCRIPT_PROJECT"
