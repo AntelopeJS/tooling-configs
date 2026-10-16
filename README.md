@@ -1,41 +1,48 @@
 # @antelopejs/tooling-configs
 
 <div align="center">
-<a href="https://www.npmjs.com/package/@antelopejs/tooling-configs"><img alt="NPM version" src="https://img.shields.io/npm/v/@antelopejs/tooling-configs.svg?style=for-the-badge&labelColor=000000"></a>
-<a href="./LICENSE"><img alt="License" src="https://img.shields.io/npm/l/@antelopejs/tooling-configs.svg?style=for-the-badge&labelColor=000000"></a>
+<a href="https://www.npmjs.com/package/@antelopejs/tooling-configs"><img alt="npm" src="https://img.shields.io/npm/v/@antelopejs/tooling-configs?style=for-the-badge&labelColor=000000&color=000000"></a>
+<a href="./LICENSE"><img alt="License" src="https://img.shields.io/npm/l/@antelopejs/tooling-configs?style=for-the-badge&labelColor=000000&color=000000"></a>
 <a href="https://discord.gg/sjK28QHrA7"><img src="https://img.shields.io/badge/Discord-18181B?logo=discord&style=for-the-badge&color=000000" alt="Discord"></a>
-<a href="https://antelopejs.com"><img src="https://img.shields.io/badge/Docs-18181B?style=for-the-badge&color=000000" alt="Documentation"></a>
 </div>
 
-Shared tooling presets for AntelopeJS repositories: [oxlint](https://oxc.rs) (including
-the vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules), [oxfmt](https://oxc.rs)
-and [Knip](https://knip.dev).
+Shared lint, format and dead-code presets for AntelopeJS repositories, plus a check for the version ranges of interface dependencies.
 
-Together they replace Biome outright — lint, format and import order — and Prettier in the
-Nuxt layers, since oxfmt formats `.vue` and sorts Tailwind classes natively. The front end
-keeps ESLint for linting, from a shared config here.
+- [oxlint](https://oxc.rs) and [oxfmt](https://oxc.rs) replace Biome: lint, format and Tailwind class sorting, `.vue` included.
+- ESLint stays for the Nuxt front ends, from a shared config, until oxlint lints `.vue` files.
+- [Knip](https://knip.dev) learns the entry points of an AntelopeJS module.
+- Every preset is a function: options adjust it without copying it.
 
-## Requirements
+## What's in the box
 
-Node **24** (or at least 22.18). oxlint reads `oxlint.config.ts` and loads JS plugins by
-executing TypeScript, which earlier runtimes cannot do.
+| Export            | Import                                                                    | What it gives                                                         |
+| ----------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `./oxc/lint`      | `import { antelopePreset } from "@antelopejs/tooling-configs/oxc/lint"`   | The oxlint preset                                                     |
+| `./oxc/fmt`       | `import { antelopeFmtPreset } from "@antelopejs/tooling-configs/oxc/fmt"` | The oxfmt preset (house style)                                        |
+| `./eslint`        | `import { antelopeNuxtConfig } from "@antelopejs/tooling-configs/eslint"` | ESLint for Nuxt layers                                                |
+| `./knip`          | `import { antelopeKnipConfig } from "@antelopejs/tooling-configs/knip"`   | Knip for AntelopeJS modules                                           |
+| `./oxc/anti-slop` | Loaded by the oxlint preset as a JS plugin                                | The vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules |
+| bin               | `antelopejs-check-interface-ranges`                                       | Fails on interface ranges that break module startup                   |
 
 ## Install
 
-```bash
-pnpm add -D oxlint@1.81.0 oxfmt @antelopejs/tooling-configs
-```
-
-Add `eslint-plugin-perfectionist` too unless you turn import sorting off — it is an
-optional peer dependency because it pulls ESLint and typescript-eslint along with it:
+Node.js 24, or at least 22.18: oxlint reads `oxlint.config.ts` and loads JS plugins by executing TypeScript.
 
 ```bash
-pnpm add -D eslint-plugin-perfectionist
+pnpm add -D @antelopejs/tooling-configs oxlint@1.81.0 oxfmt
 ```
 
-Pin `oxlint` to the exact version this package depends on for `@oxlint/plugins`
-(currently **1.81.0**). The JS plugin API is still alpha and the two packages must move
-together.
+The tools are optional peer dependencies, so add only the ones a repository uses:
+
+| Tool                    | Packages to add                                                                  |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| oxlint                  | `oxlint@1.81.0`, plus `oxlint-tsgolint` for the type-aware rules (on by default) |
+| oxfmt                   | `oxfmt@^0.66.0`                                                                  |
+| ESLint                  | `@nuxt/eslint-config`                                                            |
+| Knip                    | `knip@>=6`                                                                       |
+| Import sorting (opt-in) | `eslint-plugin-perfectionist`                                                    |
+
+Pin `oxlint` to the exact version this package uses for `@oxlint/plugins` (currently **1.81.0**): the JS plugin API is still alpha and the two must move together.
 
 ## oxlint
 
@@ -46,7 +53,7 @@ import { antelopePreset } from "@antelopejs/tooling-configs/oxc/lint";
 
 export default defineConfig({
   extends: [antelopePreset()],
-  // Only read from the root config, never from a preset.
+  // oxlint reads this field only from the root config, never from a preset.
   options: { typeAware: true },
 });
 ```
@@ -61,23 +68,20 @@ export default defineConfig({
 }
 ```
 
-Type-aware rules (`typescript/no-floating-promises`) also need the tsgolint binary:
-
-```bash
-pnpm add -D oxlint-tsgolint
-```
-
 ### What the preset turns on
 
-| Group          | Contents                                                                                                    |
-| -------------- | ----------------------------------------------------------------------------------------------------------- |
-| oxc defaults   | the `correctness` category, plus the `eslint`, `typescript`, `node`, `oxc`, `import` and `promise` plugins  |
-| imports        | `import/no-cycle`, `import/no-self-import`, `import/no-duplicates` as errors                                |
-|                | (a repository with existing cycles starts with `importCycles: "warn"`)                                      |
-| import sorting | `perfectionist/sort-imports`, autofixed by `oxlint --fix`                                                   |
-| complexity     | `max-params` 5, `max-lines-per-function` 120, `max-lines` 500, `max-depth` 4, `complexity` 20 — as warnings |
-| anti-slop      | all 15 generic rules, as warnings                                                                           |
-| type-aware     | `typescript/no-floating-promises` as an error                                                               |
+| Group          | Rules                                                                                                                                                                                                             | Default |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| oxc            | the `correctness` category, with the `eslint`, `typescript`, `node`, `oxc`, `import` and `promise` plugins; `no-unused-vars` (`_` prefix allowed), `eqeqeq` (`== null` allowed), `radix`, `prefer-regex-literals` | error   |
+| Imports        | `import/no-cycle`, `import/no-self-import`, `import/no-duplicates`                                                                                                                                                | error   |
+| Type-aware     | `typescript/no-floating-promises` as an error, eight more type-aware rules as warnings                                                                                                                            | on      |
+| Complexity     | `max-params` 5, `max-lines-per-function` 120, `max-lines` 500, `max-depth` 4, `complexity` 20                                                                                                                     | warn    |
+| Anti-slop      | 7 of the 15 vendored rules; the 8 others are listed in `ANTI_SLOP_RULES_OFF_BY_DEFAULT`                                                                                                                           | warn    |
+| Import sorting | `perfectionist/sort-imports`, autofixed by `oxlint --fix`                                                                                                                                                         | off     |
+
+`correctness` is raised to error on purpose: oxlint reports it as warnings, and warnings never fail the command. Complexity and anti-slop start as warnings so a repository can work through its backlog before raising them to `"error"`.
+
+Import sorting is off because it moves value imports across side-effect imports, and in an AntelopeJS module `import "./components"` is what registers the decorated classes. Turn it on only where import order does not matter.
 
 ### Options
 
@@ -85,26 +89,19 @@ pnpm add -D oxlint-tsgolint
 antelopePreset({
   antiSlop: "error", // "warn" (default) | "error" | false
   importCycles: "warn", // "error" (default) | "warn" | false
-  complexity: { maxParams: 8 }, // override thresholds, or false
-  importSorting: false, // leave imports alone
-  typeAware: false, // no tsgolint in this repository
+  complexity: { maxParams: 8 }, // override thresholds or severity, or false
+  importSorting: true, // false (default); needs eslint-plugin-perfectionist
+  typeAware: false, // true (default); false when the repository has no oxlint-tsgolint
 });
 ```
 
-`correctness` is raised to error deliberately. oxlint reports it as warnings, and warnings
-do not fail the command — a preset that left it alone could never fail a pipeline, while
-Biome was failing the build on the same rules.
+### Add ignore patterns
 
-`antiSlop` and `complexity` default to warnings on purpose: a repository adopting them
-has findings to work through, and a red pipeline on day one teaches the team to ignore
-the pipeline. Raise them to `"error"` once the backlog is clear.
-
-### Adding your own ignore patterns
-
-oxlint does not merge `ignorePatterns` across `extends`. A root config that declares its
-own **replaces** the preset's, so spread them:
+oxlint does not merge `ignorePatterns` across `extends`: a root config that declares its own replaces the preset's. Spread the shared ones:
 
 ```ts
+// oxlint.config.ts
+import { defineConfig } from "oxlint";
 import {
   ANTELOPE_IGNORE_PATTERNS,
   antelopePreset,
@@ -135,55 +132,23 @@ export default antelopeFmtPreset();
 }
 ```
 
-### The house style
+The house style sets every field, so `.editorconfig` files cannot override it: `printWidth` 80, 2 spaces, semicolons, double quotes, `trailingComma: "all"`. Fix the repository's `.editorconfig` to match anyway, so editors agree with the formatter.
 
-| Option                 | Value      |
-| ---------------------- | ---------- |
-| `printWidth`           | 80         |
-| `tabWidth` / `useTabs` | 2 / spaces |
-| `semi`                 | true       |
-| `singleQuote`          | false      |
-| `trailingComma`        | `"all"`    |
-
-Every field is set explicitly, including those that already match oxfmt's defaults.
-Repositories carry `.editorconfig` files that contradict each other — five declare tabs,
-two declare spaces, which is why the codebases drifted apart in the first place — and
-oxfmt falls back to `.editorconfig` for any field a config leaves unset. Stating all of
-them is what makes the style identical everywhere. Fix the repository's `.editorconfig`
-to match anyway, so editors agree with the formatter.
-
-Import order is not part of it: `perfectionist/sort-imports` owns that on the lint side.
-Enabling oxfmt's `sortImports` as well would have two tools sorting the same imports
-differently, each undoing the other on every save.
-
-The preset also leaves `CHANGELOG.md` alone. changelogen writes it during a release and
-the release commit lands unformatted, so checking it would turn the default branch red
-after every release with a breaking change.
-
-Extra ignores are **added** to the shared ones rather than replacing them, so a repository
-adopting oxfmt in stages can park a directory without losing the rest:
+The preset leaves import order to the linter and ignores `CHANGELOG.md`, which changelogen writes unformatted on every release. Other options of oxfmt pass through. Two are specific:
 
 ```ts
-export default antelopeFmtPreset({ ignorePatterns: ["frontend-vue/**"] });
-```
-
-In a front end, pass the theme stylesheet to replace `prettier-plugin-tailwindcss`:
-
-```ts
+// oxfmt.config.ts
 export default antelopeFmtPreset({
-  tailwindStylesheet: "./assets/css/main.css",
+  ignorePatterns: ["frontend-vue/**"], // added to the shared ignores, not replacing them
+  tailwindStylesheet: "./assets/css/main.css", // sorts Tailwind classes, replacing prettier-plugin-tailwindcss
 });
 ```
 
-### Replacing Biome
+### Replace Biome
 
-Per repository: delete `biome.json` and the `@biomejs/biome` dependency, point `lint`,
-`lint:fix` and `format` at oxlint and oxfmt, and port anything the Biome config carried
-that the preset does not (`noRestrictedImports` guards become `import/no-cycle`). Reformat
-in its own commit and record it in `.git-blame-ignore-revs`, which GitHub honours, so the
-pass does not bury the history.
+Delete `biome.json` and the `@biomejs/biome` dependency, point `lint`, `lint:fix` and `format` at oxlint and oxfmt, and port what the Biome config carried that the preset does not. Reformat in its own commit and list it in `.git-blame-ignore-revs`, which GitHub honours.
 
-## ESLint (front ends)
+## ESLint (Nuxt front ends)
 
 oxlint does not lint `.vue` files yet, so the front end stays on ESLint:
 
@@ -194,15 +159,7 @@ import { antelopeNuxtConfig } from "@antelopejs/tooling-configs/eslint";
 export default antelopeNuxtConfig({ dirs: ["./playground"] });
 ```
 
-`@nuxt/eslint` supplies the Vue and TypeScript rules; the preset only records where
-AntelopeJS layers differ from it — single-word page components, `any` and `{}` as
-load-bearing types in the interface layer, `_`-prefixed unused bindings, and import order
-left to the formatter.
-
-Formatting rules are deliberately absent, `vue/max-attributes-per-line` included: oxfmt
-formats `.vue`, and a lint rule that also reflows markup would fight it on every save.
-Declare `@nuxt/eslint-config` explicitly — nine layers use it today through
-`@nuxt/eslint` without declaring it.
+`@nuxt/eslint-config` supplies the Vue and TypeScript rules. The preset only records where AntelopeJS layers differ: single-word page components, `any` and `{}` allowed, `_`-prefixed unused bindings, and import order left alone. It sets no formatting rule, since oxfmt formats `.vue`. Pass `rules` to layer your own on top, and declare `@nuxt/eslint-config` in the front end's `package.json`.
 
 ## Knip
 
@@ -213,39 +170,25 @@ import { antelopeKnipConfig } from "@antelopejs/tooling-configs/knip";
 export default antelopeKnipConfig();
 ```
 
-The defaults declare what Knip cannot infer for an AntelopeJS module: the interface
-subpaths as public API, and `src/test/**` plus a root `antelope.test.ts` as entry points,
-since `ajs module test` is not a runner Knip has a plugin for. Without them, Knip reports
-the whole test suite as dead code.
+The defaults declare what Knip cannot infer for an AntelopeJS module:
 
-`src/index.ts` is not among them on purpose: Knip already maps the `main`/`bin` of
-package.json (`dist/index.js`) back onto `src/index.ts`, ahead of the `dist/**` ignore, so
-repeating it only earns a "redundant pattern" hint.
+- entry points: `src/interfaces/**/*.ts` (public API), `src/test/**` and `antelope.test.ts` (run by `ajs module test`), and `scripts/**`;
+- ignored: `dist/**`, `playground/**`, `.antelope/**`, and the `@antelopejs/*` dependencies, which the runtime loads by name.
 
-The front end is left out of `project` rather than ignored, so a repository that wants
-`frontend-vue/` analysed can add it under Knip's `workspaces` without the preset
-overriding the choice.
+`entry`, `project`, `ignore`, `ignoreDependencies` and `ignoreBinaries` options are appended to the defaults. `frontend-vue/` stays out of `project`, so a repository can opt it in through Knip's `workspaces`.
 
 ## Interface ranges
 
-`@antelopejs/core` keeps one copy of each `@antelopejs/interface-*` package at startup, the
-one its implementing module installed, and refuses to start when a loaded module declares a
-range that copy falls outside. An exact pin (`0.1.7`) or a 0.x caret (`^0.1.2` stops at
-`0.2.0`) therefore breaks a module's startup at the next interface release, with no change to
-the module.
+`@antelopejs/core` keeps one copy of each `@antelopejs/interface-*` package, the one its implementing module installed, and refuses to start when a module declares a range that copy falls outside. An exact pin (`0.1.7`) or a 0.x caret (`^0.1.2` stops at `0.2.0`) therefore breaks startup at the next interface release.
 
-`antelopejs-check-interface-ranges` fails on such a range in `dependencies` or
-`optionalDependencies`, in every `package.json` git tracks in the repository (playgrounds and
-front-end layers included), whatever directory it runs from:
+`antelopejs-check-interface-ranges` fails on such a range in `dependencies` or `optionalDependencies`, in every `package.json` git tracks in the repository, from any directory:
 
 | The package…                                      | must declare                                 |
 | ------------------------------------------------- | -------------------------------------------- |
 | consumes the interface                            | `>=<floor> <1.0.0` (`<next major>` from 1.0) |
 | implements it (listed in `antelopeJs.implements`) | `>=<floor> <0.<minor + 1>.0` while it is 0.x |
 
-An implementer is the opposite case on purpose: it must never be handed a breaking minor it
-does not implement. When the implemented interface sits in the same repository, its version is
-the floor to use. `workspace:`, `file:` and `link:` specs are left alone.
+An implementer must never be handed a breaking minor it does not implement. `workspace:`, `file:` and `link:` specs are skipped. Pass paths to check only those manifests.
 
 ```jsonc
 // package.json
@@ -256,12 +199,14 @@ the floor to use. `workspace:`, `file:` and `link:` specs are left alone.
 }
 ```
 
-Pass paths to check only those manifests.
-
 ## Vendored anti-slop
 
-`src/oxc/anti-slop/` is a copy of upstream, kept byte-identical so it can be diffed
-against new releases. See `src/oxc/anti-slop/VENDORED.md` for the commit it came from and
-any local edits. It is excluded from this repository's own formatting and linting.
+`src/oxc/anti-slop/` is a byte-identical copy of upstream, so it can be diffed against new releases; `src/oxc/anti-slop/VENDORED.md` records the commit and any local edit. This repository does not format or lint it. Upstream is MIT (`src/oxc/anti-slop/LICENSE`).
 
-Upstream is MIT (`src/oxc/anti-slop/LICENSE`); the rest of this repository is Apache-2.0.
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md). `pnpm install`, then `pnpm checks` runs the typecheck, lint, format check and tests.
+
+## License
+
+[Apache-2.0](./LICENSE), except the vendored anti-slop rules (MIT).
