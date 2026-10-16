@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.0.9
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.0.8...v0.0.9)
+
+### 🚀 Enhancements
+
+- **docs:** Add a commit-pinned shared documentation guardrail ([#15](https://github.com/AntelopeJS/tooling-configs/pull/15))
+
+### 📖 Documentation
+
+- Rewrite the README ([#14](https://github.com/AntelopeJS/tooling-configs/pull/14))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli <rizzitelli.antony@pm.me>
+
 ## v0.0.8
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.0.7...v0.0.8)
