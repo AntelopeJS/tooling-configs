@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
@@ -163,4 +164,76 @@ test("max-lines is file debt, not a global rule count; update keeps, lowers, dro
   const unchanged = read(root, "guardrails.ratchet.json");
   assert.equal(bin(root, "ratchet").status, 1);
   assert.equal(read(root, "guardrails.ratchet.json"), unchanged);
+});
+
+test("ratchet includes untracked findings among changed files and never reports zero to zero as lowering", (t) => {
+  const root = lintRepo(t);
+  put(root, "legacy.ts", "export let legacy: any;\n");
+  put(root, "changed.ts", "export const before = 1;\n");
+  put(
+    root,
+    "guardrails.ratchet.json",
+    formatCeilings({
+      rules: { "typescript/no-explicit-any": 1, "eslint/no-alert": 0 },
+      oversizeFiles: {},
+    }),
+  );
+  commit(root);
+  put(root, "changed.ts", "export let changed: any;\n");
+  put(root, "untracked.ts", "export let untracked: any;\n");
+  const result = bin(root, "ratchet", ["--update"]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /untracked.ts:1:/);
+  assert.doesNotMatch(result.stderr, /^ {2}legacy.ts:/m);
+  assert.doesNotMatch(result.stdout, /0 -> 0/);
+});
+
+test("staged ratchet blocks newly added comments under a ceiling but passes untouched legacy comments", (t) => {
+  const root = testRepo(t);
+  linkOxlint(root);
+  put(
+    root,
+    "oxlint.config.ts",
+    `export default { categories: { correctness: "off" }, jsPlugins: [{ name: "antelopejs", specifier: ${JSON.stringify(join(PACKAGE_ROOT, "src/oxc/guardrails/index.ts"))} }], rules: { "antelopejs/no-comments": process.env.ANTELOPEJS_RATCHET_MEASURE === "1" ? "error" : "off" } };\n`,
+  );
+  put(
+    root,
+    "guardrails.ratchet.json",
+    formatCeilings({
+      rules: { "antelopejs/no-comments": 10 },
+      oversizeFiles: {},
+    }),
+  );
+  put(root, "sample.ts", "// Legacy comment\nexport const value = 1;\n");
+  commit(root);
+  put(root, "sample.ts", "// Legacy comment\nexport const value = 2;\n");
+  execFileSync("git", ["add", "sample.ts"], { cwd: root });
+  const unchanged = bin(root, "ratchet", ["--staged", "sample.ts"]);
+  assert.equal(unchanged.status, 0, unchanged.stderr);
+  put(
+    root,
+    "sample.ts",
+    "// Legacy comment\nexport const value = 2;\n// New comment\n",
+  );
+  execFileSync("git", ["add", "sample.ts"], { cwd: root });
+  const added = bin(root, "ratchet", ["--staged", "sample.ts"]);
+  assert.equal(added.status, 1);
+  assert.match(added.stderr, /sample.ts:3:1:.*comment/i);
+  assert.match(added.stderr, /antelopejs\/no-comments/);
+  assert.match(added.stderr, /TSDoc|code/);
+  assert.doesNotMatch(added.stderr, /sample.ts:1:1:/);
+});
+
+test("ratchet removes zero ceilings without claiming a lowering from zero to zero", (t) => {
+  const root = lintRepo(t);
+  put(root, "sample.ts", "export const value = 1;\n");
+  put(
+    root,
+    "guardrails.ratchet.json",
+    formatCeilings({ rules: { "eslint/no-alert": 0 }, oversizeFiles: {} }),
+  );
+  const result = bin(root, "ratchet", ["--update"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stdout, /0 -> 0/);
+  assert.deepEqual(readCeilings(root).rules, {});
 });

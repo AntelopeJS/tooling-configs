@@ -1,16 +1,17 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, lstatSync } from "node:fs";
 import { join, matchesGlob, relative, resolve } from "node:path";
 
 import { AGENT_IGNORE_PATTERNS, IGNORE_PATTERNS } from "../oxc/shared.ts";
 
-export const SIZE_EXCLUSIONS = [
+const SIZE_EXCLUSIONS = [
   {
     kind: "generated",
     patterns: [
       ...IGNORE_PATTERNS,
       ...AGENT_IGNORE_PATTERNS,
       "**/*.generated.*",
+      "**/generated/**",
       "**/__snapshots__/**",
     ],
   },
@@ -60,7 +61,19 @@ export function repositoryPath(root: string, file: string): string {
   return relative(root, resolve(root, file)).split("\\").join("/");
 }
 
-export function fileBytes(root: string, file: string): number | undefined {
+export function fileBytes(
+  root: string,
+  file: string,
+  staged = false,
+): number | undefined {
+  if (staged) {
+    const result = spawnSync("git", ["cat-file", "-s", `:${file}`], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    if (result.error) throw result.error;
+    return result.status === 0 ? Number(result.stdout.trim()) : undefined;
+  }
   const path = join(root, file);
   if (!existsSync(path)) return undefined;
   const stat = lstatSync(path);
@@ -70,6 +83,7 @@ export function fileBytes(root: string, file: string): number | undefined {
 export function authoredSizes(
   root: string,
   files = gitFiles(root),
+  staged = false,
 ): Map<string, number> {
   const sizes = new Map<string, number>();
   for (const input of files) {
@@ -80,7 +94,7 @@ export function authoredSizes(
       )
     )
       continue;
-    const size = fileBytes(root, file);
+    const size = fileBytes(root, file, staged);
     if (size !== undefined) sizes.set(file, size);
   }
   return sizes;

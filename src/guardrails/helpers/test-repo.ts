@@ -39,11 +39,17 @@ export function commit(root: string): void {
   );
 }
 
-export function testRepo(t: TestContext): string {
+export function testRepo(t: TestContext, checksWorkflow = true): string {
   const root = mkdtempSync(join(tmpdir(), "antelope-guardrails-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   execFileSync("git", ["init", "-q"], { cwd: root });
   put(root, ".gitignore", "node_modules\n");
+  if (checksWorkflow)
+    put(
+      root,
+      ".github/workflows/ci.yml",
+      "jobs:\n  checks:\n    steps:\n      - run: pnpm run checks\n",
+    );
   put(
     root,
     "package.json",

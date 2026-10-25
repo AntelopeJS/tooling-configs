@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
@@ -18,6 +19,7 @@ test("size catches untracked tests and real byte excess, not only tracked source
     "src/__fixtures__/large.ts",
     "dist/large.js",
     "src/code.generated.ts",
+    "src/generated/client.ts",
     "src/__snapshots__/large.snap",
     "image.png",
   ])
@@ -60,4 +62,17 @@ test("size honours a recorded allowance but rejects one byte of growth instead o
   const result = bin(root, "check-size", ["large.ts"]);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /1 bytes over the 20123-byte ceiling/);
+});
+
+test("staged size checks the index blob rather than the working tree in both directions", (t) => {
+  const root = testRepo(t);
+  put(root, "large.ts", "x".repeat(20_001));
+  execFileSync("git", ["add", "large.ts"], { cwd: root });
+  put(root, "large.ts", "small\n");
+  const oversized = bin(root, "check-size", ["--staged", "large.ts"]);
+  assert.equal(oversized.status, 1);
+  assert.match(oversized.stderr, /large.ts: 20001 bytes/);
+  execFileSync("git", ["add", "large.ts"], { cwd: root });
+  put(root, "large.ts", "x".repeat(20_001));
+  assert.equal(bin(root, "check-size", ["--staged", "large.ts"]).status, 0);
 });

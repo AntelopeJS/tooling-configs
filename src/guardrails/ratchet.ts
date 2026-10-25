@@ -40,14 +40,16 @@ function changedFiles(root: string): Set<string> {
     }).status !== 0
   )
     return new Set(gitFiles(root));
-  return new Set(
-    execFileSync("git", ["diff", "HEAD", "--name-only", "-z"], {
-      cwd: root,
-      encoding: "utf8",
-    })
-      .split("\0")
-      .filter(Boolean),
+  const tracked = execFileSync("git", ["diff", "HEAD", "--name-only", "-z"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  const untracked = execFileSync(
+    "git",
+    ["ls-files", "--others", "--exclude-standard", "-z"],
+    { cwd: root, encoding: "utf8" },
   );
+  return new Set(`${tracked}${untracked}`.split("\0").filter(Boolean));
 }
 
 function lowerCeilings(ceilings: Ceilings, current: Ceilings): string[] {
@@ -56,8 +58,7 @@ function lowerCeilings(ceilings: Ceilings, current: Ceilings): string[] {
     const count = current.rules[rule] ?? 0;
     if (count === 0) delete ceilings.rules[rule];
     else if (count < limit) ceilings.rules[rule] = count;
-    if (count < limit || count === 0)
-      lowered.push(`${rule}: ${limit} -> ${count}`);
+    if (count < limit) lowered.push(`${rule}: ${limit} -> ${count}`);
   }
   for (const [file, limit] of Object.entries(ceilings.oversizeFiles)) {
     if (current.oversizeFiles[file] === undefined) {

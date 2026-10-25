@@ -12,9 +12,11 @@ export interface Diagnostic {
   /** `file:line:column` of the first label, or the file when oxlint gives no span. */
   location: string;
   message: string;
+  line: number | undefined;
+  help: string | undefined;
 }
 
-export function resolveOxlint(root: string): string {
+function resolveOxlint(root: string): string {
   try {
     const require = createRequire(join(root, "package.json"));
     return join(dirname(require.resolve("oxlint/package.json")), "bin/oxlint");
@@ -44,6 +46,7 @@ interface OxlintDiagnostic {
   code: string;
   filename: string;
   message: string;
+  help?: string;
   labels?: { span: OxlintSpan }[];
 }
 
@@ -64,11 +67,17 @@ function parseDiagnostics(text: string, root: string): Diagnostic[] {
       file,
       location: span ? `${file}:${span.line}:${span.column}` : file,
       message: item.message,
+      line: span?.line,
+      help: item.help,
     };
   });
 }
 
-export function lintDiagnostics(root: string, config?: string): Diagnostic[] {
+export function lintDiagnostics(
+  root: string,
+  config?: string,
+  files?: string[],
+): Diagnostic[] {
   const binary = resolveOxlint(root);
   const temporary =
     config === undefined
@@ -86,6 +95,7 @@ export function lintDiagnostics(root: string, config?: string): Diagnostic[] {
         `${basename(temporary)}/**`,
       );
     }
+    if (files) args.push("--", ...files);
     const result = spawnSync(process.execPath, args, {
       cwd: root,
       encoding: "utf8",

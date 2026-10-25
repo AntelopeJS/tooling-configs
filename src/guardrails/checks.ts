@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { packageManager, parseManifest } from "./package.ts";
 
-export const CHECK_STEPS = [
+const CHECK_STEPS = [
   "typecheck",
   "lint",
   "format:check",

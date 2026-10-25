@@ -6,6 +6,7 @@ export interface Manifest {
   name?: string;
   packageManager?: string;
   scripts?: Record<string, string>;
+  dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
 }
 
@@ -49,11 +50,12 @@ export function toolingVersions() {
       if (manifest.name === "@antelopejs/tooling-configs") {
         const lefthook = manifest.devDependencies?.lefthook;
         const knip = manifest.devDependencies?.knip;
-        if (!lefthook || !knip)
+        const tsgolint = manifest.devDependencies?.["oxlint-tsgolint"];
+        if (!lefthook || !knip || !tsgolint)
           throw new Error(
-            "tooling-configs must declare lefthook and knip devDependencies.",
+            "tooling-configs must declare lefthook, knip and oxlint-tsgolint devDependencies.",
           );
-        return { lefthook, knip };
+        return { lefthook, knip, tsgolint };
       }
     }
     const parent = dirname(directory);
@@ -63,14 +65,44 @@ export function toolingVersions() {
   }
 }
 
-const MANAGED_SCRIPTS = {
-  checks: "antelopejs-checks",
-  size: "antelopejs-check-size",
-  ratchet: "antelopejs-ratchet",
-  "ratchet:update": "antelopejs-ratchet --update",
-  sync: "antelopejs-sync",
-  "sync:check": "antelopejs-sync --check",
-};
+export function repositoryTools(manifest: Manifest) {
+  const targets = {
+    installed: {
+      commands: {
+        checks: "antelopejs-checks",
+        size: "antelopejs-check-size",
+        ratchet: "antelopejs-ratchet",
+        sync: "antelopejs-sync",
+      },
+      presets: {
+        "oxlint.config.ts": "@antelopejs/tooling-configs/oxc/lint",
+        "oxfmt.config.ts": "@antelopejs/tooling-configs/oxc/fmt",
+        "knip.config.ts": "@antelopejs/tooling-configs/knip",
+      },
+      hookPrefix: `${execCommand(packageManager(manifest))} `,
+    },
+    source: {
+      commands: {
+        checks: "node src/bin/checks.ts",
+        size: "node src/bin/check-size.ts",
+        ratchet: "node src/bin/ratchet.ts",
+        sync: "node src/bin/sync.ts",
+      },
+      presets: {
+        "oxlint.config.ts": "./src/oxc/lint.ts",
+        "oxfmt.config.ts": "./src/oxc/fmt.ts",
+        "knip.config.ts": "./src/knip.ts",
+      },
+      hookPrefix: "",
+    },
+  };
+  return targets[
+    manifest.name === "@antelopejs/tooling-configs" ? "source" : "installed"
+  ];
+}
+
+export const PREPARE_INSTALL =
+  "if git rev-parse --is-inside-work-tree >/dev/null 2>&1 && command -v lefthook >/dev/null 2>&1; then lefthook install; fi";
 
 const DEFAULT_SCRIPTS = {
   typecheck: "tsc --noEmit",
@@ -80,24 +112,36 @@ const DEFAULT_SCRIPTS = {
   knip: "knip",
 };
 
+function prepareScript(current = ""): string {
+  if (current.includes(PREPARE_INSTALL)) return current;
+  const legacy =
+    /(^|&&\s*|;\s*)(?:(?:pnpm exec|npm exec --|yarn exec|bun x --no-install)\s+)?lefthook\s+install(?=\s*(?:$|&&|;))/;
+  if (legacy.test(current))
+    return current.replace(legacy, `$1${PREPARE_INSTALL}`);
+  return current ? `${current} && ${PREPARE_INSTALL}` : PREPARE_INSTALL;
+}
+
 export function managedPackage(
   current: string | undefined,
   versions: ReturnType<typeof toolingVersions>,
+  options: { typeAware?: boolean; nuxt?: boolean } = {},
 ): string {
   if (current === undefined) throw new Error("package.json is missing.");
   const manifest = parseManifest(current);
   const scripts = (manifest.scripts ??= {});
-  const install = `${execCommand(packageManager(manifest))} lefthook install`;
-  if (!/(?:^|\s)lefthook\s+install(?:\s|$)/.test(scripts.prepare ?? ""))
-    scripts.prepare = scripts.prepare
-      ? `${scripts.prepare} && ${install}`
-      : install;
-  Object.assign(scripts, MANAGED_SCRIPTS);
+  scripts.prepare = prepareScript(scripts.prepare);
+  const tools = repositoryTools(manifest);
+  Object.assign(scripts, tools.commands, {
+    "ratchet:update": `${tools.commands.ratchet} --update`,
+    "sync:check": `${tools.commands.sync} --check`,
+  });
   for (const [name, command] of Object.entries(DEFAULT_SCRIPTS))
-    scripts[name] ??= command;
+    scripts[name] ??=
+      name === "typecheck" && options.nuxt ? "nuxi typecheck" : command;
   const dependencies = (manifest.devDependencies ??= {});
   dependencies.lefthook ??= versions.lefthook;
   dependencies.knip ??= versions.knip;
+  if (options.typeAware) dependencies["oxlint-tsgolint"] ??= versions.tsgolint;
   manifest.devDependencies = Object.fromEntries(
     Object.entries(dependencies).sort(([a], [b]) => a.localeCompare(b)),
   );

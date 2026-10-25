@@ -11,7 +11,7 @@ import {
 } from "./agents-block.ts";
 import { ANTELOPE_STYLE } from "../oxc/fmt.ts";
 import { formatCeilings, readCeilings } from "./ceilings.ts";
-import { parseManifest, toolingVersions } from "./package.ts";
+import { parseManifest, PREPARE_INSTALL, toolingVersions } from "./package.ts";
 import { MANAGED_ARTIFACTS, syncRepository } from "./sync.ts";
 import {
   bin,
@@ -77,7 +77,7 @@ test("full sync measures once, preserves handwritten text even behind a CLAUDE s
   assert.equal(manifest.scripts?.test, "custom-test");
   assert.equal(
     manifest.scripts?.prepare,
-    "node prepare.mjs && npm exec -- lefthook install",
+    `node prepare.mjs && ${PREPARE_INSTALL}`,
   );
   assert.equal(manifest.scripts?.checks, "antelopejs-checks");
   assert.equal(manifest.devDependencies?.knip, "^6.0.0");
@@ -135,7 +135,6 @@ test("template profile manages only presets and AGENTS, and appends without repl
   const root = testRepo(t);
   const originalPackage = read(root, "package.json");
   put(root, "AGENTS.md", "Handwritten without a final newline.");
-  put(root, "oxlint.config.ts", "export default {};\n");
   put(
     root,
     "oxfmt.config.ts",
