@@ -235,7 +235,6 @@ function typescriptFixture(t, text) {
         target: "ES2022",
         types: [],
         skipLibCheck: true,
-        // Build configs can skip checking; the docs guardrail must not.
         noCheck: true,
       },
       include: ["src/**/*.ts"],

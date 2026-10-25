@@ -1,4 +1,8 @@
-/** Paths every AntelopeJS project generates or vendors, and that no linter should read. */
+/**
+ * Paths every AntelopeJS project generates or vendors, and that no linter should read.
+ * `.github/ISSUE_TEMPLATE/**` holds GitHub's legacy issue templates: Markdown with
+ * YAML frontmatter saved under a .yml extension, which a YAML formatter cannot parse.
+ */
 export const IGNORE_PATTERNS = [
   "**/node_modules/**",
   "**/dist/**",
@@ -9,8 +13,6 @@ export const IGNORE_PATTERNS = [
   "**/.output/**",
   "**/output/**",
   "**/i18n-registry.generated.ts",
-  // GitHub's legacy issue templates are Markdown with YAML frontmatter saved
-  // under a .yml extension, so a YAML formatter cannot parse them.
   ".github/ISSUE_TEMPLATE/**",
 ];
 

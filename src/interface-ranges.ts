@@ -15,11 +15,10 @@
 
 const INTERFACE_PACKAGE_PREFIX = "@antelopejs/interface-";
 
-// A module's own interface linked from the workspace is the copy it builds
-// against, not a release it resolves.
+/** A module's own interface linked from the workspace is the copy it builds against, not a release it resolves. */
 const LOCAL_SPEC_PREFIXES = ["workspace:", "file:", "link:"];
 
-// The fields `@antelopejs/core` checks at startup.
+/** The fields `@antelopejs/core` checks at startup. */
 const CHECKED_FIELDS = ["dependencies", "optionalDependencies"] as const;
 
 const BOUNDED_RANGE = /^>=(\d+)\.(\d+)\.(\d+) <(\d+)\.(\d+)\.(\d+)$/;
@@ -27,7 +26,7 @@ const SINGLE_VERSION = /^[\^~=]?v?(\d+)\.(\d+)\.(\d+)$/;
 
 type Version = readonly [major: number, minor: number, patch: number];
 
-export type RangeRole = "consumer" | "implementer";
+type RangeRole = "consumer" | "implementer";
 
 export interface PackageManifest {
   name?: string;
@@ -53,13 +52,13 @@ const sameVersion = (a: Version, b: Version): boolean =>
   a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
 
 /** The first release a module declaring `floor` must not be handed. */
-export function rangeCeiling(floor: Version, role: RangeRole): Version {
+function rangeCeiling(floor: Version, role: RangeRole): Version {
   const [major, minor] = floor;
   if (major > 0) return [major + 1, 0, 0];
   return role === "implementer" ? [0, minor + 1, 0] : [1, 0, 0];
 }
 
-export function expectedRange(floor: Version, role: RangeRole): string {
+function expectedRange(floor: Version, role: RangeRole): string {
   return `>=${formatVersion(floor)} <${formatVersion(rangeCeiling(floor, role))}`;
 }
 
@@ -83,6 +82,7 @@ function compareVersions(a: Version, b: Version): number {
   return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 }
 
+/** A range is accepted when it is bounded for its role and admits the interface this package builds against. */
 function isAcceptedRange(
   spec: string,
   role: RangeRole,
@@ -93,7 +93,6 @@ function isAcceptedRange(
   const floor = toVersion(bounded, 1);
   const ceiling = toVersion(bounded, 4);
   if (!sameVersion(ceiling, rangeCeiling(floor, role))) return false;
-  // The interface this package builds against must be one it accepts.
   return (
     local === undefined ||
     (compareVersions(local, floor) >= 0 && compareVersions(local, ceiling) < 0)

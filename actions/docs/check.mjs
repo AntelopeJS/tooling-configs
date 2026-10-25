@@ -19,6 +19,12 @@ const fields = new Set([
   "devDependencies",
 ]);
 
+/** HTML comments are declarations, never rendered anchors or navigation. */
+const HTML_COMMENT = /<!--[\s\S]*?-->/g;
+
+/** URLs are never fetched, and `/paths` belong to Nuxt/MDC, not the filesystem. */
+const UNCHECKED_LINK = /^(?:[a-z][a-z\d+.-]*:|\/)/i;
+
 function plain(tokens) {
   return tokens
     .map((token) => {
@@ -80,8 +86,7 @@ function document(path) {
       }
     }
     if (token.type !== "html") return;
-    // Comments are declarations, never rendered anchors or HTML navigation.
-    const html = token.text.replace(/<!--[\s\S]*?-->/g, "");
+    const html = token.text.replace(HTML_COMMENT, "");
     for (const tag of html.matchAll(/<[a-z][^>]*>/gi)) {
       for (const id of attributes(tag[0], "id")) doc.anchors.add(id);
       if (/^<a\b/i.test(tag[0])) {
@@ -113,10 +118,12 @@ function document(path) {
   return doc;
 }
 
+/**
+ * npm excludes prereleases unless a comparator explicitly admits that tuple;
+ * subset() otherwise treats <2.0.0 as wider than the caret bound <2.0.0-0.
+ */
 function comparableRange(spec) {
   if (!semver.validRange(spec)) return null;
-  // npm excludes prereleases unless a comparator explicitly admits that tuple.
-  // subset() otherwise treats <2.0.0 as wider than the caret bound <2.0.0-0.
   return new semver.Range(spec).set
     .map((comparators) =>
       comparators
@@ -170,7 +177,7 @@ function checkCompatibility(doc, localPath, fail) {
       const documentedRange = comparableRange(documented);
       const declaredRange = comparableRange(declared);
       const equivalent =
-        typeof declared === "string" &&
+        declared !== undefined &&
         (documented === declared ||
           (documentedRange !== null &&
             declaredRange !== null &&
@@ -227,8 +234,7 @@ export function checkDocs({ root = process.cwd(), files, project = "" }) {
   let links = 0;
   for (const doc of documents) {
     for (const href of doc.links) {
-      // /paths belong to Nuxt/MDC, not the filesystem. Never fetch URLs.
-      if (!href || /^(?:[a-z][a-z\d+.-]*:|\/)/i.test(href)) continue;
+      if (!href || UNCHECKED_LINK.test(href)) continue;
       links += 1;
       try {
         const hash = href.indexOf("#");

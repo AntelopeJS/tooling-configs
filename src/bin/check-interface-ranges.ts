@@ -9,10 +9,12 @@ import {
   type PackageManifest,
 } from "../interface-ranges.ts";
 
-// Every manifest in the repository by default, whatever directory the lint
-// runs from: playgrounds and front-end layers are loaded by the runtime too, a
-// playground is where a stale interface range first broke a startup, and an
-// implemented interface usually sits in a sibling package.
+/**
+ * Every manifest in the repository by default, whatever directory the lint
+ * runs from: playgrounds and front-end layers are loaded by the runtime too, a
+ * playground is where a stale interface range first broke a startup, and an
+ * implemented interface usually sits in a sibling package.
+ */
 function trackedManifests(): string[] {
   const git = (args: string[]): string =>
     execFileSync("git", args, { encoding: "utf8" }).trim();
@@ -28,6 +30,7 @@ function main(): number {
     process.argv.length > 2 ? process.argv.slice(2) : trackedManifests();
   const manifests = paths.map((path) => ({
     path,
+    /* SAFETY: package.json is written by package managers; checkInterfaceRanges reads only optional dependency maps. */
     manifest: JSON.parse(readFileSync(path, "utf8")) as PackageManifest,
   }));
   const localVersions = new Map<string, string>();
