@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.2
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.1...v0.2.2)
+
+### 🚀 Enhancements
+
+- **guardrails:** Add cleanup proofs and retire the ratchet at zero debt ([#19](https://github.com/AntelopeJS/tooling-configs/pull/19))
+
+### 🏡 Chore
+
+- Configure Renovate with the shared preset ([#18](https://github.com/AntelopeJS/tooling-configs/pull/18))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.2.1
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.0...v0.2.1)
