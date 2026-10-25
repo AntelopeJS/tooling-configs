@@ -22,12 +22,20 @@ test("size catches untracked tests and real byte excess, not only tracked source
     "src/generated/client.ts",
     "src/__snapshots__/large.snap",
     "image.png",
+    ".github/social-card.png",
+    ".agents/fixtures/large.ts",
   ])
     put(root, path, "x".repeat(MAX_FILE_BYTES + 1));
   put(root, "boundary.ts", "x".repeat(MAX_FILE_BYTES));
+  put(root, ".github/scripts/large.ts", "x".repeat(MAX_FILE_BYTES + 1));
   put(root, "deleted.ts", "x".repeat(MAX_FILE_BYTES + 1));
   commit(root);
   rmSync(join(root, "deleted.ts"));
+  const dotted = bin(root, "check-size");
+  assert.equal(dotted.status, 1);
+  assert.match(dotted.stderr, /^\.github\/scripts\/large\.ts: /mu);
+  assert.doesNotMatch(dotted.stderr, /social-card|\.agents/u);
+  rmSync(join(root, ".github/scripts/large.ts"));
   assert.equal(bin(root, "check-size").status, 0);
   put(root, "src/clock.test.ts", "é".repeat(10_001));
   const result = bin(root, "check-size");
