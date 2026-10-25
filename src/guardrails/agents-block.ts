@@ -12,7 +12,7 @@ export const AGENTS_BLOCK_END = "<!-- antelopejs-guardrails:end -->";
 
 const COMMENTS = `### Comments
 
-Say it in code. A constraint belongs in a type, a lint rule, or a test. A public item's contract belongs in TSDoc (\`/** */\`) on that item. The only other comments are lint directives, \`@ts-expect-error <reason>\`, and \`SAFETY: <reason>\` above a type assertion.`;
+Say it in code. A constraint belongs in a type, a lint rule, or a test. A public item's contract belongs in TSDoc (\`/** */\`) on that item. The only other comments are lint directives that name their rules, \`@ts-expect-error <reason>\`, \`SAFETY: <reason>\` above a type assertion, \`/*!\` license headers, and bundler or formatter directives.`;
 
 const TESTS = `### Tests
 
@@ -29,7 +29,7 @@ const SHARED_RULES = [
     "Comments are TSDoc, directives, or `SAFETY:` only",
     "`antelopejs/no-comments`",
   ],
-  ["Every test asserts", "`jest/expect-expect`"],
+  ["Every test asserts", "`antelopejs/require-assertion`"],
   [
     "Tests read no files outside fixtures, helpers, locales",
     "`antelopejs/no-fs-read-in-tests`",
@@ -103,7 +103,7 @@ function fullBody(context: AgentsBlockContext): string[] {
     "",
     "### Debt",
     "",
-    "`guardrails.ratchet.json` records the lint findings and oversize files this repository already had. Its numbers only go down. After you remove debt, run `pnpm run ratchet:update` and commit the lowered file. A rule listed there is off for `oxlint` and counted by the ratchet instead.",
+    "`guardrails.ratchet.json` records the lint findings and oversize files this repository already had. Its numbers only go down. After you remove debt, run `pnpm run ratchet:update` and commit the lowered file. A rule listed there is off for `oxlint`. The ratchet counts it instead, and the pre-commit hook rejects it on every line you add.",
     "",
     ruleTable([...SHARED_RULES, ...FULL_RULES]),
   ];
