@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -12,7 +12,6 @@ import {
   linkOxlint,
   PACKAGE_ROOT,
   put,
-  read,
   testRepo,
 } from "./helpers/test-repo.ts";
 
@@ -156,14 +155,19 @@ test("max-lines is file debt, not a global rule count; update keeps, lowers, dro
   rmSync(join(root, "byte-heavy.ts"));
   assert.equal(bin(root, "ratchet", ["--update"]).status, 0);
   assert.deepEqual(readCeilings(root).oversizeFiles, {});
+  assert.equal(existsSync(join(root, "guardrails.ratchet.json")), false);
   put(root, "new.ts", long);
+  put(
+    root,
+    "guardrails.ratchet.json",
+    formatCeilings({ rules: {}, oversizeFiles: {} }),
+  );
   const reject = bin(root, "ratchet", ["--update"]);
   assert.equal(reject.status, 1);
   assert.match(reject.stderr, /new.ts:.*max-lines/);
   assert.deepEqual(readCeilings(root).oversizeFiles, {});
-  const unchanged = read(root, "guardrails.ratchet.json");
   assert.equal(bin(root, "ratchet").status, 1);
-  assert.equal(read(root, "guardrails.ratchet.json"), unchanged);
+  assert.equal(existsSync(join(root, "guardrails.ratchet.json")), false);
 });
 
 test("ratchet includes untracked findings among changed files and never reports zero to zero as lowering", (t) => {
@@ -236,6 +240,11 @@ test("ratchet removes zero ceilings without claiming a lowering from zero to zer
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(result.stdout, /0 -> 0/);
   assert.deepEqual(readCeilings(root).rules, {});
+  assert.equal(existsSync(join(root, "guardrails.ratchet.json")), false);
+  assert.match(
+    result.stdout,
+    /Deleted guardrails\.ratchet\.json.*no debt left.*antelopejs-sync/,
+  );
 });
 
 test("ratchet ignores growth of listed data and binary files and drops their allowances on update", (t) => {

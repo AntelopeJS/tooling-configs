@@ -1,6 +1,7 @@
 /** What the managed AGENTS.md block needs to know about the repository. */
 export interface AgentsBlockContext {
   profile: "full" | "template";
+  ratchet: boolean;
   /** Repository-relative path of the verification skill's SKILL.md, when one exists. */
   verificationSkill: string | undefined;
   /** Repository-relative path of GLOSSARY.md, when one exists. */
@@ -53,7 +54,6 @@ const FULL_RULES = [
     "Files ≤ 20,000 bytes, tests included",
     "`antelopejs-check-size` (pre-commit)",
   ],
-  ["Existing debt only shrinks", "`antelopejs-ratchet`"],
   ["Types check", "`tsc` (pre-push)"],
   ["No dead files, exports, or dependencies", "knip"],
   ["Managed files match the pack", "`antelopejs-sync --check`"],
@@ -92,7 +92,7 @@ function fullBody(context: AgentsBlockContext): string[] {
   return [
     "## Guardrails",
     "",
-    "Finish every change with `pnpm run checks`. It runs typecheck, lint, format, knip, tests, size, ratchet, and sync, and prints only what failed. The change is done when it prints no failure.",
+    `Finish every change with \`pnpm run checks\`. It runs typecheck, lint, format, knip, tests, size, ${context.ratchet ? "ratchet, " : ""}and sync, and prints only what failed. The change is done when it prints no failure.`,
     "",
     ...pointers(context).flatMap((line) => [line, ""]),
     "The tools enforce most rules, listed in the table at the end. The sections below hold the rules no tool checks.",
@@ -101,11 +101,24 @@ function fullBody(context: AgentsBlockContext): string[] {
     "",
     TESTS,
     "",
-    "### Debt",
-    "",
-    "`guardrails.ratchet.json` records the lint findings and oversize files this repository already had. Its numbers only go down. After you remove debt, run `pnpm run ratchet:update` and commit the lowered file. A rule listed there is off for `oxlint`. The ratchet counts it instead, and the pre-commit hook rejects it on every line you add.",
-    "",
-    ruleTable([...SHARED_RULES, ...FULL_RULES]),
+    ...(context.ratchet
+      ? [
+          "### Debt",
+          "",
+          "`guardrails.ratchet.json` records the lint findings and oversize files this repository already had. Its numbers only go down. After you remove debt, run `pnpm run ratchet:update` and commit the lowered file. A rule listed there is off for `oxlint`. The ratchet counts it instead, and the pre-commit hook rejects it on every line you add.",
+          "",
+        ]
+      : []),
+    ruleTable([
+      ...SHARED_RULES,
+      ...FULL_RULES,
+      ...(context.ratchet
+        ? ([["Existing debt only shrinks", "`antelopejs-ratchet`"]] satisfies [
+            string,
+            string,
+          ][])
+        : []),
+    ]),
   ];
 }
 

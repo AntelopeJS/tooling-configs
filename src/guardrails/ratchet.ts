@@ -1,10 +1,11 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
   CEILINGS_FILE,
   formatCeilings,
+  isRetired,
   MAX_FILE_BYTES,
   readCeilings,
   type Ceilings,
@@ -113,9 +114,11 @@ export function ratchet(root: string, update = false) {
       failures.push(sizeFailure(file, size, limit));
   }
   const lowered = update ? lowerCeilings(ceilings, current) : [];
+  const retired = update && isRetired(ceilings);
   if (update) {
     const path = join(root, CEILINGS_FILE);
-    writeFileSync(path, formatCeilings(ceilings));
+    if (retired) unlinkSync(path);
+    else writeFileSync(path, formatCeilings(ceilings));
   }
-  return { failures, lowered };
+  return { failures, lowered, retired };
 }

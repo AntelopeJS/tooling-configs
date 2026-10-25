@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import { resolve } from "node:path";
 
 import { runCli } from "../guardrails/cli.ts";
+import { CEILINGS_FILE } from "../guardrails/ceilings.ts";
 import { repositoryPath, repositoryRoot } from "../guardrails/files.ts";
 import { ratchet } from "../guardrails/ratchet.ts";
 import { stagedRatchet } from "../guardrails/staged-ratchet.ts";
@@ -26,8 +27,13 @@ runCli(() => {
             : undefined,
         ),
         lowered: [],
+        retired: false,
       }
     : ratchet(root, values.update);
+  if (result.retired)
+    process.stdout.write(
+      `Deleted ${CEILINGS_FILE}: no debt left. Run antelopejs-sync.\n`,
+    );
   for (const message of result.lowered)
     process.stdout.write(`Lowered ${message}\n`);
   for (const message of result.failures) process.stderr.write(`${message}\n`);

@@ -5,6 +5,7 @@ import { bin, put, testRepo } from "./helpers/test-repo.ts";
 
 test("checks suppresses passing output, reports missing scripts, and continues after failures", (t) => {
   const root = testRepo(t);
+  put(root, "guardrails.ratchet.json", '{"rules":{},"oversizeFiles":{}}');
   const scripts = {
     typecheck: "node -e \"console.log('hidden success')\"",
     lint: "node -e \"console.error('lint broke');process.exit(2)\"",
@@ -48,4 +49,24 @@ test("checks suppresses passing output, reports missing scripts, and continues a
   const passing = bin(root, "checks");
   assert.equal(passing.status, 0);
   assert.equal(passing.stdout, "Checks: 8 passed, 0 failed.\n");
+});
+
+test("checks skips ratchet by file absence even if a stale ratchet script fails", (t) => {
+  const root = testRepo(t);
+  const scripts = Object.fromEntries(
+    [
+      "typecheck",
+      "lint",
+      "format:check",
+      "knip",
+      "test",
+      "size",
+      "sync:check",
+    ].map((name) => [name, 'node -e "process.exit(0)"']),
+  );
+  scripts.ratchet = 'node -e "process.exit(1)"';
+  put(root, "package.json", JSON.stringify({ packageManager: "npm", scripts }));
+  const result = bin(root, "checks");
+  assert.equal(result.status, 0, result.stdout);
+  assert.equal(result.stdout, "Checks: 7 passed, 0 failed.\n");
 });

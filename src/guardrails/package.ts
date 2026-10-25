@@ -124,7 +124,7 @@ function prepareScript(current = ""): string {
 export function managedPackage(
   current: string | undefined,
   versions: ReturnType<typeof toolingVersions>,
-  options: { typeAware?: boolean; nuxt?: boolean } = {},
+  options: { typeAware?: boolean; nuxt?: boolean; ratchet?: boolean } = {},
 ): string {
   if (current === undefined) throw new Error("package.json is missing.");
   const manifest = parseManifest(current);
@@ -135,6 +135,10 @@ export function managedPackage(
     "ratchet:update": `${tools.commands.ratchet} --update`,
     "sync:check": `${tools.commands.sync} --check`,
   });
+  if (options.ratchet === false) {
+    delete scripts.ratchet;
+    delete scripts["ratchet:update"];
+  }
   for (const [name, command] of Object.entries(DEFAULT_SCRIPTS))
     scripts[name] ??=
       name === "typecheck" && options.nuxt ? "nuxi typecheck" : command;

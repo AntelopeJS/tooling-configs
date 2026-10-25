@@ -31,6 +31,14 @@ export interface Ceilings {
 
 const EMPTY_CEILINGS: Ceilings = { rules: {}, oversizeFiles: {} };
 
+/** A repository retires its ratchet once no lint or file debt remains. */
+export function isRetired(ceilings: Ceilings): boolean {
+  return (
+    Object.values(ceilings.rules).every((count) => count === 0) &&
+    Object.keys(ceilings.oversizeFiles).length === 0
+  );
+}
+
 /** Finds the nearest git directory or worktree marker, falling back to cwd outside git. */
 export function findGitRoot(cwd = process.cwd()): string {
   let directory = resolve(cwd);
