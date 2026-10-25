@@ -195,7 +195,8 @@ function planSync(
       const changed =
         current.get(artifact.path) !== content ||
         (artifact.mode !== undefined &&
-          modes.get(artifact.path) !== artifact.mode);
+          (artifact.mode & 0o111) !== 0 &&
+          ((modes.get(artifact.path) ?? 0) & 0o111) === 0);
       if (notes.length)
         plan.push({
           kind: "migrated",
@@ -257,14 +258,21 @@ function repositorySnapshot(root: string) {
   return { current, modes };
 }
 
+function linksTo(root: string, link: string, target: string): boolean {
+  const path = join(root, link);
+  return (
+    lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink() === true &&
+    resolve(root, readlinkSync(path)) === join(root, target)
+  );
+}
+
 function claudeProse(
   root: string,
   current: ReadonlyMap<string, string>,
 ): string {
-  const path = join(root, "CLAUDE.md");
   if (
-    lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink() &&
-    resolve(root, readlinkSync(path)) === join(root, "AGENTS.md")
+    linksTo(root, "CLAUDE.md", "AGENTS.md") ||
+    linksTo(root, "AGENTS.md", "CLAUDE.md")
   )
     return "";
   const claude = current.get("CLAUDE.md")?.trim() ?? "";

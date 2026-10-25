@@ -17,19 +17,19 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 
 ## What's in the box
 
-| Export             | Import                                                                    | What it gives                                                         |
-| ------------------ | ------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `./oxc/lint`       | `import { antelopePreset } from "@antelopejs/tooling-configs/oxc/lint"`   | The oxlint preset                                                     |
-| `./oxc/fmt`        | `import { antelopeFmtPreset } from "@antelopejs/tooling-configs/oxc/fmt"` | The oxfmt preset (house style)                                        |
-| `./eslint`         | `import { antelopeNuxtConfig } from "@antelopejs/tooling-configs/eslint"` | ESLint for Nuxt layers                                                |
-| `./knip`           | `import { antelopeKnipConfig } from "@antelopejs/tooling-configs/knip"`   | Knip for AntelopeJS modules                                           |
-| `./oxc/anti-slop`  | Loaded by the oxlint preset as a JS plugin                                | The vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules |
-| `./oxc/guardrails` | Loaded by the oxlint preset as a JS plugin                                | The `antelopejs` comment and test-quality rules                       |
-| bin                | `antelopejs-sync`                                                         | Writes the guardrail pack into a repository; `--check` reports drift  |
-| bin                | `antelopejs-checks`                                                       | Runs every check and prints only the failures                         |
-| bin                | `antelopejs-ratchet`                                                      | Fails when recorded debt grows; `--update` lowers the record          |
-| bin                | `antelopejs-check-size`                                                   | Fails on authored files over 20,000 bytes                             |
-| bin                | `antelopejs-check-interface-ranges`                                       | Fails on interface ranges that break module startup                   |
+| Export             | Import                                                                    | What it gives                                                               |
+| ------------------ | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `./oxc/lint`       | `import { antelopePreset } from "@antelopejs/tooling-configs/oxc/lint"`   | The oxlint preset                                                           |
+| `./oxc/fmt`        | `import { antelopeFmtPreset } from "@antelopejs/tooling-configs/oxc/fmt"` | The oxfmt preset (house style)                                              |
+| `./eslint`         | `import { antelopeNuxtConfig } from "@antelopejs/tooling-configs/eslint"` | ESLint for Nuxt layers                                                      |
+| `./knip`           | `import { antelopeKnipConfig } from "@antelopejs/tooling-configs/knip"`   | Knip for AntelopeJS modules                                                 |
+| `./oxc/anti-slop`  | Loaded by the oxlint preset as a JS plugin                                | The vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules       |
+| `./oxc/guardrails` | Loaded by the oxlint preset as a JS plugin                                | The `antelopejs` comment and test-quality rules                             |
+| bin                | `antelopejs-sync`                                                         | Writes the guardrail pack into a repository; `--check` reports drift        |
+| bin                | `antelopejs-checks`                                                       | Runs every check and prints only the failures                               |
+| bin                | `antelopejs-ratchet`                                                      | Fails when recorded debt grows; `--update` lowers the record                |
+| bin                | `antelopejs-check-size`                                                   | Fails on authored files over 20,000 bytes and on blanket disable directives |
+| bin                | `antelopejs-check-interface-ranges`                                       | Fails on interface ranges that break module startup                         |
 
 ## Install
 
@@ -176,7 +176,7 @@ pnpm install
 
 ### Size
 
-`antelopejs-check-size` fails on an authored file over 20,000 bytes, tests included. Generated code, fixtures, lockfiles, `CHANGELOG.md`, Markdown and binary assets are excluded. Pass paths to check only those files, as the pre-commit hook does.
+`antelopejs-check-size` fails on an authored file over 20,000 bytes, tests included. Generated code, fixtures, lockfiles, `CHANGELOG.md`, Markdown and binary assets are excluded. Pass paths to check only those files, as the pre-commit hook does. It also fails on an `oxlint-disable` or `eslint-disable` directive (line, next-line or file form) that names no rule: oxlint applies such a directive before any rule runs, so `no-comments` cannot report it.
 
 ## oxfmt
 

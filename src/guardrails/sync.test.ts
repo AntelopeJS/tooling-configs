@@ -129,6 +129,27 @@ test("sync check reports every drift without writing or measuring counts, includ
   );
   assert.equal(bin(root, "sync").status, 0);
   assert.equal(statSync(join(root, ".agents/setup")).mode & 0o777, 0o755);
+  chmodSync(join(root, ".agents/setup"), 0o700);
+  assert.equal(bin(root, "sync", ["--check"]).status, 0);
+});
+
+test("sync keeps AGENTS prose once when AGENTS.md links to CLAUDE.md", (t) => {
+  const root = testRepo(t);
+  linkOxlint(root);
+  put(
+    root,
+    "oxlint.config.ts",
+    'import type {} from "@antelopejs/tooling-configs/oxc/lint";\nexport default { categories: { correctness: "off" } };\n',
+  );
+  put(root, "sample.ts", "export const value = 1;\n");
+  put(root, "CLAUDE.md", "## Versioning\n\nBump both bounds together.\n");
+  symlinkSync("CLAUDE.md", join(root, "AGENTS.md"));
+  const result = bin(root, "sync");
+  assert.equal(result.status, 0, result.stderr);
+  const agents = read(root, "AGENTS.md");
+  assert.equal(agents.split("## Versioning").length, 2);
+  assert.equal(read(root, "CLAUDE.md"), "@AGENTS.md\n");
+  assert.equal(bin(root, "sync", ["--check"]).status, 0);
 });
 
 test("template profile manages only presets and AGENTS, and appends without replacing handwritten content", (t) => {

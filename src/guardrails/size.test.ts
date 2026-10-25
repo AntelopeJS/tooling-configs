@@ -76,3 +76,30 @@ test("staged size checks the index blob rather than the working tree in both dir
   put(root, "large.ts", "x".repeat(20_001));
   assert.equal(bin(root, "check-size", ["--staged", "large.ts"]).status, 0);
 });
+
+test("size rejects disable directives without a rule list, in line and block form, in staged blobs too", (t) => {
+  const root = testRepo(t);
+  const blanket = ["es", "lint-disable"].join("");
+  put(
+    root,
+    "named.ts",
+    `// ${blanket}-next-line no-debugger -- probe\ndebugger;\n`,
+  );
+  assert.equal(bin(root, "check-size").status, 0);
+  put(root, "block.ts", `/* ${blanket} */\n// a stale comment\n`);
+  put(root, "line.ts", `run(); // ox${"lint-disable"}-line\n`);
+  const result = bin(root, "check-size");
+  assert.equal(result.status, 1);
+  assert.match(
+    result.stderr,
+    /block\.ts:1: `eslint-disable` without a rule list/,
+  );
+  assert.match(
+    result.stderr,
+    /line\.ts:1: `oxlint-disable-line` without a rule list/,
+  );
+  assert.doesNotMatch(result.stderr, /named\.ts/);
+  commit(root);
+  put(root, "block.ts", "export const clean = true;\n");
+  assert.equal(bin(root, "check-size", ["--staged", "block.ts"]).status, 1);
+});

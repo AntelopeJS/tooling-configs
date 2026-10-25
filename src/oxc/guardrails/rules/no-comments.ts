@@ -4,7 +4,7 @@ import type { Comment } from "@oxlint/plugins";
 
 const allowedCommentForms = [
   { type: "Shebang", pattern: /^/u },
-  { type: "Block", pattern: /^[*!]/u },
+  { type: "Block", pattern: /^[*!]/u, raw: true },
   { type: "Line", pattern: /^\/\s*<reference\s[^>]*\/\s*>\s*$/u },
   { type: null, pattern: /^(?:oxlint|eslint)-enable(?:\s|$)/u },
   {
@@ -45,10 +45,11 @@ export const noCommentsRule = defineRule({
       Program() {
         let safetyLine: Comment | undefined;
         for (const comment of context.sourceCode.getAllComments()) {
-          const text = comment.value.trim();
+          const text = comment.value.replace(/^\s*\*?\s*/u, "").trimEnd();
           const form = allowedCommentForms.find(
-            ({ type, pattern }) =>
-              (type === null || type === comment.type) && pattern.test(text),
+            (allowed) =>
+              (allowed.type === null || allowed.type === comment.type) &&
+              allowed.pattern.test("raw" in allowed ? comment.value : text),
           );
           const continuesSafety =
             comment.type === "Line" &&
