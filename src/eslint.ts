@@ -22,27 +22,22 @@ export interface AntelopeNuxtConfigOptions {
  * layers carry today) would fight it on every save.
  */
 export const ANTELOPE_NUXT_RULES: NuxtRules = {
-  // Nuxt layers import composables after side-effectful setup, and import order
-  // is owned by the formatter's own sorting, not by a lint rule.
+  /** Import order follows side-effectful setup and belongs to the formatter. */
   "import/first": "off",
   "import/order": "off",
 
-  // Layers ship single-word page components (`index`, `login`) by design, and
-  // props default through `withDefaults` rather than per-prop declarations.
+  /** Single-word pages are intentional; withDefaults supplies prop defaults. */
   "vue/multi-word-component-names": "off",
   "vue/require-default-prop": "off",
 
-  // The CMS types blocks and forms structurally; `any` and `{}` are load-bearing
-  // in the interface layer rather than accidents.
+  /** CMS blocks and forms require structural types in the interface layer. */
   "@typescript-eslint/no-explicit-any": "off",
   "@typescript-eslint/no-empty-object-type": "off",
 
-  // Emits are declared one line per event, each with a comment explaining what
-  // the parent does with it; merging the signatures throws that away.
+  /** Separate event signatures preserve their documentation. */
   "@typescript-eslint/unified-signatures": "off",
 
-  // Underscore-prefixed bindings are the convention for a deliberately unused
-  // parameter, which the default rule reports.
+  /** Underscores mark intentionally unused bindings. */
   "@typescript-eslint/no-unused-vars": [
     "error",
     {
@@ -66,11 +61,24 @@ export const ANTELOPE_NUXT_RULES: NuxtRules = {
  */
 export function antelopeNuxtConfig(
   options: AntelopeNuxtConfigOptions = {},
-  // Annotated rather than inferred: the composer's type lives in a transitive
-  // package, which pnpm's isolated layout cannot name from a declaration file.
 ): ReturnType<typeof createConfigForNuxt> {
+  const overrides = { ...ANTELOPE_NUXT_RULES, ...options.rules };
   return createConfigForNuxt({
     features: { tooling: true },
     dirs: { src: options.dirs ?? [] },
-  }).overrideRules({ ...ANTELOPE_NUXT_RULES, ...options.rules });
+  }).onResolved((configs) =>
+    configs.map((config) => {
+      if (config.rules === undefined) return config;
+      const rules = { ...config.rules };
+      for (const [name, original] of Object.entries(rules)) {
+        const rule = overrides[name] === undefined ? original : overrides[name];
+        if (rule === null) delete rules[name];
+        else if (rule === "warn" || rule === 1) rules[name] = "error";
+        else if (Array.isArray(rule) && (rule[0] === "warn" || rule[0] === 1)) {
+          rules[name] = ["error", ...rule.slice(1)];
+        } else rules[name] = rule;
+      }
+      return { ...config, rules };
+    }),
+  );
 }

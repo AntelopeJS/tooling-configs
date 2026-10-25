@@ -1,43 +1,34 @@
 import { defineConfig } from "oxlint";
 
+import { MEASURE_ENV, readCeilings } from "../guardrails/ceilings.ts";
+import {
+  ASSERTION_FUNCTION_NAMES,
+  TEST_FILE_GLOBS,
+} from "./guardrails/shared.ts";
 import { AGENT_IGNORE_PATTERNS, IGNORE_PATTERNS } from "./shared.ts";
 
+export {
+  ASSERTION_FUNCTION_NAMES,
+  TEST_FILE_GLOBS,
+} from "./guardrails/shared.ts";
+
 /**
- * The paths the preset ignores. oxlint does not merge `ignorePatterns` across
- * `extends`: a root config that declares its own **replaces** these, so spread
- * them when a repository adds patterns of its own.
- *
- * @example
- * ```ts
- * export default defineConfig({
- *   extends: [antelopePreset()],
- *   ignorePatterns: [...ANTELOPE_IGNORE_PATTERNS, "playground/**"],
- * });
- * ```
+ * oxlint replaces rather than merges ignorePatterns across extends.
+ * Spread these patterns when adding repository-specific ignores.
  */
 export const ANTELOPE_IGNORE_PATTERNS = [
   ...IGNORE_PATTERNS,
   ...AGENT_IGNORE_PATTERNS,
 ];
 
-type Severity = "off" | "warn" | "error";
+type Severity = "off" | "error";
 
-/**
- * Thresholds for the complexity rules. The defaults are deliberately looser than
- * oxlint's own (3 parameters, 50 lines per function): AntelopeJS handlers take a
- * request context plus its dependencies, and interface files declare long types.
- * They are meant to catch the outliers, not to redesign every signature.
- */
+/** Thresholds allow request contexts and dependencies while rejecting outlier signatures and files. */
 export interface ComplexityThresholds {
-  /** `eslint/max-params` (oxlint default: 3). */
   maxParams: number;
-  /** `eslint/max-lines-per-function` (oxlint default: 50). */
   maxLinesPerFunction: number;
-  /** `eslint/max-lines` (oxlint default: 300). */
   maxLines: number;
-  /** `eslint/max-depth` (oxlint default: 4). */
   maxDepth: number;
-  /** `eslint/complexity`, cyclomatic (oxlint default: 20). */
   complexity: number;
 }
 
@@ -50,114 +41,32 @@ export const DEFAULT_COMPLEXITY_THRESHOLDS: ComplexityThresholds = {
 };
 
 export interface AntelopePresetOptions {
+  /** All fifteen vendored anti-slop rules. Defaults to true. */
+  antiSlop?: boolean;
+  /** Comment and test-quality rules. Defaults to true. */
+  guardrails?: boolean;
+  /** Complexity limits at error. Pass an object to override thresholds, or false to disable. */
+  complexity?: boolean | Partial<ComplexityThresholds>;
   /**
-   * Vendored anti-slop rules, which reject low-evidence TypeScript (`unknown`
-   * parameters, unjustified `as` assertions, open dictionaries...).
-   * `true` maps to `"warn"`: a repository adopting them has findings to work
-   * through before the gate can be raised to `"error"`.
-   *
-   * @default "warn"
-   */
-  antiSlop?: boolean | Severity;
-  /**
-   * Complexity ceilings. Pass an object to override individual thresholds.
-   *
-   * @default "warn" with {@link DEFAULT_COMPLEXITY_THRESHOLDS}
-   */
-  complexity?:
-    | boolean
-    | (Partial<ComplexityThresholds> & { severity?: Severity });
-  /**
-   * Import sorting through `eslint-plugin-perfectionist`, autofixed by
-   * `oxlint --fix`.
-   *
-   * Off by default, because the sort moves value imports across side-effect
-   * imports and module evaluation order is load-bearing in an AntelopeJS
-   * module: `import "./components"` is what puts the decorated classes in the
-   * registry. Running it over the cms/dms repositories moved
-   * `import { CORE_SCHEMA_NAME } from ".../constants"` from before
-   * `import "./db"` to after `import "./routes"` -- in a file whose comment
-   * says the position is deliberate -- and broke the package at require time.
-   * Nothing in a typecheck or a build catches it.
-   *
-   * `sortSideEffects: false` is not enough: it keeps side-effect imports in
-   * place (verified across 1402 files, none moved) but lets everything else
-   * cross them. `partitionByNewLine`, which would fix that, is refused by
-   * perfectionist 5.11 -- it conflicts with both `newlinesBetween` and
-   * `newlinesInside`. Turn this back on when the rule can guarantee that no
-   * import crosses a side-effect import.
-   *
-   * The plugin is an optional peer dependency: it pulls ESLint and
-   * typescript-eslint in with it, which a repository leaving this off has no
-   * reason to install. Add `eslint-plugin-perfectionist` alongside this package
-   * when turning it on.
-   *
-   * @default false
+   * Import sorting through eslint-plugin-perfectionist, autofixed by oxlint --fix.
+   * Off by default because sorting value imports across side-effect imports
+   * changes module registration order and breaks AntelopeJS packages at require time.
+   * sortSideEffects: false keeps side-effect imports in place but lets values cross them.
+   * perfectionist 5.11 refuses partitionByNewLine with newlinesBetween or newlinesInside.
+   * Enable only when no import can cross a side-effect import, and install the optional
+   * eslint-plugin-perfectionist peer dependency alongside this package.
    */
   importSorting?: boolean;
+  /** Import cycles fail at runtime. Defaults to true. */
+  importCycles?: boolean;
   /**
-   * Severity of `import/no-cycle`. A cycle only shows up at runtime, in a
-   * consumer's process, so it ships as an error — but a repository that already
-   * has cycles needs to see them without a red pipeline while it untangles them.
-   *
-   * @default "error"
-   */
-  importCycles?: boolean | Severity;
-  /**
-   * `typescript/no-floating-promises`, which needs type information. The
-   * consuming repository must also set `options.typeAware` in its own root
-   * config: oxlint only reads that field there, never from an extended preset.
-   *
-   * @default true
+   * Type-aware rules. Defaults to true. Consumers must also set options.typeAware
+   * in their root config because oxlint never reads that field from extends.
    */
   typeAware?: boolean;
 }
 
-/** Every generic anti-slop rule, exported so this package can lint itself. */
-/**
- * The anti-slop rules left off by default.
- *
- * Measured across the sixteen cms/dms repositories: these seven produced 3038
- * of the 3429 anti-slop findings, and every sample we read was either the
- * correct idiom or a design change well beyond a lint pass.
- *
- * - `require-safety-comment-for-type-assertion` (1283) is satisfied by writing
- *   a comment, so at that volume it manufactures the noise it exists to fight.
- *   Removing assertions is the goal; annotating them is not.
- * - `no-unknown-parameters` (566) and `no-unknown-returns` (104) fire on catch
- *   handlers, where `unknown` is the only correct type, and on the parsers
- *   whose whole job is to take unknown in and hand typed values out.
- * - `no-runtime-typeof` (460) assumes a validation layer above the check. In a
- *   CMS reading Vault responses, WebSocket frames and user-defined rows, the
- *   `typeof` *is* that layer.
- * - `no-unsafe-dictionary-type` (442) is right in a business application and
- *   wrong here: tables and columns defined at run time have no compile-time
- *   schema, which is the product, not a typing gap.
- * - `no-shape-in-symbol-names` (104) matches a substring in identifiers and
- *   catches domain words such as `BlueGreenShape`.
- * - `no-module-mocking` (79) is a test-architecture position, not cleanup.
- * - `no-known-value-widening` (201) is the near miss. Of 174 sampled, 96 are
- *   `return accumulator` where the object was filled in a loop from run-time
- *   keys, so the open dictionary is the honest type and there is no evidence to
- *   preserve; the rule reads them as stable consts because assigning a property
- *   is not a write to the binding. The 53 real ones -- annotated object
- *   literals that should use `satisfies` -- are worth fixing by hand, and are,
- *   but not at the price of 96 suppressions. Narrowing the rule to literals
- *   would make it worth turning back on.
- *
- * A repository that wants one back enables it in its own `rules` block.
- */
-export const ANTI_SLOP_RULES_OFF_BY_DEFAULT = [
-  "no-known-value-widening",
-  "no-module-mocking",
-  "no-runtime-typeof",
-  "no-shape-in-symbol-names",
-  "no-unknown-parameters",
-  "no-unknown-returns",
-  "no-unsafe-dictionary-type",
-  "require-safety-comment-for-type-assertion",
-] as const;
-
+/** Every vendored anti-slop rule, also used to lint this package from source. */
 export const ANTI_SLOP_RULES = [
   "no-chained-type-assertions",
   "no-conditional-empty-object-spread",
@@ -176,73 +85,42 @@ export const ANTI_SLOP_RULES = [
   "require-safety-comment-for-type-assertion",
 ] as const;
 
-/** Shared empty override set, so the threshold spread is never conditional. */
-const EMPTY_THRESHOLDS: Partial<ComplexityThresholds> & {
-  severity?: Severity;
-} = {};
-
-function severityOf(
-  option: boolean | Severity | undefined,
-  fallback: Severity,
-): Severity {
-  if (option === undefined || option === true) return fallback;
-  if (option === false) return "off";
-  return option;
-}
-
-function basePreset(cycleSeverity: Severity) {
+/** Correctness must fail CI; underscore bindings and omitted rest siblings are intentional. */
+function basePreset(importCycles: boolean) {
   return defineConfig({
-    // oxlint reports `correctness` as warnings, and warnings do not fail the
-    // command. Left alone, nothing this preset finds could ever fail CI -- and
-    // these are the rules that catch duplicate object keys and unused bindings,
-    // which Biome was failing the build on before.
     categories: { correctness: "error" },
     ignorePatterns: ANTELOPE_IGNORE_PATTERNS,
     plugins: ["eslint", "typescript", "node", "oxc", "import", "promise"],
     rules: {
-      // `_` marks a parameter kept for the signature's shape, which is the same
-      // convention the Nuxt layers' ESLint config already encodes.
       "eslint/no-unused-vars": [
         "error",
         {
           argsIgnorePattern: "^_",
           varsIgnorePattern: "^_",
           caughtErrorsIgnorePattern: "^_",
-          // `const { secret: _secret, ...rest } = row` is the idiom for
-          // dropping a key; without this every repository invents its own
-          // underscore rename for it.
           ignoreRestSiblings: true,
         },
       ],
-      // Biome's recommended set blocked these and oxlint's correctness category
-      // does not, so dropping Biome quietly removed them. `== null` stays
-      // allowed, as it was there: it is the idiomatic nullish check.
       "eslint/eqeqeq": ["error", "always", { null: "ignore" }],
       "eslint/radix": "error",
       "eslint/prefer-regex-literals": "error",
-      "import/no-cycle": cycleSeverity,
+      "import/no-cycle": importCycles ? "error" : "off",
       "import/no-self-import": "error",
       "import/no-duplicates": "error",
     },
   });
 }
 
-/**
- * The anti-slop rules at one severity. Exported for this repository's own config:
- * it registers the plugin from source rather than through the package exports,
- * so linting never waits on a build.
- */
-export function antiSlopRules(severity: Severity): Record<string, Severity> {
-  const off = new Set<string>(ANTI_SLOP_RULES_OFF_BY_DEFAULT);
+/** All vendored rules at one severity, without resolving the published plugin. */
+export function antiSlopRules(
+  severity: Severity = "error",
+): Record<string, Severity> {
   return Object.fromEntries(
-    ANTI_SLOP_RULES.map((rule) => [
-      `anti-slop/${rule}`,
-      off.has(rule) ? "off" : severity,
-    ]),
+    ANTI_SLOP_RULES.map((rule) => [`anti-slop/${rule}`, severity]),
   );
 }
 
-function antiSlopPreset(severity: Severity) {
+function antiSlopPreset() {
   return defineConfig({
     jsPlugins: [
       {
@@ -250,19 +128,76 @@ function antiSlopPreset(severity: Severity) {
         specifier: "@antelopejs/tooling-configs/oxc/anti-slop",
       },
     ],
-    rules: antiSlopRules(severity),
+    rules: antiSlopRules(),
   });
 }
 
-function complexityPreset(
-  thresholds: ComplexityThresholds,
-  severity: Severity,
-) {
+/** Jest matcher semantics and module restrictions are not portable to Mocha, Chai, and Vitest. */
+export const FRAMEWORK_SPECIFIC_JEST_RULES = {
+  "jest/no-conditional-expect": "off",
+  "jest/no-export": "off",
+  "jest/no-standalone-expect": "off",
+  "jest/prefer-snapshot-hint": "off",
+  "jest/require-to-throw-message": "off",
+  "jest/valid-expect": "off",
+  "jest/valid-expect-in-promise": "off",
+} as const;
+
+/**
+ * Source registration and published registration share the same test overrides.
+ * Oxlint 1.81 only runs built-in Jest rules for .test/.spec files, __tests__ paths,
+ * or Vitest/@jest/globals imports. Mocha globals under test/ or tests/ still need
+ * a .test/.spec filename; a config override cannot force framework detection.
+ */
+export function guardrailsRules() {
+  return defineConfig({
+    plugins: ["jest"],
+    rules: {
+      ...FRAMEWORK_SPECIFIC_JEST_RULES,
+      "jest/expect-expect": "off",
+      "antelopejs/no-comments": "error",
+    },
+    overrides: [
+      {
+        files: TEST_FILE_GLOBS,
+        rules: {
+          "antelopejs/no-fs-read-in-tests": "error",
+          "antelopejs/no-constant-value-assertion": "error",
+          "antelopejs/no-typeof-function-only-test": "error",
+          "jest/expect-expect": [
+            "error",
+            { assertFunctionNames: ASSERTION_FUNCTION_NAMES },
+          ],
+        },
+      },
+      {
+        files: ["**/fixtures/**", "**/helpers/**", "**/locales/**"],
+        rules: {
+          "antelopejs/no-fs-read-in-tests": "off",
+        },
+      },
+    ],
+  });
+}
+
+function guardrailsPreset() {
+  return defineConfig({
+    extends: [guardrailsRules()],
+    jsPlugins: [
+      {
+        name: "antelopejs",
+        specifier: "@antelopejs/tooling-configs/oxc/guardrails",
+      },
+    ],
+  });
+}
+
+function complexityPreset(thresholds: ComplexityThresholds) {
   return defineConfig({
     rules: {
-      "eslint/max-params": [severity, { max: thresholds.maxParams }],
+      "eslint/max-params": ["error", { max: thresholds.maxParams }],
       "eslint/max-lines-per-function": [
-        severity,
+        "error",
         {
           max: thresholds.maxLinesPerFunction,
           skipBlankLines: true,
@@ -270,37 +205,32 @@ function complexityPreset(
         },
       ],
       "eslint/max-lines": [
-        severity,
+        "error",
         { max: thresholds.maxLines, skipBlankLines: true, skipComments: true },
       ],
-      "eslint/max-depth": [severity, { max: thresholds.maxDepth }],
-      "eslint/complexity": [severity, { max: thresholds.complexity }],
+      "eslint/max-depth": ["error", { max: thresholds.maxDepth }],
+      "eslint/complexity": ["error", { max: thresholds.complexity }],
     },
   });
 }
 
-/**
- * Turning on type information enables a whole family of rules, not just the one
- * worth the setup. `no-floating-promises` catches a promise whose rejection is
- * lost, which is why type-aware linting is worth running at all; the rest report
- * until a repository has worked through them, like every other backlog here.
- */
 function typeAwarePreset() {
   return defineConfig({
     rules: {
       "typescript/no-floating-promises": "error",
-      "typescript/await-thenable": "warn",
-      "typescript/unbound-method": "warn",
-      "typescript/no-meaningless-void-operator": "warn",
-      "typescript/no-misused-spread": "warn",
-      "typescript/no-base-to-string": "warn",
-      "typescript/no-redundant-type-constituents": "warn",
-      "typescript/restrict-template-expressions": "warn",
-      "typescript/require-array-sort-compare": "warn",
+      "typescript/await-thenable": "error",
+      "typescript/unbound-method": "error",
+      "typescript/no-meaningless-void-operator": "error",
+      "typescript/no-misused-spread": "error",
+      "typescript/no-base-to-string": "error",
+      "typescript/no-redundant-type-constituents": "error",
+      "typescript/restrict-template-expressions": "error",
+      "typescript/require-array-sort-compare": "error",
     },
   });
 }
 
+/** Side-effect imports register classes, so sorting may never relocate them. */
 function importSortingPreset() {
   return defineConfig({
     jsPlugins: ["eslint-plugin-perfectionist"],
@@ -310,12 +240,6 @@ function importSortingPreset() {
         {
           type: "line-length",
           order: "asc",
-          // A side-effect import in an AntelopeJS module is a registration:
-          // `import "./components"` is what puts the decorated classes in the
-          // registry. Moving one changes when it evaluates relative to the
-          // values it may read, so they stay exactly where the author put them
-          // -- which also means no `side-effect` group here, since listing one
-          // is what relocates them.
           sortSideEffects: false,
           internalPattern: ["^@/.*", "^~/.*"],
           groups: [
@@ -336,50 +260,45 @@ function importSortingPreset() {
   });
 }
 
-/**
- * The shared AntelopeJS oxlint preset: oxc's own defaults (the `correctness`
- * category), plus import hygiene, complexity ceilings, import sorting, and the
- * vendored anti-slop rules.
- *
- * @example
- * ```ts
- * // oxlint.config.ts
- * import { defineConfig } from "oxlint";
- * import { antelopePreset } from "@antelopejs/tooling-configs/oxc/lint";
- *
- * export default defineConfig({
- *   extends: [antelopePreset()],
- *   options: { typeAware: true },
- * });
- * ```
- */
-export function antelopePreset(options: AntelopePresetOptions = {}) {
-  const complexity = options.complexity ?? true;
-  const isToggle = complexity === true || complexity === false;
-  const overrides = isToggle ? EMPTY_THRESHOLDS : complexity;
-  const complexityThresholds: ComplexityThresholds = {
-    ...DEFAULT_COMPLEXITY_THRESHOLDS,
-    ...overrides,
-  };
-  const complexitySeverity = severityOf(
-    isToggle ? complexity : (overrides.severity ?? true),
-    "warn",
+/** Overrides run after rules, including test-specific rules; measurement bypasses all ceilings. */
+function ratchetOverrides() {
+  if (process.env[MEASURE_ENV] !== undefined) return [];
+  const ceilings = readCeilings(process.cwd());
+  const rules: Record<string, "off"> = Object.fromEntries(
+    Object.keys(ceilings.rules).map((rule) => [rule, "off"]),
   );
-  const antiSlopSeverity = severityOf(options.antiSlop, "warn");
+  return [
+    ...Object.keys(ceilings.oversizeFiles).map((path) => ({
+      files: [path.replaceAll(/([*?[\]{}])/gu, "\\$1")],
+      rules: { "eslint/max-lines": "off" as const },
+    })),
+    { files: ["**/*"], rules },
+  ];
+}
 
+/** The shared AntelopeJS preset. Every enabled rule fails CI; recorded debt is enforced by the ratchet. */
+export function antelopePreset(options: AntelopePresetOptions = {}) {
+  let thresholds = DEFAULT_COMPLEXITY_THRESHOLDS;
+  if (
+    options.complexity !== true &&
+    options.complexity !== false &&
+    options.complexity !== undefined
+  ) {
+    thresholds = { ...thresholds, ...options.complexity };
+  }
   return defineConfig({
     extends: [
-      basePreset(severityOf(options.importCycles, "error")),
+      basePreset(options.importCycles !== false),
       options.typeAware === false ? null : typeAwarePreset(),
-      antiSlopSeverity === "off" ? null : antiSlopPreset(antiSlopSeverity),
-      complexitySeverity === "off"
-        ? null
-        : complexityPreset(complexityThresholds, complexitySeverity),
+      options.antiSlop === false ? null : antiSlopPreset(),
+      options.guardrails === false ? null : guardrailsPreset(),
+      options.complexity === false ? null : complexityPreset(thresholds),
       options.importSorting === true ? importSortingPreset() : null,
     ].filter((config) => config !== null),
     rules: {
       "typescript/no-floating-promises":
         options.typeAware === false ? "off" : "error",
     },
+    overrides: ratchetOverrides(),
   });
 }
