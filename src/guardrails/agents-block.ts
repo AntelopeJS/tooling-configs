@@ -1,6 +1,7 @@
 /** What the managed AGENTS.md block needs to know about the repository. */
 export interface AgentsBlockContext {
   profile: "full" | "template";
+  ratchet: boolean;
   /** Repository-relative path of the verification skill's SKILL.md, when one exists. */
   verificationSkill: string | undefined;
   /** Repository-relative path of GLOSSARY.md, when one exists. */
@@ -21,6 +22,10 @@ Hold every test you write or keep to this checklist:
 - Name the wrong implementation this test fails on. A test with no answer is deleted, not kept.
 - No test reads the file it tests. Drive the behaviour through the public interface.
 - An invariant over many files is a lint rule, not a test.`;
+
+const CLEANUP_PROOF = `### Cleanup proof
+
+A behaviour-preserving cleanup PR shows \`antelopejs-api-diff <base-ref>\` passing. Published declarations stay unchanged. A comment-only PR shows \`antelopejs-comment-proof <base-ref>\` passing instead of a verifier. Both compare committed HEAD.`;
 
 const SHARED_RULES = [
   ["Formatting", "oxfmt"],
@@ -46,6 +51,14 @@ const SHARED_RULES = [
     "Params ≤ 5, function ≤ 120 lines, file ≤ 500 lines, depth ≤ 4, complexity ≤ 20",
     "`eslint/max-*`, `eslint/complexity`",
   ],
+  [
+    "Cleanup preserves published declarations",
+    "`antelopejs-api-diff <base-ref>`",
+  ],
+  [
+    "Comment-only changes preserve JavaScript emit",
+    "`antelopejs-comment-proof <base-ref>`",
+  ],
 ] as const;
 
 const FULL_RULES = [
@@ -53,7 +66,6 @@ const FULL_RULES = [
     "Files ≤ 20,000 bytes, tests included",
     "`antelopejs-check-size` (pre-commit)",
   ],
-  ["Existing debt only shrinks", "`antelopejs-ratchet`"],
   ["Types check", "`tsc` (pre-push)"],
   ["No dead files, exports, or dependencies", "knip"],
   ["Managed files match the pack", "`antelopejs-sync --check`"],
@@ -92,7 +104,7 @@ function fullBody(context: AgentsBlockContext): string[] {
   return [
     "## Guardrails",
     "",
-    "Finish every change with `pnpm run checks`. It runs typecheck, lint, format, knip, tests, size, ratchet, and sync, and prints only what failed. The change is done when it prints no failure.",
+    `Finish every change with \`pnpm run checks\`. It runs typecheck, lint, format, knip, tests, size, ${context.ratchet ? "ratchet, " : ""}and sync, and prints only what failed. The change is done when it prints no failure.`,
     "",
     ...pointers(context).flatMap((line) => [line, ""]),
     "The tools enforce most rules, listed in the table at the end. The sections below hold the rules no tool checks.",
@@ -101,11 +113,26 @@ function fullBody(context: AgentsBlockContext): string[] {
     "",
     TESTS,
     "",
-    "### Debt",
+    CLEANUP_PROOF,
     "",
-    "`guardrails.ratchet.json` records the lint findings and oversize files this repository already had. Its numbers only go down. After you remove debt, run `pnpm run ratchet:update` and commit the lowered file. A rule listed there is off for `oxlint`. The ratchet counts it instead, and the pre-commit hook rejects it on every line you add.",
-    "",
-    ruleTable([...SHARED_RULES, ...FULL_RULES]),
+    ...(context.ratchet
+      ? [
+          "### Debt",
+          "",
+          "`guardrails.ratchet.json` records the lint findings and oversize files this repository already had. Its numbers only go down. After you remove debt, run `pnpm run ratchet:update` and commit the lowered file. A rule listed there is off for `oxlint`. The ratchet counts it instead, and the pre-commit hook rejects it on every line you add.",
+          "",
+        ]
+      : []),
+    ruleTable([
+      ...SHARED_RULES,
+      ...FULL_RULES,
+      ...(context.ratchet
+        ? ([["Existing debt only shrinks", "`antelopejs-ratchet`"]] satisfies [
+            string,
+            string,
+          ][])
+        : []),
+    ]),
   ];
 }
 
@@ -119,6 +146,8 @@ function templateBody(context: AgentsBlockContext): string[] {
     COMMENTS,
     "",
     TESTS,
+    "",
+    CLEANUP_PROOF,
     "",
     ruleTable(SHARED_RULES),
   ];

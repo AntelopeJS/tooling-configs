@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, statSync, symlinkSync } from "node:fs";
+import { chmodSync, existsSync, rmSync, statSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -66,7 +66,7 @@ test("full sync measures once, preserves handwritten text even behind a CLAUDE s
   });
   assert.equal(
     read(root, "AGENTS.md"),
-    `Handwritten introduction.\n\n${agentsBlock({ profile: "full", verificationSkill: ".agents/skills/verify-runtime/SKILL.md", glossary: "docs/GLOSSARY.md" }).trimEnd()}\n\nHandwritten footer.\n`,
+    `Handwritten introduction.\n\n${agentsBlock({ profile: "full", ratchet: true, verificationSkill: ".agents/skills/verify-runtime/SKILL.md", glossary: "docs/GLOSSARY.md" }).trimEnd()}\n\nHandwritten footer.\n`,
   );
   assert.equal(read(root, "CLAUDE.md"), "@AGENTS.md\n");
   const packageText = read(root, "package.json");
@@ -174,6 +174,8 @@ test("template profile manages only presets and AGENTS, and appends without repl
     read(root, "AGENTS.md"),
     /^Handwritten without a final newline\.\n\n/,
   );
+  assert.match(read(root, "AGENTS.md"), /antelopejs-api-diff <base-ref>/);
+  assert.match(read(root, "AGENTS.md"), /antelopejs-comment-proof <base-ref>/);
   assert.match(
     read(root, "oxlint.config.ts"),
     /options: \{ typeAware: true \}/,
@@ -246,4 +248,60 @@ test("sync keeps an oxfmt-formatted repository formatted, so formatting never re
     { cwd: root, encoding: "utf8" },
   );
   assert.equal(oxfmt.status, 0, oxfmt.stdout + oxfmt.stderr);
+});
+
+test("sync leaves retired files for ratchet:update, then removes ratchet wiring without measuring new debt", (t) => {
+  const root = testRepo(t);
+  put(
+    root,
+    "guardrails.ratchet.json",
+    formatCeilings({ rules: { "eslint/no-alert": 0 }, oversizeFiles: {} }),
+  );
+  const first = bin(root, "sync");
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stdout, /Note:.*ratchet:update/);
+  assert.equal(existsSync(join(root, "guardrails.ratchet.json")), true);
+  assert.match(read(root, "AGENTS.md"), /### Debt/);
+  const check = bin(root, "sync", ["--check"]);
+  assert.equal(check.status, 1);
+  assert.match(check.stderr, /ratchet:update/);
+  rmSync(join(root, "guardrails.ratchet.json"));
+  const adopted = parseManifest(read(root, "package.json"));
+  assert.ok(adopted.scripts);
+  adopted.scripts["sync:check"] = "";
+  put(root, "package.json", JSON.stringify(adopted));
+  put(root, "new-debt.ts", "export let debt: any;\n");
+  const retired = bin(root, "sync");
+  assert.equal(retired.status, 0, retired.stderr);
+  assert.equal(existsSync(join(root, "guardrails.ratchet.json")), false);
+  assert.doesNotMatch(
+    read(root, "AGENTS.md"),
+    /### Debt|ratchet|Existing debt only shrinks/,
+  );
+  assert.doesNotMatch(read(root, "lefthook.yml"), /antelopejs-ratchet/);
+  const manifest = parseManifest(read(root, "package.json"));
+  assert.equal(manifest.scripts?.ratchet, undefined);
+  assert.equal(manifest.scripts?.["ratchet:update"], undefined);
+  assert.equal(bin(root, "sync", ["--check"]).status, 0);
+  assert.equal(bin(root, "sync").status, 0);
+  assert.equal(existsSync(join(root, "guardrails.ratchet.json")), false);
+});
+
+test("first adoption without debt writes no ratchet file, scripts or hook", (t) => {
+  const root = testRepo(t);
+  linkOxlint(root);
+  put(
+    root,
+    "oxlint.config.ts",
+    'import type {} from "@antelopejs/tooling-configs/oxc/lint";\nexport default { categories: { correctness: "off" } };\n',
+  );
+  const result = bin(root, "sync");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(join(root, "guardrails.ratchet.json")), false);
+  assert.equal(
+    parseManifest(read(root, "package.json")).scripts?.ratchet,
+    undefined,
+  );
+  assert.doesNotMatch(read(root, "lefthook.yml"), /antelopejs-ratchet/);
+  assert.equal(bin(root, "sync", ["--check"]).status, 0);
 });

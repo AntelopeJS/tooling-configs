@@ -1,8 +1,9 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, lstatSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, openSync, readSync } from "node:fs";
 import { join, matchesGlob, relative, resolve } from "node:path";
 
 import { AGENT_IGNORE_PATTERNS, IGNORE_PATTERNS } from "../oxc/shared.ts";
+import { MAX_FILE_BYTES } from "./ceilings.ts";
 
 const SIZE_EXCLUSIONS = [
   {
@@ -16,6 +17,16 @@ const SIZE_EXCLUSIONS = [
     ],
   },
   { kind: "fixtures", patterns: ["**/fixtures/**", "**/__fixtures__/**"] },
+  {
+    kind: "data",
+    patterns: [
+      "**/locales/**/*.json",
+      "**/i18n/**/*.json",
+      "**/blocks.json",
+      "**/schema.json",
+      "**/evals/**/cases.json",
+    ],
+  },
   {
     kind: "lockfiles",
     patterns: [
@@ -61,7 +72,7 @@ export function repositoryPath(root: string, file: string): string {
   return relative(root, resolve(root, file)).split("\\").join("/");
 }
 
-export function fileBytes(
+function fileBytes(
   root: string,
   file: string,
   staged = false,
@@ -90,6 +101,24 @@ function isExcluded(file: string): boolean {
   );
 }
 
+function isBinary(root: string, file: string, staged: boolean): boolean {
+  if (staged) {
+    const blob = execFileSync("git", ["show", `:${file}`], {
+      cwd: root,
+      maxBuffer: fileBytes(root, file, true),
+    });
+    return blob.subarray(0, 8000).includes(0);
+  }
+  const descriptor = openSync(join(root, file), "r");
+  try {
+    const prefix = Buffer.alloc(8000);
+    const length = readSync(descriptor, prefix, 0, prefix.length, 0);
+    return prefix.subarray(0, length).includes(0);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
 export function authoredSizes(
   root: string,
   files = gitFiles(root),
@@ -100,6 +129,12 @@ export function authoredSizes(
     const file = repositoryPath(root, input);
     if (isExcluded(file)) continue;
     const size = fileBytes(root, file, staged);
+    if (
+      size !== undefined &&
+      size > MAX_FILE_BYTES &&
+      isBinary(root, file, staged)
+    )
+      continue;
     if (size !== undefined) sizes.set(file, size);
   }
   return sizes;

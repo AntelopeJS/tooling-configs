@@ -29,6 +29,8 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 | bin                | `antelopejs-checks`                                                       | Runs every check and prints only the failures                               |
 | bin                | `antelopejs-ratchet`                                                      | Fails when recorded debt grows; `--update` lowers the record                |
 | bin                | `antelopejs-check-size`                                                   | Fails on authored files over 20,000 bytes and on blanket disable directives |
+| bin                | `antelopejs-api-diff <base-ref>`                                          | Compares published declaration bundles against committed HEAD               |
+| bin                | `antelopejs-comment-proof <base-ref>`                                     | Compares comment-free JavaScript emit against committed HEAD                |
 | bin                | `antelopejs-check-interface-ranges`                                       | Fails on interface ranges that break module startup                         |
 
 ## Install
@@ -153,11 +155,11 @@ pnpm install
 | `.agents/setup`                                         | Orb setup: switches to the `.nvmrc` Node, activates `packageManager` through corepack, installs with the frozen lockfile                                                                              |
 | `AGENTS.md`                                             | Writes the managed block between `<!-- antelopejs-guardrails:start -->` and `:end -->`; text outside the markers stays                                                                                |
 | `CLAUDE.md`                                             | `@AGENTS.md`                                                                                                                                                                                          |
-| `guardrails.ratchet.json`                               | Records the current findings, once, when the file is missing                                                                                                                                          |
+| `guardrails.ratchet.json`                               | Records non-empty debt on first adoption, before `sync:check` exists                                                                                                                                  |
 
 `--profile template` writes only the three preset configs and a user-facing `AGENTS.md` block, for template repositories. `antelopejs-sync --check` writes nothing and exits 1 on any drift; `pnpm run checks` runs it.
 
-`pnpm run checks` runs `typecheck`, `lint`, `format:check`, `knip`, `test`, `size`, `ratchet` and `sync:check`, and prints only the output of the steps that failed.
+`pnpm run checks` runs `typecheck`, `lint`, `format:check`, `knip`, `test`, `size` and `sync:check`, plus `ratchet` when `guardrails.ratchet.json` exists. It prints only the output of the steps that failed. Sync adds the ratchet scripts and pre-commit hook only while that file exists.
 
 ### Ratchet
 
@@ -174,9 +176,28 @@ pnpm install
 - A file listed under `oversizeFiles` may exceed 20,000 bytes and `max-lines`, up to its recorded size. Any other file over either limit fails.
 - `antelopejs-ratchet --update` lowers each number to the current count and removes what reached zero. It never raises a number or adds an entry. Commit the lowered file.
 
+When every rule count is zero and `oversizeFiles` is empty, the ratchet is retired. `antelopejs-ratchet --update` deletes the file and asks you to run `antelopejs-sync`. Sync then removes `ratchet`, `ratchet:update`, the ratchet hook and the Debt instructions. Commit those changes together. An empty baseline on first adoption creates no file. Later syncs never recreate it because the `sync:check` script marks adoption.
+
+`antelopejs-sync --check` rejects an existing retired file and tells you to run `ratchet:update`. Plain sync reports the same note but leaves deletion to the update command.
+
 ### Size
 
-`antelopejs-check-size` fails on an authored file over 20,000 bytes, tests included. Generated code, fixtures, lockfiles, `CHANGELOG.md`, Markdown and binary assets are excluded. Pass paths to check only those files, as the pre-commit hook does. It also fails on an `oxlint-disable` or `eslint-disable` directive (line, next-line or file form) that names no rule: oxlint applies such a directive before any rule runs, so `no-comments` cannot report it.
+`antelopejs-check-size` fails on an authored file over 20,000 bytes, tests included. Generated code, fixtures, lockfiles, `CHANGELOG.md`, Markdown and binary assets are excluded. Data JSON under `locales/` or `i18n/`, `blocks.json`, `schema.json`, and `evals/**/cases.json` are excluded too. Files over the limit with a NUL byte in their first 8,000 bytes are binary even without a known extension. Staged checks inspect the index blob. Excluded files are also removed from recorded size allowances on ratchet update.
+
+Pass paths to check only those files, as the pre-commit hook does. The command also fails on an `oxlint-disable` or `eslint-disable` directive (line, next-line or file form) that names no rule: oxlint applies such a directive before any rule runs, so `no-comments` cannot report it.
+
+### Cleanup proof
+
+A behaviour-preserving cleanup PR shows `antelopejs-api-diff <base-ref>` passing. It checks each tracked, non-private package with a `tsconfig.json`, using that package's installed TypeScript. It emits declarations without comments, resolves published entries from `exports` (preferring `types`), `main`, `types`/`typings` and `typesVersions`, and bundles each entry's local declaration closure. External packages stay external. Stable top-level ordering ignores declaration moves between internal files while preserving overload order. Compiler errors fail the proof.
+
+A comment-only PR shows `antelopejs-comment-proof <base-ref>` passing instead of a verifier. It includes private packages, ignores type diagnostics and compares comment-free JavaScript emit byte for byte. Both commands exclude test sources, fail on added or removed outputs, and print unified diffs for changes.
+
+Both commands compare **committed HEAD**, not staged or working-tree edits. They check out the base and HEAD in temporary detached worktrees, reuse the current checkout's root and package `node_modules`, and remove the worktrees afterwards. Install the consumer's dependencies before running them.
+
+```bash
+pnpm exec antelopejs-api-diff origin/main
+pnpm exec antelopejs-comment-proof origin/main
+```
 
 ## oxfmt
 
@@ -279,7 +300,7 @@ checks that remain the author's responsibility.
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md). `pnpm install`, then `pnpm checks` runs the typecheck, lint, format check, tests, size check and ratchet.
+See [CONTRIBUTING.md](./CONTRIBUTING.md). `pnpm install`, then `pnpm checks` runs the typecheck, lint, format check, Knip, tests, size and sync checks. Repositories with recorded debt also run the ratchet.
 
 ## License
 

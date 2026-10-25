@@ -18,7 +18,12 @@ import {
   AGENTS_BLOCK_START,
   type AgentsBlockContext,
 } from "./agents-block.ts";
-import { CEILINGS_FILE, formatCeilings } from "./ceilings.ts";
+import {
+  CEILINGS_FILE,
+  formatCeilings,
+  isRetired,
+  readCeilings,
+} from "./ceilings.ts";
 import {
   managedPackage,
   packageManager,
@@ -63,6 +68,8 @@ interface ManagedArtifact {
 
 const LEGACY_COMMENT_INSTRUCTION =
   "- Explain non-obvious constraints and decisions in comments; avoid restating the code. Document public contracts with TSDoc.";
+
+const RETIRED_RATCHET = `${CEILINGS_FILE} has no debt left. Run ratchet:update to delete it, then run antelopejs-sync.`;
 
 function managedAgents(current = "", context: RepoContext): ArtifactContent {
   const start = current.indexOf(AGENTS_BLOCK_START);
@@ -111,7 +118,12 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
     path: "lefthook.yml",
     profiles: ["full"],
     desired: (current, context) => ({
-      content: lefthook(current, context.manager, context.tools),
+      content: lefthook(
+        current,
+        context.manager,
+        context.tools,
+        context.ratchet,
+      ),
       notes: [],
     }),
   },
@@ -187,6 +199,7 @@ function planSync(
   }
   for (const artifact of MANAGED_ARTIFACTS) {
     if (!artifact.profiles.includes(context.profile)) continue;
+    if (artifact.path === CEILINGS_FILE && !context.ratchet) continue;
     try {
       const { content, notes } = artifact.desired(
         current.get(artifact.path),
@@ -296,6 +309,7 @@ function repositoryContext(
   const desiredLint = current.get(lint.path) ?? lint.content;
   return {
     profile,
+    ratchet: current.has(CEILINGS_FILE),
     manager: packageManager(manifest),
     versions: toolingVersions(),
     tools: repositoryTools(manifest),
@@ -328,6 +342,16 @@ function writeArtifacts(
   }
 }
 
+function repositoryNotices(root: string, context: RepoContext): string[] {
+  const notices: string[] = [];
+  if (context.profile === "full" && !hasChecksWorkflow(root))
+    notices.push(MISSING_CHECKS_WORKFLOW);
+  if (context.ratchet && isRetired(readCeilings(root)))
+    notices.push(RETIRED_RATCHET);
+  return notices;
+}
+
+/** Measures debt only on first adoption, before sync has written the sync:check script; retired repositories stay retired. */
 export function syncRepository(
   root: string,
   options: { check?: boolean; profile?: AgentsBlockContext["profile"] } = {},
@@ -343,24 +367,22 @@ export function syncRepository(
   const notes = plan.flatMap((artifact) =>
     artifact.kind === "migrated" ? artifact.notes : [],
   );
-  if (profile === "full" && !hasChecksWorkflow(root)) {
-    if (options.check) errors.push(MISSING_CHECKS_WORKFLOW);
-    else notes.push(MISSING_CHECKS_WORKFLOW);
-  }
+  (options.check ? errors : notes).push(...repositoryNotices(root, context));
   if (
     !errors.length &&
     profile === "full" &&
     !options.check &&
-    !current.has(CEILINGS_FILE)
+    !current.has(CEILINGS_FILE) &&
+    manifest.scripts?.["sync:check"] === undefined
   ) {
     const lint = PRESET_CONFIGS[0];
     const desired = presetConfig(current.get(lint.path), lint, context.tools);
-    context.baseline = formatCeilings(
-      measureBaseline(
-        root,
-        desired === current.get(lint.path) ? undefined : desired,
-      ),
+    const baseline = measureBaseline(
+      root,
+      desired === current.get(lint.path) ? undefined : desired,
     );
+    context.ratchet = !isRetired(baseline);
+    context.baseline = formatCeilings(baseline);
     plan = planSync(current, modes, context);
   }
   const writes = plan.filter(

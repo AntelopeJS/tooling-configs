@@ -62,6 +62,7 @@ export function lefthook(
   current: string | undefined,
   manager: PackageManager,
   tools: ReturnType<typeof repositoryTools>,
+  ratchet = true,
 ): string {
   const exec = execCommand(manager);
   const document = parseDocument(current ?? "{}\n");
@@ -108,6 +109,8 @@ export function lefthook(
     for (const [key, command] of Object.entries(commands))
       document.setIn([hook, "commands", key], document.createNode(command));
   }
+  if (!ratchet)
+    document.deleteIn(["pre-commit", "commands", "antelopejs-ratchet"]);
   return document.toString({ lineWidth: 0 });
 }
 
