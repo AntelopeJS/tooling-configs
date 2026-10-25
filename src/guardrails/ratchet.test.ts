@@ -237,3 +237,24 @@ test("ratchet removes zero ceilings without claiming a lowering from zero to zer
   assert.doesNotMatch(result.stdout, /0 -> 0/);
   assert.deepEqual(readCeilings(root).rules, {});
 });
+
+test("ratchet ignores growth of listed data and binary files and drops their allowances on update", (t) => {
+  const root = lintRepo(t);
+  put(root, "locales/en.json", JSON.stringify("x".repeat(21_000)));
+  put(root, "opaque.custom", `\0${"x".repeat(21_000)}`);
+  put(root, "legacy.ts", "export let legacy: any;\n");
+  put(
+    root,
+    "guardrails.ratchet.json",
+    formatCeilings({
+      rules: { "typescript/no-explicit-any": 1 },
+      oversizeFiles: { "locales/en.json": 20_001, "opaque.custom": 20_001 },
+    }),
+  );
+  const result = bin(root, "ratchet", ["--update"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(readCeilings(root), {
+    rules: { "typescript/no-explicit-any": 1 },
+    oversizeFiles: {},
+  });
+});

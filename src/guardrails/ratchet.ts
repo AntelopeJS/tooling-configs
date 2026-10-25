@@ -9,20 +9,21 @@ import {
   readCeilings,
   type Ceilings,
 } from "./ceilings.ts";
-import { authoredSizes, fileBytes, gitFiles } from "./files.ts";
+import { authoredSizes, gitFiles } from "./files.ts";
 import { lintDiagnostics, type Diagnostic } from "./oxlint.ts";
 import { sizeFailure } from "./size.ts";
 
 function baseline(root: string, diagnostics: Diagnostic[]): Ceilings {
   const rules: Record<string, number> = {};
   const oversizeFiles: Record<string, number> = {};
+  const sizes = authoredSizes(root);
   for (const diagnostic of diagnostics) {
     if (diagnostic.rule === "eslint/max-lines") {
-      const size = fileBytes(root, diagnostic.file);
+      const size = sizes.get(diagnostic.file);
       if (size !== undefined) oversizeFiles[diagnostic.file] = size;
     } else rules[diagnostic.rule] = (rules[diagnostic.rule] ?? 0) + 1;
   }
-  for (const [file, size] of authoredSizes(root)) {
+  for (const [file, size] of sizes) {
     if (size > MAX_FILE_BYTES) oversizeFiles[file] = size;
   }
   return { rules, oversizeFiles };
@@ -105,8 +106,9 @@ export function ratchet(root: string, update = false) {
           : `${file}: ${size} bytes and an eslint/max-lines diagnostic; this file has no oversize allowance. Split by responsibility into sibling modules, or split tests by behaviour under test, one file per describe.`,
       );
   }
+  const sizes = authoredSizes(root, Object.keys(ceilings.oversizeFiles));
   for (const [file, limit] of Object.entries(ceilings.oversizeFiles)) {
-    const size = fileBytes(root, file);
+    const size = sizes.get(file);
     if (size !== undefined && size > limit)
       failures.push(sizeFailure(file, size, limit));
   }
