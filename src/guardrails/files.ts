@@ -80,6 +80,16 @@ export function fileBytes(
   return stat.isFile() ? stat.size : undefined;
 }
 
+/** `path.matchesGlob` never lets `*` or `**` cross a segment starting with a dot, so each path is also tried with those dots removed. */
+function isExcluded(file: string): boolean {
+  const undotted = file.replace(/(^|\/)\./gu, "$1");
+  return SIZE_EXCLUSIONS.some(({ patterns }) =>
+    patterns.some(
+      (pattern) => matchesGlob(file, pattern) || matchesGlob(undotted, pattern),
+    ),
+  );
+}
+
 export function authoredSizes(
   root: string,
   files = gitFiles(root),
@@ -88,12 +98,7 @@ export function authoredSizes(
   const sizes = new Map<string, number>();
   for (const input of files) {
     const file = repositoryPath(root, input);
-    if (
-      SIZE_EXCLUSIONS.some(({ patterns }) =>
-        patterns.some((pattern) => matchesGlob(file, pattern)),
-      )
-    )
-      continue;
+    if (isExcluded(file)) continue;
     const size = fileBytes(root, file, staged);
     if (size !== undefined) sizes.set(file, size);
   }
