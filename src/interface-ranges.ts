@@ -26,7 +26,7 @@ const SINGLE_VERSION = /^[\^~=]?v?(\d+)\.(\d+)\.(\d+)$/;
 
 type Version = readonly [major: number, minor: number, patch: number];
 
-export type RangeRole = "consumer" | "implementer";
+type RangeRole = "consumer" | "implementer";
 
 export interface PackageManifest {
   name?: string;
@@ -52,13 +52,13 @@ const sameVersion = (a: Version, b: Version): boolean =>
   a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
 
 /** The first release a module declaring `floor` must not be handed. */
-export function rangeCeiling(floor: Version, role: RangeRole): Version {
+function rangeCeiling(floor: Version, role: RangeRole): Version {
   const [major, minor] = floor;
   if (major > 0) return [major + 1, 0, 0];
   return role === "implementer" ? [0, minor + 1, 0] : [1, 0, 0];
 }
 
-export function expectedRange(floor: Version, role: RangeRole): string {
+function expectedRange(floor: Version, role: RangeRole): string {
   return `>=${formatVersion(floor)} <${formatVersion(rangeCeiling(floor, role))}`;
 }
 
