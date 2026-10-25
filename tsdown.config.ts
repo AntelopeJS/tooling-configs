@@ -1,13 +1,19 @@
 import { defineConfig } from "tsdown";
 
+/** The lint tools and plugins are resolved from the consumer's node_modules at lint time, never bundled. */
 export default defineConfig({
   entry: [
     "./src/oxc/lint.ts",
     "./src/oxc/fmt.ts",
     "./src/oxc/anti-slop/index.ts",
+    "./src/oxc/guardrails/index.ts",
     "./src/knip.ts",
     "./src/eslint.ts",
     "./src/bin/check-interface-ranges.ts",
+    "./src/bin/sync.ts",
+    "./src/bin/check-size.ts",
+    "./src/bin/ratchet.ts",
+    "./src/bin/checks.ts",
   ],
   outDir: "dist",
   format: ["esm"],
@@ -15,7 +21,6 @@ export default defineConfig({
   clean: true,
   target: false,
   deps: {
-    // Resolved from the consumer's node_modules at lint time, never bundled.
     neverBundle: [
       "oxlint",
       "oxfmt",

@@ -1,0 +1,31 @@
+#!/usr/bin/env node
+import { parseArgs } from "node:util";
+
+import { runCli } from "../guardrails/cli.ts";
+import { repositoryRoot } from "../guardrails/files.ts";
+import { syncRepository } from "../guardrails/sync.ts";
+
+runCli(() => {
+  const { values } = parseArgs({
+    options: {
+      check: { type: "boolean" },
+      profile: { type: "string", default: "full" },
+    },
+  });
+  if (values.profile !== "full" && values.profile !== "template")
+    throw new Error("--profile must be full or template.");
+  const result = syncRepository(repositoryRoot(), {
+    check: values.check,
+    profile: values.profile,
+  });
+  for (const path of result.paths)
+    process.stdout.write(
+      `${values.check ? "Drift" : "Updated"}: ${path}${values.check ? "; run antelopejs-sync" : ""}\n`,
+    );
+  if (!result.paths.length) process.stdout.write("Guardrails are in sync.\n");
+  if (!values.check && result.dependenciesAdded)
+    process.stdout.write(
+      "Added devDependencies. Run install with your package manager before using the hooks or checks.\n",
+    );
+  return values.check && result.paths.length ? 1 : 0;
+});
