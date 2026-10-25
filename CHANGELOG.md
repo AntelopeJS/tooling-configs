@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.0
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.0.9...v0.2.0)
+
+### 🚀 Enhancements
+
+- ⚠️  Turn tooling-configs into the guardrail pack ([#16](https://github.com/AntelopeJS/tooling-configs/pull/16))
+
+#### ⚠️ Breaking Changes
+
+- ⚠️  Turn tooling-configs into the guardrail pack ([#16](https://github.com/AntelopeJS/tooling-configs/pull/16))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli <rizzitelli.antony@pm.me>
+
 ## v0.0.9
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.0.8...v0.0.9)
