@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { lintProject } from "./helpers/lint-project.ts";
@@ -24,7 +25,7 @@ it("restates a constant", () => { expect(MAX_ITEMS).toBe(5); });
           "anti-slop/no-object-parameters": 1,
           "antelopejs/no-comments": 1,
           "antelopejs/no-constant-value-assertion": 1,
-          "jest/expect-expect": 1,
+          "antelopejs/require-assertion": 1,
         },
         oversizeFiles: {},
       }),
@@ -38,7 +39,7 @@ it("restates a constant", () => { expect(MAX_ITEMS).toBe(5); });
       "anti-slop(no-object-parameters)",
       "antelopejs(no-comments)",
       "antelopejs(no-constant-value-assertion)",
-      "jest(expect-expect)",
+      "antelopejs(require-assertion)",
     ]) {
       assert(codes.includes(code), JSON.stringify(measured));
     }
@@ -90,14 +91,14 @@ test("an oversize exemption turns off max-lines only for its recorded path", () 
   }
 });
 
-test("test globs and Vitest imports require assertions; Chai, node assertions and assertion helpers count", () => {
+test("test globs require assertions without framework imports or filename suffixes", () => {
   const project = lintProject();
   try {
     const empty = 'it("missing", () => { run(); });';
     for (const path of ["a.test.ts", "b.spec.js", "__tests__/a.ts"])
       project.write(path, empty);
-    for (const path of ["test/a.ts", "tests/a.ts"])
-      project.write(path, `import { it } from "vitest"; ${empty}`);
+    for (const path of ["test/foo.ts", "tests/a.ts"])
+      project.write(path, empty);
     project.write("source.ts", empty);
     project.write(
       "valid.test.ts",
@@ -107,6 +108,10 @@ it("node", () => { assert.equal(1, 1); });
 it("helper", () => { expectFailure(run); });
 it("helper", () => { assertRetryable(run()); });
 it("helper", () => { expectRejection(run); });
+it("sinon", () => { sinon.assert.calledOnce(spy); });
+it("supertest", () => { return request(app).get("/").expect(200); });
+it("should", () => { response.should.equal(200); });
+it("should call", () => { should(response).equal(200); });
 it("parameterized", () => {
   if (flag) expect(fn()).toBe(1);
   else expect(fn()).toBe(2);
@@ -117,14 +122,20 @@ export function assertionHelper() { expect(1, "a Chai or Vitest message").to.equ
     const result = project.run(true);
     const missing = result.diagnostics.filter(
       (diagnostic: { code: string }) =>
-        diagnostic.code === "jest(expect-expect)",
+        diagnostic.code === "antelopejs(require-assertion)",
     );
-    assert.equal(missing.length, 5, JSON.stringify(result));
+    assert.deepEqual(
+      missing
+        .map((diagnostic: { filename: string }) => diagnostic.filename)
+        .sort(),
+      ["__tests__/a.ts", "a.test.ts", "b.spec.js", "test/foo.ts", "tests/a.ts"],
+      JSON.stringify(result),
+    );
     assert.equal(
       result.diagnostics.filter((diagnostic: { code: string }) =>
         diagnostic.code.startsWith("jest("),
       ).length,
-      5,
+      0,
     );
     assert(
       !missing.some(
@@ -155,12 +166,43 @@ test("antelopejs@b0c06d3:test/core/cli/git-operations.test.ts:9 has no assertion
     assert.equal(
       result.diagnostics.filter(
         (diagnostic: { code: string }) =>
-          diagnostic.code === "jest(expect-expect)",
+          diagnostic.code === "antelopejs(require-assertion)",
       ).length,
       1,
     );
   } finally {
     project.remove();
+  }
+});
+
+test("ceilings come from the nearest git ancestor, including worktrees, with cwd fallback", () => {
+  for (const marker of [".git/HEAD", ".git", "nested/.git", null]) {
+    const project = lintProject();
+    try {
+      if (marker !== null) project.write(marker, "gitdir: /unused\n");
+      if (marker === "nested/.git")
+        project.write(".git/HEAD", "ref: refs/heads/main\n");
+      project.write(
+        "nested/test/foo.ts",
+        "// ordinary comment\nexport const value = 1;",
+      );
+      project.write(
+        "guardrails.ratchet.json",
+        JSON.stringify({ rules: { "antelopejs/no-comments": 1 } }),
+      );
+      const result = project.run(false, join(project.root, "nested"));
+      const comments = result.diagnostics.filter(
+        (diagnostic: { code: string }) =>
+          diagnostic.code === "antelopejs(no-comments)",
+      );
+      assert.equal(
+        comments.length,
+        marker === null || marker === "nested/.git" ? 1 : 0,
+        JSON.stringify(result),
+      );
+    } finally {
+      project.remove();
+    }
   }
 });
 

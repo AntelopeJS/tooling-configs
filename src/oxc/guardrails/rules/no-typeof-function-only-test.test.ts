@@ -18,6 +18,16 @@ tester.run(
       'it("uses a helper", () => { expect(fn).toBeTypeOf("function"); expectFailure(fn); });',
       'it("uses an assert helper", () => { assert.isFunction(fn); assertRetryable(run()); });',
       'it("calls a function", () => { expect(fn()).toBe("function"); });',
+      ...[
+        "sinon.assert.calledOnce(spy)",
+        'request(app).get("/").expect(200)',
+        "value.should.equal(1)",
+        "value.should.be.ok",
+        "should(value).equal(1)",
+      ].map(
+        (assertion) =>
+          `it("also checks behavior", () => { expect(fn).toBeTypeOf("function"); ${assertion}; });`,
+      ),
       'expect(fn).toBeTypeOf("function");',
       `it("restricts copying, resending and revoking invitations to platform owners", () => {
     expect(SaasWorkspaceInvitationsController).toBeTypeOf("function");

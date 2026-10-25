@@ -1,14 +1,17 @@
 import { defineRule } from "@oxlint/plugins";
 
 import type { ESTree } from "@oxlint/plugins";
-import { matcherChain, memberName } from "../shared.ts";
+import { matcherChain } from "../shared.ts";
 
 const equalityMatchers = new Set([
   "toBe",
   "toEqual",
   "toStrictEqual",
   "to.equal",
+  "to.eq",
+  "eql",
   "to.eql",
+  "to.deep.eq",
   "to.deep.equal",
   "to.be.equal",
 ]);
@@ -17,8 +20,7 @@ const constantName = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/u;
 function isConstant(node: ESTree.Argument | undefined): boolean {
   if (node?.type === "Identifier") return constantName.test(node.name);
   if (node?.type !== "MemberExpression") return false;
-  const name = memberName(node);
-  return (name !== null && constantName.test(name)) || isConstant(node.object);
+  return isConstant(node.object);
 }
 
 function isLiteralValue(node: ESTree.Node): boolean {

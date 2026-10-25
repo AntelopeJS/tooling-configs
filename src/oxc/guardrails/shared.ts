@@ -9,7 +9,7 @@ export const TEST_FILE_GLOBS = [
   "**/__tests__/**",
 ];
 
-/** Assertion entry points recognized by both expect-expect and the function-only rule. */
+/** Assertion entry points recognized by the assertion and function-only rules. */
 export const ASSERTION_FUNCTION_NAMES = [
   "expect",
   "assert",
@@ -56,11 +56,47 @@ export function matcherChain(node: ESTree.CallExpression) {
   return { expect: current, matcher: chain.join(".") };
 }
 
-/** Uses the same wildcard assertion names accepted by jest/expect-expect. */
-export function isAssertionName(name: string): boolean {
+function isAssertionName(name: string): boolean {
   return ASSERTION_FUNCTION_NAMES.some((pattern) =>
     pattern.endsWith("*")
       ? name.startsWith(pattern.slice(0, -1))
       : name === pattern,
   );
+}
+
+/** Assertion syntax shared by both test-quality rules, including fluent assertion libraries. */
+export function isAssertion(
+  node: ESTree.CallExpression | ESTree.MemberExpression,
+): boolean {
+  if (node.type === "MemberExpression") return memberName(node) === "should";
+  const name = callName(node.callee);
+  return (
+    (name !== null &&
+      (isAssertionName(name) ||
+        name.startsWith("sinon.assert.") ||
+        name === "should")) ||
+    (node.callee.type === "MemberExpression" &&
+      memberName(node.callee) === "expect")
+  );
+}
+
+/** Executable inline callbacks for it/test, excluding skipped and todo registrations. */
+export function testCallback(node: ESTree.CallExpression) {
+  const name = callName(node.callee);
+  if (
+    name === null ||
+    !/^(?:it|test)(?:\.(?:only|concurrent|serial|fails|skip|todo))*$/u.test(
+      name,
+    ) ||
+    /\.(?:skip|todo)(?:\.|$)/u.test(name)
+  )
+    return undefined;
+  for (const argument of node.arguments) {
+    if (
+      argument.type === "ArrowFunctionExpression" ||
+      argument.type === "FunctionExpression"
+    )
+      return argument;
+  }
+  return undefined;
 }

@@ -1,10 +1,11 @@
 import { defineConfig } from "oxlint";
 
-import { MEASURE_ENV, readCeilings } from "../guardrails/ceilings.ts";
 import {
-  ASSERTION_FUNCTION_NAMES,
-  TEST_FILE_GLOBS,
-} from "./guardrails/shared.ts";
+  findGitRoot,
+  MEASURE_ENV,
+  readCeilings,
+} from "../guardrails/ceilings.ts";
+import { TEST_FILE_GLOBS } from "./guardrails/shared.ts";
 import { AGENT_IGNORE_PATTERNS, IGNORE_PATTERNS } from "./shared.ts";
 
 export {
@@ -143,12 +144,7 @@ export const FRAMEWORK_SPECIFIC_JEST_RULES = {
   "jest/valid-expect-in-promise": "off",
 } as const;
 
-/**
- * Source registration and published registration share the same test overrides.
- * Oxlint 1.81 only runs built-in Jest rules for .test/.spec files, __tests__ paths,
- * or Vitest/@jest/globals imports. Mocha globals under test/ or tests/ still need
- * a .test/.spec filename; a config override cannot force framework detection.
- */
+/** Source and published registration share test overrides without Jest framework detection. */
 export function guardrailsRules() {
   return defineConfig({
     plugins: ["jest"],
@@ -164,10 +160,7 @@ export function guardrailsRules() {
           "antelopejs/no-fs-read-in-tests": "error",
           "antelopejs/no-constant-value-assertion": "error",
           "antelopejs/no-typeof-function-only-test": "error",
-          "jest/expect-expect": [
-            "error",
-            { assertFunctionNames: ASSERTION_FUNCTION_NAMES },
-          ],
+          "antelopejs/require-assertion": "error",
         },
       },
       {
@@ -263,7 +256,7 @@ function importSortingPreset() {
 /** Overrides run after rules, including test-specific rules; measurement bypasses all ceilings. */
 function ratchetOverrides() {
   if (process.env[MEASURE_ENV] !== undefined) return [];
-  const ceilings = readCeilings(process.cwd());
+  const ceilings = readCeilings(findGitRoot());
   const rules: Record<string, "off"> = Object.fromEntries(
     Object.keys(ceilings.rules).map((rule) => [rule, "off"]),
   );

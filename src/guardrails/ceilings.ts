@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 /** The per-repository ratchet file, at the repository root. */
 export const CEILINGS_FILE = "guardrails.ratchet.json";
@@ -29,7 +29,18 @@ export interface Ceilings {
   oversizeFiles: Record<string, number>;
 }
 
-export const EMPTY_CEILINGS: Ceilings = { rules: {}, oversizeFiles: {} };
+const EMPTY_CEILINGS: Ceilings = { rules: {}, oversizeFiles: {} };
+
+/** Finds the nearest git directory or worktree marker, falling back to cwd outside git. */
+export function findGitRoot(cwd = process.cwd()): string {
+  let directory = resolve(cwd);
+  while (!existsSync(join(directory, ".git"))) {
+    const parent = dirname(directory);
+    if (parent === directory) return resolve(cwd);
+    directory = parent;
+  }
+  return directory;
+}
 
 /** Reads the ceilings at `root`; a repository without the file has no debt. */
 export function readCeilings(root: string): Ceilings {
@@ -39,7 +50,7 @@ export function readCeilings(root: string): Ceilings {
 }
 
 /** Parses the ceilings file, rejecting anything but non-negative integer counts. */
-export function parseCeilings(text: string, source: string): Ceilings {
+function parseCeilings(text: string, source: string): Ceilings {
   /* SAFETY: JSON text yields plain data; parseCounts checks every field before it is returned. */
   const parsed = JSON.parse(text) as Partial<Ceilings> | null;
   if (parsed === null || Array.isArray(parsed)) {

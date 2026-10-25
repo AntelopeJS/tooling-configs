@@ -41,13 +41,13 @@ export default { extends: [preset] };
     root,
     write,
     remove: () => rmSync(root, { recursive: true, force: true }),
-    run(measure: boolean | string = false) {
+    run(measure: boolean | string = false, directory = root) {
       const env = { ...process.env };
       delete env.ANTELOPEJS_RATCHET_MEASURE;
       if (measure !== false)
         env.ANTELOPEJS_RATCHET_MEASURE = measure === true ? "1" : measure;
       const result = spawnSync(process.execPath, [oxlint, "-f", "json"], {
-        cwd: root,
+        cwd: directory,
         env,
         encoding: "utf8",
       });

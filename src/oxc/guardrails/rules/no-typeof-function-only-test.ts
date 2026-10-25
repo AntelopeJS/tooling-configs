@@ -1,13 +1,16 @@
 import { defineRule } from "@oxlint/plugins";
 
 import type { ESTree } from "@oxlint/plugins";
-import { callName, isAssertionName, matcherChain } from "../shared.ts";
+import {
+  callName,
+  isAssertion,
+  matcherChain,
+  testCallback,
+} from "../shared.ts";
 
 const functionMatchers = new Set(["toBeTypeOf", "to.be.a", "to.be.an"]);
 const typeofMatchers = new Set(["toBe", "to.equal"]);
 const assertTypeofMatchers = new Set(["assert.equal", "assert.strictEqual"]);
-const testName =
-  /^(?:it|test)(?:\.(?:only|skip|concurrent|serial|todo|fails))*$/u;
 
 function isTypeof(node: ESTree.Argument | undefined): boolean {
   return node?.type === "UnaryExpression" && node.operator === "typeof";
@@ -70,38 +73,34 @@ export const noTypeofFunctionOnlyTestRule = defineRule({
   },
   createOnce(context) {
     const frames: TestFrame[] = [];
+    function recordAssertion(
+      node: ESTree.CallExpression | ESTree.MemberExpression,
+    ) {
+      const frame = frames.at(-1);
+      if (
+        frame === undefined ||
+        node.start < frame.callback.start ||
+        node.end > frame.callback.end ||
+        !isAssertion(node)
+      )
+        return;
+      frame.assertions.push(
+        node.type === "CallExpression" && isFunctionCheck(node),
+      );
+    }
     return {
       before() {
         frames.length = 0;
       },
       CallExpression(node) {
-        const name = callName(node.callee);
-        const callback = node.arguments.find(
-          (argument) =>
-            argument.type === "ArrowFunctionExpression" ||
-            argument.type === "FunctionExpression",
-        );
-        if (
-          name !== null &&
-          testName.test(name) &&
-          callback !== undefined &&
-          (callback.type === "ArrowFunctionExpression" ||
-            callback.type === "FunctionExpression")
-        ) {
+        const callback = testCallback(node);
+        if (callback !== undefined) {
           frames.push({ node, callback, assertions: [] });
-          return;
+        } else {
+          recordAssertion(node);
         }
-        const frame = frames.at(-1);
-        if (
-          frame === undefined ||
-          node.start < frame.callback.start ||
-          node.end > frame.callback.end ||
-          name === null ||
-          !isAssertionName(name)
-        )
-          return;
-        frame.assertions.push(isFunctionCheck(node));
       },
+      MemberExpression: recordAssertion,
       "CallExpression:exit"(node) {
         const frame = frames.at(-1);
         if (frame?.node !== node) return;

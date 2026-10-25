@@ -1,11 +1,29 @@
 import { defineRule } from "@oxlint/plugins";
 
-const allowedCommentPatterns = [
-  /^(?:oxlint|eslint)-(?:disable|enable)(?:\b|[-\s])/u,
-  /^@ts-expect-error(?:\s*:\s*|\s+)(?!:)\S/u,
-  /^SAFETY:/u,
+import type { Comment } from "@oxlint/plugins";
+
+const allowedCommentForms = [
+  { type: "Shebang", pattern: /^/u },
+  { type: "Block", pattern: /^[*!]/u },
+  { type: "Line", pattern: /^\/\s*<reference\s[^>]*\/\s*>\s*$/u },
+  { type: null, pattern: /^(?:oxlint|eslint)-enable(?:\s|$)/u },
+  {
+    type: null,
+    pattern: /^(?:oxlint|eslint)-disable(?:-line|-next-line)?\s+(?!-)[\w@/]/u,
+  },
+  { type: null, pattern: /^@ts-expect-error(?:\s*:\s*|\s+)(?!:)\S/u },
+  { type: null, pattern: /^SAFETY:/u, safety: true },
+  { type: null, pattern: /^(?:#|@)__PURE__\s*$/u },
+  { type: null, pattern: /^@vite-ignore\b/u },
+  {
+    type: null,
+    pattern:
+      /^webpack(?:ChunkName|Prefetch|Preload|Mode|Ignore|Exports|Include|Exclude)\s*:/u,
+  },
+  { type: null, pattern: /^(?:prettier|oxfmt)-ignore\s*$/u },
 ];
-const referenceDirective = /^\/\s*<reference\s[^>]*\/\s*>\s*$/u;
+const disableDirective =
+  /^(?:oxlint|eslint)-disable(?:-line|-next-line)?(?:\s|$)/u;
 
 /** Ordinary comments must become executable constraints or documentation on a public item. */
 export const noCommentsRule = defineRule({
@@ -18,27 +36,40 @@ export const noCommentsRule = defineRule({
     messages: {
       comment:
         "Comments rot. Encode this constraint in a type, a lint rule, or a test, or write TSDoc (`/** */`) on the public item it documents.",
+      unnamedDisable:
+        "Name the rule(s) to disable and give a reason, for example: oxlint-disable-next-line no-debugger -- debugging this operation.",
     },
   },
   createOnce(context) {
     return {
       Program() {
+        let safetyLine: Comment | undefined;
         for (const comment of context.sourceCode.getAllComments()) {
-          if (comment.type === "Shebang") continue;
-          if (comment.type === "Block" && comment.value.startsWith("*"))
-            continue;
-          if (
+          const text = comment.value.trim();
+          const form = allowedCommentForms.find(
+            ({ type, pattern }) =>
+              (type === null || type === comment.type) && pattern.test(text),
+          );
+          const continuesSafety =
             comment.type === "Line" &&
-            referenceDirective.test(comment.value.trim())
-          )
+            safetyLine !== undefined &&
+            comment.loc.start.line === safetyLine.loc.end.line + 1 &&
+            /^\s*$/u.test(
+              context.sourceCode.text.slice(safetyLine.end, comment.start),
+            );
+          safetyLine =
+            comment.type === "Line" &&
+            (continuesSafety || (form !== undefined && "safety" in form))
+              ? comment
+              : undefined;
+          const unnamedDisable =
+            disableDirective.test(text) && form === undefined;
+          if (!unnamedDisable && (form !== undefined || continuesSafety))
             continue;
-          if (
-            allowedCommentPatterns.some((pattern) =>
-              pattern.test(comment.value.trim()),
-            )
-          )
-            continue;
-          context.report({ loc: comment.loc, messageId: "comment" });
+          context.report({
+            loc: comment.loc,
+            messageId: unnamedDisable ? "unnamedDisable" : "comment",
+          });
         }
       },
     };
