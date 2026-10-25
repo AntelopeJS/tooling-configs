@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.1
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.0...v0.2.1)
+
+### 🩹 Fixes
+
+- **guardrails:** Exclude assets and fixtures under dot directories from the size guard ([#17](https://github.com/AntelopeJS/tooling-configs/pull/17))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.2.0
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.0.9...v0.2.0)
