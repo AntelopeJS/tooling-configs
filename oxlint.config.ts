@@ -4,14 +4,19 @@ import {
   ANTELOPE_IGNORE_PATTERNS,
   antelopePreset,
   antiSlopRules,
+  guardrailsRules,
 } from "./src/oxc/lint.ts";
 
+/** Resolve plugins from source so a fresh checkout can lint before building. */
 export default defineConfig({
-  // The plugin is registered from source, not through this package's own
-  // exports: resolving those would mean building before every lint, which
-  // breaks a fresh clone, `pnpm release`, and CI alike.
-  extends: [antelopePreset({ antiSlop: false, typeAware: false })],
+  extends: [
+    guardrailsRules(),
+    antelopePreset({ antiSlop: false, guardrails: false, typeAware: false }),
+  ],
   ignorePatterns: [...ANTELOPE_IGNORE_PATTERNS, "src/oxc/anti-slop/**"],
-  jsPlugins: [{ name: "anti-slop", specifier: "./src/oxc/anti-slop/index.ts" }],
-  rules: antiSlopRules("warn"),
+  jsPlugins: [
+    { name: "anti-slop", specifier: "./src/oxc/anti-slop/index.ts" },
+    { name: "antelopejs", specifier: "./src/oxc/guardrails/index.ts" },
+  ],
+  rules: antiSlopRules(),
 });

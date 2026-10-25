@@ -31,15 +31,15 @@ export interface AntelopeKnipOptions {
  * The front end is absent too: {@link DEFAULT_PROJECT} only reaches `src/`, so
  * `frontend-vue/` is outside the analysis unless a repository opts it in
  * through Knip's `workspaces`, which an ignore here would then override.
+ *
+ * - `src/interfaces/**`: the public API, imported through the package's `exports` subpaths.
+ * - `src/test/**`: the test tree run by `ajs module test`, which Knip has no plugin for.
+ *   The whole directory, because the runner loads the harness and its fixtures; no test imports them.
+ * - `antelope.test.ts`: the `ajs module test` harness manifest, when a module keeps one at its root.
  */
 const DEFAULT_ENTRY = [
-  // Public API: consumers import these through the package's `exports` subpaths.
   "src/interfaces/**/*.ts",
-  // The test tree, run by `ajs module test`, which Knip has no plugin for. The
-  // whole directory rather than `*.test.ts`: the harness and its fixtures are
-  // loaded by the runner, not imported by a test.
   "src/test/**",
-  // The `ajs module test` harness manifest, when a module keeps one at its root.
   "antelope.test.ts",
   "scripts/**/*.{ts,mjs}",
 ];

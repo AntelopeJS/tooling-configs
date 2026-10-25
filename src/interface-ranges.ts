@@ -15,11 +15,10 @@
 
 const INTERFACE_PACKAGE_PREFIX = "@antelopejs/interface-";
 
-// A module's own interface linked from the workspace is the copy it builds
-// against, not a release it resolves.
+/** A module's own interface linked from the workspace is the copy it builds against, not a release it resolves. */
 const LOCAL_SPEC_PREFIXES = ["workspace:", "file:", "link:"];
 
-// The fields `@antelopejs/core` checks at startup.
+/** The fields `@antelopejs/core` checks at startup. */
 const CHECKED_FIELDS = ["dependencies", "optionalDependencies"] as const;
 
 const BOUNDED_RANGE = /^>=(\d+)\.(\d+)\.(\d+) <(\d+)\.(\d+)\.(\d+)$/;
@@ -83,6 +82,7 @@ function compareVersions(a: Version, b: Version): number {
   return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 }
 
+/** A range is accepted when it is bounded for its role and admits the interface this package builds against. */
 function isAcceptedRange(
   spec: string,
   role: RangeRole,
@@ -93,7 +93,6 @@ function isAcceptedRange(
   const floor = toVersion(bounded, 1);
   const ceiling = toVersion(bounded, 4);
   if (!sameVersion(ceiling, rangeCeiling(floor, role))) return false;
-  // The interface this package builds against must be one it accepts.
   return (
     local === undefined ||
     (compareVersions(local, floor) >= 0 && compareVersions(local, ceiling) < 0)

@@ -6,23 +6,30 @@
 <a href="https://discord.gg/sjK28QHrA7"><img src="https://img.shields.io/badge/Discord-18181B?logo=discord&style=for-the-badge&color=000000" alt="Discord"></a>
 </div>
 
-Shared lint, format and dead-code presets for AntelopeJS repositories, plus a check for the version ranges of interface dependencies.
+The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the commands that install and enforce them in a repository, and a check for the version ranges of interface dependencies.
 
 - [oxlint](https://oxc.rs) and [oxfmt](https://oxc.rs) replace Biome: lint, format and Tailwind class sorting, `.vue` included.
 - ESLint stays for the Nuxt front ends, from a shared config, until oxlint lints `.vue` files.
 - [Knip](https://knip.dev) learns the entry points of an AntelopeJS module.
 - Every preset is a function: options adjust it without copying it.
+- `antelopejs-sync` writes the configs, hooks, scripts and agent instructions into a repository, and `antelopejs-sync --check` fails CI when they drift.
+- Every lint rule is an error or off. Existing debt is recorded per repository and may only shrink.
 
 ## What's in the box
 
-| Export            | Import                                                                    | What it gives                                                         |
-| ----------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `./oxc/lint`      | `import { antelopePreset } from "@antelopejs/tooling-configs/oxc/lint"`   | The oxlint preset                                                     |
-| `./oxc/fmt`       | `import { antelopeFmtPreset } from "@antelopejs/tooling-configs/oxc/fmt"` | The oxfmt preset (house style)                                        |
-| `./eslint`        | `import { antelopeNuxtConfig } from "@antelopejs/tooling-configs/eslint"` | ESLint for Nuxt layers                                                |
-| `./knip`          | `import { antelopeKnipConfig } from "@antelopejs/tooling-configs/knip"`   | Knip for AntelopeJS modules                                           |
-| `./oxc/anti-slop` | Loaded by the oxlint preset as a JS plugin                                | The vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules |
-| bin               | `antelopejs-check-interface-ranges`                                       | Fails on interface ranges that break module startup                   |
+| Export             | Import                                                                    | What it gives                                                         |
+| ------------------ | ------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `./oxc/lint`       | `import { antelopePreset } from "@antelopejs/tooling-configs/oxc/lint"`   | The oxlint preset                                                     |
+| `./oxc/fmt`        | `import { antelopeFmtPreset } from "@antelopejs/tooling-configs/oxc/fmt"` | The oxfmt preset (house style)                                        |
+| `./eslint`         | `import { antelopeNuxtConfig } from "@antelopejs/tooling-configs/eslint"` | ESLint for Nuxt layers                                                |
+| `./knip`           | `import { antelopeKnipConfig } from "@antelopejs/tooling-configs/knip"`   | Knip for AntelopeJS modules                                           |
+| `./oxc/anti-slop`  | Loaded by the oxlint preset as a JS plugin                                | The vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules |
+| `./oxc/guardrails` | Loaded by the oxlint preset as a JS plugin                                | The `antelopejs` comment and test-quality rules                       |
+| bin                | `antelopejs-sync`                                                         | Writes the guardrail pack into a repository; `--check` reports drift  |
+| bin                | `antelopejs-checks`                                                       | Runs every check and prints only the failures                         |
+| bin                | `antelopejs-ratchet`                                                      | Fails when recorded debt grows; `--update` lowers the record          |
+| bin                | `antelopejs-check-size`                                                   | Fails on authored files over 20,000 bytes                             |
+| bin                | `antelopejs-check-interface-ranges`                                       | Fails on interface ranges that break module startup                   |
 
 ## Install
 
@@ -74,12 +81,25 @@ export default defineConfig({
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | oxc            | the `correctness` category, with the `eslint`, `typescript`, `node`, `oxc`, `import` and `promise` plugins; `no-unused-vars` (`_` prefix allowed), `eqeqeq` (`== null` allowed), `radix`, `prefer-regex-literals` | error   |
 | Imports        | `import/no-cycle`, `import/no-self-import`, `import/no-duplicates`                                                                                                                                                | error   |
-| Type-aware     | `typescript/no-floating-promises` as an error, eight more type-aware rules as warnings                                                                                                                            | on      |
-| Complexity     | `max-params` 5, `max-lines-per-function` 120, `max-lines` 500, `max-depth` 4, `complexity` 20                                                                                                                     | warn    |
-| Anti-slop      | 7 of the 15 vendored rules; the 8 others are listed in `ANTI_SLOP_RULES_OFF_BY_DEFAULT`                                                                                                                           | warn    |
+| Type-aware     | `typescript/no-floating-promises` and eight more type-aware rules                                                                                                                                                 | error   |
+| Complexity     | `max-params` 5, `max-lines-per-function` 120, `max-lines` 500, `max-depth` 4, `complexity` 20                                                                                                                     | error   |
+| Anti-slop      | all 15 vendored rules                                                                                                                                                                                             | error   |
+| Guardrails     | `antelopejs/no-comments`; in test files `antelopejs/no-fs-read-in-tests`, `antelopejs/no-constant-value-assertion`, `antelopejs/no-typeof-function-only-test` and `jest/expect-expect`                            | error   |
 | Import sorting | `perfectionist/sort-imports`, autofixed by `oxlint --fix`                                                                                                                                                         | off     |
 
-`correctness` is raised to error on purpose: oxlint reports it as warnings, and warnings never fail the command. Complexity and anti-slop start as warnings so a repository can work through its backlog before raising them to `"error"`.
+No rule warns. oxlint reports `correctness` as warnings by default, and warnings never fail the command, so the preset raises it to error. A repository with existing findings records them in `guardrails.ratchet.json` instead of lowering a severity (see [Guardrail pack](#guardrail-pack)).
+
+The guardrail rules:
+
+| Rule                                      | Fails on                                                                                                                                           |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `antelopejs/no-comments`                  | `//` and `/* */` comments. Allowed: TSDoc `/** */`, oxlint/eslint directives, `@ts-expect-error <reason>`, `SAFETY: <reason>`, `/// <reference />` |
+| `antelopejs/no-fs-read-in-tests`          | `readFileSync` or `readdirSync` from `fs` in a test file. Files under `fixtures/`, `helpers/` and `locales/` may read                              |
+| `jest/expect-expect`                      | a test with no assertion. A call named `expect*` or `assert*` counts                                                                               |
+| `antelopejs/no-constant-value-assertion`  | `expect(UPPER_SNAKE).toBe(literal)`, `.toEqual`, `.to.equal` and their synonyms                                                                    |
+| `antelopejs/no-typeof-function-only-test` | a test whose only assertions are `toBeTypeOf("function")`, `to.be.a("function")` or equivalents                                                    |
+
+Test files are `*.test.*`, `*.spec.*`, and files under `test/`, `tests/` and `__tests__/`. oxlint 1.81 runs `jest/expect-expect` only on `.test`/`.spec` files, `__tests__/` paths, or files that import Vitest; name Mocha tests `*.test.ts` so it reaches them.
 
 Import sorting is off because it moves value imports across side-effect imports, and in an AntelopeJS module `import "./components"` is what registers the decorated classes. Turn it on only where import order does not matter.
 
@@ -87,9 +107,10 @@ Import sorting is off because it moves value imports across side-effect imports,
 
 ```ts
 antelopePreset({
-  antiSlop: "error", // "warn" (default) | "error" | false
-  importCycles: "warn", // "error" (default) | "warn" | false
-  complexity: { maxParams: 8 }, // override thresholds or severity, or false
+  antiSlop: false, // true (default)
+  guardrails: false, // true (default)
+  importCycles: false, // true (default)
+  complexity: { maxParams: 8 }, // override thresholds, or false
   importSorting: true, // false (default); needs eslint-plugin-perfectionist
   typeAware: false, // true (default); false when the repository has no oxlint-tsgolint
 });
@@ -112,6 +133,50 @@ export default defineConfig({
   ignorePatterns: [...ANTELOPE_IGNORE_PATTERNS, "playground/**"],
 });
 ```
+
+## Guardrail pack
+
+Run `antelopejs-sync` at the repository root, then install dependencies. It is idempotent: a second run changes nothing.
+
+```bash
+pnpm add -D @antelopejs/tooling-configs oxlint@1.81.0 oxlint-tsgolint oxfmt
+pnpm exec antelopejs-sync
+pnpm install
+```
+
+| File                                                    | What `sync` does                                                                                                                                                                                      |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `oxlint.config.ts`, `oxfmt.config.ts`, `knip.config.ts` | Writes a config that extends the preset, unless the file already imports it                                                                                                                           |
+| `lefthook.yml`                                          | Pre-commit on staged files: oxfmt, oxlint, size. Pre-push: typecheck                                                                                                                                  |
+| `package.json`                                          | `prepare` installs lefthook. Sets `checks`, `size`, `ratchet`, `ratchet:update`, `sync`, `sync:check`; adds missing `typecheck`, `lint`, `format`, `format:check`, `knip`; adds `lefthook` and `knip` |
+| `.nvmrc`                                                | `24`                                                                                                                                                                                                  |
+| `.agents/setup`                                         | Orb setup: switches to the `.nvmrc` Node, activates `packageManager` through corepack, installs with the frozen lockfile                                                                              |
+| `AGENTS.md`                                             | Writes the managed block between `<!-- antelopejs-guardrails:start -->` and `:end -->`; text outside the markers stays                                                                                |
+| `CLAUDE.md`                                             | `@AGENTS.md`                                                                                                                                                                                          |
+| `guardrails.ratchet.json`                               | Records the current findings, once, when the file is missing                                                                                                                                          |
+
+`--profile template` writes only the three preset configs and a user-facing `AGENTS.md` block, for template repositories. `antelopejs-sync --check` writes nothing and exits 1 on any drift; `pnpm run checks` runs it.
+
+`pnpm run checks` runs `typecheck`, `lint`, `format:check`, `knip`, `test`, `size`, `ratchet` and `sync:check`, and prints only the output of the steps that failed.
+
+### Ratchet
+
+`guardrails.ratchet.json` holds the debt a repository had when it adopted the pack:
+
+```json
+{
+  "rules": { "antelopejs/no-comments": 22, "eslint/max-depth": 1 },
+  "oversizeFiles": { "src/legacy.ts": 31250 }
+}
+```
+
+- A rule listed under `rules` is off for `oxlint`, so editors, hooks and `lint` stay green. `antelopejs-ratchet` counts it with every rule on, and fails when a count rises. It prints the findings in the files the change touched.
+- A file listed under `oversizeFiles` may exceed 20,000 bytes and `max-lines`, up to its recorded size. Any other file over either limit fails.
+- `antelopejs-ratchet --update` lowers each number to the current count and removes what reached zero. It never raises a number or adds an entry. Commit the lowered file.
+
+### Size
+
+`antelopejs-check-size` fails on an authored file over 20,000 bytes, tests included. Generated code, fixtures, lockfiles, `CHANGELOG.md`, Markdown and binary assets are excluded. Pass paths to check only those files, as the pre-commit hook does.
 
 ## oxfmt
 
@@ -159,7 +224,7 @@ import { antelopeNuxtConfig } from "@antelopejs/tooling-configs/eslint";
 export default antelopeNuxtConfig({ dirs: ["./playground"] });
 ```
 
-`@nuxt/eslint-config` supplies the Vue and TypeScript rules. The preset only records where AntelopeJS layers differ: single-word page components, `any` and `{}` allowed, `_`-prefixed unused bindings, and import order left alone. It sets no formatting rule, since oxfmt formats `.vue`. Pass `rules` to layer your own on top, and declare `@nuxt/eslint-config` in the front end's `package.json`.
+`@nuxt/eslint-config` supplies the Vue and TypeScript rules. The preset only records where AntelopeJS layers differ: single-word page components, `any` and `{}` allowed, `_`-prefixed unused bindings, and import order left alone. It sets no formatting rule, since oxfmt formats `.vue`. Every rule the resolved config sets to warn becomes an error, so no rule warns there either. Pass `rules` to layer your own on top, and declare `@nuxt/eslint-config` in the front end's `package.json`.
 
 ## Knip
 
@@ -214,7 +279,7 @@ checks that remain the author's responsibility.
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md). `pnpm install`, then `pnpm checks` runs the typecheck, lint, format check and tests.
+See [CONTRIBUTING.md](./CONTRIBUTING.md). `pnpm install`, then `pnpm checks` runs the typecheck, lint, format check, tests, size check and ratchet.
 
 ## License
 

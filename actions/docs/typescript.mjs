@@ -1,8 +1,16 @@
 import { createRequire } from "node:module";
 import { dirname, relative, resolve } from "node:path";
 
-// Resolve the consumer's compiler, types, and imports. No examples are executed,
-// no output is emitted, and no temporary source files are written into its tree.
+/** Each complete example is an isolated module, even without imports. */
+const MODULE_SUFFIX = "\nexport {};\n";
+
+/** TS18003 (no inputs found) is expected when only virtual examples and API entries are roots. */
+const NO_INPUTS_FOUND = 18003;
+
+/**
+ * Resolves the consumer's compiler, types, and imports. No examples are executed,
+ * no output is emitted, and no temporary source files are written into its tree.
+ */
 export function checkTypescript(project, documents, fail) {
   const ts = createRequire(project)("typescript");
   const config = ts.readConfigFile(project, ts.sys.readFile);
@@ -20,8 +28,7 @@ export function checkTypescript(project, documents, fail) {
     let index = 0;
     for (const example of doc.examples) {
       const name = `${doc.path}.docs-check-${++index}.${example.extension}`;
-      // Each complete example is an isolated module, even without imports.
-      virtual.set(name, `${example.text}\nexport {};\n`);
+      virtual.set(name, `${example.text}${MODULE_SUFFIX}`);
       sources.add(name);
     }
     for (const entry of doc.api) {
@@ -48,9 +55,8 @@ export function checkTypescript(project, documents, fail) {
   });
   for (const diagnostic of [
     ...(config.error ? [config.error] : []),
-    // Virtual examples/API entries are roots even if include finds no .ts files.
     ...parsed.errors.filter(
-      (error) => error.code !== 18003 || sources.size === 0,
+      (error) => error.code !== NO_INPUTS_FOUND || sources.size === 0,
     ),
     ...ts.getPreEmitDiagnostics(program),
   ]) {
