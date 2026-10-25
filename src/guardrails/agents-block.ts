@@ -23,6 +23,10 @@ Hold every test you write or keep to this checklist:
 - No test reads the file it tests. Drive the behaviour through the public interface.
 - An invariant over many files is a lint rule, not a test.`;
 
+const CLEANUP_PROOF = `### Cleanup proof
+
+A behaviour-preserving cleanup PR shows \`antelopejs-api-diff <base-ref>\` passing. Published declarations stay unchanged. A comment-only PR shows \`antelopejs-comment-proof <base-ref>\` passing instead of a verifier. Both compare committed HEAD.`;
+
 const SHARED_RULES = [
   ["Formatting", "oxfmt"],
   ["Lint findings are errors; no rule warns", "oxlint preset"],
@@ -46,6 +50,14 @@ const SHARED_RULES = [
   [
     "Params ≤ 5, function ≤ 120 lines, file ≤ 500 lines, depth ≤ 4, complexity ≤ 20",
     "`eslint/max-*`, `eslint/complexity`",
+  ],
+  [
+    "Cleanup preserves published declarations",
+    "`antelopejs-api-diff <base-ref>`",
+  ],
+  [
+    "Comment-only changes preserve JavaScript emit",
+    "`antelopejs-comment-proof <base-ref>`",
   ],
 ] as const;
 
@@ -101,6 +113,8 @@ function fullBody(context: AgentsBlockContext): string[] {
     "",
     TESTS,
     "",
+    CLEANUP_PROOF,
+    "",
     ...(context.ratchet
       ? [
           "### Debt",
@@ -132,6 +146,8 @@ function templateBody(context: AgentsBlockContext): string[] {
     COMMENTS,
     "",
     TESTS,
+    "",
+    CLEANUP_PROOF,
     "",
     ruleTable(SHARED_RULES),
   ];

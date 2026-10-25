@@ -14,6 +14,8 @@ export default defineConfig({
     "./src/bin/check-size.ts",
     "./src/bin/ratchet.ts",
     "./src/bin/checks.ts",
+    "./src/bin/api-diff.ts",
+    "./src/bin/comment-proof.ts",
   ],
   outDir: "dist",
   format: ["esm"],

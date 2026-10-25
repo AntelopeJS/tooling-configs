@@ -21,9 +21,11 @@
     "url": "git+https://github.com/AntelopeJS/tooling-configs.git"
   },
   "bin": {
+    "antelopejs-api-diff": "./dist/bin/api-diff.mjs",
     "antelopejs-check-interface-ranges": "./dist/bin/check-interface-ranges.mjs",
     "antelopejs-check-size": "./dist/bin/check-size.mjs",
     "antelopejs-checks": "./dist/bin/checks.mjs",
+    "antelopejs-comment-proof": "./dist/bin/comment-proof.mjs",
     "antelopejs-ratchet": "./dist/bin/ratchet.mjs",
     "antelopejs-sync": "./dist/bin/sync.mjs"
   },
@@ -62,6 +64,7 @@
   },
   "dependencies": {
     "@oxlint/plugins": "1.81.0",
+    "dts-bundle-generator": "^9.5.1",
     "yaml": "^2.9.1"
   },
   "devDependencies": {

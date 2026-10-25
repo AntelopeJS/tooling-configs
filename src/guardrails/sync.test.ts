@@ -174,6 +174,8 @@ test("template profile manages only presets and AGENTS, and appends without repl
     read(root, "AGENTS.md"),
     /^Handwritten without a final newline\.\n\n/,
   );
+  assert.match(read(root, "AGENTS.md"), /antelopejs-api-diff <base-ref>/);
+  assert.match(read(root, "AGENTS.md"), /antelopejs-comment-proof <base-ref>/);
   assert.match(
     read(root, "oxlint.config.ts"),
     /options: \{ typeAware: true \}/,
