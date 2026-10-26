@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 
 import { readCeilings } from "./ceilings.ts";
 import { lintDiagnostics } from "./oxlint.ts";
+import { renamedPaths } from "./renames.ts";
 
 export function stagedRatchet(root: string, files?: string[]): string[] {
   const targets =
@@ -14,6 +15,7 @@ export function stagedRatchet(root: string, files?: string[]): string[] {
       .split("\0")
       .filter(Boolean);
   if (!targets.length) return [];
+  const renames = renamedPaths(root, true);
   const additions = new Map<string, { start: number; end: number }[]>();
   for (const file of targets) {
     const diff = execFileSync(
@@ -24,8 +26,9 @@ export function stagedRatchet(root: string, files?: string[]): string[] {
         "--no-ext-diff",
         "--no-color",
         "--unified=0",
+        "--find-renames",
         "--",
-        file,
+        ...[renames.get(file), file].filter((path) => path !== undefined),
       ],
       { cwd: root, encoding: "utf8" },
     );

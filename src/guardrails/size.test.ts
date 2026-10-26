@@ -149,3 +149,45 @@ test("size rejects disable directives without a rule list, in line and block for
   put(root, "block.ts", "export const clean = true;\n");
   assert.equal(bin(root, "check-size", ["--staged", "block.ts"]).status, 1);
 });
+
+test("size measures authored build and output directories below the root and excludes only generated roots", (t) => {
+  const root = testRepo(t);
+  const big = "x".repeat(MAX_FILE_BYTES + 1);
+  for (const path of [
+    "dist/x.js",
+    "build/x.js",
+    "output/x.js",
+    "packages/lib/build/x.js",
+    "packages/lib/output/x.js",
+    "packages/lib/dist/x.js",
+    ".output/x.js",
+    ".nuxt/x.js",
+    "coverage/x.js",
+  ])
+    put(root, path, big);
+  put(root, "packages/lib/package.json", "{}\n");
+  commit(root);
+  assert.equal(bin(root, "check-size").status, 0);
+  for (const path of [
+    "src/core/output/x.ts",
+    "src/core/build/x.ts",
+    "test/core/cli/output/x.test.ts",
+    "src/build/x.ts",
+    "packages/lib/src/output/x.ts",
+    "tools/build/x.ts",
+  ])
+    put(root, path, big);
+  const result = bin(root, "check-size");
+  assert.equal(result.status, 1);
+  const flagged = [...result.stderr.matchAll(/^(\S+): \d+ bytes/gmu)]
+    .map(([, file]) => file)
+    .sort();
+  assert.deepEqual(flagged, [
+    "packages/lib/src/output/x.ts",
+    "src/build/x.ts",
+    "src/core/build/x.ts",
+    "src/core/output/x.ts",
+    "test/core/cli/output/x.test.ts",
+    "tools/build/x.ts",
+  ]);
+});

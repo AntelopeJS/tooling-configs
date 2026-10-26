@@ -1,9 +1,10 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { closeSync, existsSync, lstatSync, openSync, readSync } from "node:fs";
-import { join, matchesGlob, relative, resolve } from "node:path";
+import { dirname, join, matchesGlob, relative, resolve } from "node:path";
 
 import { AGENT_IGNORE_PATTERNS, IGNORE_PATTERNS } from "../oxc/shared.ts";
 import { MAX_FILE_BYTES } from "./ceilings.ts";
+import { trackedManifests } from "./revisions.ts";
 
 const SIZE_EXCLUSIONS = [
   {
@@ -68,6 +69,15 @@ export function repositoryRoot(cwd = process.cwd()): string {
   }).trim();
 }
 
+/** Resolves a user-supplied revision to a commit id, so it can never read as an option. */
+export function resolveRevision(root: string, revision: string): string {
+  return execFileSync(
+    "git",
+    ["rev-parse", "--verify", "--end-of-options", `${revision}^{commit}`],
+    { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+  ).trim();
+}
+
 export function repositoryPath(root: string, file: string): string {
   return relative(root, resolve(root, file)).split("\\").join("/");
 }
@@ -91,13 +101,23 @@ function fileBytes(
   return stat.isFile() ? stat.size : undefined;
 }
 
+/** A package root is the directory of a tracked manifest outside every `src` directory; its top-level `build` and `output` are generated output. */
+function packageOutputPatterns(root: string): string[] {
+  return trackedManifests(root).flatMap((manifest) => {
+    const directory = dirname(manifest);
+    if (directory === "." || directory.split("/").includes("src")) return [];
+    return [`${directory}/build/**`, `${directory}/output/**`];
+  });
+}
+
 /** `path.matchesGlob` never lets `*` or `**` cross a segment starting with a dot, so each path is also tried with those dots removed. */
-function isExcluded(file: string): boolean {
+function isExcluded(file: string, packageOutputs: string[]): boolean {
   const undotted = file.replace(/(^|\/)\./gu, "$1");
-  return SIZE_EXCLUSIONS.some(({ patterns }) =>
-    patterns.some(
-      (pattern) => matchesGlob(file, pattern) || matchesGlob(undotted, pattern),
-    ),
+  const matches = (pattern: string) =>
+    matchesGlob(file, pattern) || matchesGlob(undotted, pattern);
+  return (
+    SIZE_EXCLUSIONS.some(({ patterns }) => patterns.some(matches)) ||
+    packageOutputs.some(matches)
   );
 }
 
@@ -125,9 +145,10 @@ export function authoredSizes(
   staged = false,
 ): Map<string, number> {
   const sizes = new Map<string, number>();
+  const packageOutputs = packageOutputPatterns(root);
   for (const input of files) {
     const file = repositoryPath(root, input);
-    if (isExcluded(file)) continue;
+    if (isExcluded(file, packageOutputs)) continue;
     const size = fileBytes(root, file, staged);
     if (
       size !== undefined &&

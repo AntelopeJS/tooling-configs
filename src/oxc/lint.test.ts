@@ -91,6 +91,43 @@ test("an oversize exemption turns off max-lines only for its recorded path", () 
   }
 });
 
+test("generated roots are ignored but authored build and output directories are linted", () => {
+  const project = lintProject();
+  try {
+    project.write(
+      "oxlint.config.ts",
+      `
+import { ANTELOPE_IGNORE_PATTERNS } from ${JSON.stringify(new URL("./lint.ts", import.meta.url).href)};
+export default {
+  ignorePatterns: ANTELOPE_IGNORE_PATTERNS,
+  rules: { "eslint/max-params": ["error", { max: 1 }] },
+};
+`,
+    );
+    const source = "export function many(a, b) { return [a, b]; }\n";
+    for (const path of [
+      "dist/a.ts",
+      "build/a.ts",
+      "output/a.ts",
+      ".output/a.ts",
+      "src/core/build/a.ts",
+      "src/core/output/a.ts",
+      "test/cli/output/a.ts",
+    ])
+      project.write(path, source);
+    const result = project.run();
+    assert.deepEqual(
+      result.diagnostics
+        .map((diagnostic: { filename: string }) => diagnostic.filename)
+        .sort(),
+      ["src/core/build/a.ts", "src/core/output/a.ts", "test/cli/output/a.ts"],
+      JSON.stringify(result),
+    );
+  } finally {
+    project.remove();
+  }
+});
+
 test("test globs require assertions without framework imports or filename suffixes", () => {
   const project = lintProject();
   try {

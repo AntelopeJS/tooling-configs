@@ -4,16 +4,26 @@ import { resolve } from "node:path";
 
 import { runCli } from "../guardrails/cli.ts";
 import { CEILINGS_FILE } from "../guardrails/ceilings.ts";
-import { repositoryPath, repositoryRoot } from "../guardrails/files.ts";
+import {
+  repositoryPath,
+  repositoryRoot,
+  resolveRevision,
+} from "../guardrails/files.ts";
 import { ratchet } from "../guardrails/ratchet.ts";
 import { stagedRatchet } from "../guardrails/staged-ratchet.ts";
 
 runCli(() => {
   const { values, positionals } = parseArgs({
-    options: { update: { type: "boolean" }, staged: { type: "boolean" } },
+    options: {
+      update: { type: "boolean" },
+      staged: { type: "boolean" },
+      base: { type: "string" },
+    },
     allowPositionals: true,
   });
   const root = repositoryRoot();
+  if (values.base !== undefined && values.staged)
+    throw new Error("--base cannot be combined with --staged.");
   if (values.update && values.staged)
     throw new Error("--staged cannot be combined with --update.");
   if (positionals.length && !values.staged)
@@ -29,7 +39,13 @@ runCli(() => {
         lowered: [],
         retired: false,
       }
-    : ratchet(root, values.update);
+    : ratchet(
+        root,
+        values.update,
+        values.base === undefined
+          ? undefined
+          : resolveRevision(root, values.base),
+      );
   if (result.retired)
     process.stdout.write(
       `Deleted ${CEILINGS_FILE}: no debt left. Run antelopejs-sync.\n`,
