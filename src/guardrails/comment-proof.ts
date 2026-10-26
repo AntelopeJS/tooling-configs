@@ -1,12 +1,12 @@
 import { copyFileSync, mkdirSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
-import { compareRevisions } from "./revisions.ts";
+import { compareRevisions, revisionCounts } from "./revisions.ts";
 import { emitPackage, packagesAt } from "./typescript.ts";
 
 /** Proves comment-free JavaScript emit matches, including private packages and excluding tests. */
 export function commentProof(root: string, baseRef: string) {
-  return compareRevisions(
+  const result = compareRevisions(
     root,
     baseRef,
     "Comment proof",
@@ -31,4 +31,5 @@ export function commentProof(root: string, baseRef: string) {
       return { packages: packages.map(({ directory }) => directory), entries };
     },
   );
+  return { ...result, output: result.output + revisionCounts(root, baseRef) };
 }

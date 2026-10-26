@@ -10,7 +10,12 @@ import {
 import { dirname, join, relative, resolve } from "node:path";
 import type ts from "typescript";
 
-import { compareRevisions } from "./revisions.ts";
+import {
+  compareRevisions,
+  DIRECTORY_LINK,
+  revisionCounts,
+} from "./revisions.ts";
+import { runtimeDiff } from "./runtime-diff.ts";
 import {
   emitPackage,
   isTestSource,
@@ -189,7 +194,7 @@ function bundleDependencies(directory: string, scratch: string): void {
   symlinkSync(
     join(current, "node_modules"),
     join(scratch, "node_modules"),
-    "dir",
+    DIRECTORY_LINK,
   );
 }
 
@@ -245,8 +250,7 @@ function bundlePackage(
   return entries.length;
 }
 
-/** Proves published declarations match between a base commit and committed HEAD. */
-export function apiDiff(root: string, baseRef: string) {
+function declarationDiff(root: string, baseRef: string) {
   return compareRevisions(root, baseRef, "API", (worktree, output, scratch) => {
     const packages = packagesAt(worktree, true);
     let entries = 0;
@@ -259,4 +263,36 @@ export function apiDiff(root: string, baseRef: string) {
       );
     return { packages: packages.map(({ directory }) => directory), entries };
   });
+}
+
+/** Compares declarations and built runtime exports, with an optional behavioral probe captured before either build. */
+export function apiDiff(root: string, baseRef: string, probeFile?: string) {
+  const probe =
+    probeFile === undefined
+      ? undefined
+      : readFileSync(resolve(root, probeFile));
+  const results: { different: boolean; output: string }[] = [];
+  const errors: string[] = [];
+  for (const compare of [
+    () => declarationDiff(root, baseRef),
+    () => runtimeDiff(root, baseRef, probe),
+  ]) {
+    try {
+      results.push(compare());
+    } catch (error) {
+      errors.push(
+        `Execution error: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    }
+  }
+  return {
+    different: errors.length > 0 || results.some((result) => result.different),
+    output:
+      results.map((result) => result.output).join("") +
+      errors.join("") +
+      (probe === undefined
+        ? "No behavioural probe ran.\n"
+        : "Behavioural probe supplied.\n") +
+      revisionCounts(root, baseRef),
+  };
 }
