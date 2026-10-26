@@ -228,6 +228,26 @@ test("staged ratchet blocks newly added comments under a ceiling but passes unto
   assert.doesNotMatch(added.stderr, /sample.ts:1:1:/);
 });
 
+test("staged ratchet passes when oxlint ignores every staged file but still fails on a parse error", (t) => {
+  const root = lintRepo(t);
+  put(
+    root,
+    ".oxlintrc.json",
+    JSON.stringify({ ignorePatterns: ["ignored/**"] }),
+  );
+  put(root, "ignored/sample.ts", "export const value = 1;\n");
+  commit(root);
+  put(root, "ignored/sample.ts", "export const value = 2;\n");
+  execFileSync("git", ["add", "ignored/sample.ts"], { cwd: root });
+  const ignored = bin(root, "ratchet", ["--staged", "ignored/sample.ts"]);
+  assert.equal(ignored.status, 0, ignored.stderr);
+  put(root, "broken.ts", "let = ;\n");
+  execFileSync("git", ["add", "broken.ts"], { cwd: root });
+  const broken = bin(root, "ratchet", ["--staged", "broken.ts"]);
+  assert.notEqual(broken.status, 0);
+  assert.match(broken.stderr, /parser or configuration errors/);
+});
+
 test("ratchet removes zero ceilings without claiming a lowering from zero to zero", (t) => {
   const root = lintRepo(t);
   put(root, "sample.ts", "export const value = 1;\n");
