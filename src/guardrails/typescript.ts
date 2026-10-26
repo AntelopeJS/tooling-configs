@@ -3,7 +3,6 @@ import { createRequire } from "node:module";
 import { dirname, join, matchesGlob, relative, sep } from "node:path";
 import type ts from "typescript";
 
-import { TEST_FILE_GLOBS } from "../oxc/guardrails/shared.ts";
 import { trackedManifests } from "./revisions.ts";
 
 export type ExportTarget =
@@ -42,9 +41,17 @@ function loadTypeScript(directory: string): typeof ts {
   ) as typeof ts;
 }
 
+const TEST_SOURCE_GLOBS = [
+  "**/*.test.*",
+  "**/*.spec.*",
+  "**/__tests__/**",
+  "test/**",
+  "tests/**",
+];
+
 export function isTestSource(root: string, file: string): boolean {
   const path = relative(root, file).split("\\").join("/");
-  return TEST_FILE_GLOBS.some((pattern) => matchesGlob(path, pattern));
+  return TEST_SOURCE_GLOBS.some((pattern) => matchesGlob(path, pattern));
 }
 
 function failDiagnostics(

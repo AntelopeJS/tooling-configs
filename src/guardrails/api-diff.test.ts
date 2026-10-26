@@ -50,17 +50,17 @@ function apiRepo(t: Parameters<typeof testRepo>[0]): string {
   return root;
 }
 
-test("api-diff ignores internal moves, declaration order and TSDoc, but detects an exported signature change in committed HEAD", (t) => {
+test("api-diff ignores internal moves out of a nested test folder, declaration order and TSDoc, but detects an exported signature change in committed HEAD", (t) => {
   const root = apiRepo(t);
   put(
     root,
-    "src/internal.ts",
+    "src/core/test/internal.ts",
     "export interface Zebra { z: string }\nexport interface Alpha { a: number }\n",
   );
   put(
     root,
     "src/index.ts",
-    "export type { Zebra, Alpha } from './internal.js';\nexport function greet(name: string): string { return name; }\n",
+    "export type { Zebra, Alpha } from './core/test/internal.js';\nexport function greet(name: string): string { return name; }\n",
   );
   put(root, "src/index.test.ts", "testDoesNotTypecheck();\n");
   commit(root);
@@ -70,6 +70,7 @@ test("api-diff ignores internal moves, declaration order and TSDoc, but detects 
     "src/alpha.d.ts",
     "/** Alpha documentation. */\nexport interface Alpha { a: number }\n",
   );
+  rmSync(join(root, "src/core"), { recursive: true });
   put(root, "src/internal.ts", "export interface Zebra { z: string }\n");
   put(
     root,
