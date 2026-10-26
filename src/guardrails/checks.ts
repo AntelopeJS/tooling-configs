@@ -35,6 +35,7 @@ export function runChecks(root: string) {
     const result = spawnSync(manager, ["run", step], {
       cwd: root,
       encoding: "utf8",
+      shell: process.platform === "win32",
       env: { ...process.env, CI: "1" },
       maxBuffer: 64 * 1024 * 1024,
     });

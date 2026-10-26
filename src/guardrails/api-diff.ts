@@ -10,7 +10,11 @@ import {
 import { dirname, join, relative, resolve } from "node:path";
 import type ts from "typescript";
 
-import { compareRevisions, revisionCounts } from "./revisions.ts";
+import {
+  compareRevisions,
+  DIRECTORY_LINK,
+  revisionCounts,
+} from "./revisions.ts";
 import { runtimeDiff } from "./runtime-diff.ts";
 import {
   emitPackage,
@@ -190,7 +194,7 @@ function bundleDependencies(directory: string, scratch: string): void {
   symlinkSync(
     join(current, "node_modules"),
     join(scratch, "node_modules"),
-    "dir",
+    DIRECTORY_LINK,
   );
 }
 

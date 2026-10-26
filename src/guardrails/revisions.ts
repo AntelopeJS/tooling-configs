@@ -20,6 +20,8 @@ export function trackedManifests(root: string): string[] {
     );
 }
 
+export const DIRECTORY_LINK = process.platform === "win32" ? "junction" : "dir";
+
 function linkDependencies(root: string, worktree: string): void {
   const directories = new Set([".", ...trackedManifests(root).map(dirname)]);
   for (const directory of directories) {
@@ -30,7 +32,7 @@ function linkDependencies(root: string, worktree: string): void {
       existsSync(dirname(target)) &&
       !existsSync(target)
     )
-      symlinkSync(source, target, "dir");
+      symlinkSync(source, target, DIRECTORY_LINK);
   }
 }
 
