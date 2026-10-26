@@ -10,7 +10,7 @@ import {
 import { dirname, join, relative, resolve } from "node:path";
 import type ts from "typescript";
 
-import { compareRevisions } from "./revisions.ts";
+import { compareRevisions, revisionCounts } from "./revisions.ts";
 import { runtimeDiff } from "./runtime-diff.ts";
 import {
   emitPackage,
@@ -288,6 +288,7 @@ export function apiDiff(root: string, baseRef: string, probeFile?: string) {
       errors.join("") +
       (probe === undefined
         ? "No behavioural probe ran.\n"
-        : "Behavioural probe supplied.\n"),
+        : "Behavioural probe supplied.\n") +
+      revisionCounts(root, baseRef),
   };
 }

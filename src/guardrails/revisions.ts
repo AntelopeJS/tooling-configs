@@ -113,3 +113,58 @@ export function compareRevisions(
     rmSync(temporary, { recursive: true, force: true });
   }
 }
+
+const COUNTS = [
+  [
+    "oxlint-disable / eslint-disable directive lines",
+    /^\s*(?:\/\/|\/\*|\*)\s*(?:oxlint|eslint)-disable\b/u,
+  ],
+  ["SAFETY: lines", /^\s*(?:\/\/|\/\*|\*)\s*SAFETY:/u],
+  ["@ts-expect-error lines", /^\s*(?:\/\/|\/\*|\*)\s*@ts-expect-error\b/u],
+] as const;
+const CODE_PATHSPECS = [
+  "*.ts",
+  "*.tsx",
+  "*.mts",
+  "*.cts",
+  "*.js",
+  "*.jsx",
+  "*.mjs",
+  "*.cjs",
+  "*.vue",
+];
+
+function countsAt(root: string, ref: string): number[] {
+  const result = spawnSync(
+    "git",
+    [
+      "grep",
+      "-h",
+      "-I",
+      "-E",
+      "-e",
+      "(oxlint|eslint)-disable|SAFETY:|@ts-expect-error",
+      ref,
+      "--",
+      ...CODE_PATHSPECS,
+    ],
+    { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0 && result.status !== 1)
+    throw new Error(result.stderr);
+  const lines = result.stdout.split("\n");
+  return COUNTS.map(
+    ([, pattern]) => lines.filter((line) => pattern.test(line)).length,
+  );
+}
+
+/** Counts directive, `SAFETY:` and `@ts-expect-error` lines in every tracked code file at the base and at committed HEAD, so a PR body copies them instead of typing them. */
+export function revisionCounts(root: string, baseRef: string): string {
+  const base = countsAt(root, baseRef);
+  const head = countsAt(root, "HEAD");
+  const rows = COUNTS.map(
+    ([label], index) => `| ${label} | ${base[index]} | ${head[index]} |`,
+  );
+  return `\nCounts in tracked code files (${baseRef} and committed HEAD).\n| Lines | base | HEAD |\n| --- | ---: | ---: |\n${rows.join("\n")}\n`;
+}
