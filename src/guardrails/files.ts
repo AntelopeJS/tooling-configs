@@ -69,6 +69,15 @@ export function repositoryRoot(cwd = process.cwd()): string {
   }).trim();
 }
 
+/** Resolves a user-supplied revision to a commit id, so it can never read as an option. */
+export function resolveRevision(root: string, revision: string): string {
+  return execFileSync(
+    "git",
+    ["rev-parse", "--verify", "--end-of-options", `${revision}^{commit}`],
+    { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+  ).trim();
+}
+
 export function repositoryPath(root: string, file: string): string {
   return relative(root, resolve(root, file)).split("\\").join("/");
 }

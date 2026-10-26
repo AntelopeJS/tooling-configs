@@ -7,11 +7,11 @@ import {
   formatCeilings,
   isRetired,
   MAX_FILE_BYTES,
-  readCeilings,
   type Ceilings,
 } from "./ceilings.ts";
 import { authoredSizes, gitFiles } from "./files.ts";
 import { lintDiagnostics, type Diagnostic } from "./oxlint.ts";
+import { readCarriedCeilings } from "./renames.ts";
 import { sizeFailure } from "./size.ts";
 
 function baseline(root: string, diagnostics: Diagnostic[]): Ceilings {
@@ -74,10 +74,10 @@ function lowerCeilings(ceilings: Ceilings, current: Ceilings): string[] {
   return lowered;
 }
 
-export function ratchet(root: string, update = false) {
+export function ratchet(root: string, update = false, base = "HEAD") {
   if (!existsSync(join(root, CEILINGS_FILE)))
     throw new Error(`${CEILINGS_FILE} is missing. Run antelopejs-sync first.`);
-  const ceilings = readCeilings(root);
+  const ceilings = readCarriedCeilings(root, false, [base]);
   const diagnostics = lintDiagnostics(root);
   const current = baseline(root, diagnostics);
   const changed = changedFiles(root);

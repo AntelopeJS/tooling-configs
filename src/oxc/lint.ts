@@ -1,10 +1,7 @@
 import { defineConfig } from "oxlint";
 
-import {
-  findGitRoot,
-  MEASURE_ENV,
-  readCeilings,
-} from "../guardrails/ceilings.ts";
+import { findGitRoot, MEASURE_ENV } from "../guardrails/ceilings.ts";
+import { readCarriedCeilings } from "../guardrails/renames.ts";
 import { TEST_FILE_GLOBS } from "./guardrails/shared.ts";
 import { AGENT_IGNORE_PATTERNS, IGNORE_PATTERNS } from "./shared.ts";
 
@@ -256,7 +253,7 @@ function importSortingPreset() {
 /** Overrides run after rules, including test-specific rules; measurement bypasses all ceilings. */
 function ratchetOverrides() {
   if (process.env[MEASURE_ENV] !== undefined) return [];
-  const ceilings = readCeilings(findGitRoot());
+  const ceilings = readCarriedCeilings(findGitRoot());
   const rules: Record<string, "off"> = Object.fromEntries(
     Object.keys(ceilings.rules).map((rule) => [rule, "off"]),
   );
