@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.2.3
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.2...v0.2.3)
+
+### 🚀 Enhancements
+
+- **guardrails:** Fail entry-only exemptions and runtime export changes in cleanup proofs ([#23](https://github.com/AntelopeJS/tooling-configs/pull/23))
+
+### 🩹 Fixes
+
+- **guardrails:** Pass the staged ratchet when oxlint ignores every staged file ([#22](https://github.com/AntelopeJS/tooling-configs/pull/22))
+- **guardrails:** Scope generated-output globs and carry oversize allowances across renames ([#24](https://github.com/AntelopeJS/tooling-configs/pull/24))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli <rizzitelli.antony@pm.me>
+- Maxime Westhoven ([@mwesto](http://github.com/mwesto))
+
 ## v0.2.2
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.1...v0.2.2)
