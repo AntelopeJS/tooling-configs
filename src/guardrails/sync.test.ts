@@ -130,6 +130,43 @@ test("sync rejects antelopejs@416e25b:.dependency-cruiser.cjs outsider exemption
   );
 });
 
+test("sync skips entry-only rules with unsupported selectors with a printed note instead of failing", (t) => {
+  const root = testRepo(t);
+  put(
+    root,
+    ".dependency-cruiser.cjs",
+    `module.exports = { forbidden: [
+  { name: "api-entry-only", severity: "error", from: { path: "^src/", pathNot: "^src/api/" }, to: { path: "^src/api/" } },
+  { name: "db-entry-only", severity: "warn", from: { pathNot: "^src/db/" }, to: { path: "^src/db/" } },
+  { name: "ui-entry-only", severity: "error", from: { pathNot: "^src/other/" }, to: {} },
+  { name: "core-entry-only", severity: "error", from: { pathNot: "^src/(?:core|util)/" }, to: { path: "^src/core/" } },
+] };\n`,
+  );
+  put(root, "src/util/helper.ts", "export {};\n");
+  commit(root);
+  const result = bin(root, "sync", ["--check", "--profile", "template"]);
+  assert.match(
+    result.stdout,
+    /Note: entry-only rule api-entry-only skipped, because its selectors are not supported \(from\.path\)/,
+  );
+  assert.match(
+    result.stdout,
+    /Note: entry-only rule db-entry-only skipped, because its selectors are not supported \(severity warn\)/,
+  );
+  assert.match(
+    result.stdout,
+    /Warning: entry-only rule ui-entry-only has no to\.path/,
+  );
+  assert.match(
+    result.stderr,
+    /core-entry-only exempts src\/util\/helper\.ts outside its module/,
+  );
+  assert.doesNotMatch(
+    result.stderr,
+    /api-entry-only|db-entry-only|ui-entry-only/,
+  );
+});
+
 test("sync check reports every drift without writing or measuring counts, including setup permissions", (t) => {
   const root = testRepo(t);
   put(

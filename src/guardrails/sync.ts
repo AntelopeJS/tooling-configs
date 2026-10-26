@@ -365,7 +365,8 @@ export function syncRepository(
   const errors = plan
     .filter((artifact) => artifact.kind === "error")
     .map(({ message }) => message);
-  errors.push(...checkEntryOnlyConfiguration(root));
+  const entryOnly = checkEntryOnlyConfiguration(root);
+  errors.push(...entryOnly.errors);
   const notes = plan.flatMap((artifact) =>
     artifact.kind === "migrated" ? artifact.notes : [],
   );
@@ -401,6 +402,7 @@ export function syncRepository(
     paths: errors.length ? [] : writes.map(({ path }) => path),
     errors,
     notes,
+    advisories: entryOnly.advisories,
     dependenciesAdded,
   };
 }

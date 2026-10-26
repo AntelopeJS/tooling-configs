@@ -22,6 +22,8 @@ runCli(() => {
     process.stdout.write(
       `Note: ${values.check || result.errors.length ? "Planned migration. " : ""}${note}\n`,
     );
+  for (const advisory of result.advisories)
+    process.stdout.write(`${advisory}\n`);
   for (const error of result.errors) process.stderr.write(`${error}\n`);
   if (result.errors.length) return 1;
   for (const path of result.paths)
