@@ -12,6 +12,8 @@ import { dirname, join, relative, resolve } from "node:path";
 import { packageManager, parseManifest } from "./package.ts";
 import { compareRevisions } from "./revisions.ts";
 import {
+  isTestSource,
+  outputRoot,
   packagesAt,
   type ExportTarget,
   type ProofManifest,
@@ -100,13 +102,14 @@ function builtEntries(directory: string, manifest: ProofManifest) {
       );
       if (!existsSync(parent))
         throw new Error(`${directory}: missing build output for ${target}.`);
+      const output = outputRoot(directory);
       const matches = readdirSync(parent, {
         recursive: true,
         withFileTypes: true,
       })
         .filter((file) => file.isFile())
         .map((file) => join(file.parentPath, file.name))
-        .filter((file) => pattern.test(file));
+        .filter((file) => pattern.test(file) && !isTestSource(output, file));
       if (!matches.length)
         throw new Error(`${directory}: missing built runtime entry ${target}.`);
       return matches.sort().map((file) => {
@@ -145,6 +148,8 @@ function buildPackage(
     execFileSync(packageManager(buildManifest), ["run", "build"], {
       cwd: directory,
       encoding: "utf8",
+      shell: process.platform === "win32",
+      env: { ...process.env, pnpm_config_verify_deps_before_run: "false" },
       timeout: 120_000,
       stdio: ["ignore", "pipe", "pipe"],
     });

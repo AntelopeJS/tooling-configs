@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join, matchesGlob, relative, sep } from "node:path";
+import { dirname, join, matchesGlob, relative, resolve, sep } from "node:path";
 import type ts from "typescript";
 
 import { trackedManifests } from "./revisions.ts";
@@ -107,15 +107,12 @@ function copyDeclarations(
   return files;
 }
 
-/** Emits with the package's compiler and config; test roots and outputs never enter either proof. */
-export function emitPackage(
-  directory: string,
-  output: string,
-  declarations: boolean,
-) {
+function parseConfig(directory: string) {
   const compiler = loadTypeScript(directory);
-  const configPath = join(directory, "tsconfig.json");
-  const config = compiler.readConfigFile(configPath, compiler.sys.readFile);
+  const config = compiler.readConfigFile(
+    join(directory, "tsconfig.json"),
+    compiler.sys.readFile,
+  );
   if (config.error) failDiagnostics(compiler, [config.error]);
   const parsed = compiler.parseJsonConfigFileContent(
     config.config,
@@ -123,6 +120,24 @@ export function emitPackage(
     directory,
   );
   failDiagnostics(compiler, parsed.errors);
+  return { compiler, parsed };
+}
+
+/** The configured `outDir`, the root under which the declaration half already judges a built path as test output. */
+export function outputRoot(directory: string): string {
+  return resolve(
+    directory,
+    parseConfig(directory).parsed.options.outDir ?? ".",
+  );
+}
+
+/** Emits with the package's compiler and config; test roots and outputs never enter either proof. */
+export function emitPackage(
+  directory: string,
+  output: string,
+  declarations: boolean,
+) {
+  const { compiler, parsed } = parseConfig(directory);
   const options: ts.CompilerOptions = {
     ...parsed.options,
     rootDir:

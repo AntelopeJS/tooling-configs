@@ -146,6 +146,52 @@ test("api-diff expands slash-spanning exports, all conditions, main and typesVer
   assert.match(removed.stdout, /exports\/subpath\/nested%2Fentry\.d\.ts/);
 });
 
+test("api-diff leaves compiled test files out of wildcard exports in both halves", (t) => {
+  const root = apiRepo(t);
+  put(
+    root,
+    "package.json",
+    JSON.stringify({
+      name: "public-api",
+      type: "module",
+      scripts: {
+        build: "tsc --noEmit false --composite false --declarationMap false",
+      },
+      exports: { "./*": "./dist/*.js" },
+    }),
+  );
+  put(
+    root,
+    "tsconfig.json",
+    JSON.stringify({
+      compilerOptions: {
+        target: "ES2020",
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        rootDir: "src",
+        outDir: "dist",
+        types: [],
+        strict: true,
+        noEmit: true,
+        declarationMap: true,
+        composite: true,
+      },
+      include: ["src/**/*"],
+    }),
+  );
+  put(root, "src/feature.ts", "export const value = 1;\n");
+  put(
+    root,
+    "src/tests/feature.test.ts",
+    'declare function describe(name: string, body: () => void): void;\ndescribe("feature", () => {});\nexport {};\n',
+  );
+  commit(root);
+  const result = bin(root, "api-diff", ["HEAD"]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /Runtime API: 1 packages, 1 entries unchanged/);
+  assert.match(result.stdout, /^API: 1 packages, 1 entries unchanged/);
+});
+
 test("api-diff resolves package-local dependencies, keeps external types external, and ignores private packages", (t) => {
   const root = testRepo(t);
   put(
