@@ -15,6 +15,7 @@ import { parseManifest, PREPARE_INSTALL, toolingVersions } from "./package.ts";
 import { MANAGED_ARTIFACTS, syncRepository } from "./sync.ts";
 import {
   bin,
+  commit,
   linkOxlint,
   PACKAGE_ROOT,
   put,
@@ -97,6 +98,36 @@ test("full sync measures once, preserves handwritten text even behind a CLAUDE s
     mtimes,
   );
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
+});
+
+test("sync rejects antelopejs@416e25b:.dependency-cruiser.cjs outsider exemptions in both modes and accepts the repaired boundary", (t) => {
+  const root = testRepo(t);
+  const config = read(
+    PACKAGE_ROOT,
+    "src/guardrails/fixtures/antelopejs-416e25b.txt",
+  );
+  put(root, ".dependency-cruiser.cjs", config);
+  put(root, "src/core/cli/public.ts", "export {};\n");
+  commit(root);
+  for (const check of [false, true]) {
+    const result = syncRepository(root, { check, profile: "template" });
+    assert.match(
+      result.errors.join("\n"),
+      /output-entry-only exempts src\/core\/cli\/public.ts outside its module/,
+    );
+    assert.deepEqual(result.paths, []);
+  }
+  put(
+    root,
+    ".dependency-cruiser.cjs",
+    config.replace("|src/core/cli/public\\\\.ts$", ""),
+  );
+  const repaired = syncRepository(root, { profile: "template" });
+  assert.deepEqual(repaired.errors, []);
+  assert.deepEqual(
+    syncRepository(root, { check: true, profile: "template" }).errors,
+    [],
+  );
 });
 
 test("sync check reports every drift without writing or measuring counts, including setup permissions", (t) => {

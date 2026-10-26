@@ -40,6 +40,7 @@ import {
   SETUP_SCRIPT,
 } from "./templates.ts";
 import { hasChecksWorkflow, MISSING_CHECKS_WORKFLOW } from "./workflow.ts";
+import { checkEntryOnlyConfiguration } from "./entry-only.ts";
 
 export interface RepoContext extends AgentsBlockContext {
   manager: PackageManager;
@@ -364,6 +365,7 @@ export function syncRepository(
   const errors = plan
     .filter((artifact) => artifact.kind === "error")
     .map(({ message }) => message);
+  errors.push(...checkEntryOnlyConfiguration(root));
   const notes = plan.flatMap((artifact) =>
     artifact.kind === "migrated" ? artifact.notes : [],
   );
