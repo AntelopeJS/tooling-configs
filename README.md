@@ -182,7 +182,7 @@ When every rule count is zero and `oversizeFiles` is empty, the ratchet is retir
 
 ### Size
 
-`antelopejs-check-size` fails on an authored file over 20,000 bytes, tests included. Generated code, fixtures, lockfiles, `CHANGELOG.md`, Markdown and binary assets are excluded. Data JSON under `locales/` or `i18n/`, `blocks.json`, `schema.json`, and `evals/**/cases.json` are excluded too. Files over the limit with a NUL byte in their first 8,000 bytes are binary even without a known extension. Staged checks inspect the index blob. Excluded files are also removed from recorded size allowances on ratchet update.
+`antelopejs-check-size` fails on an authored file over 20,000 bytes, tests included. Generated code (`dist`, `coverage`, `.nuxt`, `.output`, and `build` or `output` at the repository root or a package root, never under `src/` or `test/`), fixtures, lockfiles, `CHANGELOG.md`, Markdown and binary assets are excluded. Data JSON under `locales/` or `i18n/`, `blocks.json`, `schema.json`, and `evals/**/cases.json` are excluded too. Files over the limit with a NUL byte in their first 8,000 bytes are binary even without a known extension. Staged checks inspect the index blob. Excluded files are also removed from recorded size allowances on ratchet update.
 
 Pass paths to check only those files, as the pre-commit hook does. The command also fails on an `oxlint-disable` or `eslint-disable` directive (line, next-line or file form) that names no rule: oxlint applies such a directive before any rule runs, so `no-comments` cannot report it.
 
