@@ -95,7 +95,7 @@ export function lintDiagnostics(
         `${basename(temporary)}/**`,
       );
     }
-    if (files) args.push("--", ...files);
+    if (files) args.push("--no-error-on-unmatched-pattern", "--", ...files);
     const result = spawnSync(process.execPath, args, {
       cwd: root,
       encoding: "utf8",
