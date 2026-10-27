@@ -9,6 +9,12 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import {
+  applyAllowance,
+  type AddedPolicy,
+  type PublishedEntry,
+} from "./added-entries.ts";
+
 export function trackedManifests(root: string): string[] {
   return execFileSync("git", ["ls-files", "-z"], {
     cwd: root,
@@ -39,14 +45,16 @@ function linkDependencies(root: string, worktree: string): void {
 interface RevisionOutput {
   packages: string[];
   entries: number;
+  published?: PublishedEntry[];
 }
 
-/** Compares isolated committed revisions and removes both worktrees even when compilation fails. */
+/** Compares isolated committed revisions and removes both worktrees even when compilation fails; a policy lets matching `@internal` additions through. */
 export function compareRevisions(
   root: string,
   baseRef: string,
   label: string,
   emit: (worktree: string, output: string, scratch: string) => RevisionOutput,
+  policy?: AddedPolicy,
 ) {
   const temporary = mkdtempSync(join(tmpdir(), "antelope-proof-"));
   const worktrees: string[] = [];
@@ -76,6 +84,15 @@ export function compareRevisions(
       mkdirSync(output, { recursive: true });
       results.push(emit(worktree, output, join(temporary, "emit", side)));
     }
+    const allowedAdditions =
+      policy === undefined
+        ? 0
+        : applyAllowance(
+            policy,
+            results[0].published ?? [],
+            results[1].published ?? [],
+            (path) => rmSync(join(temporary, "head", path), { force: true }),
+          );
     const diff = spawnSync(
       "git",
       [
@@ -104,7 +121,7 @@ export function compareRevisions(
       output:
         diff.status === 1
           ? `${label}: differences against ${baseRef} (committed HEAD).\n${diff.stdout}`
-          : `${label}: ${packages} packages, ${results[1].entries} entries unchanged against ${baseRef} (committed HEAD).\n`,
+          : `${label}: ${packages} packages, ${results[1].entries - allowedAdditions} entries unchanged against ${baseRef} (committed HEAD).\n`,
     };
   } finally {
     for (const worktree of worktrees.reverse())

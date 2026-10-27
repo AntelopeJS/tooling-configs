@@ -1,15 +1,25 @@
-import { generateDtsBundle } from "dts-bundle-generator";
 import {
   copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import type ts from "typescript";
 
+import {
+  allowedByGlob,
+  createAddedPolicy,
+  describeAllowance,
+  fillStars,
+  recordVerdict,
+  type AddedPolicy,
+  type PublishedEntry,
+} from "./added-entries.ts";
+import { bundleDeclarations } from "./declaration-bundle.ts";
 import {
   compareRevisions,
   DIRECTORY_LINK,
@@ -20,6 +30,7 @@ import {
   emitPackage,
   isTestSource,
   packagesAt,
+  unpublishedAt,
   type ExportTarget,
   type ProofManifest,
 } from "./typescript.ts";
@@ -27,6 +38,20 @@ import {
 interface PublishedTarget {
   entry: string;
   target: string;
+  subpath: string;
+}
+
+interface BundledPackage {
+  count: number;
+  published: PublishedEntry[];
+}
+
+interface PackagePaths {
+  root: string;
+  name: string;
+  directory: string;
+  output: string;
+  scratch: string;
 }
 
 function entrySegment(value: string): string {
@@ -42,22 +67,25 @@ function entryPattern(value: string): string {
 function exportTargets(
   target: ExportTarget | undefined,
   entry = "exports/root",
+  subpath = ".",
 ): PublishedTarget[] {
   // eslint-disable-next-line anti-slop/no-runtime-typeof -- package exports is a standard recursive JSON union.
-  if (typeof target === "string") return [{ entry, target }];
+  if (typeof target === "string") return [{ entry, target, subpath }];
   if (target == null) return [];
   if (Array.isArray(target))
     return target.flatMap((value, index) =>
-      exportTargets(value, `${entry}/fallback/${index}`),
+      exportTargets(value, `${entry}/fallback/${index}`, subpath),
     );
-  if (target.types !== undefined) return exportTargets(target.types, entry);
+  if (target.types !== undefined)
+    return exportTargets(target.types, entry, subpath);
   return Object.entries(target).flatMap(([key, value]) => {
     const name = key.startsWith(".")
       ? key === "."
         ? "exports/root"
         : `exports/subpath/${entryPattern(key.slice(2))}`
       : `${entry}/condition/${entrySegment(key)}`;
-    return exportTargets(value, name);
+    const published = key.startsWith(".") ? key.slice(2) || "." : subpath;
+    return exportTargets(value, name, published);
   });
 }
 
@@ -76,7 +104,8 @@ function entryPatterns(manifest: ProofManifest): PublishedTarget[] {
   const targets = exportTargets(manifest.exports);
   for (const key of ["main", "types", "typings"] as const) {
     const target = manifest[key];
-    if (target !== undefined) targets.push({ entry: key, target });
+    if (target !== undefined)
+      targets.push({ entry: key, target, subpath: key });
   }
   for (const [version, mappings] of Object.entries(
     manifest.typesVersions ?? {},
@@ -86,9 +115,13 @@ function entryPatterns(manifest: ProofManifest): PublishedTarget[] {
         targets.push({
           entry: `typesVersions/${entrySegment(version)}/${entryPattern(entry)}/${index}`,
           target,
+          subpath: entry,
         });
   return targets
-    .map(({ entry, target }) => ({ entry, target: declarationTarget(target) }))
+    .map((published) => ({
+      ...published,
+      target: declarationTarget(published.target),
+    }))
     .filter(
       ({ target }) => /\.d\.[cm]?ts$/u.test(target) || target.includes("*"),
     );
@@ -115,8 +148,8 @@ function publishedEntries(
   const files = emitted.files.map((file) =>
     relative(scratch, file).split("\\").join("/"),
   );
-  const entries: { entry: string; file: string }[] = [];
-  for (const { entry, target } of entryPatterns(manifest)) {
+  const entries: { entry: string; file: string; subpath: string }[] = [];
+  for (const { entry, target, subpath } of entryPatterns(manifest)) {
     if (isTestSource(outputRoot, resolve(directory, target))) continue;
     const path = relative(outputRoot, resolve(directory, target))
       .split("\\")
@@ -129,13 +162,18 @@ function publishedEntries(
       );
     for (const file of matches) {
       const captures = pattern.exec(file)?.slice(1) ?? [];
-      let index = 0;
       const name = entry.includes("*")
-        ? entry.replaceAll("*", () =>
-            entrySegment(captures[index++] ?? captures[0] ?? ""),
-          )
+        ? fillStars(entry, captures, entrySegment)
         : `${entry}${captures.length ? `/file/${entrySegment(file)}` : ""}`;
-      entries.push({ entry: `${name}.d.ts`, file });
+      entries.push({
+        entry: `${name}.d.ts`,
+        file,
+        subpath: subpath.includes("*")
+          ? fillStars(subpath, captures)
+          : captures.length
+            ? `${subpath}/${captures[0]}`
+            : subpath,
+      });
     }
   }
   return entries.sort((a, b) => a.entry.localeCompare(b.entry));
@@ -206,14 +244,14 @@ function generatorEntry(file: string): string {
 }
 
 function bundlePackage(
-  directory: string,
-  output: string,
-  scratch: string,
+  paths: PackagePaths,
   manifest: ProofManifest,
-): number {
+  policy?: AddedPolicy,
+): BundledPackage {
+  const { directory, output, scratch } = paths;
   const emitted = emitPackage(directory, scratch, true);
   const entries = publishedEntries(directory, manifest, emitted, scratch);
-  if (!entries.length) return 0;
+  if (!entries.length) return { count: 0, published: [] };
   bundleDependencies(directory, scratch);
   writeFileSync(
     join(scratch, "package.json"),
@@ -234,7 +272,9 @@ function bundlePackage(
       include: [],
     }),
   );
-  const bundles = generateDtsBundle(
+  const bundles = bundleDeclarations(
+    emitted.compilerRoot,
+    scratch,
     entries.map(({ file }) => ({
       filePath: generatorEntry(join(scratch, file)),
       output: { exportReferencedTypes: false, noBanner: true },
@@ -247,26 +287,112 @@ function bundlePackage(
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, normalizeBundle(emitted.compiler, bundles[index]));
   }
-  return entries.length;
+  if (policy !== undefined)
+    for (const { file, subpath } of entries) {
+      if (!allowedByGlob(policy, subpath)) continue;
+      const emittedFile = join(scratch, file);
+      const module = emitted.modules.get(resolve(emittedFile)) ?? emittedFile;
+      recordVerdict(policy, emitted.compiler, {
+        directory: paths.name,
+        subpath,
+        module,
+        label: relative(paths.root, module).split("\\").join("/"),
+      });
+    }
+  return {
+    count: entries.length,
+    published: entries.map(({ entry, subpath }) => ({
+      path: `${paths.name === "." ? "_root" : paths.name}/${entry}`,
+      directory: paths.name,
+      subpath,
+    })),
+  };
 }
 
-function declarationDiff(root: string, baseRef: string) {
-  return compareRevisions(root, baseRef, "API", (worktree, output, scratch) => {
-    const packages = packagesAt(worktree, true);
-    let entries = 0;
-    for (const { directory, manifest } of packages)
-      entries += bundlePackage(
-        join(worktree, directory),
-        join(output, directory === "." ? "_root" : directory),
-        join(scratch, directory === "." ? "_root" : directory),
-        manifest,
-      );
-    return { packages: packages.map(({ directory }) => directory), entries };
-  });
+function declarationDiff(
+  root: string,
+  baseRef: string,
+  policy: AddedPolicy | undefined,
+) {
+  const errors = new Set<string>();
+  const failedPackages = new Set<string>();
+  const unpublished = new Map<string, string>();
+  const result = compareRevisions(
+    root,
+    baseRef,
+    "API",
+    (worktree, output, scratch) => {
+      const packages = packagesAt(worktree, true);
+      for (const { directory, reason } of unpublishedAt(worktree))
+        unpublished.set(directory, reason);
+      const published: PublishedEntry[] = [];
+      let entries = 0;
+      for (const { directory, manifest } of packages) {
+        const key = directory === "." ? "_root" : directory;
+        try {
+          const bundled = bundlePackage(
+            {
+              root: worktree,
+              name: directory,
+              directory: join(worktree, directory),
+              output: join(output, key),
+              scratch: join(scratch, key),
+            },
+            manifest,
+            policy,
+          );
+          entries += bundled.count;
+          published.push(...bundled.published);
+        } catch (error) {
+          failedPackages.add(directory);
+          errors.add(
+            `Execution error: ${directory}${manifest.name === undefined ? "" : ` (${manifest.name})`}: ${error instanceof Error ? error.message : String(error)}\n`,
+          );
+        }
+      }
+      for (const directory of failedPackages)
+        for (const side of ["base", "head"])
+          rmSync(
+            join(
+              dirname(output),
+              side,
+              directory === "." ? "_root" : directory,
+            ),
+            { recursive: true, force: true },
+          );
+      return {
+        packages: packages.map(({ directory }) => directory),
+        entries,
+        published,
+      };
+    },
+    policy,
+  );
+  return {
+    different: result.different || errors.size > 0,
+    output:
+      (errors.size > 0 && !result.different
+        ? result.output.replace(
+            /^API:[^\n]*\n/u,
+            "API: comparison incomplete due to execution errors.\n",
+          )
+        : result.output) +
+      [...unpublished]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([directory, reason]) => `API: skipped ${directory}, ${reason}.\n`)
+        .join("") +
+      [...errors].join(""),
+  };
 }
 
-/** Compares declarations and built runtime exports, with an optional behavioral probe captured before either build. */
-export function apiDiff(root: string, baseRef: string, probeFile?: string) {
+/** Compares declarations and built runtime exports, with an optional behavioral probe captured before either build. Added entries whose subpath matches an `allowAdded` glob pass when their module is `@internal`. */
+export function apiDiff(
+  root: string,
+  baseRef: string,
+  probeFile?: string,
+  allowAdded: readonly string[] = [],
+) {
+  const policy = allowAdded.length ? createAddedPolicy(allowAdded) : undefined;
   const probe =
     probeFile === undefined
       ? undefined
@@ -274,8 +400,8 @@ export function apiDiff(root: string, baseRef: string, probeFile?: string) {
   const results: { different: boolean; output: string }[] = [];
   const errors: string[] = [];
   for (const compare of [
-    () => declarationDiff(root, baseRef),
-    () => runtimeDiff(root, baseRef, probe),
+    () => declarationDiff(root, baseRef, policy),
+    () => runtimeDiff(root, baseRef, probe, policy),
   ]) {
     try {
       results.push(compare());
@@ -286,9 +412,13 @@ export function apiDiff(root: string, baseRef: string, probeFile?: string) {
     }
   }
   return {
-    different: errors.length > 0 || results.some((result) => result.different),
+    different:
+      errors.length > 0 ||
+      results.some((result) => result.different) ||
+      (policy?.problems.size ?? 0) > 0,
     output:
       results.map((result) => result.output).join("") +
+      (policy === undefined ? "" : describeAllowance(policy)) +
       errors.join("") +
       (probe === undefined
         ? "No behavioural probe ran.\n"

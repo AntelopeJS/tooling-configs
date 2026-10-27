@@ -5,56 +5,13 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  apiRepo,
   bin,
   commit,
   PACKAGE_ROOT,
   put,
   testRepo,
 } from "./helpers/test-repo.ts";
-
-function apiRepo(t: Parameters<typeof testRepo>[0]): string {
-  const root = testRepo(t);
-  symlinkSync(
-    join(PACKAGE_ROOT, "node_modules"),
-    join(root, "node_modules"),
-    "dir",
-  );
-  put(
-    root,
-    "package.json",
-    JSON.stringify({
-      name: "public-api",
-      type: "module",
-      scripts: {
-        build: "tsc --noEmit false --composite false --declarationMap false",
-      },
-      exports: {
-        ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
-      },
-    }),
-  );
-  put(
-    root,
-    "tsconfig.json",
-    JSON.stringify({
-      compilerOptions: {
-        target: "ES2020",
-        module: "NodeNext",
-        moduleResolution: "NodeNext",
-        rootDir: "src",
-        outDir: "dist",
-        types: [],
-        strict: true,
-        noEmit: true,
-        declarationMap: true,
-        composite: true,
-      },
-      include: ["src/**/*"],
-      exclude: ["src/**/*.test.ts"],
-    }),
-  );
-  return root;
-}
 
 test("api-diff ignores internal moves out of a nested test folder, declaration order and TSDoc, but detects an exported signature change in committed HEAD", (t) => {
   const root = apiRepo(t);
