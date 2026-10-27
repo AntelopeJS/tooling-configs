@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.5
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.4...v0.2.5)
+
+### 🩹 Fixes
+
+- **guardrails:** Compare api-diff declarations independent of object member order ([#30](https://github.com/AntelopeJS/tooling-configs/pull/30))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.2.4
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.3...v0.2.4)
