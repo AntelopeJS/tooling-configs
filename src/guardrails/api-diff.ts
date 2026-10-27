@@ -8,7 +8,6 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import type ts from "typescript";
 
 import {
   allowedByGlob,
@@ -20,6 +19,7 @@ import {
   type PublishedEntry,
 } from "./added-entries.ts";
 import { bundleDeclarations } from "./declaration-bundle.ts";
+import { normalizeBundle } from "./declaration-order.ts";
 import {
   compareRevisions,
   DIRECTORY_LINK,
@@ -177,49 +177,6 @@ function publishedEntries(
     }
   }
   return entries.sort((a, b) => a.entry.localeCompare(b.entry));
-}
-
-function statementName(
-  compiler: typeof ts,
-  statement: ts.Statement,
-  source: ts.SourceFile,
-): string {
-  if (compiler.isVariableStatement(statement))
-    return (
-      statement.declarationList.declarations[0]?.name.getText(source) ?? ""
-    );
-  if (
-    compiler.isFunctionDeclaration(statement) ||
-    compiler.isClassDeclaration(statement) ||
-    compiler.isInterfaceDeclaration(statement) ||
-    compiler.isTypeAliasDeclaration(statement) ||
-    compiler.isEnumDeclaration(statement) ||
-    compiler.isModuleDeclaration(statement) ||
-    compiler.isImportEqualsDeclaration(statement)
-  )
-    return statement.name?.getText(source) ?? "default";
-  return statement.getText(source);
-}
-
-function normalizeBundle(compiler: typeof ts, text: string): string {
-  const source = compiler.createSourceFile(
-    "bundle.d.ts",
-    text,
-    compiler.ScriptTarget.Latest,
-    true,
-  );
-  const statements = [...source.statements].sort((a, b) =>
-    statementName(compiler, a, source).localeCompare(
-      statementName(compiler, b, source),
-    ),
-  );
-  const normalized = compiler.factory.updateSourceFile(source, statements);
-  return compiler
-    .createPrinter({
-      removeComments: true,
-      newLine: compiler.NewLineKind.LineFeed,
-    })
-    .printFile(normalized);
 }
 
 function bundleDependencies(directory: string, scratch: string): void {
