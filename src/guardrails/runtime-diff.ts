@@ -9,6 +9,11 @@ import {
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
+import {
+  fillStars,
+  type AddedPolicy,
+  type PublishedEntry,
+} from "./added-entries.ts";
 import { packageManager, parseManifest } from "./package.ts";
 import { compareRevisions } from "./revisions.ts";
 import {
@@ -57,39 +62,52 @@ function properties(object, observe) {
 })().catch(error => { process.stderr.write(String(error.stack)); process.exitCode = 1; });
 `;
 
+interface RuntimeTarget {
+  entry: string;
+  target: string;
+  subpath: string;
+}
+
 function runtimeTargets(
   target: ExportTarget | undefined,
   entry = "exports",
-): { entry: string; target: string }[] {
+  subpath = ".",
+): RuntimeTarget[] {
   if (target == null) return [];
   if (Array.isArray(target))
     return target.flatMap((value, index) =>
-      runtimeTargets(value, `${entry}/${index}`),
+      runtimeTargets(value, `${entry}/${index}`, subpath),
     );
-  if (target.constructor === String) return [{ entry, target: String(target) }];
+  if (target.constructor === String)
+    return [{ entry, target: String(target), subpath }];
   return Object.entries(target).flatMap(([key, value]) => {
     if (key === "types") return [];
     if (["browser", "deno", "react-native"].includes(key))
       throw new Error(`${entry}/${key}: unsupported runtime environment.`);
-    return runtimeTargets(value, `${entry}/${key}`);
+    return runtimeTargets(
+      value,
+      `${entry}/${key}`,
+      key.startsWith(".") ? key.slice(2) || "." : subpath,
+    );
   });
 }
 
 function builtEntries(directory: string, manifest: ProofManifest) {
   const targets = runtimeTargets(manifest.exports);
-  if (manifest.main) targets.push({ entry: "main", target: manifest.main });
+  if (manifest.main)
+    targets.push({ entry: "main", target: manifest.main, subpath: "main" });
   if (!targets.length)
     throw new Error(`${directory}: no published runtime entry.`);
   return targets
     .filter(({ target }) => !target.endsWith(".json"))
-    .flatMap(({ entry, target }) => {
+    .flatMap(({ entry, target, subpath }) => {
       if (!target.includes("*")) {
         const file = resolve(directory, target);
         if (!existsSync(file))
           throw new Error(
             `${directory}: missing built runtime entry ${target}.`,
           );
-        return [{ entry, file }];
+        return [{ entry, file, subpath }];
       }
       const prefix = resolve(directory, target.slice(0, target.indexOf("*")));
       const parent = dirname(prefix);
@@ -114,7 +132,11 @@ function builtEntries(directory: string, manifest: ProofManifest) {
         throw new Error(`${directory}: missing built runtime entry ${target}.`);
       return matches.sort().map((file) => {
         const capture = pattern.exec(file)?.[1] ?? relative(directory, file);
-        return { entry: entry.replaceAll("*", capture), file };
+        return {
+          entry: entry.replaceAll("*", capture),
+          file,
+          subpath: fillStars(subpath, [capture]),
+        };
       });
     });
 }
@@ -140,7 +162,9 @@ function buildPackage(
   directory: string,
   output: string,
   manifest: ProofManifest,
-): number | undefined {
+):
+  | { count: number; entries: { entry: string; subpath: string }[] }
+  | undefined {
   const buildManifest = parseManifest(
     readFileSync(join(directory, "package.json"), "utf8"),
   );
@@ -166,7 +190,7 @@ function buildPackage(
     mkdirSync(dirname(destination), { recursive: true });
     writeFileSync(destination, metadata);
   }
-  return entries.length;
+  return { count: entries.length, entries };
 }
 
 /** Builds both committed revisions and compares published runtime metadata and one captured optional probe. */
@@ -174,6 +198,7 @@ export function runtimeDiff(
   root: string,
   baseRef: string,
   probe: Buffer | undefined,
+  policy?: AddedPolicy,
 ) {
   const errors: string[] = [];
   const failedPackages = new Set<string>();
@@ -184,16 +209,27 @@ export function runtimeDiff(
     "Runtime API",
     (worktree, output, scratch) => {
       const packages = packagesAt(worktree, true);
+      const published: PublishedEntry[] = [];
       let entries = 0;
       for (const { directory, manifest } of packages) {
+        const folder = encodeURIComponent(directory).replaceAll(".", "%2E");
         try {
           const built = buildPackage(
             join(worktree, directory),
-            join(output, encodeURIComponent(directory).replaceAll(".", "%2E")),
+            join(output, folder),
             manifest,
           );
           if (built === undefined) skippedPackages.add(directory);
-          else entries += built;
+          else {
+            entries += built.count;
+            published.push(
+              ...built.entries.map(({ entry, subpath }) => ({
+                path: `${folder}/${encodeURIComponent(entry)}.json`,
+                directory,
+                subpath,
+              })),
+            );
+          }
         } catch (error) {
           failedPackages.add(directory);
           errors.push(
@@ -223,8 +259,13 @@ export function runtimeDiff(
           childJson([script, worktree], worktree),
         );
       }
-      return { packages: packages.map(({ directory }) => directory), entries };
+      return {
+        packages: packages.map(({ directory }) => directory),
+        entries,
+        published,
+      };
     },
+    policy,
   );
   return {
     different: result.different || errors.length > 0,

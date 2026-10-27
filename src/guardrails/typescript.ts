@@ -131,7 +131,7 @@ export function outputRoot(directory: string): string {
   );
 }
 
-/** Emits with the package's compiler and config; test roots and outputs never enter either proof. */
+/** Emits with the package's compiler and config; test roots and outputs never enter either proof. `modules` maps each emitted file to its source module. */
 export function emitPackage(
   directory: string,
   output: string,
@@ -170,6 +170,7 @@ export function emitPackage(
   if (declarations)
     failDiagnostics(compiler, compiler.getPreEmitDiagnostics(program));
   const files: string[] = [];
+  const modules = new Map<string, string>();
   const result = program.emit(
     undefined,
     (file, text, _bom, _onError, sources) => {
@@ -182,9 +183,11 @@ export function emitPackage(
       mkdirSync(dirname(file), { recursive: true });
       writeFileSync(file, text);
       files.push(file);
+      if (sources?.[0] !== undefined)
+        modules.set(resolve(file), sources[0].fileName);
     },
   );
   if (declarations) failDiagnostics(compiler, result.diagnostics);
   if (declarations) files.push(...copyDeclarations(program, directory, output));
-  return { compiler, files, options: parsed.options };
+  return { compiler, files, modules, options: parsed.options };
 }

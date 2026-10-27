@@ -192,6 +192,12 @@ A behaviour-preserving cleanup PR shows `antelopejs-api-diff <base-ref>` passing
 
 A comment-only PR shows `antelopejs-comment-proof <base-ref>` passing instead of a verifier. It includes private packages, ignores type diagnostics and compares comment-free JavaScript emit byte for byte. Both commands exclude test sources, fail on added or removed outputs, and print unified diffs for changes.
 
+Pass `--allow-added <glob>` (repeatable) to `antelopejs-api-diff` when a refactor adds helper files that a wildcard export publishes, such as an `internal/` directory under `"./*"`. An added entry passes, in both the declaration and the runtime half, when its published subpath matches a glob (for example `--allow-added '**/internal/**'`, matched against `base/table-view/internal/helper` for `./base/table-view/internal/helper`) and its source module is marked `@internal`: a leading `/** @internal @packageDocumentation */` comment on the module (`@module` and `@fileoverview` also qualify), or an `@internal` tag on every exported declaration. Allowed entries are printed under `Added (allowed): <count>`. An added entry that matches but is not marked `@internal` fails with the file and the fix. Added entries matching no glob, removed entries and changed entries still fail, matching or not. Without the flag nothing changes.
+
+```bash
+pnpm exec antelopejs-api-diff origin/main --allow-added '**/internal/**'
+```
+
 Both commands compare **committed HEAD**, not staged or working-tree edits. They check out the base and HEAD in temporary detached worktrees, reuse the current checkout's root and package `node_modules`, and remove the worktrees afterwards. Install the consumer's dependencies before running them.
 
 ```bash

@@ -80,3 +80,48 @@ export function bin(root: string, name: string, args: string[] = []) {
 export function read(root: string, path: string): string {
   return readFileSync(join(root, path), "utf8");
 }
+
+/** A repository publishing a compiled `src` through `dist` with a build script, for the proof commands. */
+export function apiRepo(t: TestContext): string {
+  const root = testRepo(t);
+  symlinkSync(
+    join(PACKAGE_ROOT, "node_modules"),
+    join(root, "node_modules"),
+    "dir",
+  );
+  put(
+    root,
+    "package.json",
+    JSON.stringify({
+      name: "public-api",
+      type: "module",
+      scripts: {
+        build: "tsc --noEmit false --composite false --declarationMap false",
+      },
+      exports: {
+        ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
+      },
+    }),
+  );
+  put(
+    root,
+    "tsconfig.json",
+    JSON.stringify({
+      compilerOptions: {
+        target: "ES2020",
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        rootDir: "src",
+        outDir: "dist",
+        types: [],
+        strict: true,
+        noEmit: true,
+        declarationMap: true,
+        composite: true,
+      },
+      include: ["src/**/*"],
+      exclude: ["src/**/*.test.ts"],
+    }),
+  );
+  return root;
+}
