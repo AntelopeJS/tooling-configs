@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.4
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.3...v0.2.4)
+
+### 🚀 Enhancements
+
+- **guardrails:** Let api-diff pass added @internal entries with --allow-added ([#26](https://github.com/AntelopeJS/tooling-configs/pull/26))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.2.3
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.2...v0.2.3)
