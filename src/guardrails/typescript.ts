@@ -12,6 +12,7 @@ export type ExportTarget =
   | { [condition: string]: ExportTarget };
 
 export interface ProofManifest {
+  name?: string;
   private?: boolean;
   exports?: ExportTarget;
   main?: string;
@@ -20,7 +21,20 @@ export interface ProofManifest {
   typesVersions?: Record<string, Record<string, string[]>>;
 }
 
-export function packagesAt(root: string, publishedOnly: boolean) {
+/** A proof analyses only packages that publish something: not private, and declaring at least one of `exports`, `main`, `types`, `typings` or `typesVersions`. */
+function unpublishedReason(manifest: ProofManifest): string | undefined {
+  if (manifest.private === true) return "private";
+  const publishes = [
+    manifest.exports,
+    manifest.main,
+    manifest.types,
+    manifest.typings,
+    manifest.typesVersions,
+  ].some((field) => field != null);
+  return publishes ? undefined : "no exports, main or types";
+}
+
+function trackedPackages(root: string) {
   return trackedManifests(root).flatMap((file) => {
     const directory = dirname(file);
     if (!existsSync(join(root, directory, "tsconfig.json"))) return [];
@@ -28,17 +42,60 @@ export function packagesAt(root: string, publishedOnly: boolean) {
     const manifest = JSON.parse(
       readFileSync(join(root, file), "utf8"),
     ) as ProofManifest;
-    if (publishedOnly && manifest.private === true) return [];
     return [{ directory, manifest }];
   });
 }
 
-/** Loads the consumer's compiler, including a package-local installation in a workspace. */
-function loadTypeScript(directory: string): typeof ts {
-  /* SAFETY: the consumer's typescript package implements the compiler API. */
-  return createRequire(join(directory, "package.json"))(
-    "typescript",
-  ) as typeof ts;
+export function packagesAt(root: string, publishedOnly: boolean) {
+  return trackedPackages(root).filter(
+    ({ manifest }) =>
+      !publishedOnly || unpublishedReason(manifest) === undefined,
+  );
+}
+
+/** The packages a published-only proof leaves out, each with the reason, so a skip is reported rather than silent. */
+export function unpublishedAt(root: string) {
+  return trackedPackages(root).flatMap(({ directory, manifest }) => {
+    const reason = unpublishedReason(manifest);
+    return reason === undefined ? [] : [{ directory, reason }];
+  });
+}
+
+/** A TypeScript installation and the directory of its package. */
+interface PackageCompiler {
+  compiler: typeof ts;
+  root: string;
+}
+
+function packageRoot(file: string): string {
+  let directory = dirname(file);
+  while (!existsSync(join(directory, "package.json"))) {
+    const parent = dirname(directory);
+    if (parent === directory) return dirname(file);
+    directory = parent;
+  }
+  return directory;
+}
+
+/** Loads the compiler a package builds with, including a package-local installation in a workspace, falling back to the one `dts-bundle-generator` brings. A TypeScript without the programmatic API (7 and later) is an error rather than a crash. */
+function loadTypeScript(directory: string): PackageCompiler {
+  const own = createRequire(import.meta.url);
+  let file: string;
+  try {
+    file = createRequire(join(directory, "package.json")).resolve("typescript");
+  } catch {
+    file = createRequire(own.resolve("dts-bundle-generator")).resolve(
+      "typescript",
+    );
+  }
+  /* SAFETY: a resolved typescript package implements the compiler API unless the check below rejects it. */
+  const compiler = createRequire(file)("typescript") as typeof ts;
+  const root = packageRoot(file);
+  if (compiler.sys === undefined || !("createProgram" in compiler))
+    throw new Error(
+      `TypeScript ${compiler.version} at ${root} has no programmatic compiler API (sys, createProgram), so this package cannot be analysed. Build it with a TypeScript that has one, or mark the package private.`,
+    );
+  return { compiler, root };
 }
 
 const TEST_SOURCE_GLOBS = [
@@ -108,7 +165,7 @@ function copyDeclarations(
 }
 
 function parseConfig(directory: string) {
-  const compiler = loadTypeScript(directory);
+  const { compiler, root } = loadTypeScript(directory);
   const config = compiler.readConfigFile(
     join(directory, "tsconfig.json"),
     compiler.sys.readFile,
@@ -120,7 +177,7 @@ function parseConfig(directory: string) {
     directory,
   );
   failDiagnostics(compiler, parsed.errors);
-  return { compiler, parsed };
+  return { compiler, root, parsed };
 }
 
 /** The configured `outDir`, the root under which the declaration half already judges a built path as test output. */
@@ -137,7 +194,7 @@ export function emitPackage(
   output: string,
   declarations: boolean,
 ) {
-  const { compiler, parsed } = parseConfig(directory);
+  const { compiler, root, parsed } = parseConfig(directory);
   const options: ts.CompilerOptions = {
     ...parsed.options,
     rootDir:
@@ -189,5 +246,11 @@ export function emitPackage(
   );
   if (declarations) failDiagnostics(compiler, result.diagnostics);
   if (declarations) files.push(...copyDeclarations(program, directory, output));
-  return { compiler, files, modules, options: parsed.options };
+  return {
+    compiler,
+    compilerRoot: root,
+    files,
+    modules,
+    options: parsed.options,
+  };
 }

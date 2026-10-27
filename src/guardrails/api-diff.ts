@@ -1,9 +1,9 @@
-import { generateDtsBundle } from "dts-bundle-generator";
 import {
   copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -19,6 +19,7 @@ import {
   type AddedPolicy,
   type PublishedEntry,
 } from "./added-entries.ts";
+import { bundleDeclarations } from "./declaration-bundle.ts";
 import {
   compareRevisions,
   DIRECTORY_LINK,
@@ -29,6 +30,7 @@ import {
   emitPackage,
   isTestSource,
   packagesAt,
+  unpublishedAt,
   type ExportTarget,
   type ProofManifest,
 } from "./typescript.ts";
@@ -270,7 +272,9 @@ function bundlePackage(
       include: [],
     }),
   );
-  const bundles = generateDtsBundle(
+  const bundles = bundleDeclarations(
+    emitted.compilerRoot,
+    scratch,
     entries.map(({ file }) => ({
       filePath: generatorEntry(join(scratch, file)),
       output: { exportReferencedTypes: false, noBanner: true },
@@ -310,29 +314,52 @@ function declarationDiff(
   baseRef: string,
   policy: AddedPolicy | undefined,
 ) {
-  return compareRevisions(
+  const errors = new Set<string>();
+  const failedPackages = new Set<string>();
+  const unpublished = new Map<string, string>();
+  const result = compareRevisions(
     root,
     baseRef,
     "API",
     (worktree, output, scratch) => {
       const packages = packagesAt(worktree, true);
+      for (const { directory, reason } of unpublishedAt(worktree))
+        unpublished.set(directory, reason);
       const published: PublishedEntry[] = [];
       let entries = 0;
       for (const { directory, manifest } of packages) {
-        const bundled = bundlePackage(
-          {
-            root: worktree,
-            name: directory,
-            directory: join(worktree, directory),
-            output: join(output, directory === "." ? "_root" : directory),
-            scratch: join(scratch, directory === "." ? "_root" : directory),
-          },
-          manifest,
-          policy,
-        );
-        entries += bundled.count;
-        published.push(...bundled.published);
+        const key = directory === "." ? "_root" : directory;
+        try {
+          const bundled = bundlePackage(
+            {
+              root: worktree,
+              name: directory,
+              directory: join(worktree, directory),
+              output: join(output, key),
+              scratch: join(scratch, key),
+            },
+            manifest,
+            policy,
+          );
+          entries += bundled.count;
+          published.push(...bundled.published);
+        } catch (error) {
+          failedPackages.add(directory);
+          errors.add(
+            `Execution error: ${directory}${manifest.name === undefined ? "" : ` (${manifest.name})`}: ${error instanceof Error ? error.message : String(error)}\n`,
+          );
+        }
       }
+      for (const directory of failedPackages)
+        for (const side of ["base", "head"])
+          rmSync(
+            join(
+              dirname(output),
+              side,
+              directory === "." ? "_root" : directory,
+            ),
+            { recursive: true, force: true },
+          );
       return {
         packages: packages.map(({ directory }) => directory),
         entries,
@@ -341,6 +368,21 @@ function declarationDiff(
     },
     policy,
   );
+  return {
+    different: result.different || errors.size > 0,
+    output:
+      (errors.size > 0 && !result.different
+        ? result.output.replace(
+            /^API:[^\n]*\n/u,
+            "API: comparison incomplete due to execution errors.\n",
+          )
+        : result.output) +
+      [...unpublished]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([directory, reason]) => `API: skipped ${directory}, ${reason}.\n`)
+        .join("") +
+      [...errors].join(""),
+  };
 }
 
 /** Compares declarations and built runtime exports, with an optional behavioral probe captured before either build. Added entries whose subpath matches an `allowAdded` glob pass when their module is `@internal`. */
