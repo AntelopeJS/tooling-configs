@@ -48,7 +48,7 @@ test("comment-proof strips comments, ignores type errors and test deletions, inc
   put(
     root,
     "output/tool.cjs",
-    "// SAFETY: counted outside the size guard's scope\n",
+    "// SAFETY: generated output, left out like the size guard leaves it out\n",
   );
   commit(root);
   put(
@@ -66,10 +66,10 @@ test("comment-proof strips comments, ignores type errors and test deletions, inc
   );
   assert.match(
     comments.stdout,
-    /\| oxlint-disable \/ eslint-disable directive lines \| 1 \| 2 \|/,
+    /\| Lint suppressions, all rules \| 1 \| 2 \|\n\| Lint suppressions, `rule` \| 1 \| 2 \|/,
   );
-  assert.match(comments.stdout, /\| SAFETY: lines \| 2 \| 3 \|/);
-  assert.match(comments.stdout, /\| @ts-expect-error lines \| 1 \| 0 \|/);
+  assert.match(comments.stdout, /\| `SAFETY:` comments \| 1 \| 2 \|/);
+  assert.match(comments.stdout, /\| `@ts-expect-error` \| 1 \| 0 \|/);
   put(root, "src/index.ts", "export const value: number = 'runtime change';\n");
   assert.equal(bin(root, "comment-proof", ["HEAD~1"]).status, 0);
   commit(root);
@@ -77,7 +77,7 @@ test("comment-proof strips comments, ignores type errors and test deletions, inc
   assert.equal(code.status, 1);
   assert.match(code.stdout, /-export const value = 'type error'/);
   assert.match(code.stdout, /\+export const value = 'runtime change'/);
-  assert.match(code.stdout, /\| SAFETY: lines \| 3 \| 1 \|/);
+  assert.match(code.stdout, /\| `SAFETY:` comments \| 2 \| 0 \|/);
   rmSync(join(root, "src/spare.ts"));
   commit(root);
   const missing = bin(root, "comment-proof", ["HEAD~1"]);

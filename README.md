@@ -184,7 +184,7 @@ When every rule count is zero and `oversizeFiles` is empty, the ratchet is retir
 
 `antelopejs-check-size` fails on an authored file over 20,000 bytes, tests included. Generated code (`dist`, `coverage`, `.nuxt`, `.output`, and `build` or `output` at the repository root or a package root, never under `src/` or `test/`), fixtures, lockfiles, `CHANGELOG.md`, Markdown and binary assets are excluded. JSON is data, never code: every `*.json`, `*.jsonc` and `*.json5` file is excluded, wherever it lives. Lint and format still cover it. Files over the limit with a NUL byte in their first 8,000 bytes are binary even without a known extension. Staged checks inspect the index blob. Excluded files are also removed from recorded size allowances on ratchet update.
 
-Pass paths to check only those files, as the pre-commit hook does. The command also fails on an `oxlint-disable` or `eslint-disable` directive (line, next-line or file form) that names no rule: oxlint applies such a directive before any rule runs, so `no-comments` cannot report it.
+Pass paths to check only those files, as the pre-commit hook does. The command also fails on an `oxlint-disable` or `eslint-disable` directive (line, next-line or file form) that names no rule: oxlint applies such a directive before any rule runs, so `no-comments` cannot report it. It reads real comments only, with the same counter as the proof tables, so directive text inside a string is not reported.
 
 ### Cleanup proof
 
@@ -197,6 +197,8 @@ Pass `--allow-added <glob>` (repeatable) to `antelopejs-api-diff` when a refacto
 ```bash
 pnpm exec antelopejs-api-diff origin/main --allow-added '**/internal/**'
 ```
+
+Both commands end with a table of suppressions in authored code files at the base and at HEAD, for PR bodies to copy: lint directives per rule they name (`*` for a directive naming none), `@ts-expect-error`, `@ts-ignore` and `SAFETY:` comments. The parser finds every comment, after code on the same line too, and skips strings, template literals and JSX text; `.vue` files contribute their script blocks and template comments. Generated output is left out as the size guard leaves it out.
 
 Both commands compare **committed HEAD**, not staged or working-tree edits. They check out the base and HEAD in temporary detached worktrees, reuse the current checkout's root and package `node_modules`, and remove the worktrees afterwards. Install the consumer's dependencies before running them.
 

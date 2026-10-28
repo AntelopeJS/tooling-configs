@@ -4,7 +4,6 @@ import { dirname, join, matchesGlob, relative, resolve } from "node:path";
 
 import { AGENT_IGNORE_PATTERNS, IGNORE_PATTERNS } from "../oxc/shared.ts";
 import { MAX_FILE_BYTES } from "./ceilings.ts";
-import { trackedManifests } from "./revisions.ts";
 
 const SIZE_EXCLUSIONS = [
   {
@@ -38,6 +37,17 @@ const SIZE_EXCLUSIONS = [
     ],
   },
 ];
+
+export function trackedManifests(root: string): string[] {
+  return execFileSync("git", ["ls-files", "-z"], {
+    cwd: root,
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter(
+      (file) => file === "package.json" || file.endsWith("/package.json"),
+    );
+}
 
 export function gitFiles(root: string): string[] {
   return [
@@ -102,12 +112,16 @@ function packageOutputPatterns(root: string): string[] {
 }
 
 /** `path.matchesGlob` never lets `*` or `**` cross a segment starting with a dot, so each path is also tried with those dots removed. */
-function isExcluded(file: string, packageOutputs: string[]): boolean {
+function isExcluded(
+  file: string,
+  packageOutputs: string[],
+  exclusions = SIZE_EXCLUSIONS,
+): boolean {
   const undotted = file.replace(/(^|\/)\./gu, "$1");
   const matches = (pattern: string) =>
     matchesGlob(file, pattern) || matchesGlob(undotted, pattern);
   return (
-    SIZE_EXCLUSIONS.some(({ patterns }) => patterns.some(matches)) ||
+    exclusions.some(({ patterns }) => patterns.some(matches)) ||
     packageOutputs.some(matches)
   );
 }
@@ -128,6 +142,13 @@ function isBinary(root: string, file: string, staged: boolean): boolean {
   } finally {
     closeSync(descriptor);
   }
+}
+
+/** Whether a repository path is generated output the size guard skips: `dist`, `.nuxt`, agent tooling, `*.generated.*`, snapshots, and package-root `build` or `output`. */
+export function generatedOutput(root: string): (file: string) => boolean {
+  const packageOutputs = packageOutputPatterns(root);
+  const generated = SIZE_EXCLUSIONS.filter(({ kind }) => kind === "generated");
+  return (file) => isExcluded(file, packageOutputs, generated);
 }
 
 export function authoredSizes(

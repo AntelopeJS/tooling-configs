@@ -31,7 +31,7 @@ const CLEANUP_PROOF = `### Cleanup proof
 
 A behaviour-preserving cleanup PR shows \`antelopejs-api-diff <base-ref>\` passing. Published declarations and built runtime exports stay unchanged; pass \`--allow-added <glob>\` (repeatable, e.g. \`'**/internal/**'\`) to let added entries under that glob pass when their module is \`@internal\`, and copy its "Added (allowed)" list. A comment-only PR shows \`antelopejs-comment-proof <base-ref>\` passing instead of a verifier. Both compare committed HEAD.
 
-Copy counts from the proof's base and HEAD table. Never type counts by hand. Keep the command and the committed head beside the copied output. Directive lines are not individual suppressed rules.
+Copy counts from the proof's base and HEAD table. Never type counts by hand. Keep the command and the committed head beside the copied output. The table counts a lint directive once per rule it names, inline directives included.
 
 Pass \`--probe <file.cjs>\` to api-diff when changing receivers, positional calls, or modules that no published entry reaches. The same captured script runs against both worktree roots, supplied as \`argv[2]\`, and prints JSON observations. Matching metadata alone does not prove those behaviours.
 

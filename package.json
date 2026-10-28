@@ -65,6 +65,7 @@
   "dependencies": {
     "@oxlint/plugins": "1.81.0",
     "dts-bundle-generator": "^9.5.1",
+    "typescript": "^5.9.3",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
@@ -78,8 +79,7 @@
     "oxlint-tsgolint": "^7.0.2001",
     "release-it": "^19.2.4",
     "release-it-changelogen": "^0.1.0",
-    "tsdown": "^0.22.14",
-    "typescript": "^5.9.3"
+    "tsdown": "^0.22.14"
   },
   "peerDependencies": {
     "@nuxt/eslint-config": ">=1.2.0",
