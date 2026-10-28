@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.6
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.5...v0.2.6)
+
+### 🩹 Fixes
+
+- **guardrails:** Exclude every JSON file from the size guard ([#33](https://github.com/AntelopeJS/tooling-configs/pull/33))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli <rizzitelli.antony@pm.me>
+
 ## v0.2.5
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.4...v0.2.5)
