@@ -124,15 +124,17 @@ function basePreset(importCycles: boolean) {
  * predicate or an assertion: that function is the decoder the rule asks for.
  */
 export function antiSlopRules(severity: Severity = "error") {
-  return {
-    ...Object.fromEntries(
-      ANTI_SLOP_RULES.map((rule) => [`anti-slop/${rule}`, severity]),
-    ),
-    "anti-slop/no-runtime-typeof": [
-      severity,
-      { allowInTypeGuards: true },
-    ] satisfies [Severity, { allowInTypeGuards: boolean }],
-  };
+  return Object.fromEntries(
+    ANTI_SLOP_RULES.map((rule) => [
+      `anti-slop/${rule}`,
+      rule === "no-runtime-typeof"
+        ? ([severity, { allowInTypeGuards: true }] satisfies [
+            Severity,
+            { allowInTypeGuards: boolean },
+          ])
+        : severity,
+    ]),
+  );
 }
 
 function antiSlopPreset() {
