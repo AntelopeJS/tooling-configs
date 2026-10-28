@@ -4,6 +4,10 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import type ts from "typescript";
 
+import {
+  DEFAULT_SAFETY_MARKERS,
+  markerPattern,
+} from "../oxc/anti-slop/rules/require-safety-comment-for-type-assertion.ts";
 import { generatedOutput, gitFiles } from "./files.ts";
 
 /**
@@ -41,11 +45,12 @@ interface CommentText {
 }
 
 const CODE_FILE = /\.(?:[cm]?[jt]sx?|vue)$/u;
-const CANDIDATE =
-  /(?:oxlint|eslint)-disable|@ts-(?:expect-error|ignore)|SAFETY:/u;
+const CANDIDATE = /(?:oxlint|eslint)-disable|@ts-(?:expect-error|ignore)/u;
 const LINT_DIRECTIVE =
   /^((?:oxlint|eslint)-disable(?:-line|-next-line)?)(?=\s|$)([\s\S]*)$/u;
 const DESCRIPTION = /\s-{2,}\s|\s-{2,}$/u;
+/** The comment `anti-slop/require-safety-comment-for-type-assertion` accepts as a justification. */
+const SAFETY_COMMENT = markerPattern(DEFAULT_SAFETY_MARKERS);
 const TS_DIRECTIVE = /^[/*\s]*@ts-(expect-error|ignore)(?![\w-])/u;
 
 let compiler: typeof ts | undefined;
@@ -157,7 +162,11 @@ function tsDirective(comment: CommentText) {
 
 /** The suppressions in one code file's text; `file` decides the language and labels each entry. */
 export function suppressionsIn(file: string, text: string): Suppression[] {
-  if (!CODE_FILE.test(file) || !CANDIDATE.test(text)) return [];
+  if (
+    !CODE_FILE.test(file) ||
+    !(CANDIDATE.test(text) || SAFETY_COMMENT.test(text))
+  )
+    return [];
   const comments = file.endsWith(".vue")
     ? vueComments(text)
     : scriptComments(
@@ -173,7 +182,7 @@ export function suppressionsIn(file: string, text: string): Suppression[] {
     const typeDirective = tsDirective(comment);
     if (typeDirective !== undefined)
       found.push({ kind: typeDirective, file, line });
-    if (/^\s*\*?\s*SAFETY:/u.test(comment.value))
+    if (SAFETY_COMMENT.test(comment.value))
       found.push({ kind: "safety", file, line });
   }
   return found;

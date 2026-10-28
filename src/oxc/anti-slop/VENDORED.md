@@ -6,4 +6,4 @@ The upstream project is meant to be vendored, not installed from npm. The `effec
 
 ## Local edits
 
-- none
+- `rules/require-safety-comment-for-type-assertion.ts` exports `DEFAULT_SAFETY_MARKERS` and `markerPattern`, so the guardrails suppression counter counts exactly the `SAFETY:` comments this rule accepts.

@@ -148,3 +148,28 @@ test("generated output is left out the way the size guard leaves it out", (t) =>
     ["src/build/authored.ts"],
   );
 });
+
+test("a comment counts as SAFETY: exactly when the type assertion rule accepts it, once per comment", () => {
+  const text = [
+    "// invariant. SAFETY: x",
+    "export const a = value as string;",
+    "/**",
+    " * Reads the row.",
+    " * SAFETY: y",
+    " */",
+    "export const b = value as number;",
+    "// SAFETY: one comment, SAFETY: counted once",
+    'export const c = "SAFETY: only text" as string;',
+    "// SAFETYNET: not a marker",
+    "// SAFETY:",
+    "",
+  ].join("\n");
+  assert.deepEqual(
+    suppressionsIn("rows.ts", text).map(({ kind, line }) => [kind, line]),
+    [
+      ["safety", 1],
+      ["safety", 3],
+      ["safety", 8],
+    ],
+  );
+});

@@ -4,7 +4,7 @@ import type { ESTree, SourceCode } from "@oxlint/plugins";
 
 type TypeAssertion = ESTree.TSAsExpression | ESTree.TSTypeAssertion;
 
-const DEFAULT_SAFETY_MARKERS = ["SAFETY"] as const;
+export const DEFAULT_SAFETY_MARKERS = ["SAFETY"] as const;
 
 const commentOwnerKinds = new Set([
   "ExpressionStatement",
@@ -34,7 +34,7 @@ function configuredSafetyMarkers(option: unknown): readonly string[] {
   return markers.length > 0 ? markers : DEFAULT_SAFETY_MARKERS;
 }
 
-function markerPattern(markers: readonly string[]): RegExp {
+export function markerPattern(markers: readonly string[]): RegExp {
   const alternation = markers
     .map((marker) => marker.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`))
     .join("|");
