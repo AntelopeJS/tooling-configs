@@ -83,7 +83,7 @@ export const ANTI_SLOP_RULES = [
   "require-safety-comment-for-type-assertion",
 ] as const;
 
-/** Correctness must fail CI; underscore bindings and omitted rest siblings are intentional. */
+/** Correctness must fail CI; underscore bindings and omitted rest siblings are intentional; `@ts-ignore` is banned because `@ts-expect-error` fails once the error is gone. */
 function basePreset(importCycles: boolean) {
   return defineConfig({
     categories: { correctness: "error" },
@@ -105,6 +105,15 @@ function basePreset(importCycles: boolean) {
       "import/no-cycle": importCycles ? "error" : "off",
       "import/no-self-import": "error",
       "import/no-duplicates": "error",
+      "typescript/ban-ts-comment": [
+        "error",
+        {
+          "ts-check": false,
+          "ts-expect-error": false,
+          "ts-ignore": true,
+          "ts-nocheck": false,
+        },
+      ],
     },
   });
 }

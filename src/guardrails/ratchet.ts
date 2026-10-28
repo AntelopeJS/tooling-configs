@@ -1,4 +1,3 @@
-import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -9,7 +8,7 @@ import {
   MAX_FILE_BYTES,
   type Ceilings,
 } from "./ceilings.ts";
-import { authoredSizes, gitFiles } from "./files.ts";
+import { authoredSizes, changedFiles } from "./files.ts";
 import { lintDiagnostics, type Diagnostic } from "./oxlint.ts";
 import { readCarriedCeilings } from "./renames.ts";
 import { sizeFailure } from "./size.ts";
@@ -32,26 +31,6 @@ function baseline(root: string, diagnostics: Diagnostic[]): Ceilings {
 
 export function measureBaseline(root: string, config?: string): Ceilings {
   return baseline(root, lintDiagnostics(root, config));
-}
-
-function changedFiles(root: string): Set<string> {
-  if (
-    spawnSync("git", ["rev-parse", "--verify", "HEAD"], {
-      cwd: root,
-      stdio: "ignore",
-    }).status !== 0
-  )
-    return new Set(gitFiles(root));
-  const tracked = execFileSync("git", ["diff", "HEAD", "--name-only", "-z"], {
-    cwd: root,
-    encoding: "utf8",
-  });
-  const untracked = execFileSync(
-    "git",
-    ["ls-files", "--others", "--exclude-standard", "-z"],
-    { cwd: root, encoding: "utf8" },
-  );
-  return new Set(`${tracked}${untracked}`.split("\0").filter(Boolean));
 }
 
 function lowerCeilings(ceilings: Ceilings, current: Ceilings): string[] {

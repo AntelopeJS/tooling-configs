@@ -28,6 +28,7 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 | bin                | `antelopejs-sync`                                                         | Writes the guardrail pack into a repository; `--check` reports drift        |
 | bin                | `antelopejs-checks`                                                       | Runs every check and prints only the failures                               |
 | bin                | `antelopejs-ratchet`                                                      | Fails when recorded debt grows; `--update` lowers the record                |
+| bin                | `antelopejs-suppressions`                                                 | Fails when suppressions exceed their budget; `--update` lowers the budget   |
 | bin                | `antelopejs-check-size`                                                   | Fails on authored files over 20,000 bytes and on blanket disable directives |
 | bin                | `antelopejs-api-diff <base-ref>`                                          | Compares published declaration bundles against committed HEAD               |
 | bin                | `antelopejs-comment-proof <base-ref>`                                     | Compares comment-free JavaScript emit against committed HEAD                |
@@ -79,15 +80,15 @@ export default defineConfig({
 
 ### What the preset turns on
 
-| Group          | Rules                                                                                                                                                                                                             | Default |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| oxc            | the `correctness` category, with the `eslint`, `typescript`, `node`, `oxc`, `import` and `promise` plugins; `no-unused-vars` (`_` prefix allowed), `eqeqeq` (`== null` allowed), `radix`, `prefer-regex-literals` | error   |
-| Imports        | `import/no-cycle`, `import/no-self-import`, `import/no-duplicates`                                                                                                                                                | error   |
-| Type-aware     | `typescript/no-floating-promises` and eight more type-aware rules                                                                                                                                                 | error   |
-| Complexity     | `max-params` 5, `max-lines-per-function` 120, `max-lines` 500, `max-depth` 4, `complexity` 20                                                                                                                     | error   |
-| Anti-slop      | all 15 vendored rules                                                                                                                                                                                             | error   |
-| Guardrails     | `antelopejs/no-comments`; in test files `antelopejs/no-fs-read-in-tests`, `antelopejs/no-constant-value-assertion`, `antelopejs/no-typeof-function-only-test` and `antelopejs/require-assertion`                  | error   |
-| Import sorting | `perfectionist/sort-imports`, autofixed by `oxlint --fix`                                                                                                                                                         | off     |
+| Group          | Rules                                                                                                                                                                                                                                                                | Default |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| oxc            | the `correctness` category, with the `eslint`, `typescript`, `node`, `oxc`, `import` and `promise` plugins; `no-unused-vars` (`_` prefix allowed), `eqeqeq` (`== null` allowed), `radix`, `prefer-regex-literals`, `typescript/ban-ts-comment` for `@ts-ignore` only | error   |
+| Imports        | `import/no-cycle`, `import/no-self-import`, `import/no-duplicates`                                                                                                                                                                                                   | error   |
+| Type-aware     | `typescript/no-floating-promises` and eight more type-aware rules                                                                                                                                                                                                    | error   |
+| Complexity     | `max-params` 5, `max-lines-per-function` 120, `max-lines` 500, `max-depth` 4, `complexity` 20                                                                                                                                                                        | error   |
+| Anti-slop      | all 15 vendored rules                                                                                                                                                                                                                                                | error   |
+| Guardrails     | `antelopejs/no-comments`; in test files `antelopejs/no-fs-read-in-tests`, `antelopejs/no-constant-value-assertion`, `antelopejs/no-typeof-function-only-test` and `antelopejs/require-assertion`                                                                     | error   |
+| Import sorting | `perfectionist/sort-imports`, autofixed by `oxlint --fix`                                                                                                                                                                                                            | off     |
 
 No rule warns. oxlint reports `correctness` as warnings by default, and warnings never fail the command, so the preset raises it to error. A repository with existing findings records them in `guardrails.ratchet.json` instead of lowering a severity (see [Guardrail pack](#guardrail-pack)).
 
@@ -146,20 +147,21 @@ pnpm exec antelopejs-sync
 pnpm install
 ```
 
-| File                                                    | What `sync` does                                                                                                                                                                                      |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `oxlint.config.ts`, `oxfmt.config.ts`, `knip.config.ts` | Writes a config that extends the preset, unless the file already imports it                                                                                                                           |
-| `lefthook.yml`                                          | Pre-commit on staged files: oxfmt, oxlint, size. Pre-push: typecheck                                                                                                                                  |
-| `package.json`                                          | `prepare` installs lefthook. Sets `checks`, `size`, `ratchet`, `ratchet:update`, `sync`, `sync:check`; adds missing `typecheck`, `lint`, `format`, `format:check`, `knip`; adds `lefthook` and `knip` |
-| `.nvmrc`                                                | `24`                                                                                                                                                                                                  |
-| `.agents/setup`                                         | Orb setup: switches to the `.nvmrc` Node, activates `packageManager` through corepack, installs with the frozen lockfile                                                                              |
-| `AGENTS.md`                                             | Writes the managed block between `<!-- antelopejs-guardrails:start -->` and `:end -->`; text outside the markers stays                                                                                |
-| `CLAUDE.md`                                             | `@AGENTS.md`                                                                                                                                                                                          |
-| `guardrails.ratchet.json`                               | Records non-empty debt on first adoption, before `sync:check` exists                                                                                                                                  |
+| File                                                    | What `sync` does                                                                                                                                                                                                                             |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `oxlint.config.ts`, `oxfmt.config.ts`, `knip.config.ts` | Writes a config that extends the preset, unless the file already imports it                                                                                                                                                                  |
+| `lefthook.yml`                                          | Pre-commit on staged files: oxfmt, oxlint, size, suppressions. Pre-push: typecheck                                                                                                                                                           |
+| `package.json`                                          | `prepare` installs lefthook. Sets `checks`, `size`, `ratchet`, `ratchet:update`, `suppressions`, `suppressions:update`, `sync`, `sync:check`; adds missing `typecheck`, `lint`, `format`, `format:check`, `knip`; adds `lefthook` and `knip` |
+| `.nvmrc`                                                | `24`                                                                                                                                                                                                                                         |
+| `.agents/setup`                                         | Orb setup: switches to the `.nvmrc` Node, activates `packageManager` through corepack, installs with the frozen lockfile                                                                                                                     |
+| `AGENTS.md`                                             | Writes the managed block between `<!-- antelopejs-guardrails:start -->` and `:end -->`; text outside the markers stays                                                                                                                       |
+| `CLAUDE.md`                                             | `@AGENTS.md`                                                                                                                                                                                                                                 |
+| `guardrails.ratchet.json`                               | Records non-empty debt on first adoption, before `sync:check` exists                                                                                                                                                                         |
+| `guardrails.suppressions.json`                          | Records the current suppression counts when the file is missing; restores the committed file instead when HEAD has one; never rewrites an existing file                                                                                      |
 
 `--profile template` writes only the three preset configs and a user-facing `AGENTS.md` block, for template repositories. `antelopejs-sync --check` writes nothing and exits 1 on any drift; `pnpm run checks` runs it.
 
-`pnpm run checks` runs `typecheck`, `lint`, `format:check`, `knip`, `test`, `size` and `sync:check`, plus `ratchet` when `guardrails.ratchet.json` exists. It prints only the output of the steps that failed. Sync adds the ratchet scripts and pre-commit hook only while that file exists.
+`pnpm run checks` runs `typecheck`, `lint`, `format:check`, `knip`, `test`, `size`, `suppressions` and `sync:check`, plus `ratchet` when `guardrails.ratchet.json` exists. It prints only the output of the steps that failed. Sync adds the ratchet scripts and pre-commit hook only while that file exists.
 
 ### Ratchet
 
@@ -179,6 +181,25 @@ pnpm install
 When every rule count is zero and `oversizeFiles` is empty, the ratchet is retired. `antelopejs-ratchet --update` deletes the file and asks you to run `antelopejs-sync`. Sync then removes `ratchet`, `ratchet:update`, the ratchet hook and the Debt instructions. Commit those changes together. An empty baseline on first adoption creates no file. Later syncs never recreate it because the `sync:check` script marks adoption.
 
 `antelopejs-sync --check` rejects an existing retired file and tells you to run `ratchet:update`. Plain sync reports the same note but leaves deletion to the update command.
+
+### Suppression budget
+
+`guardrails.suppressions.json` caps the suppressions in authored code files. It is separate from the ratchet and permanent: it stays when its counts reach zero and when the ratchet is retired.
+
+```json
+{
+  "rules": { "anti-slop/no-chained-type-assertions": 19, "*": 0 },
+  "tsExpectError": 8,
+  "tsIgnore": 0,
+  "safety": 2
+}
+```
+
+- `rules` holds lint directives (`oxlint-disable`, `eslint-disable`, their `-line` and `-next-line` forms, in line or block comments, after code too) per rule they name; a directive naming several rules counts once per rule, and one naming none counts under `*`. A rule missing from `rules` has ceiling 0. The other fields count `@ts-expect-error`, `@ts-ignore` and `SAFETY:` comments. The counter is the one behind the proof tables: it reads comments from the parser, so strings and template literals are never counted, and it skips generated output as the size guard does.
+- `antelopejs-suppressions` fails when a count is above its ceiling, printing each `file:line` in the files the change touched and the fix: fix the code, or remove another suppression of the same kind; a rule that keeps needing suppressions should be changed in the preset. It prints nothing on success.
+- `antelopejs-suppressions --update` lowers each ceiling to the current count and drops rules at zero. No command raises a ceiling. A raise is a hand edit, visible in the diff.
+- The pre-commit hook runs `antelopejs-suppressions --staged`: it compares the suppressions in the staged files with those files at HEAD, following renames and counting deleted files, and fails a kind that rises by more than the staged budget raises its ceiling. A suppression moved between staged files nets out.
+- `@ts-ignore` is also a lint error (`typescript/ban-ts-comment`); `@ts-expect-error` fails once its error is gone.
 
 ### Size
 

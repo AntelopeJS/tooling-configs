@@ -254,6 +254,7 @@ test("template profile manages only presets and AGENTS, and appends without repl
     ".nvmrc",
     ".agents/setup",
     "guardrails.ratchet.json",
+    "guardrails.suppressions.json",
   ])
     assert.equal(existsSync(join(root, path)), false, path);
   assert.equal(
@@ -355,7 +356,7 @@ test("sync leaves retired files for ratchet:update, then removes ratchet wiring 
   assert.equal(existsSync(join(root, "guardrails.ratchet.json")), false);
 });
 
-test("first adoption without debt writes no ratchet file, scripts or hook", (t) => {
+test("first adoption without debt writes no ratchet file, scripts or hook, but keeps an all-zero suppression budget", (t) => {
   const root = testRepo(t);
   linkOxlint(root);
   put(
@@ -371,5 +372,12 @@ test("first adoption without debt writes no ratchet file, scripts or hook", (t) 
     undefined,
   );
   assert.doesNotMatch(read(root, "lefthook.yml"), /antelopejs-ratchet/);
+  assert.deepEqual(JSON.parse(read(root, "guardrails.suppressions.json")), {
+    rules: {},
+    tsExpectError: 0,
+    tsIgnore: 0,
+    safety: 0,
+  });
+  assert.match(read(root, "lefthook.yml"), /antelopejs-suppressions --staged/);
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
 });
