@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.10
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.9...v0.2.10)
+
+### 🚀 Enhancements
+
+- **lint:** Accept typeof inside type guards and assertion functions ([#39](https://github.com/AntelopeJS/tooling-configs/pull/39))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli <rizzitelli.antony@pm.me>
+
 ## v0.2.9
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.8...v0.2.9)
