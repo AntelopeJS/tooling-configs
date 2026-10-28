@@ -18,16 +18,7 @@ const SIZE_EXCLUSIONS = [
     ],
   },
   { kind: "fixtures", patterns: ["**/fixtures/**", "**/__fixtures__/**"] },
-  {
-    kind: "data",
-    patterns: [
-      "**/locales/**/*.json",
-      "**/i18n/**/*.json",
-      "**/blocks.json",
-      "**/schema.json",
-      "**/evals/**/cases.json",
-    ],
-  },
+  { kind: "data", patterns: ["**/*.{json,jsonc,json5}"] },
   {
     kind: "lockfiles",
     patterns: [
