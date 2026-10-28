@@ -35,6 +35,37 @@ const NEVER_SUPPRESSED: ReadonlyMap<string, string> = new Map([
   ["typescript/ban-ts-comment", "use `@ts-expect-error <reason>`"],
 ]);
 
+const MIN_REASON_WORDS = 3;
+
+/** Words that say a suppression is wanted without saying why the code needs it. */
+const VAGUE_WORDS = new Set(
+  `a an the this that it its is are be was here there we for of to as and or not no
+  ok okay fine safe safely correct valid works working intended intentional intentionally
+  needed necessary required expected known false positive legacy existing old behavior behaviour
+  preserve preserved preserves preserving keep kept compat compatibility workaround hack
+  temporary todo fixme later ignore ignored disable disabled suppress suppressed lint rule
+  type types typing typescript cast casting assert assertion by design trust trusted me`.split(
+    /\s+/u,
+  ),
+);
+
+function words(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+
+/** A reason too short or too vague to tell a reader why this code needs its suppression. */
+function genericReason(suppression: Suppression): boolean {
+  const said = words(suppression.reason);
+  if (said.length < MIN_REASON_WORDS) return true;
+  const named = new Set(
+    suppression.kind === "rule" ? words(suppression.rule) : [],
+  );
+  return said.every((word) => VAGUE_WORDS.has(word) || named.has(word));
+}
+
 function identity(suppression: Suppression): string {
   return [
     suppression.kind,
@@ -88,20 +119,37 @@ function addedSuppressions(
   return unmatched(before, after, identity);
 }
 
+function label(suppression: Suppression): string {
+  if (suppression.kind === "rule")
+    return `\`${suppression.directive} ${suppression.rule}\``;
+  if (suppression.kind === "safety") return "`SAFETY:`";
+  return suppression.kind === "tsIgnore"
+    ? "`@ts-ignore`"
+    : "`@ts-expect-error`";
+}
+
 /**
- * Fails each added suppression that names a rule no directive may name.
- * Suppressions already on the base are left to the burn-down the budget
- * tracks.
+ * Fails each added suppression that names a rule no directive may name, and
+ * each whose reason is empty or generic. Suppressions already on the base
+ * are left to the burn-down the budget tracks.
  */
 function policyFailures(added: Suppression[]): string[] {
   return added.flatMap((suppression) => {
-    if (suppression.kind !== "rule") return [];
-    const instead = NEVER_SUPPRESSED.get(suppression.rule);
-    return instead === undefined
-      ? []
-      : [
-          `${suppression.file}:${suppression.line}: \`${suppression.directive} ${suppression.rule}\`: this rule is never suppressed. Fix: ${instead}.`,
-        ];
+    const at = `${suppression.file}:${suppression.line}`;
+    const instead =
+      suppression.kind === "rule"
+        ? NEVER_SUPPRESSED.get(suppression.rule)
+        : undefined;
+    if (instead !== undefined)
+      return [
+        `${at}: ${label(suppression)}: this rule is never suppressed. Fix: ${instead}.`,
+      ];
+    if (suppression.kind === "rule" && suppression.rule === "*") return [];
+    if (!genericReason(suppression)) return [];
+    const quoted = suppression.reason ? `"${suppression.reason}"` : "none";
+    return [
+      `${at}: ${label(suppression)} reason ${quoted} does not say why this code needs it. Fix: state the fact about this line that makes the suppression hold (at least ${MIN_REASON_WORDS} words${suppression.kind === "rule" ? ", after ` -- `" : ""}), or fix the code.`,
+    ];
   });
 }
 
@@ -117,7 +165,8 @@ function hasCommit(root: string, revision: string): boolean {
 
 /**
  * Fails what the working tree adds against `revision` (HEAD when none is
- * given): a suppression that names a never-suppressed rule.
+ * given): a suppression that names a never-suppressed rule or gives no
+ * specific reason.
  */
 export function checkPolicy(root: string, revision = "HEAD"): string[] {
   if (!hasCommit(root, revision)) return [];

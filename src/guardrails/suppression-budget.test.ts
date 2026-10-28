@@ -93,7 +93,7 @@ test("the staged check fails a commit adding an inline directive, nets a suppres
   put(
     root,
     "src/routes.ts",
-    `${ROUTES}export const debug = () => console.log("route"); // oxlint-disable-line no-console -- debugging routes\n`,
+    `${ROUTES}export const debug = () => console.log("route"); // oxlint-disable-line no-console -- prints each matched route while debugging\n`,
   );
   git(root, ["add", "src/routes.ts"]);
   const inline = bin(root, "suppressions", ["--staged"]);

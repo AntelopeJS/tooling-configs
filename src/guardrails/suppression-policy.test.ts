@@ -21,6 +21,18 @@ const AUTH_FETCH = [
   "",
 ].join("\n");
 
+const NUMBERS = (reason: string) =>
+  [
+    "export function expectDate(parsed: Date | string) {",
+    "  if (!(parsed instanceof Date))",
+    "    throw new Error(",
+    `      // oxlint-disable-next-line anti-slop/no-runtime-typeof${reason}`,
+    "      `Date filter expects a date value. Got: ${typeof parsed}`,",
+    "    );",
+    "}",
+    "",
+  ].join("\n");
+
 function budgetRepo(
   t: Parameters<typeof testRepo>[0],
   files: Record<string, string>,
@@ -64,4 +76,63 @@ test("a new directive disabling the SAFETY rule fails within the budget and name
   const moved = bin(root, "suppressions");
   assert.equal(moved.status, 0, moved.stderr);
   assert.equal(bin(root, "suppressions", ["--staged"]).status, 0);
+});
+
+test("an added directive with no reason or a one-word reason fails, and a stripped reason counts as added where it was stripped", (t) => {
+  const reasoned = NUMBERS(
+    " -- the message reports the runtime kind of the rejected value",
+  );
+  const root = budgetRepo(
+    t,
+    { "src/numbers.ts": reasoned, "src/legacy.ts": NUMBERS("") },
+    { "anti-slop/no-runtime-typeof": 2 },
+  );
+  assert.equal(bin(root, "suppressions").status, 0);
+  put(root, "src/numbers.ts", NUMBERS(" -- Diagnostic."));
+  const vague = bin(root, "suppressions");
+  assert.equal(vague.status, 1);
+  assert.match(
+    vague.stderr,
+    /^src\/numbers\.ts:4: `oxlint-disable-next-line anti-slop\/no-runtime-typeof` reason "Diagnostic\." does not say why this code needs it\. Fix: state the fact about this line that makes the suppression hold \(at least 3 words, after ` -- `\), or fix the code\.$/m,
+  );
+  put(root, "src/numbers.ts", NUMBERS(""));
+  assert.match(
+    bin(root, "suppressions").stderr,
+    /^src\/numbers\.ts:4: `oxlint-disable-next-line anti-slop\/no-runtime-typeof` reason none[^\n]*\n(?!src\/legacy)/,
+  );
+  put(
+    root,
+    "src/numbers.ts",
+    NUMBERS(" -- intentional legacy behaviour, safe"),
+  );
+  assert.match(bin(root, "suppressions").stderr, /does not say why/);
+  put(root, "src/numbers.ts", reasoned);
+  assert.equal(bin(root, "suppressions").status, 0);
+});
+
+test("a vague SAFETY: or @ts-expect-error reason fails like a directive's", (t) => {
+  const root = budgetRepo(t, { "src/index.ts": "export {};\n" }, {});
+  put(
+    root,
+    "src/index.ts",
+    [
+      "// SAFETY: safe cast",
+      "export const id = JSON.parse('1') as number;",
+      "// @ts-expect-error",
+      "export const total: number = 'total';",
+      "",
+    ].join("\n"),
+  );
+  put(
+    root,
+    "guardrails.suppressions.json",
+    formatBudget({ rules: {}, tsExpectError: 1, tsIgnore: 0, safety: 1 }),
+  );
+  const result = bin(root, "suppressions");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /src\/index\.ts:1: `SAFETY:` reason "safe cast"/);
+  assert.match(
+    result.stderr,
+    /src\/index\.ts:3: `@ts-expect-error` reason none/,
+  );
 });
