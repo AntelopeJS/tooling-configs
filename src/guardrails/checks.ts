@@ -13,6 +13,7 @@ const CHECK_STEPS = [
   "test",
   "size",
   "ratchet",
+  "suppressions",
   "sync:check",
 ];
 

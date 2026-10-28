@@ -4,17 +4,11 @@ import { readCeilings } from "./ceilings.ts";
 import { lintDiagnostics } from "./oxlint.ts";
 import { renamedPaths } from "./renames.ts";
 
-export function stagedRatchet(root: string, files?: string[]): string[] {
-  const targets =
-    files ??
-    execFileSync(
-      "git",
-      ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"],
-      { cwd: root, encoding: "utf8" },
-    )
-      .split("\0")
-      .filter(Boolean);
-  if (!targets.length) return [];
+/** The line ranges each staged file adds against HEAD, following renames. */
+export function stagedAdditions(
+  root: string,
+  targets: string[],
+): Map<string, { start: number; end: number }[]> {
   const renames = renamedPaths(root, true);
   const additions = new Map<string, { start: number; end: number }[]>();
   for (const file of targets) {
@@ -43,6 +37,21 @@ export function stagedRatchet(root: string, files?: string[]): string[] {
       ),
     );
   }
+  return additions;
+}
+
+export function stagedRatchet(root: string, files?: string[]): string[] {
+  const targets =
+    files ??
+    execFileSync(
+      "git",
+      ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"],
+      { cwd: root, encoding: "utf8" },
+    )
+      .split("\0")
+      .filter(Boolean);
+  if (!targets.length) return [];
+  const additions = stagedAdditions(root, targets);
   const ceilings = readCeilings(root);
   return lintDiagnostics(root, undefined, targets)
     .filter(

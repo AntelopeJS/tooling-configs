@@ -267,3 +267,29 @@ test("fixture, helper and locale directories can read files while tests and ordi
     project.remove();
   }
 });
+
+test("the preset bans @ts-ignore but keeps @ts-expect-error with a reason", () => {
+  const project = lintProject();
+  try {
+    project.write(
+      "src/legacy.ts",
+      "// @ts-ignore\nexport const ignored: number = 'x';\n// @ts-expect-error a legacy string id\nexport const expected: number = 'y';\n",
+    );
+    const result = project.run();
+    assert.deepEqual(
+      result.diagnostics.map(
+        (diagnostic: {
+          code: string;
+          labels: { span: { line: number } }[];
+        }) => [diagnostic.code, diagnostic.labels[0].span.line],
+      ),
+      [
+        ["typescript(ban-ts-comment)", 1],
+        ["antelopejs(no-comments)", 1],
+      ],
+      JSON.stringify(result),
+    );
+  } finally {
+    project.remove();
+  }
+});

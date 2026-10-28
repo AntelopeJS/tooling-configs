@@ -27,6 +27,7 @@
     "antelopejs-checks": "./dist/bin/checks.mjs",
     "antelopejs-comment-proof": "./dist/bin/comment-proof.mjs",
     "antelopejs-ratchet": "./dist/bin/ratchet.mjs",
+    "antelopejs-suppressions": "./dist/bin/suppressions.mjs",
     "antelopejs-sync": "./dist/bin/sync.mjs"
   },
   "files": [
@@ -60,7 +61,9 @@
     "prepare": "if git rev-parse --is-inside-work-tree >/dev/null 2>&1 && command -v lefthook >/dev/null 2>&1; then lefthook install; fi",
     "sync": "node src/bin/sync.ts",
     "sync:check": "node src/bin/sync.ts --check",
-    "knip": "knip"
+    "knip": "knip",
+    "suppressions": "node src/bin/suppressions.ts",
+    "suppressions:update": "node src/bin/suppressions.ts --update"
   },
   "dependencies": {
     "@oxlint/plugins": "1.81.0",

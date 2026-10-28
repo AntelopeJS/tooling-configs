@@ -69,11 +69,18 @@ export function linkOxlint(root: string): void {
   );
 }
 
-export function bin(root: string, name: string, args: string[] = []) {
+/** Runs a bin from source as CI would, without the CI run's own pull request base, plus `env`. */
+export function bin(
+  root: string,
+  name: string,
+  args: string[] = [],
+  env: Record<string, string> = {},
+) {
+  const { GITHUB_BASE_REF: _base, ...inherited } = process.env;
   return spawnSync(
     process.execPath,
     [join(PACKAGE_ROOT, "src/bin", `${name}.ts`), ...args],
-    { cwd: root, encoding: "utf8", env: { ...process.env, CI: "1" } },
+    { cwd: root, encoding: "utf8", env: { ...inherited, CI: "1", ...env } },
   );
 }
 

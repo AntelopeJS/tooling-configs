@@ -72,6 +72,7 @@ export function repositoryTools(manifest: Manifest) {
         checks: "antelopejs-checks",
         size: "antelopejs-check-size",
         ratchet: "antelopejs-ratchet",
+        suppressions: "antelopejs-suppressions",
         sync: "antelopejs-sync",
       },
       presets: {
@@ -86,6 +87,7 @@ export function repositoryTools(manifest: Manifest) {
         checks: "node src/bin/checks.ts",
         size: "node src/bin/check-size.ts",
         ratchet: "node src/bin/ratchet.ts",
+        suppressions: "node src/bin/suppressions.ts",
         sync: "node src/bin/sync.ts",
       },
       presets: {
@@ -133,6 +135,7 @@ export function managedPackage(
   const tools = repositoryTools(manifest);
   Object.assign(scripts, tools.commands, {
     "ratchet:update": `${tools.commands.ratchet} --update`,
+    "suppressions:update": `${tools.commands.suppressions} --update`,
     "sync:check": `${tools.commands.sync} --check`,
   });
   if (options.ratchet === false) {

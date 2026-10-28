@@ -33,6 +33,7 @@ import {
   type PackageManager,
 } from "./package.ts";
 import { measureBaseline } from "./ratchet.ts";
+import { adoptedBudget, SUPPRESSIONS_FILE } from "./suppression-budget.ts";
 import {
   lefthook,
   PRESET_CONFIGS,
@@ -50,6 +51,7 @@ export interface RepoContext extends AgentsBlockContext {
   nuxt: boolean;
   claude: string;
   baseline: string;
+  suppressionBudget: string;
 }
 
 interface ArtifactContent {
@@ -165,6 +167,14 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
     profiles: ["full"],
     desired: (current, context) => ({
       content: current ?? context.baseline,
+      notes: [],
+    }),
+  },
+  {
+    path: SUPPRESSIONS_FILE,
+    profiles: ["full"],
+    desired: (current, context) => ({
+      content: current ?? context.suppressionBudget,
       notes: [],
     }),
   },
@@ -322,6 +332,10 @@ function repositoryContext(
     ),
     claude: profile === "full" ? claudeProse(root, current) : "",
     baseline: "",
+    suppressionBudget:
+      profile === "full" && !current.has(SUPPRESSIONS_FILE)
+        ? adoptedBudget(root)
+        : "",
     verificationSkill: verificationSkill(root),
     glossary: ["GLOSSARY.md", "docs/GLOSSARY.md"].find((file) =>
       existsSync(join(root, file)),

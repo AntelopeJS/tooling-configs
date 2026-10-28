@@ -63,6 +63,27 @@ export function gitFiles(root: string): string[] {
   ];
 }
 
+/** Files that differ from HEAD in the working tree, untracked ones included; every file before the first commit. */
+export function changedFiles(root: string): Set<string> {
+  if (
+    spawnSync("git", ["rev-parse", "--verify", "HEAD"], {
+      cwd: root,
+      stdio: "ignore",
+    }).status !== 0
+  )
+    return new Set(gitFiles(root));
+  const tracked = execFileSync("git", ["diff", "HEAD", "--name-only", "-z"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  const untracked = execFileSync(
+    "git",
+    ["ls-files", "--others", "--exclude-standard", "-z"],
+    { cwd: root, encoding: "utf8" },
+  );
+  return new Set(`${tracked}${untracked}`.split("\0").filter(Boolean));
+}
+
 export function repositoryRoot(cwd = process.cwd()): string {
   return execFileSync("git", ["rev-parse", "--show-toplevel"], {
     cwd,

@@ -93,6 +93,10 @@ export function lefthook(
         glob,
         run: `${tools.hookPrefix}${tools.commands.ratchet} --staged {staged_files}`,
       },
+      "antelopejs-suppressions": {
+        glob,
+        run: `${tools.hookPrefix}${tools.commands.suppressions} --staged`,
+      },
     },
     "pre-push": {
       "antelopejs-typecheck": { run: `${manager} run typecheck` },

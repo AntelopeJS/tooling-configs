@@ -26,7 +26,8 @@ test("checks suppresses passing output, reports missing scripts, and continues a
   assert.match(result.stdout, /Missing package.json script "size"/);
   assert.match(result.stdout, /later failure/);
   assert.doesNotMatch(result.stdout, /hidden success/);
-  assert.match(result.stdout, /Checks: 5 passed, 3 failed\./);
+  assert.match(result.stdout, /Missing package.json script "suppressions"/);
+  assert.match(result.stdout, /Checks: 5 passed, 4 failed\./);
   put(
     root,
     "package.json",
@@ -41,6 +42,7 @@ test("checks suppresses passing output, reports missing scripts, and continues a
           "test",
           "size",
           "ratchet",
+          "suppressions",
           "sync:check",
         ].map((name) => [name, "node -e \"console.log('hidden success')\""]),
       ),
@@ -48,7 +50,7 @@ test("checks suppresses passing output, reports missing scripts, and continues a
   );
   const passing = bin(root, "checks");
   assert.equal(passing.status, 0);
-  assert.equal(passing.stdout, "Checks: 8 passed, 0 failed.\n");
+  assert.equal(passing.stdout, "Checks: 9 passed, 0 failed.\n");
 });
 
 test("checks skips ratchet by file absence even if a stale ratchet script fails", (t) => {
@@ -61,6 +63,7 @@ test("checks skips ratchet by file absence even if a stale ratchet script fails"
       "knip",
       "test",
       "size",
+      "suppressions",
       "sync:check",
     ].map((name) => [name, 'node -e "process.exit(0)"']),
   );
@@ -68,5 +71,5 @@ test("checks skips ratchet by file absence even if a stale ratchet script fails"
   put(root, "package.json", JSON.stringify({ packageManager: "npm", scripts }));
   const result = bin(root, "checks");
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 7 passed, 0 failed.\n");
+  assert.equal(result.stdout, "Checks: 8 passed, 0 failed.\n");
 });
