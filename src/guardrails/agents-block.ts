@@ -39,7 +39,7 @@ An entry-only rule exempts only its own module. Add a second module entry rather
 
 const SUPPRESSION_BUDGET = `### Suppression budget
 
-\`guardrails.suppressions.json\` caps the suppressions in authored code: lint directives per rule they name (\`*\` for none), \`@ts-expect-error\`, \`@ts-ignore\` and \`SAFETY:\` comments. A suppression over its ceiling fails: fix the code, or remove another suppression of the same kind. A rule that keeps needing suppressions should be changed in the preset. Never raise a number in that file; only a human raises one, by hand, in a reviewed diff. After you remove suppressions, run \`pnpm run suppressions:update\` and commit the lowered file.`;
+\`guardrails.suppressions.json\` caps the suppressions in authored code: lint directives per rule they name (\`*\` for none), \`@ts-expect-error\`, \`@ts-ignore\` and \`SAFETY:\` comments. A suppression over its ceiling fails: fix the code, or remove another suppression of the same kind. A rule that keeps needing suppressions should be changed in the preset. Never raise or remove a number in that file: the check fails a ceiling higher than on the pull request base, and only the operator approves a raise. After you remove suppressions, run \`pnpm run suppressions:update\` and commit the lowered file.`;
 
 const SHARED_RULES = [
   ["Formatting", "oxfmt"],

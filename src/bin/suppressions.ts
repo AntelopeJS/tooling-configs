@@ -4,24 +4,37 @@ import { parseArgs } from "node:util";
 import { runCli } from "../guardrails/cli.ts";
 import { repositoryRoot } from "../guardrails/files.ts";
 import {
+  raisedCeilings,
+  suppressionBase,
+} from "../guardrails/suppression-base.ts";
+import {
   checkSuppressions,
   stagedSuppressions,
 } from "../guardrails/suppression-budget.ts";
+
+function fullCheck(root: string, update?: boolean, base?: string): string[] {
+  const failures = checkSuppressions(root, update);
+  const revision = suppressionBase(root, base);
+  return revision === undefined
+    ? failures
+    : [...raisedCeilings(root, revision), ...failures];
+}
 
 runCli(() => {
   const { values } = parseArgs({
     options: {
       update: { type: "boolean" },
       staged: { type: "boolean" },
+      base: { type: "string" },
     },
     allowPositionals: true,
   });
-  if (values.update && values.staged)
-    throw new Error("--staged cannot be combined with --update.");
+  if (values.staged && (values.update || values.base !== undefined))
+    throw new Error("--staged cannot be combined with --update or --base.");
   const root = repositoryRoot();
   const failures = values.staged
     ? stagedSuppressions(root)
-    : checkSuppressions(root, values.update);
+    : fullCheck(root, values.update, values.base);
   for (const failure of failures) process.stderr.write(`${failure}\n`);
   return failures.length ? 1 : 0;
 });

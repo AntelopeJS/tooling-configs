@@ -39,14 +39,14 @@ function limitOf(budget: SuppressionCounts, suppression: Suppression): number {
 }
 
 function count(value: number | undefined, source: string): number {
-  if (value === undefined) return 0;
+  if (value === undefined) throw new Error(`${source} is missing`);
   if (!Number.isInteger(value) || value < 0)
     throw new Error(`${source} must be a non-negative integer`);
   return value;
 }
 
-/** Parses a budget, rejecting anything but non-negative integer ceilings. */
-function parseBudget(text: string, source: string): SuppressionCounts {
+/** Parses a budget, rejecting a missing field and anything but non-negative integer ceilings. */
+export function parseBudget(text: string, source: string): SuppressionCounts {
   /* SAFETY: JSON text yields plain data; every field is checked below before it is returned. */
   const parsed = JSON.parse(text) as Partial<SuppressionCounts> | null;
   if (parsed === null || Array.isArray(parsed))
@@ -67,12 +67,10 @@ function parseBudget(text: string, source: string): SuppressionCounts {
   };
 }
 
-/** Serializes a budget with sorted rules and no zero rule, so rewriting an unchanged budget is a no-op. */
+/** Serializes a budget with sorted rules, zero ceilings kept, so rewriting an unchanged budget is a no-op. */
 export function formatBudget(budget: SuppressionCounts): string {
   const rules = Object.fromEntries(
-    Object.entries(budget.rules)
-      .filter(([, limit]) => limit > 0)
-      .sort(([a], [b]) => a.localeCompare(b)),
+    Object.entries(budget.rules).sort(([a], [b]) => a.localeCompare(b)),
   );
   return `${JSON.stringify({ ...budget, rules }, null, 2)}\n`;
 }
