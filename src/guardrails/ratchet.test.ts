@@ -267,9 +267,14 @@ test("ratchet removes zero ceilings without claiming a lowering from zero to zer
   );
 });
 
-test("ratchet ignores growth of listed data and binary files and drops their allowances on update", (t) => {
+test("ratchet ignores growth of listed JSON and binary files and drops their allowances on update", (t) => {
   const root = lintRepo(t);
   put(root, "locales/en.json", JSON.stringify("x".repeat(21_000)));
+  put(
+    root,
+    "packages/dms/docs-data/examples.json",
+    JSON.stringify("x".repeat(48_000)),
+  );
   put(root, "opaque.custom", `\0${"x".repeat(21_000)}`);
   put(root, "legacy.ts", "export let legacy: any;\n");
   put(
@@ -277,7 +282,11 @@ test("ratchet ignores growth of listed data and binary files and drops their all
     "guardrails.ratchet.json",
     formatCeilings({
       rules: { "typescript/no-explicit-any": 1 },
-      oversizeFiles: { "locales/en.json": 20_001, "opaque.custom": 20_001 },
+      oversizeFiles: {
+        "locales/en.json": 20_001,
+        "packages/dms/docs-data/examples.json": 48_123,
+        "opaque.custom": 20_001,
+      },
     }),
   );
   const result = bin(root, "ratchet", ["--update"]);
@@ -286,4 +295,21 @@ test("ratchet ignores growth of listed data and binary files and drops their all
     rules: { "typescript/no-explicit-any": 1 },
     oversizeFiles: {},
   });
+});
+
+test("ratchet update keeps an oversize code allowance while dropping the JSON one", (t) => {
+  const root = lintRepo(t);
+  put(root, "docs-data/examples.json", JSON.stringify("x".repeat(48_000)));
+  put(root, "big.ts", `export const big = "${"x".repeat(21_000)}";\n`);
+  put(
+    root,
+    "guardrails.ratchet.json",
+    formatCeilings({
+      rules: {},
+      oversizeFiles: { "docs-data/examples.json": 48_123, "big.ts": 22_000 },
+    }),
+  );
+  const result = bin(root, "ratchet", ["--update"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(Object.keys(readCeilings(root).oversizeFiles), ["big.ts"]);
 });

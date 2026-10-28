@@ -57,7 +57,7 @@ test("size catches untracked tests and real byte excess, not only tracked source
   assert.equal(bin(root, "check-size", ["src/clock.test.ts"]).status, 1);
 });
 
-test("size excludes data JSON and NUL-bearing binaries, not neighbouring authored JSON or late NULs", (t) => {
+test("size excludes every JSON file and NUL-bearing binaries, not oversized code or late NULs", (t) => {
   const root = testRepo(t);
   for (const path of [
     "locales/en.json",
@@ -67,11 +67,25 @@ test("size excludes data JSON and NUL-bearing binaries, not neighbouring authore
     "nested/schema.json",
     "evals/cases.json",
     "nested/evals/suite/cases.json",
+    "packages/dms/docs-data/examples.json",
+    "authored.json",
+    "tsconfig.jsonc",
+    ".config/settings.json5",
   ])
     put(root, path, JSON.stringify("x".repeat(MAX_FILE_BYTES)));
   put(root, "opaque.custom", `\0${"x".repeat(MAX_FILE_BYTES)}`);
   commit(root);
   assert.equal(bin(root, "check-size").status, 0);
+  execFileSync("git", ["add", "packages/dms/docs-data/examples.json"], {
+    cwd: root,
+  });
+  assert.equal(
+    bin(root, "check-size", [
+      "--staged",
+      "packages/dms/docs-data/examples.json",
+    ]).status,
+    0,
+  );
   put(root, "opaque.custom", "x".repeat(MAX_FILE_BYTES + 1));
   assert.equal(
     bin(root, "check-size", ["--staged", "opaque.custom"]).status,
@@ -84,14 +98,15 @@ test("size excludes data JSON and NUL-bearing binaries, not neighbouring authore
     bin(root, "check-size", ["--staged", "opaque.custom"]).status,
     1,
   );
-  put(root, "authored.json", JSON.stringify("x".repeat(MAX_FILE_BYTES)));
+  put(root, "authored.ts", "x".repeat(MAX_FILE_BYTES + 1));
   put(
     root,
     "late.custom",
     `${"x".repeat(8000)}\0${"x".repeat(MAX_FILE_BYTES)}`,
   );
   const result = bin(root, "check-size");
-  assert.match(result.stderr, /authored\.json:/);
+  assert.match(result.stderr, /authored\.ts:/);
+  assert.doesNotMatch(result.stderr, /\.json/u);
   assert.match(result.stderr, /late\.custom:/);
 });
 
