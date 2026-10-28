@@ -204,9 +204,11 @@ function bundlePackage(
   paths: PackagePaths,
   manifest: ProofManifest,
   policy?: AddedPolicy,
+  notices?: Set<string>,
 ): BundledPackage {
   const { directory, output, scratch } = paths;
   const emitted = emitPackage(directory, scratch, true);
+  if (emitted.notice !== undefined) notices?.add(emitted.notice);
   const entries = publishedEntries(directory, manifest, emitted, scratch);
   if (!entries.length) return { count: 0, published: [] };
   bundleDependencies(directory, scratch);
@@ -272,6 +274,7 @@ function declarationDiff(
   policy: AddedPolicy | undefined,
 ) {
   const errors = new Set<string>();
+  const notices = new Set<string>();
   const failedPackages = new Set<string>();
   const unpublished = new Map<string, string>();
   const result = compareRevisions(
@@ -297,6 +300,7 @@ function declarationDiff(
             },
             manifest,
             policy,
+            notices,
           );
           entries += bundled.count;
           published.push(...bundled.published);
@@ -338,6 +342,7 @@ function declarationDiff(
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([directory, reason]) => `API: skipped ${directory}, ${reason}.\n`)
         .join("") +
+      [...notices].sort().join("") +
       [...errors].join(""),
   };
 }

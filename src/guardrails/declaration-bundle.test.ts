@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { bundleDeclarations, workerCount } from "./declaration-bundle.ts";
+import {
+  bundleDeclarations,
+  WORKER_NODE_ARGS,
+  workerCount,
+} from "./declaration-bundle.ts";
 
 const GIB = 1024 ** 3;
 
@@ -21,6 +26,20 @@ test("workerCount needs enough entries per worker and stays inside the cpus, the
     ],
     [1, 6, 8, 3, 2, 1],
   );
+});
+
+test("a worker started with the worker options cannot grow its heap past the per-worker memory workerCount budgets for", () => {
+  const run = spawnSync(
+    process.execPath,
+    [
+      ...WORKER_NODE_ARGS,
+      "-e",
+      "process.stdout.write(String(require('node:v8').getHeapStatistics().heap_size_limit))",
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(run.status, 0, run.stderr);
+  assert.ok(Number(run.stdout) <= 1.5 * GIB, run.stdout);
 });
 
 test("bundleDeclarations returns each entry's bundle at its own index whether one process or several produce them", (t) => {

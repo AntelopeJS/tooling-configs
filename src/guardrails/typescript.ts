@@ -3,6 +3,11 @@ import { createRequire } from "node:module";
 import { dirname, join, matchesGlob, relative, resolve, sep } from "node:path";
 import type ts from "typescript";
 
+import {
+  declaresTypeScript,
+  describePackage,
+  repositoryDirectory,
+} from "./declared-typescript.ts";
 import { trackedManifests } from "./files.ts";
 
 export type ExportTarget =
@@ -61,10 +66,11 @@ export function unpublishedAt(root: string) {
   });
 }
 
-/** A TypeScript installation and the directory of its package. */
+/** A TypeScript installation and the directory of its package; `notice` says the package declares none and the pack's was used. */
 interface PackageCompiler {
   compiler: typeof ts;
   root: string;
+  notice?: string;
 }
 
 function packageRoot(file: string): string {
@@ -77,17 +83,32 @@ function packageRoot(file: string): string {
   return directory;
 }
 
-/** Loads the compiler a package builds with, including a package-local installation in a workspace, falling back to the one `dts-bundle-generator` brings. A TypeScript without the programmatic API (7 and later) is an error rather than a crash. */
-function loadTypeScript(directory: string): PackageCompiler {
-  const own = createRequire(import.meta.url);
-  let file: string;
+function resolveTypeScript(directory: string) {
   try {
-    file = createRequire(join(directory, "package.json")).resolve("typescript");
-  } catch {
-    file = createRequire(own.resolve("dts-bundle-generator")).resolve(
-      "typescript",
-    );
+    return {
+      file: createRequire(join(directory, "package.json")).resolve(
+        "typescript",
+      ),
+      fallback: false,
+    };
+  } catch (error) {
+    if (declaresTypeScript(directory))
+      throw new Error(
+        `${describePackage(directory)} declares typescript but it cannot be resolved from the package directory, so the compiler it builds with is not available. Install dependencies (run pnpm install) and retry.`,
+        { cause: error },
+      );
+    return {
+      file: createRequire(
+        createRequire(import.meta.url).resolve("dts-bundle-generator"),
+      ).resolve("typescript"),
+      fallback: true,
+    };
   }
+}
+
+/** Loads the compiler a package builds with, including a package-local installation in a workspace. A package that declares `typescript` (itself or through its workspace root) but cannot resolve it is an error; only a package that declares none falls back to the one `dts-bundle-generator` brings, with a `notice`. A TypeScript without the programmatic API (7 and later) is an error rather than a crash. */
+function loadTypeScript(directory: string): PackageCompiler {
+  const { file, fallback } = resolveTypeScript(directory);
   /* SAFETY: a resolved typescript package implements the compiler API unless the check below rejects it. */
   const compiler = createRequire(file)("typescript") as typeof ts;
   const root = packageRoot(file);
@@ -95,7 +116,13 @@ function loadTypeScript(directory: string): PackageCompiler {
     throw new Error(
       `TypeScript ${compiler.version} at ${root} has no programmatic compiler API (sys, createProgram), so this package cannot be analysed. Build it with a TypeScript that has one, or mark the package private.`,
     );
-  return { compiler, root };
+  return {
+    compiler,
+    root,
+    notice: fallback
+      ? `${repositoryDirectory(directory)}: declares no typescript; using the pack's TypeScript ${compiler.version}\n`
+      : undefined,
+  };
 }
 
 const TEST_SOURCE_GLOBS = [
@@ -165,7 +192,7 @@ function copyDeclarations(
 }
 
 function parseConfig(directory: string) {
-  const { compiler, root } = loadTypeScript(directory);
+  const { compiler, root, notice } = loadTypeScript(directory);
   const config = compiler.readConfigFile(
     join(directory, "tsconfig.json"),
     compiler.sys.readFile,
@@ -177,7 +204,7 @@ function parseConfig(directory: string) {
     directory,
   );
   failDiagnostics(compiler, parsed.errors);
-  return { compiler, root, parsed };
+  return { compiler, root, notice, parsed };
 }
 
 /** The configured `outDir`, the root under which the declaration half already judges a built path as test output. */
@@ -194,7 +221,7 @@ export function emitPackage(
   output: string,
   declarations: boolean,
 ) {
-  const { compiler, root, parsed } = parseConfig(directory);
+  const { compiler, root, notice, parsed } = parseConfig(directory);
   const options: ts.CompilerOptions = {
     ...parsed.options,
     rootDir:
@@ -249,6 +276,7 @@ export function emitPackage(
   return {
     compiler,
     compilerRoot: root,
+    notice,
     files,
     modules,
     options: parsed.options,

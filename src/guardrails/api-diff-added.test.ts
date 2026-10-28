@@ -58,6 +58,14 @@ test("api-diff --allow-added passes an added internal entry marked @internal in 
   assert.doesNotMatch(strict.stdout, /Added \(allowed\)/);
 });
 
+test("api-diff --allow-added prints no Added (allowed) line when nothing was added", (t) => {
+  const root = wildcardRepo(t);
+  const result = bin(root, "api-diff", ["base", ...INTERNAL]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /^API: 1 packages, 2 entries unchanged/);
+  assert.doesNotMatch(result.stdout, /Added \(allowed\)/);
+});
+
 test("api-diff --allow-added accepts a module-level @internal tag or a tag on every exported declaration and rejects a partly tagged module", (t) => {
   const root = wildcardRepo(t);
   addHelper(
@@ -87,7 +95,7 @@ test("api-diff --allow-added fails an added internal entry without @internal and
   addHelper(root, "export function help(): number { return 1; }\n");
   const result = bin(root, "api-diff", ["base", ...INTERNAL]);
   assert.equal(result.status, 1, result.stdout + result.stderr);
-  assert.match(result.stdout, /Added \(allowed\): 0/);
+  assert.doesNotMatch(result.stdout, /Added \(allowed\)/);
   assert.match(
     result.stdout,
     /src\/internal\/helper\.ts.*not marked @internal/,
