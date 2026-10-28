@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, join, matchesGlob, relative, resolve, sep } from "node:path";
 import type ts from "typescript";
 
-import { trackedManifests } from "./revisions.ts";
+import { trackedManifests } from "./files.ts";
 
 export type ExportTarget =
   | string
