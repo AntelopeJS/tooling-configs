@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.9
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.8...v0.2.9)
+
+### 🚀 Enhancements
+
+- **garden:** Add the antelopejs-garden bin and sync the CI and mutation callers ([#38](https://github.com/AntelopeJS/tooling-configs/pull/38))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.2.8
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.7...v0.2.8)
