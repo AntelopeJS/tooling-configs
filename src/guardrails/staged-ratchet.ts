@@ -60,6 +60,9 @@ function countByRule(diagnostics: Diagnostic[]): Map<string, number> {
   return counts;
 }
 
+const LINT_CONFIG =
+  /(?:^|\/)(?:oxlint\.config\.[cm]?[jt]s|\.oxlintrc\.jsonc?)$/u;
+
 function headCounts(root: string, targets: string[]): Map<string, number> {
   const renames = renamedPaths(root, true);
   const previous = [
@@ -69,10 +72,18 @@ function headCounts(root: string, targets: string[]): Map<string, number> {
     ]),
   ];
   return countByRule(
-    withPreviousTree(root, previous, (tree) => {
-      const existing = previous.filter((file) => existsSync(join(tree, file)));
-      return existing.length ? lintDiagnostics(tree, undefined, existing) : [];
-    }),
+    withPreviousTree(
+      root,
+      previous.filter((file) => !LINT_CONFIG.test(file)),
+      (tree) => {
+        const existing = previous.filter((file) =>
+          existsSync(join(tree, file)),
+        );
+        return existing.length
+          ? lintDiagnostics(tree, undefined, existing)
+          : [];
+      },
+    ),
   );
 }
 
