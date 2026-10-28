@@ -202,6 +202,8 @@ test("turning a directive that disables the SAFETY rule into a SAFETY: comment p
     tsIgnore: 0,
     safety: 1,
   });
+  stage(root);
+  assert.equal(bin(root, "suppressions", ["--staged"]).status, 0);
   const lowered = bin(root, "suppressions", ["--base", "base"]);
   assert.equal(lowered.status, 0, lowered.stderr);
   put(
@@ -212,4 +214,11 @@ test("turning a directive that disables the SAFETY rule into a SAFETY: comment p
   const added = bin(root, "suppressions", ["--base", "base"]);
   assert.equal(added.status, 1);
   assert.match(added.stderr, /`SAFETY:` comments: 2 exceeds ceiling 1\./);
+  stage(root);
+  const staged = bin(root, "suppressions", ["--staged"]);
+  assert.equal(staged.status, 1);
+  assert.match(
+    staged.stderr,
+    /`SAFETY:` comments: this commit adds 2 to the staged files\./,
+  );
 });

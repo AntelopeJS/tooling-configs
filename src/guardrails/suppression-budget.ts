@@ -233,11 +233,15 @@ function stagedBudget(
     (before.get(safetyRule)?.length ?? 0) -
       (after.get(safetyRule)?.length ?? 0),
   );
+  const freed =
+    (head.rules[SAFETY_RULE] ?? 0) - (index.rules[SAFETY_RULE] ?? 0);
   for (const [key, found] of after) {
     const rise = found.length - (before.get(key)?.length ?? 0);
+    const raised = limitOf(index, found[0]) - limitOf(head, found[0]);
     const allowance =
-      Math.max(0, limitOf(index, found[0]) - limitOf(head, found[0])) +
-      (found[0].kind === "safety" ? converted : 0);
+      found[0].kind === "safety"
+        ? converted + Math.max(0, raised - Math.max(0, freed))
+        : Math.max(0, raised);
     if (rise <= allowance) continue;
     const added = found.filter(({ file, line }) =>
       additions
