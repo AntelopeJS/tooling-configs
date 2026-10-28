@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.2.11
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.10...v0.2.11)
+
+### 🚀 Enhancements
+
+- **lint:** Flag tests that import their own package name instead of local source ([#43](https://github.com/AntelopeJS/tooling-configs/pull/43))
+
+### 🩹 Fixes
+
+- **api-diff:** Skip ./tests/* test-helper entries in both halves and say so ([#42](https://github.com/AntelopeJS/tooling-configs/pull/42))
+- **ratchet:** Compare staged findings by net per-rule count so moves and reformats pass ([#40](https://github.com/AntelopeJS/tooling-configs/pull/40))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.2.10
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.9...v0.2.10)
