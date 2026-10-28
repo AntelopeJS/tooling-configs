@@ -18,7 +18,14 @@ type Options = Parameters<typeof generateDtsBundle>[1];
 
 const ENTRIES_PER_WORKER = 16;
 const MAX_WORKERS = 8;
-const WORKER_MEMORY = 1.5 * 1024 ** 3;
+const MIB = 1024 ** 2;
+const WORKER_MEMORY = 1.5 * 1024 * MIB;
+const WORKER_NATIVE_MEMORY = 256 * MIB;
+
+/** Node options that keep a worker inside `WORKER_MEMORY`: the old-space cap leaves room for the memory V8 holds outside the heap, so a worker's resident size stays under the budget that `workerCount` assumes. */
+export const WORKER_NODE_ARGS = [
+  `--max-old-space-size=${(WORKER_MEMORY - WORKER_NATIVE_MEMORY) / MIB}`,
+];
 
 const WORKER = `
 const { readFileSync, writeFileSync } = require("node:fs");
@@ -35,11 +42,11 @@ try {
 
 const DRIVER = `
 const { spawn } = require("node:child_process");
-const [worker, ...jobs] = process.argv.slice(1);
+const [flags, worker, ...jobs] = process.argv.slice(1);
 let failed = false;
 let pending = jobs.length;
 for (const job of jobs) {
-  spawn(process.execPath, [worker, job], { stdio: ["ignore", "inherit", "inherit"] }).on("exit", (code) => {
+  spawn(process.execPath, [...JSON.parse(flags), worker, job], { stdio: ["ignore", "inherit", "inherit"] }).on("exit", (code) => {
     failed ||= code !== 0;
     pending -= 1;
     if (pending === 0) process.exit(failed ? 1 : 0);
@@ -107,7 +114,13 @@ function generateInWorkers(
   writeFileSync(worker, WORKER);
   const run = spawnSync(
     process.execPath,
-    ["-e", DRIVER, worker, ...jobs.map(({ file }) => file)],
+    [
+      "-e",
+      DRIVER,
+      JSON.stringify(WORKER_NODE_ARGS),
+      worker,
+      ...jobs.map(({ file }) => file),
+    ],
     { encoding: "utf8", stdio: ["ignore", "ignore", "pipe"] },
   );
   if (run.error) throw run.error;

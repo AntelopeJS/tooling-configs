@@ -194,14 +194,15 @@ export function applyAllowance(
   return removed;
 }
 
-/** The "Added (allowed)" list with its count, or the problems that kept additions from passing. */
+/** The "Added (allowed)" list with its count when anything was allowed, and the problems that kept additions from passing; empty when there is nothing to report. */
 export function describeAllowance(policy: AddedPolicy): string {
   const lines = [...policy.allowed.values()]
     .map(({ directory, subpath }) => `  ${directory}: ./${subpath}\n`)
     .sort();
-  return `Added (allowed): ${lines.length}\n${lines.join("")}${[
-    ...policy.problems,
-  ]
+  const allowed = lines.length
+    ? `Added (allowed): ${lines.length}\n${lines.join("")}`
+    : "";
+  return `${allowed}${[...policy.problems]
     .map((problem) => `Not internal: ${problem}\n`)
     .join("")}`;
 }

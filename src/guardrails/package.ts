@@ -8,6 +8,9 @@ export interface Manifest {
   scripts?: Record<string, string>;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  workspaces?: unknown;
 }
 
 export type PackageManager = "pnpm" | "npm" | "yarn" | "bun";
