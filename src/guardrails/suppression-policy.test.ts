@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import test from "node:test";
 
 import { formatBudget } from "./suppression-budget.ts";
-import { bin, commit, put, testRepo } from "./helpers/test-repo.ts";
+import { bin, commit, put, read, testRepo } from "./helpers/test-repo.ts";
 
 const SESSION = [
   "export function statusOf(error: Error) {",
@@ -50,20 +50,25 @@ function budgetRepo(
   t: Parameters<typeof testRepo>[0],
   files: Record<string, string>,
   rules: Record<string, number>,
+  safety = 1,
 ): string {
   const root = testRepo(t);
   for (const [path, content] of Object.entries(files)) put(root, path, content);
   put(
     root,
     "guardrails.suppressions.json",
-    formatBudget({ rules, tsExpectError: 0, tsIgnore: 0, safety: 1 }),
+    formatBudget({ rules, tsExpectError: 0, tsIgnore: 0, safety }),
   );
   commit(root);
   return root;
 }
 
+function git(root: string, args: string[]): void {
+  execFileSync("git", args, { cwd: root, stdio: "pipe" });
+}
+
 function stage(root: string): void {
-  execFileSync("git", ["add", "-A"], { cwd: root });
+  git(root, ["add", "-A"]);
 }
 
 test("a new directive disabling the SAFETY rule fails within the budget and names the fix; the one already on the base and a move with its reason pass", (t) => {
@@ -170,4 +175,41 @@ test("a block disable left open to the end of its file fails, and closing it rig
   stage(root);
   assert.equal(bin(root, "suppressions").status, 0);
   assert.equal(bin(root, "suppressions", ["--staged"]).status, 0);
+});
+
+test("turning a directive that disables the SAFETY rule into a SAFETY: comment passes without a raise, and --update moves its room to safety", (t) => {
+  const rule = "anti-slop/require-safety-comment-for-type-assertion";
+  const root = budgetRepo(
+    t,
+    { "server/session.ts": SESSION, "app/auth/useAuthFetch.ts": AUTH_FETCH },
+    { [rule]: 2 },
+    0,
+  );
+  git(root, ["branch", "base"]);
+  const safety = SESSION.replace(
+    /\/\/ oxlint-disable-next-line \S+ -- /u,
+    "// SAFETY: ",
+  );
+  put(root, "server/session.ts", safety);
+  stage(root);
+  assert.equal(bin(root, "suppressions", ["--staged"]).status, 0);
+  const converted = bin(root, "suppressions", ["--base", "base"]);
+  assert.equal(converted.status, 0, converted.stderr);
+  assert.equal(bin(root, "suppressions", ["--update"]).status, 0);
+  assert.deepEqual(JSON.parse(read(root, "guardrails.suppressions.json")), {
+    rules: { [rule]: 1 },
+    tsExpectError: 0,
+    tsIgnore: 0,
+    safety: 1,
+  });
+  const lowered = bin(root, "suppressions", ["--base", "base"]);
+  assert.equal(lowered.status, 0, lowered.stderr);
+  put(
+    root,
+    "src/extra.ts",
+    "// SAFETY: the parsed config is a plain object\nexport const config = JSON.parse('{}') as object;\n",
+  );
+  const added = bin(root, "suppressions", ["--base", "base"]);
+  assert.equal(added.status, 1);
+  assert.match(added.stderr, /`SAFETY:` comments: 2 exceeds ceiling 1\./);
 });

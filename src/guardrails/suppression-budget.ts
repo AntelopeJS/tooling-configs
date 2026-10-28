@@ -33,6 +33,20 @@ function labelOf(suppression: Suppression): string {
     : LABELS[suppression.kind];
 }
 
+/** The rule a SAFETY comment satisfies, so a directive disabling it may become a SAFETY comment without a raise. */
+export const SAFETY_RULE =
+  "anti-slop/require-safety-comment-for-type-assertion";
+
+/** The safety ceiling plus the room the directives disabling the SAFETY rule leave below theirs, so the two only ever shrink together. */
+export function safetyCeiling(
+  budget: SuppressionCounts,
+  disables: number,
+): number {
+  return (
+    budget.safety + Math.max(0, (budget.rules[SAFETY_RULE] ?? 0) - disables)
+  );
+}
+
 function limitOf(budget: SuppressionCounts, suppression: Suppression): number {
   return suppression.kind === "rule"
     ? (budget.rules[suppression.rule] ?? 0)
@@ -105,15 +119,20 @@ function lowered(budget: SuppressionCounts, current: SuppressionCounts) {
     ),
     tsExpectError: Math.min(budget.tsExpectError, current.tsExpectError),
     tsIgnore: Math.min(budget.tsIgnore, current.tsIgnore),
-    safety: Math.min(budget.safety, current.safety),
+    safety: Math.min(
+      safetyCeiling(budget, current.rules[SAFETY_RULE] ?? 0),
+      current.safety,
+    ),
   };
 }
 
 /**
  * Fails each budget key whose count in the working tree is above its ceiling,
  * listing the suppressions in the files this change touches (all of them when
- * it touches none). `update` lowers every ceiling to its current count; no
- * command ever raises one.
+ * it touches none). SAFETY comments may also use the room the
+ * directives disabling the SAFETY rule leave below their ceiling. `update`
+ * lowers every ceiling to its current count, moving that room to `safety`;
+ * no command ever raises the two together.
  */
 export function checkSuppressions(root: string, update = false): string[] {
   const path = join(root, SUPPRESSIONS_FILE);
@@ -121,10 +140,14 @@ export function checkSuppressions(root: string, update = false): string[] {
     throw new Error(`${SUPPRESSIONS_FILE} is missing. Run antelopejs-sync.`);
   const budget = parseBudget(readFileSync(path, "utf8"), SUPPRESSIONS_FILE);
   const suppressions = worktreeSuppressions(root);
+  const counts = countSuppressions(suppressions);
   const changed = changedFiles(root);
   const failures: string[] = [];
   for (const [key, found] of groupByKey(suppressions)) {
-    const limit = limitOf(budget, found[0]);
+    const limit =
+      found[0].kind === "safety"
+        ? safetyCeiling(budget, counts.rules[SAFETY_RULE] ?? 0)
+        : limitOf(budget, found[0]);
     if (found.length <= limit) continue;
     const inChanged = found.filter(({ file }) => changed.has(file));
     const shown = inChanged.length ? inChanged : found;
@@ -138,11 +161,7 @@ export function checkSuppressions(root: string, update = false): string[] {
         : []),
     );
   }
-  if (update)
-    writeFileSync(
-      path,
-      formatBudget(lowered(budget, countSuppressions(suppressions))),
-    );
+  if (update) writeFileSync(path, formatBudget(lowered(budget, counts)));
   return failures.length ? [...failures, SUPPRESSION_FIX] : [];
 }
 
@@ -208,12 +227,17 @@ function stagedBudget(
     ...new Set([...after.values()].flat().map(({ file }) => file)),
   ]);
   const failures: string[] = [];
+  const safetyRule = `lint rule \`${SAFETY_RULE}\``;
+  const converted = Math.max(
+    0,
+    (before.get(safetyRule)?.length ?? 0) -
+      (after.get(safetyRule)?.length ?? 0),
+  );
   for (const [key, found] of after) {
     const rise = found.length - (before.get(key)?.length ?? 0);
-    const allowance = Math.max(
-      0,
-      limitOf(index, found[0]) - limitOf(head, found[0]),
-    );
+    const allowance =
+      Math.max(0, limitOf(index, found[0]) - limitOf(head, found[0])) +
+      (found[0].kind === "safety" ? converted : 0);
     if (rise <= allowance) continue;
     const added = found.filter(({ file, line }) =>
       additions
