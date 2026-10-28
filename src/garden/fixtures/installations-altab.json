@@ -1,0 +1,24 @@
+{
+  "installations": [
+    {
+      "app_slug": "chatgpt-codex-connector",
+      "repository_selection": "all"
+    },
+    {
+      "app_slug": "devarings-os",
+      "repository_selection": "selected"
+    },
+    {
+      "app_slug": "amp-for-github",
+      "repository_selection": "all"
+    },
+    {
+      "app_slug": "claude",
+      "repository_selection": "all"
+    },
+    {
+      "app_slug": "antelopejs-cloud",
+      "repository_selection": "selected"
+    }
+  ]
+}

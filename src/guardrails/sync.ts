@@ -40,7 +40,17 @@ import {
   presetConfig,
   SETUP_SCRIPT,
 } from "./templates.ts";
-import { hasChecksWorkflow, MISSING_CHECKS_WORKFLOW } from "./workflow.ts";
+import {
+  ciNodeCallers,
+  hasChecksWorkflow,
+  MISSING_CHECKS_WORKFLOW,
+} from "./workflow.ts";
+import {
+  CI_PATH,
+  ciWorkflow,
+  MUTATION_PATH,
+  mutationCaller,
+} from "./ci-workflow.ts";
 import { checkEntryOnlyConfiguration } from "./entry-only.ts";
 
 export interface RepoContext extends AgentsBlockContext {
@@ -52,6 +62,9 @@ export interface RepoContext extends AgentsBlockContext {
   claude: string;
   baseline: string;
   suppressionBudget: string;
+  packageName: string;
+  /** Whether sync owns .github/workflows/ci.yml: it exists, or no other workflow runs the checks. */
+  managesCi: boolean;
 }
 
 interface ArtifactContent {
@@ -127,6 +140,25 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
         context.tools,
         context.ratchet,
       ),
+      notes: [],
+    }),
+  },
+  {
+    path: CI_PATH,
+    profiles: ["full", "template"],
+    desired: (current) => ({
+      content: ciWorkflow(
+        current,
+        current === undefined ? [] : ciNodeCallers(current),
+      ),
+      notes: [],
+    }),
+  },
+  {
+    path: MUTATION_PATH,
+    profiles: ["full"],
+    desired: (_current, context) => ({
+      content: mutationCaller(context.packageName),
       notes: [],
     }),
   },
@@ -211,6 +243,7 @@ function planSync(
   for (const artifact of MANAGED_ARTIFACTS) {
     if (!artifact.profiles.includes(context.profile)) continue;
     if (artifact.path === CEILINGS_FILE && !context.ratchet) continue;
+    if (artifact.path === CI_PATH && !context.managesCi) continue;
     try {
       const { content, notes } = artifact.desired(
         current.get(artifact.path),
@@ -336,6 +369,8 @@ function repositoryContext(
       profile === "full" && !current.has(SUPPRESSIONS_FILE)
         ? adoptedBudget(root)
         : "",
+    packageName: manifest.name ?? "",
+    managesCi: current.has(CI_PATH) || !hasChecksWorkflow(root),
     verificationSkill: verificationSkill(root),
     glossary: ["GLOSSARY.md", "docs/GLOSSARY.md"].find((file) =>
       existsSync(join(root, file)),
@@ -359,7 +394,11 @@ function writeArtifacts(
 
 function repositoryNotices(root: string, context: RepoContext): string[] {
   const notices: string[] = [];
-  if (context.profile === "full" && !hasChecksWorkflow(root))
+  if (
+    context.profile === "full" &&
+    !hasChecksWorkflow(root) &&
+    existsSync(join(root, CI_PATH))
+  )
     notices.push(MISSING_CHECKS_WORKFLOW);
   if (context.ratchet && isRetired(readCeilings(root)))
     notices.push(RETIRED_RATCHET);

@@ -178,7 +178,8 @@ test("sync check reports every drift without writing or measuring counts, includ
   const initial = bin(root, "sync", ["--check"]);
   assert.equal(initial.status, 1);
   for (const path of MANAGED_ARTIFACTS.filter(
-    ({ path }) => path !== "guardrails.ratchet.json",
+    ({ path }) =>
+      path !== "guardrails.ratchet.json" && path !== ".github/workflows/ci.yml",
   ).map(({ path }) => path))
     assert.ok(
       initial.stdout.includes(`Drift: ${path}; run antelopejs-sync`),

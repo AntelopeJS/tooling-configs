@@ -1,0 +1,98 @@
+[
+  {
+    "created_at": "2026-10-28T16:58:09Z",
+    "dependency": {
+      "package": {
+        "ecosystem": "npm",
+        "name": "undici"
+      },
+      "scope": "development"
+    },
+    "html_url": "https://github.com/AntelopeJS/antelopejs/security/dependabot/104",
+    "number": 104,
+    "security_advisory": {
+      "ghsa_id": "GHSA-2m5v-pch6-74hx",
+      "severity": "high"
+    }
+  },
+  {
+    "created_at": "2026-10-28T16:58:09Z",
+    "dependency": {
+      "package": {
+        "ecosystem": "npm",
+        "name": "undici"
+      },
+      "scope": "development"
+    },
+    "html_url": "https://github.com/AntelopeJS/antelopejs/security/dependabot/103",
+    "number": 103,
+    "security_advisory": {
+      "ghsa_id": "GHSA-qrxm-fqhp-jwvm",
+      "severity": "high"
+    }
+  },
+  {
+    "created_at": "2026-10-28T16:58:08Z",
+    "dependency": {
+      "package": {
+        "ecosystem": "npm",
+        "name": "undici"
+      },
+      "scope": "development"
+    },
+    "html_url": "https://github.com/AntelopeJS/antelopejs/security/dependabot/102",
+    "number": 102,
+    "security_advisory": {
+      "ghsa_id": "GHSA-9fm3-97px-rjf6",
+      "severity": "medium"
+    }
+  },
+  {
+    "created_at": "2026-10-25T17:00:50Z",
+    "dependency": {
+      "package": {
+        "ecosystem": "npm",
+        "name": "undici"
+      },
+      "scope": "development"
+    },
+    "html_url": "https://github.com/AntelopeJS/antelopejs/security/dependabot/101",
+    "number": 101,
+    "security_advisory": {
+      "ghsa_id": "GHSA-xjj6-f33q-929c",
+      "severity": "high"
+    }
+  },
+  {
+    "created_at": "2026-10-25T17:00:49Z",
+    "dependency": {
+      "package": {
+        "ecosystem": "npm",
+        "name": "serialize-javascript"
+      },
+      "scope": "runtime"
+    },
+    "html_url": "https://github.com/AntelopeJS/antelopejs/security/dependabot/99",
+    "number": 99,
+    "security_advisory": {
+      "ghsa_id": "GHSA-m5mm-p8h7-m29v",
+      "severity": "low"
+    }
+  },
+  {
+    "created_at": "2026-10-09T13:16:48Z",
+    "dependency": {
+      "package": {
+        "ecosystem": "npm",
+        "name": "smol-toml"
+      },
+      "scope": "development"
+    },
+    "html_url": "https://github.com/AntelopeJS/antelopejs/security/dependabot/96",
+    "number": 96,
+    "security_advisory": {
+      "ghsa_id": "GHSA-r4xh-jqrq-34v2",
+      "severity": "medium"
+    }
+  }
+]

@@ -220,6 +220,11 @@ test("missing checks CI is a note on sync and a failure on check; real run and r
     "guardrails.ratchet.json",
     '{"rules":{"eslint/no-alert":1},"oversizeFiles":{}}\n',
   );
+  put(
+    root,
+    ".github/workflows/ci.yml",
+    "jobs:\n  lint:\n    steps:\n      - run: pnpm lint\n",
+  );
   const sync = bin(root, "sync");
   assert.equal(sync.status, 0, sync.stderr);
   assert.match(sync.stdout, /Note:.*workflow.*pnpm run checks/);
