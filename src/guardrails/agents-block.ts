@@ -58,6 +58,10 @@ const SHARED_RULES = [
     "`antelopejs/no-fs-read-in-tests`",
   ],
   [
+    "Tests import the code under test from local source, not their own package name",
+    "`antelopejs/no-self-import-in-tests`",
+  ],
+  [
     "No assertion that restates a constant",
     "`antelopejs/no-constant-value-assertion`",
   ],

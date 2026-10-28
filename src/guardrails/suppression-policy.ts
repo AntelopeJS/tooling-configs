@@ -29,6 +29,10 @@ const NEVER_SUPPRESSED: ReadonlyMap<string, string> = new Map([
     "drive the behaviour through the public interface, or read from fixtures/",
   ],
   [
+    "antelopejs/no-self-import-in-tests",
+    "import the module under test by relative path, or publish the subpath in exports and link the package to itself",
+  ],
+  [
     "antelopejs/no-typeof-function-only-test",
     "assert on what the function returns or does, or delete the test",
   ],
