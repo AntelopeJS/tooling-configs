@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.7
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.6...v0.2.7)
+
+### 🚀 Enhancements
+
+- **guardrails:** Cap suppressions with a per-repository budget ([#35](https://github.com/AntelopeJS/tooling-configs/pull/35))
+
+### 🩹 Fixes
+
+- **guardrails:** Count every suppression comment with one parser-based counter ([#34](https://github.com/AntelopeJS/tooling-configs/pull/34))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli <rizzitelli.antony@pm.me>
+
 ## v0.2.6
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.5...v0.2.6)
