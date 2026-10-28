@@ -29,6 +29,7 @@ test("a directive written after code on the same line is counted, in the proof t
         kind: "rule",
         rule: "anti-slop/no-chained-type-assertions",
         directive: "oxlint-disable-line",
+        reason: "the export-job helpers never read a null context",
         file: "packages/dms/src/utils/export-jobs-run.ts",
         line: 3,
       },

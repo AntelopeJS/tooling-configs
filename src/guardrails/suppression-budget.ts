@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { changedFiles } from "./files.ts";
 import { renamedPaths } from "./renames.ts";
 import { stagedAdditions } from "./staged-ratchet.ts";
+import { checkStagedPolicy } from "./suppression-policy.ts";
 import {
   countSuppressions,
   revisionSuppressions,
@@ -176,19 +177,31 @@ function stagedNames(root: string, filter: string): string[] {
 /**
  * Compares the staged files' suppressions with those files at HEAD, rename
  * sources and deleted files included, and fails each key that rises by more
- * than the staged budget raises its ceiling. A commit that first adds the
- * budget is not compared.
+ * than the staged budget raises its ceiling, then applies the suppression
+ * policy to what the commit adds. A commit that first adds the budget is
+ * not compared.
  */
 export function stagedSuppressions(root: string): string[] {
-  const head = budgetAt(root, "HEAD");
-  if (head === undefined) return [];
-  const index = budgetAt(root, "") ?? head;
   const renames = renamedPaths(root, true);
   const staged = stagedNames(root, "ACMR");
   const previous = [
     ...staged.map((file) => renames.get(file) ?? file),
     ...stagedNames(root, "D"),
   ];
+  return [
+    ...stagedBudget(root, staged, previous),
+    ...checkStagedPolicy(root, staged, previous),
+  ];
+}
+
+function stagedBudget(
+  root: string,
+  staged: string[],
+  previous: string[],
+): string[] {
+  const head = budgetAt(root, "HEAD");
+  if (head === undefined) return [];
+  const index = budgetAt(root, "") ?? head;
   const before = groupByKey(revisionSuppressions(root, "HEAD", previous));
   const after = groupByKey(revisionSuppressions(root, "", staged));
   const additions = stagedAdditions(root, [
