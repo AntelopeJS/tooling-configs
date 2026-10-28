@@ -33,6 +33,17 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 | bin                | `antelopejs-api-diff <base-ref>`                                          | Compares published declaration bundles against committed HEAD                                           |
 | bin                | `antelopejs-comment-proof <base-ref>`                                     | Compares comment-free JavaScript emit against committed HEAD                                            |
 | bin                | `antelopejs-check-interface-ranges`                                       | Fails on interface ranges that break module startup                                                     |
+| bin                | `antelopejs-garden [--json] [--apply-pauses]`                             | The Gardener's scans of the organization through the GitHub API and npm                                 |
+
+## antelopejs-garden
+
+`antelopejs-garden` is the Gardener's deterministic scan. It reads the non-archived AntelopeJS repositories whose `pack` property is `full` or `template` and whose `tier` is N1 to N3, through the GitHub API and the npm registry, authenticated with the token `gh` is logged in with. It never clones.
+
+- `--json` prints `{ generatedAt, findings, pauses, skipped }`. A finding is `{ key, repo, check, subject, severity, evidence, doneMeans }` with the key `repo|check|subject`, sorted. `skipped` lists every check whose source does not exist yet, or that could not run.
+- Without `--json` it prints failures only. The exit code is non-zero only when a check could not run.
+- `--apply-pauses` sets the repository variable `NEXT_AUTOMERGE` to `shadow` on repositories where it is `on`, when `checks` is red on `next`, the ratchet file is back on a Clean repository, or governance drifted. It never sets `on` and writes nothing else.
+
+`antelopejs-sync` (full profile) writes the weekly mutation caller `.github/workflows/mutation.yml`, and both profiles keep the shared CI caller on the job id `ci`, so the check is reported as `ci / checks`.
 
 ## Install
 

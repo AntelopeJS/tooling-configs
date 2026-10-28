@@ -1,0 +1,47 @@
+[
+  {
+    "created_at": "2026-10-28T19:46:12Z",
+    "html_url": "https://github.com/AntelopeJS/dms/pull/511",
+    "number": 511,
+    "title": "fix(iface): reject malformed footer summary rule operands",
+    "user": {
+      "login": "Upd4ting"
+    }
+  },
+  {
+    "created_at": "2026-10-28T19:36:44Z",
+    "html_url": "https://github.com/AntelopeJS/dms/pull/510",
+    "number": 510,
+    "title": "fix(dms): skip persisted presence entries that miss required fields",
+    "user": {
+      "login": "Upd4ting"
+    }
+  },
+  {
+    "created_at": "2026-10-28T19:31:42Z",
+    "html_url": "https://github.com/AntelopeJS/dms/pull/509",
+    "number": 509,
+    "title": "fix(iface): keep a page's default permission when its Action is unbound",
+    "user": {
+      "login": "Upd4ting"
+    }
+  },
+  {
+    "created_at": "2026-10-28T19:27:07Z",
+    "html_url": "https://github.com/AntelopeJS/dms/pull/508",
+    "number": 508,
+    "title": "fix(dms): encode preview cache keys unambiguously",
+    "user": {
+      "login": "Upd4ting"
+    }
+  },
+  {
+    "created_at": "2026-10-28T19:14:37Z",
+    "html_url": "https://github.com/AntelopeJS/dms/pull/507",
+    "number": 507,
+    "title": "fix(iface): release a replaced page's component permission identities",
+    "user": {
+      "login": "Upd4ting"
+    }
+  }
+]

@@ -17,6 +17,7 @@ export default defineConfig({
     "./src/bin/checks.ts",
     "./src/bin/api-diff.ts",
     "./src/bin/comment-proof.ts",
+    "./src/bin/garden.ts",
   ],
   outDir: "dist",
   format: ["esm"],

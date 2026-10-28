@@ -1,0 +1,56 @@
+{
+  "dist-tags": {
+    "latest": "0.2.7"
+  },
+  "name": "@antelopejs/tooling-configs",
+  "time": {
+    "0.2.5": "2026-10-27T12:36:16.655Z",
+    "0.2.6": "2026-10-28T09:51:58.554Z",
+    "0.2.7": "2026-10-28T17:09:16.757Z"
+  },
+  "versions": {
+    "0.2.5": {
+      "bin": {
+        "antelopejs-api-diff": "dist/bin/api-diff.mjs",
+        "antelopejs-check-interface-ranges": "dist/bin/check-interface-ranges.mjs",
+        "antelopejs-check-size": "dist/bin/check-size.mjs",
+        "antelopejs-checks": "dist/bin/checks.mjs",
+        "antelopejs-comment-proof": "dist/bin/comment-proof.mjs",
+        "antelopejs-ratchet": "dist/bin/ratchet.mjs",
+        "antelopejs-sync": "dist/bin/sync.mjs"
+      },
+      "dist": {
+        "tarball": "https://registry.npmjs.org/@antelopejs/tooling-configs/-/tooling-configs-0.2.5.tgz"
+      }
+    },
+    "0.2.6": {
+      "bin": {
+        "antelopejs-api-diff": "dist/bin/api-diff.mjs",
+        "antelopejs-check-interface-ranges": "dist/bin/check-interface-ranges.mjs",
+        "antelopejs-check-size": "dist/bin/check-size.mjs",
+        "antelopejs-checks": "dist/bin/checks.mjs",
+        "antelopejs-comment-proof": "dist/bin/comment-proof.mjs",
+        "antelopejs-ratchet": "dist/bin/ratchet.mjs",
+        "antelopejs-sync": "dist/bin/sync.mjs"
+      },
+      "dist": {
+        "tarball": "https://registry.npmjs.org/@antelopejs/tooling-configs/-/tooling-configs-0.2.6.tgz"
+      }
+    },
+    "0.2.7": {
+      "bin": {
+        "antelopejs-api-diff": "dist/bin/api-diff.mjs",
+        "antelopejs-check-interface-ranges": "dist/bin/check-interface-ranges.mjs",
+        "antelopejs-check-size": "dist/bin/check-size.mjs",
+        "antelopejs-checks": "dist/bin/checks.mjs",
+        "antelopejs-comment-proof": "dist/bin/comment-proof.mjs",
+        "antelopejs-ratchet": "dist/bin/ratchet.mjs",
+        "antelopejs-suppressions": "dist/bin/suppressions.mjs",
+        "antelopejs-sync": "dist/bin/sync.mjs"
+      },
+      "dist": {
+        "tarball": "https://registry.npmjs.org/@antelopejs/tooling-configs/-/tooling-configs-0.2.7.tgz"
+      }
+    }
+  }
+}

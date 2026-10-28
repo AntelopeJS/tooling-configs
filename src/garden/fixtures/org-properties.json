@@ -1,0 +1,77 @@
+[
+  {
+    "properties": [
+      {
+        "property_name": "pack",
+        "value": "full"
+      },
+      {
+        "property_name": "tier",
+        "value": "N1"
+      }
+    ],
+    "repository_full_name": "AntelopeJS/tooling-configs",
+    "repository_id": 1355631604,
+    "repository_name": "tooling-configs"
+  },
+  {
+    "properties": [
+      {
+        "property_name": "pack",
+        "value": "full"
+      },
+      {
+        "property_name": "tier",
+        "value": "N2"
+      }
+    ],
+    "repository_full_name": "AntelopeJS/dms",
+    "repository_id": 1373673693,
+    "repository_name": "dms"
+  },
+  {
+    "properties": [
+      {
+        "property_name": "pack",
+        "value": "full"
+      },
+      {
+        "property_name": "tier",
+        "value": "N1"
+      }
+    ],
+    "repository_full_name": "AntelopeJS/mongodb",
+    "repository_id": 980242332,
+    "repository_name": "mongodb"
+  },
+  {
+    "properties": [
+      {
+        "property_name": "pack",
+        "value": "none"
+      },
+      {
+        "property_name": "tier",
+        "value": "N3"
+      }
+    ],
+    "repository_full_name": "AntelopeJS/cloud",
+    "repository_id": 1313847040,
+    "repository_name": "cloud"
+  },
+  {
+    "properties": [
+      {
+        "property_name": "pack",
+        "value": "none"
+      },
+      {
+        "property_name": "tier",
+        "value": "N1"
+      }
+    ],
+    "repository_full_name": "AntelopeJS/interfaces",
+    "repository_id": 980241204,
+    "repository_name": "interfaces"
+  }
+]

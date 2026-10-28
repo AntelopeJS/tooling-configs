@@ -1,0 +1,37 @@
+[
+  {
+    "archived": false,
+    "default_branch": "main",
+    "language": null,
+    "name": "interfaces",
+    "private": false
+  },
+  {
+    "archived": false,
+    "default_branch": "main",
+    "language": "TypeScript",
+    "name": "mongodb",
+    "private": false
+  },
+  {
+    "archived": false,
+    "default_branch": "main",
+    "language": "TypeScript",
+    "name": "cloud",
+    "private": true
+  },
+  {
+    "archived": false,
+    "default_branch": "main",
+    "language": "TypeScript",
+    "name": "tooling-configs",
+    "private": false
+  },
+  {
+    "archived": false,
+    "default_branch": "main",
+    "language": "TypeScript",
+    "name": "dms",
+    "private": false
+  }
+]
