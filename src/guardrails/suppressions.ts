@@ -50,14 +50,10 @@ const TS_DIRECTIVE = /^[/*\s]*@ts-(expect-error|ignore)(?![\w-])/u;
 
 let compiler: typeof ts | undefined;
 
-/** The TypeScript that `dts-bundle-generator` brings, so the count never depends on the consumer's compiler. */
+/** This package's own TypeScript 5, loaded on first use, so the count never depends on the compiler a repository installs (TypeScript 7 has no parser API). */
 function typescript(): typeof ts {
-  if (compiler !== undefined) return compiler;
-  const own = createRequire(import.meta.url);
-  /* SAFETY: dts-bundle-generator depends on a TypeScript with the parser API, whatever the repository installs. */
-  compiler = createRequire(own.resolve("dts-bundle-generator"))(
-    "typescript",
-  ) as typeof ts;
+  /* SAFETY: the `typescript` dependency is pinned to 5.x, which exports the parser API. */
+  compiler ??= createRequire(import.meta.url)("typescript") as typeof ts;
   return compiler;
 }
 
