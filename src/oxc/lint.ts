@@ -118,13 +118,21 @@ function basePreset(importCycles: boolean) {
   });
 }
 
-/** All vendored rules at one severity, without resolving the published plugin. */
-export function antiSlopRules(
-  severity: Severity = "error",
-): Record<string, Severity> {
-  return Object.fromEntries(
-    ANTI_SLOP_RULES.map((rule) => [`anti-slop/${rule}`, severity]),
-  );
+/**
+ * All vendored rules at one severity, without resolving the published plugin.
+ * `no-runtime-typeof` accepts a `typeof` whose nearest function returns a type
+ * predicate or an assertion: that function is the decoder the rule asks for.
+ */
+export function antiSlopRules(severity: Severity = "error") {
+  return {
+    ...Object.fromEntries(
+      ANTI_SLOP_RULES.map((rule) => [`anti-slop/${rule}`, severity]),
+    ),
+    "anti-slop/no-runtime-typeof": [
+      severity,
+      { allowInTypeGuards: true },
+    ] satisfies [Severity, { allowInTypeGuards: boolean }],
+  };
 }
 
 function antiSlopPreset() {
