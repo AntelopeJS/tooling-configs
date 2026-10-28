@@ -26,6 +26,7 @@ import {
   revisionCounts,
 } from "./revisions.ts";
 import { runtimeDiff } from "./runtime-diff.ts";
+import { testEntryNotice } from "./test-entries.ts";
 import {
   emitPackage,
   isTestSource,
@@ -44,6 +45,7 @@ interface PublishedTarget {
 interface BundledPackage {
   count: number;
   published: PublishedEntry[];
+  skipped: string[];
 }
 
 interface PackagePaths {
@@ -149,17 +151,25 @@ function publishedEntries(
     relative(scratch, file).split("\\").join("/"),
   );
   const entries: { entry: string; file: string; subpath: string }[] = [];
+  const skipped: string[] = [];
   for (const { entry, target, subpath } of entryPatterns(manifest)) {
-    if (isTestSource(outputRoot, resolve(directory, target))) continue;
+    if (isTestSource(outputRoot, resolve(directory, target))) {
+      skipped.push(target);
+      continue;
+    }
     const path = relative(outputRoot, resolve(directory, target))
       .split("\\")
       .join("/");
     const pattern = targetPattern(path);
-    const matches = files.filter((file) => pattern.test(file));
-    if (!matches.length && !path.includes("*"))
+    const found = files.filter((file) => pattern.test(file));
+    if (!found.length && !path.includes("*"))
       throw new Error(
         `${directory}: published target ${target} has no emitted declaration.`,
       );
+    const matches = found.filter(
+      (file) => !isTestSource(outputRoot, join(outputRoot, file)),
+    );
+    if (matches.length < found.length) skipped.push(target);
     for (const file of matches) {
       const captures = pattern.exec(file)?.slice(1) ?? [];
       const name = entry.includes("*")
@@ -176,7 +186,10 @@ function publishedEntries(
       });
     }
   }
-  return entries.sort((a, b) => a.entry.localeCompare(b.entry));
+  return {
+    entries: entries.sort((a, b) => a.entry.localeCompare(b.entry)),
+    skipped,
+  };
 }
 
 function bundleDependencies(directory: string, scratch: string): void {
@@ -209,8 +222,13 @@ function bundlePackage(
   const { directory, output, scratch } = paths;
   const emitted = emitPackage(directory, scratch, true);
   if (emitted.notice !== undefined) notices?.add(emitted.notice);
-  const entries = publishedEntries(directory, manifest, emitted, scratch);
-  if (!entries.length) return { count: 0, published: [] };
+  const { entries, skipped } = publishedEntries(
+    directory,
+    manifest,
+    emitted,
+    scratch,
+  );
+  if (!entries.length) return { count: 0, published: [], skipped };
   bundleDependencies(directory, scratch);
   writeFileSync(
     join(scratch, "package.json"),
@@ -265,6 +283,7 @@ function bundlePackage(
       directory: paths.name,
       subpath,
     })),
+    skipped,
   };
 }
 
@@ -277,6 +296,7 @@ function declarationDiff(
   const notices = new Set<string>();
   const failedPackages = new Set<string>();
   const unpublished = new Map<string, string>();
+  const skippedTests = new Set<string>();
   const result = compareRevisions(
     root,
     baseRef,
@@ -303,6 +323,8 @@ function declarationDiff(
             notices,
           );
           entries += bundled.count;
+          for (const target of bundled.skipped)
+            skippedTests.add(testEntryNotice("API", directory, target));
           published.push(...bundled.published);
         } catch (error) {
           failedPackages.add(directory);
@@ -342,6 +364,7 @@ function declarationDiff(
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([directory, reason]) => `API: skipped ${directory}, ${reason}.\n`)
         .join("") +
+      [...skippedTests].sort().join("") +
       [...notices].sort().join("") +
       [...errors].join(""),
   };

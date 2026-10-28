@@ -16,6 +16,7 @@ import {
 } from "./added-entries.ts";
 import { packageManager, parseManifest } from "./package.ts";
 import { compareRevisions } from "./revisions.ts";
+import { testEntryNotice } from "./test-entries.ts";
 import {
   isTestSource,
   outputRoot,
@@ -92,14 +93,29 @@ function runtimeTargets(
   });
 }
 
-function builtEntries(directory: string, manifest: ProofManifest) {
+interface BuiltEntries {
+  entries: { entry: string; file: string; subpath: string }[];
+  skipped: string[];
+}
+
+function builtEntries(
+  directory: string,
+  manifest: ProofManifest,
+): BuiltEntries {
   const targets = runtimeTargets(manifest.exports);
   if (manifest.main)
     targets.push({ entry: "main", target: manifest.main, subpath: "main" });
   if (!targets.length)
     throw new Error(`${directory}: no published runtime entry.`);
-  return targets
+  const output = outputRoot(directory);
+  const skipped: string[] = [];
+  const entries = targets
     .filter(({ target }) => !target.endsWith(".json"))
+    .filter(({ target }) => {
+      if (!isTestSource(output, resolve(directory, target))) return true;
+      skipped.push(target);
+      return false;
+    })
     .flatMap(({ entry, target, subpath }) => {
       if (!target.includes("*")) {
         const file = resolve(directory, target);
@@ -120,16 +136,17 @@ function builtEntries(directory: string, manifest: ProofManifest) {
       );
       if (!existsSync(parent))
         throw new Error(`${directory}: missing build output for ${target}.`);
-      const output = outputRoot(directory);
-      const matches = readdirSync(parent, {
+      const found = readdirSync(parent, {
         recursive: true,
         withFileTypes: true,
       })
         .filter((file) => file.isFile())
         .map((file) => join(file.parentPath, file.name))
-        .filter((file) => pattern.test(file) && !isTestSource(output, file));
-      if (!matches.length)
+        .filter((file) => pattern.test(file));
+      if (!found.length)
         throw new Error(`${directory}: missing built runtime entry ${target}.`);
+      const matches = found.filter((file) => !isTestSource(output, file));
+      if (matches.length < found.length) skipped.push(target);
       return matches.sort().map((file) => {
         const capture = pattern.exec(file)?.[1] ?? relative(directory, file);
         return {
@@ -139,6 +156,7 @@ function builtEntries(directory: string, manifest: ProofManifest) {
         };
       });
     });
+  return { entries, skipped };
 }
 
 function childJson(args: string[], cwd: string): string {
@@ -163,7 +181,11 @@ function buildPackage(
   output: string,
   manifest: ProofManifest,
 ):
-  | { count: number; entries: { entry: string; subpath: string }[] }
+  | {
+      count: number;
+      entries: { entry: string; subpath: string }[];
+      skipped: string[];
+    }
   | undefined {
   const buildManifest = parseManifest(
     readFileSync(join(directory, "package.json"), "utf8"),
@@ -177,20 +199,21 @@ function buildPackage(
       timeout: 120_000,
       stdio: ["ignore", "pipe", "pipe"],
     });
-  let entries: ReturnType<typeof builtEntries>;
+  let built: BuiltEntries;
   try {
-    entries = builtEntries(directory, manifest);
+    built = builtEntries(directory, manifest);
   } catch (error) {
     if (buildManifest.scripts?.build) throw error;
     return undefined;
   }
+  const { entries, skipped } = built;
   for (const { entry, file } of entries) {
     const destination = join(output, `${encodeURIComponent(entry)}.json`);
     const metadata = childJson(["-e", DESCRIBE, file], directory);
     mkdirSync(dirname(destination), { recursive: true });
     writeFileSync(destination, metadata);
   }
-  return { count: entries.length, entries };
+  return { count: entries.length, entries, skipped };
 }
 
 /** Builds both committed revisions and compares published runtime metadata and one captured optional probe. */
@@ -203,6 +226,7 @@ export function runtimeDiff(
   const errors: string[] = [];
   const failedPackages = new Set<string>();
   const skippedPackages = new Set<string>();
+  const skippedTests = new Set<string>();
   const result = compareRevisions(
     root,
     baseRef,
@@ -222,6 +246,10 @@ export function runtimeDiff(
           if (built === undefined) skippedPackages.add(directory);
           else {
             entries += built.count;
+            for (const target of built.skipped)
+              skippedTests.add(
+                testEntryNotice("Runtime API", directory, target),
+              );
             published.push(
               ...built.entries.map(({ entry, subpath }) => ({
                 path: `${folder}/${encodeURIComponent(entry)}.json`,
@@ -282,6 +310,7 @@ export function runtimeDiff(
             `Runtime API: skipped ${directory}, which has no build script and no committed runtime entry.\n`,
         )
         .join("") +
+      [...skippedTests].sort().join("") +
       errors.join(""),
   };
 }
