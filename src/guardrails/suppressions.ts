@@ -271,8 +271,25 @@ export function openDisablesIn(file: string, text: string): OpenDisable[] {
   return [...open.values()];
 }
 
+/** Each repository's generated-output test, remembered per path, since the base and the working tree list mostly the same files. */
+const generatedPaths = new Map<string, (file: string) => boolean>();
+
+function generatedIn(root: string): (file: string) => boolean {
+  const known = generatedPaths.get(root);
+  if (known !== undefined) return known;
+  const test = generatedOutput(root);
+  const verdicts = new Map<string, boolean>();
+  const generated = (file: string) => {
+    const verdict = verdicts.get(file) ?? test(file);
+    verdicts.set(file, verdict);
+    return verdict;
+  };
+  generatedPaths.set(root, generated);
+  return generated;
+}
+
 function authoredCode(root: string, files: string[]): string[] {
-  const generated = generatedOutput(root);
+  const generated = generatedIn(root);
   return files.filter((file) => CODE_FILE.test(file) && !generated(file));
 }
 
