@@ -32,6 +32,14 @@ export type Suppression =
       line: number;
     };
 
+/** A block `oxlint-disable` or `eslint-disable` that no later `-enable` closes for `rule` (`*` for a blanket block). */
+export interface OpenDisable {
+  rule: string;
+  directive: string;
+  file: string;
+  line: number;
+}
+
 /** Suppression totals: lint directives per named rule (`*` for none), then each comment kind. */
 export interface SuppressionCounts {
   rules: Record<string, number>;
@@ -56,6 +64,7 @@ const DESCRIPTION = /\s-{2,}\s|\s-{2,}$/u;
 const SAFETY_COMMENT = markerPattern(DEFAULT_SAFETY_MARKERS);
 const TS_DIRECTIVE = /^[/*\s]*@ts-(expect-error|ignore)(?![\w-])/u;
 const SAFETY_REASON = /SAFETY\s*:([\s\S]*)$/u;
+const ENABLE_DIRECTIVE = /^((?:oxlint|eslint)-enable)(?=\s|$)([\s\S]*)$/u;
 
 let compiler: typeof ts | undefined;
 
@@ -234,6 +243,32 @@ export function suppressionsIn(file: string, text: string): Suppression[] {
       });
   }
   return found;
+}
+
+/**
+ * The block disables in one code file's text that are still open at its end.
+ * An `-enable` naming rules closes those rules; one naming none closes every
+ * open block.
+ */
+export function openDisablesIn(file: string, text: string): OpenDisable[] {
+  if (!CODE_FILE.test(file) || !CANDIDATE.test(text)) return [];
+  const open = new Map<string, OpenDisable>();
+  for (const comment of fileComments(file, text)) {
+    const value = comment.value.replace(/^\s*\*?\s*/u, "");
+    const disable = LINT_DIRECTIVE.exec(value);
+    if (disable !== null && !disable[1].endsWith("line")) {
+      const line = lineOf(text, comment.start);
+      for (const rule of directiveParts(disable[2]).rules)
+        open.set(rule, { rule, directive: disable[1], file, line });
+      continue;
+    }
+    const enable = ENABLE_DIRECTIVE.exec(value);
+    if (enable === null) continue;
+    const { rules } = directiveParts(enable[2]);
+    if (rules[0] === "*") open.clear();
+    else for (const rule of rules) open.delete(rule);
+  }
+  return [...open.values()];
 }
 
 function authoredCode(root: string, files: string[]): string[] {

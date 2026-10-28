@@ -33,6 +33,19 @@ const NUMBERS = (reason: string) =>
     "",
   ].join("\n");
 
+const ACCESSIBILITY = (enable: boolean) =>
+  [
+    "/* oxlint-disable anti-slop/no-unsafe-dictionary-type -- The decoded cookie has no validated field contract; this open property lookup implements per-field fallback without rejecting the entire cookie. */",
+    "export function isRecord(value: object): value is Record<string, unknown> {",
+    "  return value !== null && !Array.isArray(value);",
+    "}",
+    ...(enable
+      ? ["/* oxlint-enable anti-slop/no-unsafe-dictionary-type */"]
+      : []),
+    "export const later: Record<string, unknown> = {};",
+    "",
+  ].join("\n");
+
 function budgetRepo(
   t: Parameters<typeof testRepo>[0],
   files: Record<string, string>,
@@ -135,4 +148,26 @@ test("a vague SAFETY: or @ts-expect-error reason fails like a directive's", (t) 
     result.stderr,
     /src\/index\.ts:3: `@ts-expect-error` reason none/,
   );
+});
+
+test("a block disable left open to the end of its file fails, and closing it right after its last use passes", (t) => {
+  const path = "app/build/utils/accessibilityPreferences.ts";
+  const root = budgetRepo(
+    t,
+    { [path]: ACCESSIBILITY(true) },
+    { "anti-slop/no-unsafe-dictionary-type": 1 },
+  );
+  put(root, path, ACCESSIBILITY(false));
+  const open = bin(root, "suppressions");
+  assert.equal(open.status, 1);
+  assert.match(
+    open.stderr,
+    /^app\/build\/utils\/accessibilityPreferences\.ts:1: `oxlint-disable anti-slop\/no-unsafe-dictionary-type` is never closed, so it also silences every line added below it\. Fix: add `oxlint-enable anti-slop\/no-unsafe-dictionary-type` right after the last line that needs it, or use `oxlint-disable-next-line`\.$/m,
+  );
+  stage(root);
+  assert.equal(bin(root, "suppressions", ["--staged"]).status, 1);
+  put(root, path, ACCESSIBILITY(true));
+  stage(root);
+  assert.equal(bin(root, "suppressions").status, 0);
+  assert.equal(bin(root, "suppressions", ["--staged"]).status, 0);
 });

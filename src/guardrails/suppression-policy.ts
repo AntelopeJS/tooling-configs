@@ -1,8 +1,12 @@
 import { spawnSync } from "node:child_process";
 
 import {
+  atRevision,
+  inWorktree,
+  openDisablesIn,
   revisionSuppressions,
   worktreeSuppressions,
+  type OpenDisable,
   type Suppression,
 } from "./suppressions.ts";
 
@@ -153,6 +157,24 @@ function policyFailures(added: Suppression[]): string[] {
   });
 }
 
+/** Fails each block disable left open at the end of its file. */
+function openDisableFailures(open: OpenDisable[]): string[] {
+  return open.map(
+    ({ directive, rule, file, line }) =>
+      `${file}:${line}: \`${directive}${rule === "*" ? "" : ` ${rule}`}\` is never closed, so it also silences every line added below it. Fix: add \`${directive.replace("disable", "enable")}${rule === "*" ? "" : ` ${rule}`}\` right after the last line that needs it, or use \`${directive}-next-line\`.`,
+  );
+}
+
+/** The open blocks of `after` beyond those of `before`, by directive and rule. */
+function addedOpenDisables(
+  before: OpenDisable[],
+  after: OpenDisable[],
+): OpenDisable[] {
+  return unmatched(before, after, ({ directive, rule }) =>
+    [directive, rule].join("\0"),
+  );
+}
+
 function hasCommit(root: string, revision: string): boolean {
   return (
     spawnSync(
@@ -166,7 +188,7 @@ function hasCommit(root: string, revision: string): boolean {
 /**
  * Fails what the working tree adds against `revision` (HEAD when none is
  * given): a suppression that names a never-suppressed rule or gives no
- * specific reason.
+ * specific reason, and a block disable left open.
  */
 export function checkPolicy(root: string, revision = "HEAD"): string[] {
   if (!hasCommit(root, revision)) return [];
@@ -175,6 +197,12 @@ export function checkPolicy(root: string, revision = "HEAD"): string[] {
       addedSuppressions(
         revisionSuppressions(root, revision),
         worktreeSuppressions(root),
+      ),
+    ),
+    ...openDisableFailures(
+      addedOpenDisables(
+        atRevision(root, revision, openDisablesIn),
+        inWorktree(root, openDisablesIn),
       ),
     ),
   ];
@@ -192,6 +220,12 @@ export function checkStagedPolicy(
       addedSuppressions(
         revisionSuppressions(root, "HEAD", previous),
         revisionSuppressions(root, "", staged),
+      ),
+    ),
+    ...openDisableFailures(
+      addedOpenDisables(
+        atRevision(root, "HEAD", openDisablesIn, previous),
+        atRevision(root, "", openDisablesIn, staged),
       ),
     ),
   ];
