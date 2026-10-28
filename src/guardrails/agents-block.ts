@@ -35,11 +35,15 @@ Copy counts from the proof's base and HEAD table. Never type counts by hand. Kee
 
 Pass \`--probe <file.cjs>\` to api-diff when changing receivers, positional calls, or modules that no published entry reaches. The same captured script runs against both worktree roots, supplied as \`argv[2]\`, and prints JSON observations. Matching metadata alone does not prove those behaviours.
 
-An entry-only rule exempts only its own module. Add a second module entry rather than exempting another importer. A no-upward rule must reject peers in the same tier as well as higher tiers. Probe the rank decision with an import, not just a reading of the configuration.`;
+An entry-only rule exempts only its own module. Add a second module entry rather than exempting another importer. A no-upward rule must reject peers in the same tier as well as higher tiers. Probe the rank decision with an import, not just a reading of the configuration.
+
+Moving a method body into a function keeps how it is called: the same receiver, argument count, read order and laziness.
+
+Verify a boundary against the imports a developer or agent would plausibly write: static and dynamic imports, re-exports, Vue \`src\`, CSS \`@import\`, and worker or child-process entries in normally named files. A construction only an evasion would write, an edit to resolution configuration (\`package.json\` \`browser\`, \`exports\`, \`main\` or \`imports\`, bundler aliases, tsconfig \`paths\`), and a difference observable only by patching private fields or internal methods go under Attention and never block. Public API and ordinary subclass behaviour stay part of the contract.`;
 
 const SUPPRESSION_BUDGET = `### Suppression budget
 
-\`guardrails.suppressions.json\` caps the suppressions in authored code: lint directives per rule they name (\`*\` for none), \`@ts-expect-error\`, \`@ts-ignore\` and \`SAFETY:\` comments. A suppression over its ceiling fails: fix the code, or remove another suppression of the same kind. A rule that keeps needing suppressions should be changed in the preset. Never raise or remove a number in that file: the check fails a ceiling higher than on the pull request base, and only the operator approves a raise. After you remove suppressions, run \`pnpm run suppressions:update\` and commit the lowered file.`;
+\`guardrails.suppressions.json\` caps the suppressions in authored code: lint directives per rule they name (\`*\` for none), \`@ts-expect-error\`, \`@ts-ignore\` and \`SAFETY:\` comments. A suppression over its ceiling fails: fix the code, or remove another suppression of the same kind. A rule that keeps needing suppressions should be changed in the preset. Never raise or remove a number in that file: the check fails a ceiling higher than on the pull request base, and only the operator approves a raise. A directive disabling \`anti-slop/require-safety-comment-for-type-assertion\` is burn-down debt: remove the assertion, or, where it holds, replace the directive with \`SAFETY: <why it holds>\`, which takes over its room without a raise. After you remove suppressions, run \`pnpm run suppressions:update\` and commit the lowered file.`;
 
 const SHARED_RULES = [
   ["Formatting", "oxfmt"],
@@ -81,7 +85,11 @@ const SHARED_RULES = [
     "Receiver, positional and unpublished-module behaviour",
     "`antelopejs-api-diff <base-ref> --probe <file.cjs>`",
   ],
-  ["Type suppressions and directive reasons are justified", "review; no tool"],
+  ["Directive and `SAFETY:` reasons are true of the code", "review; no tool"],
+  [
+    "Evasion-only and patched-internal findings go under Attention",
+    "review; no tool",
+  ],
   ["No-upward rules reject same-tier peers", "review and import probes"],
   ["No `@ts-ignore`", "`typescript/ban-ts-comment`"],
 ] as const;
@@ -93,6 +101,18 @@ const FULL_RULES = [
   ],
   [
     "Suppressions stay within `guardrails.suppressions.json`",
+    "`antelopejs-suppressions` (pre-commit, checks)",
+  ],
+  [
+    "No added directive disables the `SAFETY:`, comment or test rules",
+    "`antelopejs-suppressions` (pre-commit, checks)",
+  ],
+  [
+    "An added suppression gives a specific reason",
+    "`antelopejs-suppressions` (pre-commit, checks)",
+  ],
+  [
+    "A block disable is closed in its file",
     "`antelopejs-suppressions` (pre-commit, checks)",
   ],
   ["Types check", "`tsc` (pre-push)"],

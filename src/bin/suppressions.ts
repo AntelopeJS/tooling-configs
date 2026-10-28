@@ -11,13 +11,18 @@ import {
   checkSuppressions,
   stagedSuppressions,
 } from "../guardrails/suppression-budget.ts";
+import { checkPolicy } from "../guardrails/suppression-policy.ts";
 
 function fullCheck(root: string, update?: boolean, base?: string): string[] {
   const failures = checkSuppressions(root, update);
   const revision = suppressionBase(root, base);
   return revision === undefined
-    ? failures
-    : [...raisedCeilings(root, revision), ...failures];
+    ? [...failures, ...checkPolicy(root)]
+    : [
+        ...raisedCeilings(root, revision),
+        ...failures,
+        ...checkPolicy(root, revision),
+      ];
 }
 
 runCli(() => {

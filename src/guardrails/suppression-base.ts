@@ -3,7 +3,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { resolveRevision } from "./files.ts";
-import { parseBudget, SUPPRESSIONS_FILE } from "./suppression-budget.ts";
+import {
+  parseBudget,
+  SAFETY_RULE,
+  safetyCeiling,
+  SUPPRESSIONS_FILE,
+} from "./suppression-budget.ts";
 
 function verified(root: string, ref: string): string | undefined {
   const result = spawnSync(
@@ -50,7 +55,8 @@ export function suppressionBase(
 /**
  * Fails each ceiling of the working-tree budget that is higher than on
  * `revision`, and each rule that `revision` lists but the working tree
- * dropped. A base without a budget, a first adoption, passes.
+ * dropped. The safety ceiling may rise by what the SAFETY rule's own
+ * ceiling falls. A base without a budget, a first adoption, passes.
  */
 export function raisedCeilings(root: string, revision: string): string[] {
   const committed = spawnSync(
@@ -92,7 +98,11 @@ export function raisedCeilings(root: string, revision: string): string[] {
     );
   compare("`@ts-expect-error`", base.tsExpectError, current.tsExpectError);
   compare("`@ts-ignore`", base.tsIgnore, current.tsIgnore);
-  compare("`SAFETY:` comments", base.safety, current.safety);
+  compare(
+    "`SAFETY:` comments",
+    safetyCeiling(base, current.rules[SAFETY_RULE] ?? 0),
+    current.safety,
+  );
   return failures.length
     ? [
         ...failures,

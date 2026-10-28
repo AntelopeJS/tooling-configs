@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { changedFiles } from "./files.ts";
 import { renamedPaths } from "./renames.ts";
 import { stagedAdditions } from "./staged-ratchet.ts";
+import { checkStagedPolicy } from "./suppression-policy.ts";
 import {
   countSuppressions,
   revisionSuppressions,
@@ -30,6 +31,20 @@ function labelOf(suppression: Suppression): string {
   return suppression.kind === "rule"
     ? `lint rule \`${suppression.rule}\``
     : LABELS[suppression.kind];
+}
+
+/** The rule a SAFETY comment satisfies, so a directive disabling it may become a SAFETY comment without a raise. */
+export const SAFETY_RULE =
+  "anti-slop/require-safety-comment-for-type-assertion";
+
+/** The safety ceiling plus the room the directives disabling the SAFETY rule leave below theirs, so the two only ever shrink together. */
+export function safetyCeiling(
+  budget: SuppressionCounts,
+  disables: number,
+): number {
+  return (
+    budget.safety + Math.max(0, (budget.rules[SAFETY_RULE] ?? 0) - disables)
+  );
 }
 
 function limitOf(budget: SuppressionCounts, suppression: Suppression): number {
@@ -104,15 +119,20 @@ function lowered(budget: SuppressionCounts, current: SuppressionCounts) {
     ),
     tsExpectError: Math.min(budget.tsExpectError, current.tsExpectError),
     tsIgnore: Math.min(budget.tsIgnore, current.tsIgnore),
-    safety: Math.min(budget.safety, current.safety),
+    safety: Math.min(
+      safetyCeiling(budget, current.rules[SAFETY_RULE] ?? 0),
+      current.safety,
+    ),
   };
 }
 
 /**
  * Fails each budget key whose count in the working tree is above its ceiling,
  * listing the suppressions in the files this change touches (all of them when
- * it touches none). `update` lowers every ceiling to its current count; no
- * command ever raises one.
+ * it touches none). SAFETY comments may also use the room the
+ * directives disabling the SAFETY rule leave below their ceiling. `update`
+ * lowers every ceiling to its current count, moving that room to `safety`;
+ * no command ever raises the two together.
  */
 export function checkSuppressions(root: string, update = false): string[] {
   const path = join(root, SUPPRESSIONS_FILE);
@@ -120,10 +140,14 @@ export function checkSuppressions(root: string, update = false): string[] {
     throw new Error(`${SUPPRESSIONS_FILE} is missing. Run antelopejs-sync.`);
   const budget = parseBudget(readFileSync(path, "utf8"), SUPPRESSIONS_FILE);
   const suppressions = worktreeSuppressions(root);
+  const counts = countSuppressions(suppressions);
   const changed = changedFiles(root);
   const failures: string[] = [];
   for (const [key, found] of groupByKey(suppressions)) {
-    const limit = limitOf(budget, found[0]);
+    const limit =
+      found[0].kind === "safety"
+        ? safetyCeiling(budget, counts.rules[SAFETY_RULE] ?? 0)
+        : limitOf(budget, found[0]);
     if (found.length <= limit) continue;
     const inChanged = found.filter(({ file }) => changed.has(file));
     const shown = inChanged.length ? inChanged : found;
@@ -137,11 +161,7 @@ export function checkSuppressions(root: string, update = false): string[] {
         : []),
     );
   }
-  if (update)
-    writeFileSync(
-      path,
-      formatBudget(lowered(budget, countSuppressions(suppressions))),
-    );
+  if (update) writeFileSync(path, formatBudget(lowered(budget, counts)));
   return failures.length ? [...failures, SUPPRESSION_FIX] : [];
 }
 
@@ -176,31 +196,52 @@ function stagedNames(root: string, filter: string): string[] {
 /**
  * Compares the staged files' suppressions with those files at HEAD, rename
  * sources and deleted files included, and fails each key that rises by more
- * than the staged budget raises its ceiling. A commit that first adds the
- * budget is not compared.
+ * than the staged budget raises its ceiling, then applies the suppression
+ * policy to what the commit adds. A commit that first adds the budget is
+ * not compared.
  */
 export function stagedSuppressions(root: string): string[] {
-  const head = budgetAt(root, "HEAD");
-  if (head === undefined) return [];
-  const index = budgetAt(root, "") ?? head;
   const renames = renamedPaths(root, true);
   const staged = stagedNames(root, "ACMR");
   const previous = [
     ...staged.map((file) => renames.get(file) ?? file),
     ...stagedNames(root, "D"),
   ];
+  return [
+    ...stagedBudget(root, staged, previous),
+    ...checkStagedPolicy(root, staged, previous),
+  ];
+}
+
+function stagedBudget(
+  root: string,
+  staged: string[],
+  previous: string[],
+): string[] {
+  const head = budgetAt(root, "HEAD");
+  if (head === undefined) return [];
+  const index = budgetAt(root, "") ?? head;
   const before = groupByKey(revisionSuppressions(root, "HEAD", previous));
   const after = groupByKey(revisionSuppressions(root, "", staged));
   const additions = stagedAdditions(root, [
     ...new Set([...after.values()].flat().map(({ file }) => file)),
   ]);
   const failures: string[] = [];
+  const safetyRule = `lint rule \`${SAFETY_RULE}\``;
+  const converted = Math.max(
+    0,
+    (before.get(safetyRule)?.length ?? 0) -
+      (after.get(safetyRule)?.length ?? 0),
+  );
+  const freed =
+    (head.rules[SAFETY_RULE] ?? 0) - (index.rules[SAFETY_RULE] ?? 0);
   for (const [key, found] of after) {
     const rise = found.length - (before.get(key)?.length ?? 0);
-    const allowance = Math.max(
-      0,
-      limitOf(index, found[0]) - limitOf(head, found[0]),
-    );
+    const raised = limitOf(index, found[0]) - limitOf(head, found[0]);
+    const allowance =
+      found[0].kind === "safety"
+        ? converted + Math.max(0, raised - Math.max(0, freed))
+        : Math.max(0, raised);
     if (rise <= allowance) continue;
     const added = found.filter(({ file, line }) =>
       additions

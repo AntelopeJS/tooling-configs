@@ -17,22 +17,22 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 
 ## What's in the box
 
-| Export             | Import                                                                    | What it gives                                                               |
-| ------------------ | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `./oxc/lint`       | `import { antelopePreset } from "@antelopejs/tooling-configs/oxc/lint"`   | The oxlint preset                                                           |
-| `./oxc/fmt`        | `import { antelopeFmtPreset } from "@antelopejs/tooling-configs/oxc/fmt"` | The oxfmt preset (house style)                                              |
-| `./eslint`         | `import { antelopeNuxtConfig } from "@antelopejs/tooling-configs/eslint"` | ESLint for Nuxt layers                                                      |
-| `./knip`           | `import { antelopeKnipConfig } from "@antelopejs/tooling-configs/knip"`   | Knip for AntelopeJS modules                                                 |
-| `./oxc/anti-slop`  | Loaded by the oxlint preset as a JS plugin                                | The vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules       |
-| `./oxc/guardrails` | Loaded by the oxlint preset as a JS plugin                                | The `antelopejs` comment and test-quality rules                             |
-| bin                | `antelopejs-sync`                                                         | Writes the guardrail pack into a repository; `--check` reports drift        |
-| bin                | `antelopejs-checks`                                                       | Runs every check and prints only the failures                               |
-| bin                | `antelopejs-ratchet`                                                      | Fails when recorded debt grows; `--update` lowers the record                |
-| bin                | `antelopejs-suppressions`                                                 | Fails when suppressions exceed their budget; `--update` lowers the budget   |
-| bin                | `antelopejs-check-size`                                                   | Fails on authored files over 20,000 bytes and on blanket disable directives |
-| bin                | `antelopejs-api-diff <base-ref>`                                          | Compares published declaration bundles against committed HEAD               |
-| bin                | `antelopejs-comment-proof <base-ref>`                                     | Compares comment-free JavaScript emit against committed HEAD                |
-| bin                | `antelopejs-check-interface-ranges`                                       | Fails on interface ranges that break module startup                         |
+| Export             | Import                                                                    | What it gives                                                                                           |
+| ------------------ | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `./oxc/lint`       | `import { antelopePreset } from "@antelopejs/tooling-configs/oxc/lint"`   | The oxlint preset                                                                                       |
+| `./oxc/fmt`        | `import { antelopeFmtPreset } from "@antelopejs/tooling-configs/oxc/fmt"` | The oxfmt preset (house style)                                                                          |
+| `./eslint`         | `import { antelopeNuxtConfig } from "@antelopejs/tooling-configs/eslint"` | ESLint for Nuxt layers                                                                                  |
+| `./knip`           | `import { antelopeKnipConfig } from "@antelopejs/tooling-configs/knip"`   | Knip for AntelopeJS modules                                                                             |
+| `./oxc/anti-slop`  | Loaded by the oxlint preset as a JS plugin                                | The vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules                                   |
+| `./oxc/guardrails` | Loaded by the oxlint preset as a JS plugin                                | The `antelopejs` comment and test-quality rules                                                         |
+| bin                | `antelopejs-sync`                                                         | Writes the guardrail pack into a repository; `--check` reports drift                                    |
+| bin                | `antelopejs-checks`                                                       | Runs every check and prints only the failures                                                           |
+| bin                | `antelopejs-ratchet`                                                      | Fails when recorded debt grows; `--update` lowers the record                                            |
+| bin                | `antelopejs-suppressions`                                                 | Fails when suppressions exceed their budget or an added one breaks policy; `--update` lowers the budget |
+| bin                | `antelopejs-check-size`                                                   | Fails on authored files over 20,000 bytes and on blanket disable directives                             |
+| bin                | `antelopejs-api-diff <base-ref>`                                          | Compares published declaration bundles against committed HEAD                                           |
+| bin                | `antelopejs-comment-proof <base-ref>`                                     | Compares comment-free JavaScript emit against committed HEAD                                            |
+| bin                | `antelopejs-check-interface-ranges`                                       | Fails on interface ranges that break module startup                                                     |
 
 ## Install
 
@@ -198,9 +198,11 @@ When every rule count is zero and `oversizeFiles` is empty, the ratchet is retir
 - `rules` holds lint directives (`oxlint-disable`, `eslint-disable`, their `-line` and `-next-line` forms, in line or block comments, after code too) per rule they name; a directive naming several rules counts once per rule, and one naming none counts under `*`. A rule missing from `rules` has ceiling 0. The other fields count `@ts-expect-error`, `@ts-ignore` and `SAFETY:` comments. The counter is the one behind the proof tables: it reads comments from the parser, so strings and template literals are never counted, and it skips generated output as the size guard does.
 - `antelopejs-suppressions` fails when a count is above its ceiling, printing each `file:line` in the files the change touched and the fix: fix the code, or remove another suppression of the same kind; a rule that keeps needing suppressions should be changed in the preset. It prints nothing on success.
 - `antelopejs-suppressions --update` lowers each ceiling to the current count and keeps rules at zero. No command raises a ceiling.
+- `SAFETY:` comments and directives disabling `anti-slop/require-safety-comment-for-type-assertion` share their room: a `SAFETY:` comment may use what those directives leave below their ceiling, in the full, base and staged checks, and `--update` moves that room to `safety`. Replacing such a directive with a `SAFETY:` comment needs no raise; their sum never rises.
 - `antelopejs-suppressions` also compares the budget with the one on the pull request base: `--base <ref>` when given, else the `GITHUB_BASE_REF` branch in CI (fetched from `origin` into a shallow checkout), else `origin/HEAD`. It fails when a ceiling is higher than on the base or a rule the base lists is removed, so a raise merges only through the operator's ruleset bypass. A base without a budget, a first adoption, passes. Without a base the comparison is skipped.
 - The pre-commit hook runs `antelopejs-suppressions --staged`: it compares the suppressions in the staged files with those files at HEAD, following renames and counting deleted files, and fails a kind that rises by more than the staged budget raises its ceiling. A suppression moved between staged files nets out.
 - `@ts-ignore` is also a lint error (`typescript/ban-ts-comment`); `@ts-expect-error` fails once its error is gone.
+- Both modes also judge what the change adds, whatever the budget allows: the full check against the same base (HEAD when there is none), the staged check against HEAD. A suppression counts as added when its kind, rule and reason occur more often than on the base, so one moved to another file with its reason is not added, and one whose reason a comment pass rewrote or stripped is. An added directive fails when it names a rule no directive may name (`anti-slop/require-safety-comment-for-type-assertion`, `antelopejs/no-comments`, the four `antelopejs` test rules, `typescript/ban-ts-comment`); the failure names what to do instead. An added directive naming its rules, `@ts-expect-error` or `SAFETY:` comment fails when its reason has fewer than three words, or only words like "safe", "intentional", "legacy" and the rule's own name. A block `oxlint-disable` or `eslint-disable` that no `-enable` closes before the end of its file fails when the change adds it. Suppressions already on the base stay under the budget until a burn-down removes them.
 
 ### Size
 
