@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.8
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.7...v0.2.8)
+
+### 🚀 Enhancements
+
+- **guardrails:** Reject suppressing instead of fixing in added code ([#36](https://github.com/AntelopeJS/tooling-configs/pull/36))
+
+### 🩹 Fixes
+
+- **guardrails:** Fail api-diff when a declared typescript cannot resolve ([#37](https://github.com/AntelopeJS/tooling-configs/pull/37))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.2.7
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.6...v0.2.7)
