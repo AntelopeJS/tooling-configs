@@ -65,7 +65,9 @@ function words(text: string): string[] {
 }
 
 /** A reason too short or too vague to tell a reader why this code needs its suppression. */
-function genericReason(suppression: Suppression): boolean {
+function genericReason(
+  suppression: Exclude<Suppression, { kind: "config" }>,
+): boolean {
   const said = words(suppression.reason);
   if (said.length < MIN_REASON_WORDS) return true;
   const named = new Set(
@@ -75,6 +77,8 @@ function genericReason(suppression: Suppression): boolean {
 }
 
 function identity(suppression: Suppression): string {
+  if (suppression.kind === "config")
+    return [suppression.kind, suppression.rule, suppression.scope].join("\0");
   return [
     suppression.kind,
     suppression.kind === "rule" ? suppression.rule : "",
@@ -130,6 +134,8 @@ function addedSuppressions(
 function label(suppression: Suppression): string {
   if (suppression.kind === "rule")
     return `\`${suppression.directive} ${suppression.rule}\``;
+  if (suppression.kind === "config")
+    return `lint config rule-off \`${suppression.rule}\` for \`${suppression.scope}\``;
   if (suppression.kind === "safety") return "`SAFETY:`";
   return suppression.kind === "tsIgnore"
     ? "`@ts-ignore`"
@@ -145,14 +151,18 @@ function policyFailures(added: Suppression[]): string[] {
   return added.flatMap((suppression) => {
     const at = `${suppression.file}:${suppression.line}`;
     const instead =
-      suppression.kind === "rule"
+      suppression.kind === "rule" || suppression.kind === "config"
         ? NEVER_SUPPRESSED.get(suppression.rule)
         : undefined;
     if (instead !== undefined)
       return [
         `${at}: ${label(suppression)}: this rule is never suppressed. Fix: ${instead}.`,
       ];
-    if (suppression.kind === "rule" && suppression.rule === "*") return [];
+    if (
+      suppression.kind === "config" ||
+      (suppression.kind === "rule" && suppression.rule === "*")
+    )
+      return [];
     if (!genericReason(suppression)) return [];
     const quoted = suppression.reason ? `"${suppression.reason}"` : "none";
     return [

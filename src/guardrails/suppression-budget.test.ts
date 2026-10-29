@@ -154,6 +154,7 @@ test("sync writes the current counts once, never rewrites the budget, restores a
     tsExpectError: 1,
     tsIgnore: 0,
     safety: 1,
+    config: {},
   };
   assert.deepEqual(
     JSON.parse(read(root, "guardrails.suppressions.json")),

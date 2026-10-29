@@ -69,8 +69,9 @@ export function suppressionBase(
 /**
  * Fails each ceiling of the working-tree budget that is higher than on
  * `revision`, and each rule that `revision` lists but the working tree
- * dropped. The safety ceiling may rise by what the SAFETY rule's own
- * ceiling falls. A base without a budget, a first adoption, passes.
+ * dropped, config rule-offs included once the base has their ceilings. The
+ * safety ceiling may rise by what the SAFETY rule's own ceiling falls. A
+ * base without a budget, a first adoption, passes.
  */
 export function raisedCeilings(root: string, revision: string): string[] {
   const committed = spawnSync(
@@ -110,6 +111,21 @@ export function raisedCeilings(root: string, revision: string): string[] {
         ? current.rules[rule]
         : (current.rules[rule] ?? 0),
     );
+  const baseConfig = base.config ?? {};
+  for (const rule of new Set([
+    ...Object.keys(baseConfig),
+    ...Object.keys(current.config ?? {}),
+  ]))
+    if (base.config !== undefined)
+      compare(
+        `lint config rule-off \`${rule}\``,
+        baseConfig[rule] ?? 0,
+        current.config === undefined ||
+          (Object.hasOwn(baseConfig, rule) &&
+            !Object.hasOwn(current.config, rule))
+          ? undefined
+          : (current.config[rule] ?? 0),
+      );
   compare("`@ts-expect-error`", base.tsExpectError, current.tsExpectError);
   compare("`@ts-ignore`", base.tsIgnore, current.tsIgnore);
   compare(
