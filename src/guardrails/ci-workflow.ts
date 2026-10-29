@@ -132,6 +132,45 @@ function renameNeeds(document: Document, from: string, to: string): void {
   }
 }
 
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function renameNeedsReferences(text: string, from: string, to: string): string {
+  const id = escapeRegExp(from);
+  const reference = new RegExp(
+    `(?<![\\w.'"-])needs(?:\\.${id}(?![\\w-])|\\[\\s*(['"])${id}\\1\\s*\\])`,
+    "g",
+  );
+  return text.replace(reference, (_match, quote?: string) =>
+    quote === undefined ? `needs.${to}` : `needs[${quote}${to}${quote}]`,
+  );
+}
+
+function isText(value: unknown): value is string {
+  return String(value) === value;
+}
+
+function renameNeedsExpressions(
+  document: Document,
+  from: string,
+  to: string,
+): void {
+  visit(document, {
+    Scalar(key, node, path) {
+      if (key === "key" || !isText(node.value)) return;
+      const parent = path.at(-1);
+      const wholeExpression =
+        isPair(parent) && isScalar(parent.key) && parent.key.value === "if";
+      node.value = wholeExpression
+        ? renameNeedsReferences(node.value, from, to)
+        : node.value.replace(/\$\{\{[\s\S]*?\}\}/g, (expression) =>
+            renameNeedsReferences(expression, from, to),
+          );
+    },
+  });
+}
+
 function hasDispatch(document: Document): boolean {
   const trigger = document.get("on", true);
   if (isMap(trigger)) return trigger.has("workflow_dispatch");
@@ -270,6 +309,7 @@ export function ciWorkflow(
   if (caller.id !== CI_JOB_ID) {
     if (isScalar(pair.key)) pair.key.value = CI_JOB_ID;
     renameNeeds(document, caller.id, CI_JOB_ID);
+    renameNeedsExpressions(document, caller.id, CI_JOB_ID);
     changed = true;
   }
   changed = grant(document, pair.value, { contents: "read" }) || changed;
