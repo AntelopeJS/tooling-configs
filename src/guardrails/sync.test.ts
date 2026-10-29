@@ -361,7 +361,7 @@ test("sync leaves retired files for ratchet:update, then removes ratchet wiring 
   assert.equal(existsSync(join(root, "guardrails.ratchet.json")), false);
 });
 
-test("first adoption without debt writes no ratchet file, scripts or hook, but keeps an all-zero suppression budget", (t) => {
+test("first adoption without debt writes no ratchet file, scripts or hook, but keeps a suppression budget at today's counts", (t) => {
   const root = testRepo(t);
   linkOxlint(root);
   put(
@@ -382,6 +382,7 @@ test("first adoption without debt writes no ratchet file, scripts or hook, but k
     tsExpectError: 0,
     tsIgnore: 0,
     safety: 0,
+    config: { "category:correctness for *": 1 },
   });
   assert.match(read(root, "lefthook.yml"), /antelopejs-suppressions --staged/);
   assert.equal(bin(root, "sync", ["--check"]).status, 0);

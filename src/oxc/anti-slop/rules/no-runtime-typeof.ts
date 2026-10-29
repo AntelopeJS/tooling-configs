@@ -32,6 +32,31 @@ function isExistenceProbe(node: ESTree.UnaryExpression): boolean {
 	return other.type === "Literal" && other.value === "undefined";
 }
 
+/** Built-ins whose `.constructor` comparison re-implements a `typeof` result. */
+const TYPEOF_CONSTRUCTORS = new Set(["String", "Number", "Boolean", "BigInt", "Symbol", "Function"]);
+
+/** Return the built-in name when the comparison is `x.constructor === String` or its mirror. */
+function constructorCheckTarget(node: ESTree.BinaryExpression): string | undefined {
+	if (!["===", "!==", "==", "!="].includes(node.operator)) return undefined;
+	for (const [operand, other] of [
+		[node.left, node.right],
+		[node.right, node.left],
+	]) {
+		const side = operand.type === "ChainExpression" ? operand.expression : operand;
+		if (
+			side.type === "MemberExpression" &&
+			!side.computed &&
+			side.property.type === "Identifier" &&
+			side.property.name === "constructor" &&
+			other.type === "Identifier" &&
+			TYPEOF_CONSTRUCTORS.has(other.name)
+		) {
+			return other.name;
+		}
+	}
+	return undefined;
+}
+
 /** Disallow runtime typeof checks that narrow unparsed values instead of decoding them. */
 export const noRuntimeTypeofRule = defineRule({
 	meta: {
@@ -43,6 +68,8 @@ export const noRuntimeTypeofRule = defineRule({
 		messages: {
 			runtimeTypeof:
 				"A `typeof` check narrows a representation without establishing its contract. Parse input at its I/O boundary, then branch on the domain value.",
+			constructorCheck:
+				"`.constructor === {{name}}` is a `typeof` check in another form. Parse input at its I/O boundary, or move the check into a type guard such as `(value: unknown): value is string`.",
 		},
 		schema: [
 			{
@@ -56,20 +83,26 @@ export const noRuntimeTypeofRule = defineRule({
 		defaultOptions: [{ allowInTypeGuards: false }],
 	},
 	createOnce(context) {
+		function allowedInTypeGuard(node: ESTree.Node): boolean {
+			const option = context.options?.[0];
+			return (
+				typeof option === "object" &&
+				option !== null &&
+				!Array.isArray(option) &&
+				option.allowInTypeGuards === true &&
+				isInsideTypeGuard(node)
+			);
+		}
 		return {
 			UnaryExpression(node) {
-				const option = context.options?.[0];
-				const allowInTypeGuards =
-					typeof option === "object" &&
-					option !== null &&
-					!Array.isArray(option) &&
-					option.allowInTypeGuards === true;
-				if (
-					node.operator === "typeof" &&
-					!isExistenceProbe(node) &&
-					(!allowInTypeGuards || !isInsideTypeGuard(node))
-				) {
+				if (node.operator === "typeof" && !isExistenceProbe(node) && !allowedInTypeGuard(node)) {
 					context.report({ node, messageId: "runtimeTypeof" });
+				}
+			},
+			BinaryExpression(node) {
+				const name = constructorCheckTarget(node);
+				if (name !== undefined && !allowedInTypeGuard(node)) {
+					context.report({ node, messageId: "constructorCheck", data: { name } });
 				}
 			},
 		};
