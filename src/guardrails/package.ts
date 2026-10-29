@@ -11,6 +11,7 @@ export interface Manifest {
   peerDependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   workspaces?: unknown;
+  antelopeJs?: { kind?: string; implements?: string[] };
 }
 
 export type PackageManager = "pnpm" | "npm" | "yarn" | "bun";

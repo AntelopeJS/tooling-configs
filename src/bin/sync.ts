@@ -4,24 +4,31 @@ import { parseArgs } from "node:util";
 import { runCli } from "../guardrails/cli.ts";
 import { repositoryRoot } from "../guardrails/files.ts";
 import { syncRepository } from "../guardrails/sync.ts";
+import { isVerifyChoice } from "../guardrails/verify-skill.ts";
 
 runCli(() => {
   const { values } = parseArgs({
     options: {
       check: { type: "boolean" },
       profile: { type: "string", default: "full" },
+      verify: { type: "string" },
     },
   });
   if (values.profile !== "full" && values.profile !== "template")
     throw new Error("--profile must be full or template.");
+  if (values.verify !== undefined && !isVerifyChoice(values.verify))
+    throw new Error("--verify must be interface, module, template, or custom.");
   const result = syncRepository(repositoryRoot(), {
     check: values.check,
     profile: values.profile,
+    verify: values.verify,
   });
   for (const note of result.notes)
     process.stdout.write(
       `Note: ${values.check || result.errors.length ? "Planned migration. " : ""}${note}\n`,
     );
+  for (const note of result.verifyNotes)
+    process.stdout.write(`Note: ${note}\n`);
   for (const advisory of result.advisories)
     process.stdout.write(`${advisory}\n`);
   for (const error of result.errors) process.stderr.write(`${error}\n`);
