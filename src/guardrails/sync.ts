@@ -32,6 +32,7 @@ import {
   toolingVersions,
   type PackageManager,
 } from "./package.ts";
+import { recordedRelease } from "./adoption.ts";
 import { measureBaseline } from "./ratchet.ts";
 import { adoptedBudget, SUPPRESSIONS_FILE } from "./suppression-budget.ts";
 import {
@@ -442,7 +443,10 @@ export function syncRepository(
       desired === current.get(lint.path) ? undefined : desired,
     );
     context.ratchet = !isRetired(baseline);
-    context.baseline = formatCeilings(baseline);
+    context.baseline = formatCeilings({
+      ...baseline,
+      pack: recordedRelease(undefined),
+    });
     plan = planSync(current, modes, context);
   }
   const writes = plan.filter(

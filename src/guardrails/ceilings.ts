@@ -23,8 +23,12 @@ export const MAX_FILE_BYTES = 20_000;
  * `oversizeFiles` maps a repository-relative path to its size in bytes when
  * last recorded. A listed file may exceed {@link MAX_FILE_BYTES} and the
  * `eslint/max-lines` limit, but may not grow past its recorded size.
+ *
+ * `pack` is the pack release the repository last adopted new rules at: only a
+ * rule a later release enabled may be added to `rules`, by `ratchet:update`.
  */
 export interface Ceilings {
+  pack?: string;
   rules: Record<string, number>;
   oversizeFiles: Record<string, number>;
 }
@@ -57,8 +61,13 @@ export function readCeilings(root: string): Ceilings {
   return parseCeilings(readFileSync(path, "utf8"), path);
 }
 
-/** Parses the ceilings file, rejecting anything but non-negative integer counts. */
-function parseCeilings(text: string, source: string): Ceilings {
+/** Whether `value` is a `major.minor.patch` release. */
+export function isPackRelease(value: string): boolean {
+  return /^\d+\.\d+\.\d+$/u.test(value);
+}
+
+/** Parses the ceilings file, rejecting anything but non-negative integer counts and a release for `pack`. */
+export function parseCeilings(text: string, source: string): Ceilings {
   /* SAFETY: JSON text yields plain data; parseCounts checks every field before it is returned. */
   const parsed = JSON.parse(text) as Partial<Ceilings> | null;
   if (parsed === null || Array.isArray(parsed)) {
@@ -66,13 +75,17 @@ function parseCeilings(text: string, source: string): Ceilings {
       `${source}: expected an object with "rules" and "oversizeFiles"`,
     );
   }
-  return {
+  if (parsed.pack !== undefined && !isPackRelease(parsed.pack))
+    throw new Error(`${source}: "pack" must be a release such as "0.2.17"`);
+  const ceilings: Ceilings = {
     rules: parseCounts(parsed.rules, `${source}: rules`),
     oversizeFiles: parseCounts(
       parsed.oversizeFiles,
       `${source}: oversizeFiles`,
     ),
   };
+  if (parsed.pack !== undefined) ceilings.pack = parsed.pack;
+  return ceilings;
 }
 
 function parseCounts(
@@ -101,9 +114,9 @@ function sortedCounts(counts: Record<string, number>): Record<string, number> {
 
 /** Serializes ceilings with sorted keys, so rewriting an unchanged file is a no-op. */
 export function formatCeilings(ceilings: Ceilings): string {
-  const sorted: Ceilings = {
-    rules: sortedCounts(ceilings.rules),
-    oversizeFiles: sortedCounts(ceilings.oversizeFiles),
-  };
+  const sorted: Ceilings = { rules: {}, oversizeFiles: {} };
+  if (ceilings.pack !== undefined) sorted.pack = ceilings.pack;
+  sorted.rules = sortedCounts(ceilings.rules);
+  sorted.oversizeFiles = sortedCounts(ceilings.oversizeFiles);
   return `${JSON.stringify(sorted, null, 2)}\n`;
 }
