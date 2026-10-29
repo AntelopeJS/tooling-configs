@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test, { after } from "node:test";
 
 import type { JsonValue } from "../garden/json.ts";
+import { PACKAGE_ROOT } from "../guardrails/helpers/test-repo.ts";
 import {
   declaredSurface,
   diffSurface,
@@ -23,6 +30,7 @@ after(() => {
 function surfaceOf(
   manifest: JsonValue,
   files: [string, string][],
+  nodeTypes = false,
 ): Record<string, string> {
   const folder = mkdtempSync(join(tmpdir(), "surface-"));
   folders.push(folder);
@@ -33,6 +41,14 @@ function surfaceOf(
   for (const [name, content] of all) {
     mkdirSync(dirname(join(folder, name)), { recursive: true });
     writeFileSync(join(folder, name), content);
+  }
+  if (nodeTypes) {
+    mkdirSync(join(folder, "node_modules", "@types"), { recursive: true });
+    symlinkSync(
+      join(PACKAGE_ROOT, "node_modules", "@types", "node"),
+      join(folder, "node_modules", "@types", "node"),
+      "dir",
+    );
   }
   return Object.fromEntries(declaredSurface(folder));
 }
@@ -193,6 +209,27 @@ test("an import the package cannot resolve fails loudly instead of yielding a pa
         ],
       ]),
     /missing-dep/,
+  );
+});
+
+const STREAM_DECLARATION: [string, string] = [
+  "index.d.ts",
+  `import type { Readable } from "node:stream";\nexport declare function Open(path: string): Readable;`,
+];
+
+test("a declaration importing a Node built-in reads through the @types/node the package resolves", () => {
+  const surface = surfaceOf(
+    { name: "a", types: "index.d.ts" },
+    [STREAM_DECLARATION],
+    true,
+  );
+  assert.deepEqual(surface, { ".:Open": "(path: string) => Readable" });
+});
+
+test("without @types/node a node: import still fails loudly and says what to install", () => {
+  assert.throws(
+    () => surfaceOf({ name: "a", types: "index.d.ts" }, [STREAM_DECLARATION]),
+    /index\.d\.ts -> node:stream; install @types\/node so node: built-ins resolve/,
   );
 });
 
