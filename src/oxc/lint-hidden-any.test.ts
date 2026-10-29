@@ -5,6 +5,7 @@ import { lintProject } from "./helpers/lint-project.ts";
 
 const HIDDEN_ANY_RULES = [
   "typescript(no-unnecessary-type-parameters)",
+  "typescript(no-unsafe-argument)",
   "typescript(no-unsafe-assignment)",
   "typescript(no-unsafe-return)",
   "typescript(use-unknown-in-catch-callback-variable)",
@@ -74,6 +75,13 @@ export function parseJsonText(text: string): DataValue {
 /** dms-automation realtime.ts:27, a catch callback inferring any. */
 export function relay(publish: Promise<void>): void {
   publish.catch((err) => console.error(err.message));
+}
+
+declare function takeManifest(manifest: PackageManifest): void;
+
+/** tooling-configs#69 review: JSON.parse passed straight to a typed parameter. */
+export function register(text: string): void {
+  takeManifest(JSON.parse(text));
 }
 `;
 
@@ -150,10 +158,11 @@ test("single-use type parameters that hide unknown fail (stripe, mollie, interfa
   ]);
 });
 
-test("any bound to a typed local, a typed return or a catch callback fails (dms-database #65, dms-automation #86)", () => {
+test("any bound to a typed local, argument, return or catch callback fails (dms-database #65, dms-automation #86)", () => {
   assert.deepEqual(hiddenAnyFindings({ "sources.ts": typedAnySources }), [
     "sources.ts:13 typescript(no-unsafe-return)",
     "sources.ts:18 typescript(use-unknown-in-catch-callback-variable)",
+    "sources.ts:25 typescript(no-unsafe-argument)",
     "sources.ts:7 typescript(no-unsafe-assignment)",
   ]);
 });
