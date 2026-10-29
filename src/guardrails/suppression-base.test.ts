@@ -86,3 +86,18 @@ test("CI compares with GITHUB_BASE_REF, fetching it into a shallow checkout, and
   ]);
   assert.equal(bin(root, "suppressions").status, 1);
 });
+
+test("CI names the missing base ref when the fetch fails, and uses a local origin ref without fetching", (t) => {
+  const root = testRepo(t);
+  put(root, "guardrails.suppressions.json", budget(0));
+  commit(root);
+  git(root, ["remote", "add", "origin", join(tmpdir(), "antelope-missing")]);
+  const ci = bin(root, "suppressions", [], { GITHUB_BASE_REF: "main" });
+  assert.equal(ci.status, 1);
+  assert.match(ci.stderr, /refs\/remotes\/origin\/main is missing/);
+  assert.match(ci.stderr, /fetching main from origin failed/);
+  assert.doesNotMatch(ci.stderr, /Command failed/);
+  git(root, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
+  const local = bin(root, "suppressions", [], { GITHUB_BASE_REF: "main" });
+  assert.equal(local.status, 0, local.stderr);
+});
