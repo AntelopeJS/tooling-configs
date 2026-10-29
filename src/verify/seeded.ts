@@ -34,13 +34,18 @@ export interface FeatureRun {
   output: string;
 }
 
+/** Runs a command in a scratch worktree; a failure carries the command's own output, which pnpm writes to stdout. */
 function inTree(worktree: string, program: string, args: string[]): string {
-  return execFileSync(program, args, {
+  const run = spawnSync(program, args, {
     cwd: worktree,
     encoding: "utf8",
     env: { ...process.env, CI: "1" },
-    stdio: ["ignore", "pipe", "pipe"],
-  }).trim();
+  });
+  if (run.status !== 0)
+    throw new Error(
+      `${[program, ...args].join(" ")} exited ${run.status ?? run.signal} in ${worktree}\n${`${run.stdout ?? ""}${run.stderr ?? ""}${run.error?.message ?? ""}`.trim().slice(-2000)}`,
+    );
+  return run.stdout.trim();
 }
 
 function prepareWorktree(
