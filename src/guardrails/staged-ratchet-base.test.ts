@@ -275,3 +275,55 @@ test("staged ratchet fails a new finding in another file staged with the file wh
   assert.equal(result.status, 1);
   assert.match(result.stderr, /y\.ts:7:/);
 });
+
+const CAST = (name: string) => `export const ${name} = readOwn({}) as Own;\n`;
+const ANNOTATED = (name: string) =>
+  `// SAFETY: readOwn always returns an Own here.\n${CAST(name)}`;
+const CALL = "export const b = readOwn(\n  {},\n);\n";
+const CALL_CAST = "export const b = readOwn(\n  {},\n) as Own;\n";
+
+function movedOut(t: TestContext, rest: string): string {
+  const root = baseRepo(t, {
+    "x.ts": `${MOLLIE_5_PRELUDE}${CAST("a")}${rest}`,
+    "y.ts": MOLLIE_5_PRELUDE,
+  });
+  put(root, "x.ts", `${MOLLIE_5_PRELUDE}${rest}`);
+  put(root, "y.ts", `${MOLLIE_5_PRELUDE}${CAST("a")}`);
+  stage(root, "x.ts", "y.ts");
+  const move = check(root, "x.ts", "y.ts");
+  assert.equal(move.status, 0, move.stderr);
+  commit(root);
+  return root;
+}
+
+function fixedEarlier(t: TestContext, rest: string): string {
+  return branchRepo(
+    t,
+    "x.ts",
+    `${MOLLIE_5_PRELUDE}${CAST("a")}${rest}`,
+    `${MOLLIE_5_PRELUDE}${rest}`,
+  );
+}
+
+for (const [label, setup] of [
+  ["moved a legacy finding out of the file", movedOut],
+  ["fixed a base finding in the file", fixedEarlier],
+] as const) {
+  test(`staged ratchet fails a cast added at the end of a multi-line call after the branch ${label}`, (t) => {
+    const root = setup(t, CALL);
+    put(root, "x.ts", `${MOLLIE_5_PRELUDE}${CALL_CAST}`);
+    stage(root, "x.ts");
+    const result = check(root, "x.ts");
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /adds 1 to the staged files/);
+  });
+
+  test(`staged ratchet fails removing a base SAFETY comment after the branch ${label}`, (t) => {
+    const root = setup(t, ANNOTATED("c"));
+    put(root, "x.ts", `${MOLLIE_5_PRELUDE}${CAST("c")}`);
+    stage(root, "x.ts");
+    const result = check(root, "x.ts");
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /adds 1 to the staged files/);
+  });
+}
