@@ -91,3 +91,50 @@ export function predicateName(
     ? predicate.parameterName.name
     : null;
 }
+
+/** The field `this.<name>` refers to: a property or constructor parameter property of the class around `node`. */
+export function classField(
+  node: ESTree.Node,
+  name: string,
+): {
+  typeAnnotation: ESTree.TSTypeAnnotation | null;
+  value: ESTree.Expression | null;
+} | null {
+  let current: ESTree.Node | null = node.parent;
+  while (current !== null && current.type !== "ClassBody") {
+    if (
+      current.type === "FunctionDeclaration" ||
+      (current.type === "FunctionExpression" &&
+        current.parent.type !== "MethodDefinition")
+    )
+      return null;
+    current = current.parent;
+  }
+  if (current === null) return null;
+  for (const member of current.body) {
+    if (
+      member.type === "PropertyDefinition" &&
+      !member.computed &&
+      member.key.type === "Identifier" &&
+      member.key.name === name
+    )
+      return {
+        typeAnnotation: member.typeAnnotation ?? null,
+        value: member.value,
+      };
+    if (member.type === "MethodDefinition" && member.kind === "constructor") {
+      for (const parameter of member.value.params) {
+        if (
+          parameter.type === "TSParameterProperty" &&
+          parameter.parameter.type === "Identifier" &&
+          parameter.parameter.name === name
+        )
+          return {
+            typeAnnotation: parameter.parameter.typeAnnotation ?? null,
+            value: null,
+          };
+      }
+    }
+  }
+  return null;
+}

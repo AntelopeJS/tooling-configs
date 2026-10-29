@@ -2,6 +2,7 @@ import { defineRule } from "@oxlint/plugins";
 
 import type { ESTree, SourceCode, Variable } from "@oxlint/plugins";
 import {
+  classField,
   collectLocalTypes,
   enclosingFunction,
   parameterPredicate,
@@ -99,6 +100,7 @@ function isStringKeyedType(
     case "TSMappedType":
       return isStringKey(type.constraint);
     case "TSIntersectionType":
+    case "TSUnionType":
       return type.types.some((part) =>
         isStringKeyedType(part, environment, depth),
       );
@@ -122,7 +124,11 @@ function isProtoKey(key: ESTree.PropertyKey): boolean {
 }
 
 function isNullPrototype(init: ESTree.Expression): boolean {
-  const value = unwrapExpression(init);
+  const value = unwrapExpression(
+    init.type === "TSAsExpression" || init.type === "TSSatisfiesExpression"
+      ? init.expression
+      : init,
+  );
   if (value.type === "CallExpression")
     return (
       callName(value.callee) === "Object.create" &&
@@ -151,11 +157,16 @@ function initializerKind(
     return isStringKeyedType(init.typeAnnotation, environment, depth)
       ? "dictionary"
       : initializerKind(init.expression, environment, depth);
-  if (init.type === "TSAsExpression")
-    return init.typeAnnotation.type === "TSTypeReference" &&
+  if (init.type === "TSAsExpression") {
+    if (
+      init.typeAnnotation.type === "TSTypeReference" &&
       referenceName(init.typeAnnotation) === "const"
-      ? initializerKind(init.expression, environment, depth)
+    )
+      return initializerKind(init.expression, environment, depth);
+    return isStringKeyedType(init.typeAnnotation, environment, depth)
+      ? "dictionary"
       : null;
+  }
   return unwrapExpression(init).type === "ObjectExpression" ? "literal" : null;
 }
 
@@ -186,13 +197,43 @@ function variableKind(
     definition.node.type !== "VariableDeclarator"
   )
     return null;
-  const init = definition.node.init;
+  return declaredKind(annotation, definition.node.init, environment, depth);
+}
+
+/** The table a field declares, given its type annotation and initializer. */
+function declaredKind(
+  annotation: ESTree.TSType | undefined,
+  init: ESTree.Expression | null,
+  environment: Environment,
+  depth: number,
+): TableKind | null {
   if (init !== null && isNullPrototype(init)) return null;
   if (annotation !== undefined)
     return isStringKeyedType(annotation, environment, depth)
       ? "dictionary"
       : null;
   return init === null ? null : initializerKind(init, environment, depth);
+}
+
+function fieldKind(
+  node: ESTree.MemberExpression,
+  environment: Environment,
+  depth: number,
+): TableKind | null {
+  if (
+    node.computed ||
+    node.object.type !== "ThisExpression" ||
+    node.property.type !== "Identifier"
+  )
+    return null;
+  const field = classField(node, node.property.name);
+  if (field === null) return null;
+  return declaredKind(
+    field.typeAnnotation?.typeAnnotation ?? undefined,
+    field.value,
+    environment,
+    depth,
+  );
 }
 
 function tableKind(
@@ -208,6 +249,8 @@ function tableKind(
     if (kinds.includes("dictionary")) return "dictionary";
     return kinds.includes("literal") ? "literal" : null;
   }
+  if (value.type === "MemberExpression")
+    return fieldKind(value, environment, depth);
   if (value.type !== "Identifier") return null;
   const variable = resolveVariable(environment.source, value);
   return variable === null ? null : variableKind(variable, environment, depth);
@@ -215,6 +258,7 @@ function tableKind(
 
 function isStaticKey(key: ESTree.Node): boolean {
   if (key.type === "Literal") return true;
+  if (key.type === "UnaryExpression") return key.operator === "typeof";
   return key.type === "TemplateLiteral" && key.expressions.length === 0;
 }
 

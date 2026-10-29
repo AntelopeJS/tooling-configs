@@ -1,6 +1,6 @@
 import { defineRule } from "@oxlint/plugins";
 
-import type { ESTree } from "@oxlint/plugins";
+import type { Context, ESTree } from "@oxlint/plugins";
 import {
   collectLocalTypes,
   parameterPredicate,
@@ -9,7 +9,7 @@ import {
   unwrapExpression,
   type LocalTypes,
 } from "../local-types.ts";
-import { memberName } from "../shared.ts";
+import { callName, memberName } from "../shared.ts";
 
 type FunctionNode = ESTree.ArrowFunctionExpression | ESTree.Function;
 
@@ -17,7 +17,7 @@ type FunctionNode = ESTree.ArrowFunctionExpression | ESTree.Function;
 type Members = Map<string, ESTree.TSType | null>;
 
 interface Presence {
-  node: ESTree.BinaryExpression;
+  node: ESTree.BinaryExpression | ESTree.CallExpression;
   object: string;
   key: string;
 }
@@ -204,6 +204,31 @@ function unwrapAlias(node: ESTree.Expression): ESTree.Expression {
   return current;
 }
 
+const PRESENCE_CALLS = new Set([
+  "Object.hasOwn",
+  "Object.prototype.hasOwnProperty.call",
+  "hasOwnProperty.call",
+  "Reflect.has",
+]);
+
+/** `Object.hasOwn(x, "k")`, `hasOwnProperty.call(x, "k")` and `Reflect.has(x, "k")` test presence, as `"k" in x` does. */
+function presenceCall(
+  node: ESTree.CallExpression,
+): { object: string; key: string } | null {
+  const [first, second] = node.arguments;
+  if (
+    !PRESENCE_CALLS.has(callName(node.callee) ?? "") ||
+    first === undefined ||
+    first.type === "SpreadElement" ||
+    second?.type !== "Literal"
+  )
+    return null;
+  const object = unwrapAlias(first);
+  return object.type === "Identifier"
+    ? { object: object.name, key: String(second.value) }
+    : null;
+}
+
 function callReads(
   node: ESTree.CallExpression,
   environment: Environment,
@@ -221,6 +246,48 @@ function callReads(
   if (guard !== undefined)
     keys.push(...(declaredMembers(guard, environment.types)?.keys() ?? []));
   return objects.flatMap((object) => keys.map((key) => [object, key] as const));
+}
+
+/** Reports the presence-only checks and unread members of one finished guard. */
+function evaluate(frame: Frame, env: Environment, context: Context): void {
+  const wide = isWide(frame.parameter);
+  if (!wide && frame.narrowed.type !== "TSIntersectionType") return;
+  const members = declaredMembers(frame.narrowed, env.types);
+  const isRead = (key: string) =>
+    frame.reads.some(
+      ([object, read]) => read === key && frame.aliases.has(object),
+    );
+  const isOpen = (key: string) => {
+    const type = members?.get(key);
+    return type !== undefined && type !== null && OPEN_TYPES.has(type.type);
+  };
+  const present = new Set<string>();
+  for (const presence of frame.presence) {
+    if (!frame.aliases.has(presence.object)) continue;
+    present.add(presence.key);
+    if (isRead(presence.key) || isOpen(presence.key)) continue;
+    context.report({
+      node: presence.node,
+      messageId: "presenceOnly",
+      data: { key: presence.key, param: presence.object },
+    });
+  }
+  const dynamic = frame.dynamicReads.some((object) =>
+    frame.aliases.has(object),
+  );
+  if (!wide || dynamic) return;
+  for (const member of members?.keys() ?? []) {
+    if (isOpen(member) || present.has(member) || isRead(member)) continue;
+    context.report({
+      node: frame.predicate,
+      messageId: "uncheckedMember",
+      data: {
+        member,
+        param: frame.name,
+        type: context.sourceCode.getText(frame.narrowed),
+      },
+    });
+  }
 }
 
 /** A type predicate must check what it narrows to, not only that a key is present. */
@@ -250,48 +317,8 @@ export const noPresenceOnlyTypeGuardRule = defineRule({
     const leave = () => {
       const frame = stack.pop();
       if (frame !== null && frame !== undefined && environment !== null)
-        evaluate(frame, environment);
+        evaluate(frame, environment, context);
     };
-    function evaluate(frame: Frame, env: Environment): void {
-      const wide = isWide(frame.parameter);
-      if (!wide && frame.narrowed.type !== "TSIntersectionType") return;
-      const members = declaredMembers(frame.narrowed, env.types);
-      const isRead = (key: string) =>
-        frame.reads.some(
-          ([object, read]) => read === key && frame.aliases.has(object),
-        );
-      const isOpen = (key: string) => {
-        const type = members?.get(key);
-        return type !== undefined && type !== null && OPEN_TYPES.has(type.type);
-      };
-      const present = new Set<string>();
-      for (const presence of frame.presence) {
-        if (!frame.aliases.has(presence.object)) continue;
-        present.add(presence.key);
-        if (isRead(presence.key) || isOpen(presence.key)) continue;
-        context.report({
-          node: presence.node,
-          messageId: "presenceOnly",
-          data: { key: presence.key, param: presence.object },
-        });
-      }
-      const dynamic = frame.dynamicReads.some((object) =>
-        frame.aliases.has(object),
-      );
-      if (!wide || dynamic) return;
-      for (const member of members?.keys() ?? []) {
-        if (isOpen(member) || present.has(member) || isRead(member)) continue;
-        context.report({
-          node: frame.predicate,
-          messageId: "uncheckedMember",
-          data: {
-            member,
-            param: frame.name,
-            type: context.sourceCode.getText(frame.narrowed),
-          },
-        });
-      }
-    }
     return {
       Program(node) {
         environment = {
@@ -307,8 +334,9 @@ export const noPresenceOnlyTypeGuardRule = defineRule({
       "FunctionExpression:exit": leave,
       "ArrowFunctionExpression:exit": leave,
       MemberExpression(node) {
-        if (node.object.type !== "Identifier") return;
-        const object = node.object.name;
+        const target = unwrapAlias(node.object);
+        if (target.type !== "Identifier") return;
+        const object = target.name;
         const key = memberName(node);
         for (const frame of active()) {
           if (key === null) frame.dynamicReads.push(object);
@@ -317,6 +345,13 @@ export const noPresenceOnlyTypeGuardRule = defineRule({
       },
       CallExpression(node) {
         if (environment === null) return;
+        const presence = presenceCall(node);
+        if (presence !== null) {
+          active()
+            .at(-1)
+            ?.presence.push({ node, ...presence });
+          return;
+        }
         const reads = callReads(node, environment);
         for (const frame of active()) frame.reads.push(...reads);
       },
