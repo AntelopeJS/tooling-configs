@@ -12,7 +12,7 @@ import { skillText } from "./skills.ts";
 const SKILL = ".agents/skills/verify-module";
 
 const DOORS = `{
-    data: { globs: ["src/store/**"], funnels: ["src/store/delete.ts"], containments: [], why: "rows" },
+    data: { globs: ["src/store/**"], funnels: ["src/store/delete.ts"], containments: ["core/own"], why: "rows" },
     format: null,
     contract: null,
     outbound: null,
@@ -64,6 +64,7 @@ test("map is silent on a complete map and names every gap of an incomplete one",
       ".agents/skills/verify-module/features/core.md: seeded-breaks/core.patch is missing",
       "seeded-doors/data.patch is missing: the data door applies to this repository",
       "verify.config.ts journey own is in no feature file",
+      "doors.data containment core/own is not a journey a feature registers",
     ].sort(),
   );
 });

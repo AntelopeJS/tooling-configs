@@ -167,6 +167,35 @@ export function checkMap(workspace: Workspace, builtins: string[]): string[] {
       problems.push(
         `seeded-doors/${kind}.patch is missing: the ${kind} door applies to this repository`,
       );
+  problems.push(...containmentProblems(workspace, features));
+  return problems;
+}
+
+/** A Data or Format door is contained only by a journey, so each rule names at least one, as a registered `feature/journey`. */
+function containmentProblems(
+  workspace: Workspace,
+  features: Feature[],
+): string[] {
+  const problems: string[] = [];
+  for (const kind of ["data", "format"] as const) {
+    const rule = workspace.config.doors[kind];
+    if (!rule) continue;
+    if (rule.containments.length === 0)
+      problems.push(
+        `doors.${kind} names no containments journey: a ${kind} door row could never pass`,
+      );
+    for (const containment of rule.containments) {
+      const [name, journey] = containment.split("/");
+      if (
+        !features.some(
+          (entry) => entry.name === name && entry.journeys.includes(journey),
+        )
+      )
+        problems.push(
+          `doors.${kind} containment ${containment} is not a journey a feature registers`,
+        );
+    }
+  }
   return problems;
 }
 

@@ -76,7 +76,7 @@ ${text.layer}
 ${BIN} map
 \`\`\`
 
-\`map\` fails on a user-facing file no feature covers, a feature without journeys, docs or seeded break, an unknown journey, and an applicable door kind without its seeded door.
+\`map\` fails on a user-facing file no feature covers, a feature without journeys, docs or seeded break, an unknown journey, an applicable door kind without its seeded door, and a Data or Format door whose \`containments\` name no journey a feature registers.
 
 ## Verdict rules
 
