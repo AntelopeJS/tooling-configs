@@ -156,6 +156,14 @@ export function writeFixture(
     env: {
       VERIFY_ENTRIES: JSON.stringify(entries),
       VERIFY_CALL_LOG: join(folder, "calls.jsonl"),
+      VERIFY_SERVICES: JSON.stringify(
+        state.containers.map(({ service, name, host, port }) => ({
+          name: service,
+          container: name,
+          host,
+          port,
+        })),
+      ),
       VERIFY_CONFIG: config,
     },
   };

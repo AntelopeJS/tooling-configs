@@ -189,7 +189,8 @@ exports.construct = async function construct() {
     }
   }
   const hooks = await loadHooks();
-  if (hooks.provide) await hooks.provide(load(Object.keys(entries)[0], "."));
+  const services = JSON.parse(process.env.VERIFY_SERVICES || "[]");
+  if (hooks.provide) await hooks.provide(load(Object.keys(entries)[0], "."), services);
 };
 exports.start = function start() {};
 exports.stop = function stop() {};
