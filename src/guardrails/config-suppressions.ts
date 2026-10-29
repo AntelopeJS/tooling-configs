@@ -165,10 +165,24 @@ function declarationsIn(source: ts.SourceFile): Declarations {
 }
 
 /**
+ * A glob of the config in `directory` as a path from the repository root;
+ * the whole directory when `glob` is undefined. Root globs stay as written,
+ * and a root block without `files` is `*`.
+ */
+function anchored(directory: string, glob?: string): string {
+  if (glob === undefined) return directory === "" ? "*" : `${directory}/**`;
+  if (directory === "") return glob;
+  const negated = glob.startsWith("!");
+  const path = (negated ? glob.slice(1) : glob).replace(/^(?:\.\/|\/)+/u, "");
+  return `${negated ? "!" : ""}${directory}/${path}`;
+}
+
+/**
  * Each rule and category a lint config file switches off, to `allow` or to
  * a warning: in every object's `rules` and `categories`, and in the argument
  * of an ESLint composer's `overrideRules`, once per glob of the object's
- * `files`. Rule maps and globs held in same-file variables or spread from
+ * `files`, each glob anchored at the config's directory so a scope never
+ * reaches past it. Rule maps and globs held in same-file variables or spread from
  * them count where they are used; configs the pack's presets return are
  * not in the file, so they never count.
  */
@@ -177,6 +191,10 @@ export function configRuleOffs(file: string, text: string): ConfigRuleOff[] {
   const compiler = typescript();
   const source = sourceOf(file, text);
   const declarations = declarationsIn(source);
+  const directory = file.includes("/")
+    ? file.slice(0, file.lastIndexOf("/"))
+    : "";
+  const whole = [anchored(directory)];
   const found: ConfigRuleOff[] = [];
   const add = (
     map: ts.Expression | undefined,
@@ -192,7 +210,11 @@ export function configRuleOffs(file: string, text: string): ConfigRuleOff[] {
     if (compiler.isObjectLiteralExpression(node)) {
       const files = member(node, "files");
       const scopes =
-        files === undefined ? ["*"] : globs(files, declarations, source);
+        files === undefined
+          ? whole
+          : globs(files, declarations, source).map((glob) =>
+              anchored(directory, glob),
+            );
       add(member(node, "rules"), scopes, "");
       add(member(node, "categories"), scopes, "category:");
     }
@@ -201,7 +223,7 @@ export function configRuleOffs(file: string, text: string): ConfigRuleOff[] {
       compiler.isPropertyAccessExpression(node.expression) &&
       node.expression.name.text === "overrideRules"
     )
-      add(node.arguments[0], ["*"], "");
+      add(node.arguments[0], whole, "");
     compiler.forEachChild(node, visit);
   };
   visit(source);

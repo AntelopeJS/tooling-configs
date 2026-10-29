@@ -242,12 +242,12 @@ test("an .oxlintrc.json with comments counts each rule off, warn or allow and ea
     countSuppressions(suppressionsIn("packages/web/.oxlintrc.json", legacy))
       .config,
     {
-      "category:correctness for *": 1,
-      "eslint/eqeqeq for *": 1,
-      "eslint/no-console for *": 1,
-      "eslint/no-debugger for *": 1,
-      "typescript/unbound-method for a/**": 1,
-      "typescript/unbound-method for b/**": 1,
+      "category:correctness for packages/web/**": 1,
+      "eslint/eqeqeq for packages/web/**": 1,
+      "eslint/no-console for packages/web/**": 1,
+      "eslint/no-debugger for packages/web/**": 1,
+      "typescript/unbound-method for packages/web/a/**": 1,
+      "typescript/unbound-method for packages/web/b/**": 1,
     },
   );
 });

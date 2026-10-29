@@ -6,6 +6,14 @@ const EVERY_FILE = new Set(["*", "**", "**/*"]);
 /** Glob syntax beyond `*` and `**`, compared only for equality. */
 const OTHER_SYNTAX = /[?[\]{}()!+@]/u;
 
+/** A glob with syntax beyond `*` and `**`, or a `.` or `..` segment, which ESLint resolves and oxlint does not. */
+function unsupported(glob: string): boolean {
+  return (
+    OTHER_SYNTAX.test(glob) ||
+    segmentsOf(glob).some((segment) => segment === "." || segment === "..")
+  );
+}
+
 /** The rule and glob of a config budget key, `<rule> for <glob>`. */
 function keyParts(key: string): { rule: string; glob: string } | undefined {
   const at = key.indexOf(" for ");
@@ -52,12 +60,13 @@ function segmentsContain(
  * Whether glob `wide` names every file `narrow` names, decided
  * conservatively: `*`, `**` and `**\/*` name every file; otherwise segment by
  * segment, where only `**` in `wide` covers `**` in `narrow`, a single-segment
- * `*` never does, and other glob syntax must match exactly.
+ * `*` never does, and other glob syntax or a `.` or `..` segment must match
+ * exactly.
  */
 export function globContains(wide: string, narrow: string): boolean {
   if (EVERY_FILE.has(wide) || wide === narrow) return true;
   if (EVERY_FILE.has(narrow)) return false;
-  if (OTHER_SYNTAX.test(wide) || OTHER_SYNTAX.test(narrow)) return false;
+  if ([wide, narrow].some(unsupported)) return false;
   return segmentsContain(segmentsOf(wide), segmentsOf(narrow));
 }
 
