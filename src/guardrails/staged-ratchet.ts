@@ -124,6 +124,31 @@ function keptFindings(
   return kept;
 }
 
+/**
+ * Per rule, the findings in the files the branch changed since `revision`, at
+ * `revision` and in the index, so a merge-base credit is only paid while the
+ * branch as a whole does not raise the rule.
+ */
+function branchCounts(root: string, revision: string) {
+  const paths = execFileSync(
+    "git",
+    ["diff", "--cached", "--name-only", "--no-renames", "-z", revision],
+    { cwd: root, encoding: "utf8" },
+  )
+    .split("\0")
+    .filter((file) => file && !LINT_CONFIG.test(file));
+  const lint = (tree: string) => {
+    const existing = paths.filter((file) => existsSync(join(tree, file)));
+    return countByRule(
+      existing.length ? lintDiagnostics(tree, undefined, existing) : [],
+    );
+  };
+  return {
+    before: withPreviousTree(root, revision, paths, lint),
+    after: withPreviousTree(root, revision, [], lint),
+  };
+}
+
 function inRanges(
   ranges: Map<string, { start: number; end: number }[]>,
   file: string,
@@ -140,8 +165,9 @@ function inRanges(
  * what the same files, rename sources and deleted files had at HEAD and the
  * staged findings that sit, on a line unchanged since the merge-base of HEAD
  * with the pull request base (`GITHUB_BASE_REF`, else `origin/HEAD`), where
- * the merge-base has a finding of the same rule; without a merge-base, HEAD
- * alone.
+ * the merge-base has a finding of the same rule, while the files the branch
+ * changed hold no more findings of that rule than at the merge-base; without a
+ * merge-base, HEAD alone.
  * The count is net across the staged files, so a block moved between them, a
  * legacy line that is reformatted, a line restored to its base form, or an
  * edit of a file a legacy finding moved into earlier on the branch passes; a
@@ -167,10 +193,13 @@ export function stagedRatchet(root: string, files?: string[]): string[] {
     base.revision === undefined
       ? undefined
       : stagedChanges(root, targets, base.revision);
-  const failures: string[] = [];
-  for (const [rule, total] of countByRule(after)) {
-    const head = atHead.get(rule) ?? 0;
-    const matches = after.filter((diagnostic) => diagnostic.rule === rule);
+  let branch: ReturnType<typeof branchCounts> | undefined;
+  const measure = (
+    rule: string,
+    matches: Diagnostic[],
+    head: number,
+    total: number,
+  ) => {
     const kept =
       atBase === undefined || baseChanges === undefined
         ? undefined
@@ -180,6 +209,24 @@ export function stagedRatchet(root: string, files?: string[]): string[] {
             baseChanges,
           );
     const rise = total - Math.max(head, kept ?? 0);
+    if (kept === undefined || kept <= head || base.revision === undefined)
+      return { kept, rise, raised: undefined };
+    branch ??= branchCounts(root, base.revision);
+    const from = branch.before.get(rule) ?? 0;
+    const to = branch.after.get(rule) ?? 0;
+    if (to <= from) return { kept, rise, raised: undefined };
+    return {
+      kept,
+      rise: Math.min(total - head, Math.max(to - from, rise)),
+      raised: `the files this branch changed hold ${to} at the index against ${from} at that merge-base, so the merge-base credit covers no added finding`,
+    };
+  };
+  const failures: string[] = [];
+  for (const [rule, total] of countByRule(after)) {
+    const head = atHead.get(rule) ?? 0;
+    if (total <= head) continue;
+    const matches = after.filter((diagnostic) => diagnostic.rule === rule);
+    const { kept, rise, raised } = measure(rule, matches, head, total);
     if (rise <= 0) continue;
     const added = matches.filter(
       ({ file, line }) =>
@@ -193,7 +240,7 @@ export function stagedRatchet(root: string, files?: string[]): string[] {
         ? `${head} at HEAD`
         : `${head} at HEAD, ${kept} unchanged since ${base.label}`;
     failures.push(
-      `${rule}: this commit adds ${rise} to the staged files (${counts}, ${total} staged); the ceiling covers only legacy findings.`,
+      `${rule}: this commit adds ${rise} to the staged files (${counts}, ${total} staged)${raised === undefined ? "" : `; ${raised}`}; the ceiling covers only legacy findings.`,
       ...(added.length ? added : matches).map(
         (diagnostic) =>
           `  ${diagnostic.location}: ${diagnostic.message}\n    Fix: ${diagnostic.help ?? "Resolve this finding; moving, reformatting or restoring a legacy finding to its base form is allowed, adding one is not."}`,
