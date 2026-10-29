@@ -175,7 +175,7 @@ function judge(
     print(status.detail);
     if (!status.ok) return 1;
   }
-  return verdict.result === "FAIL" ? 1 : 0;
+  return verdict.result === "PASS" || verdict.result === "PASS+NOTES" ? 0 : 1;
 }
 
 async function main(argv: string[]): Promise<number> {

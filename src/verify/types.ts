@@ -85,6 +85,12 @@ export interface TreeRecord {
   lines: string[];
 }
 
+/** Options of `ajs project dev`: extra environment and extra flags such as `--watch`. */
+export interface DevOptions {
+  env?: { [name: string]: string };
+  args?: string[];
+}
+
 /** Options of a driven command. */
 export interface DriveOptions {
   cwd?: string;
@@ -165,11 +171,7 @@ export interface JourneyContext {
   /** Writes the fixture project of the interface or module kind and returns its folder. */
   fixture(options?: { moduleConfig?: JsonObject }): string;
   /** Starts `ajs project dev` in a project and waits until it is ready. */
-  dev(
-    name: string,
-    project: string,
-    options?: { env?: { [name: string]: string } },
-  ): Promise<App>;
+  dev(name: string, project: string, options?: DevOptions): Promise<App>;
   call(name: string, app: App, request: CallRequest): Promise<CallResult>;
   /** Stops an app with SIGINT by recorded PID. */
   stop(name: string, app: App): Promise<StopResult>;
@@ -213,6 +215,8 @@ export interface TemplateProbe {
   body?: RegExp;
   /** A line of `ajs project dev` output that means ready, for a template with no HTTP endpoint. */
   log?: RegExp;
+  /** How long the process must keep running after `log` matches, 3000 ms by default: core prints nothing once modules start. */
+  settleMs?: number;
 }
 
 /** The repo-owned layer of a shared verification skill: `.agents/skills/verify-<kind>/verify.config.ts`. */

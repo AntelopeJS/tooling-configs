@@ -30,6 +30,7 @@ import type {
   CallResult,
   Check,
   CommandResult,
+  DevOptions,
   DriveOptions,
   HttpResult,
   JourneyContext,
@@ -59,6 +60,7 @@ class NotVerified extends Error {}
 const READY_TIMEOUT_MS = 120_000;
 const STOP_TIMEOUT_MS = 30_000;
 const POLL_MS = 250;
+const SETTLE_MS = 3000;
 
 function slug(text: string): string {
   return text
@@ -87,12 +89,17 @@ export class VerifyContext implements JourneyContext {
   private readonly fixtures = new Map<string, Fixture>();
   private index = 0;
 
+  readonly workspace: Workspace;
+  readonly state: RunState;
+
   constructor(
-    readonly workspace: Workspace,
-    readonly state: RunState,
+    workspace: Workspace,
+    state: RunState,
     feature: string,
     journey: string,
   ) {
+    this.workspace = workspace;
+    this.state = state;
     this.repo = workspace.root;
     this.folder = join(state.evidence, feature, journey);
     this.work = join(state.dir, "work", feature, journey);
@@ -254,7 +261,7 @@ export class VerifyContext implements JourneyContext {
   async dev(
     name: string,
     project: string,
-    options: { env?: { [name: string]: string } } = {},
+    options: DevOptions = {},
   ): Promise<App> {
     const port = await freePort();
     const fixture = this.fixtures.get(project);
@@ -267,7 +274,7 @@ export class VerifyContext implements JourneyContext {
     const folder = this.step(name);
     const handle = startRecorded(folder, {
       program: process.execPath,
-      args: [ajsEntry(this.repo), "project", "dev"],
+      args: [ajsEntry(this.repo), "project", "dev", ...(options.args ?? [])],
       cwd: project,
       env: this.env(env),
     });
@@ -329,10 +336,22 @@ export class VerifyContext implements JourneyContext {
       await sleep(POLL_MS);
       check = await this.probe(app, fixture, folder);
     }
+    const settle = this.workspace.config.template?.probe.log
+      ? (this.workspace.config.template.probe.settleMs ?? SETTLE_MS)
+      : 0;
+    if (check.pass && settle > 0) await sleep(settle);
+    const alive = {
+      name: "still running after readiness",
+      pass: !exited,
+      detail: `waited ${settle} ms`,
+    };
     writeFileSync(
       join(folder, "ready.txt"),
-      `${check.pass ? "ready" : exited ? "exited before ready" : "timed out"}\n`,
+      `${check.pass && !exited ? "ready" : exited ? "exited before ready" : "timed out"}\n`,
     );
+    this.expect(folder, check.pass ? [check, alive] : [check], {
+      critical: true,
+    });
     this.expect(folder, [check], { critical: true });
   }
 
@@ -413,7 +432,7 @@ export class VerifyContext implements JourneyContext {
   async scaffold(
     name: string,
     project: string,
-    flags: string[] = ["--pm", "pnpm", "--no-git-init"],
+    flags: string[] = ["--pm", "pnpm", "--git-init"],
   ): Promise<CommandResult> {
     const set = await this.ajs("config set git", [
       "config",

@@ -27,7 +27,7 @@ const IDENTITY = [
 function commitFolder(folder: string): void {
   for (const args of [
     ["init", "-q"],
-    ["add", "-A"],
+    ["add", "-A", "--force"],
     ["commit", "-q", "-m", "verify source"],
   ])
     execFileSync("git", [...IDENTITY, ...args], {

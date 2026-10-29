@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 import { exitIs, exists, interrupted, refused } from "./checks.ts";
-import type { BuiltinJourney } from "./context.ts";
+import type { BuiltinJourney, VerifyContext } from "./context.ts";
 import { INTERFACE_JOURNEYS } from "./interface.ts";
 import type { VerifyKind } from "./kinds.ts";
 
@@ -37,28 +37,49 @@ const moduleDev: BuiltinJourney = {
   },
 };
 
-/** Scaffolds a project from the template through `ajs`, installs it, runs its checks, runs it and stops it. */
-const scaffold: BuiltinJourney = {
-  title:
-    "a project scaffolded from the template installs, passes its checks, starts and answers",
+/** Scaffolds a project from the template with `ajs project init` and installs it; returns its folder. */
+async function scaffoldProject(context: VerifyContext): Promise<string> {
+  const project = join(context.work, "app");
+  const init = await context.scaffold("ajs project init", project);
+  context.expect(
+    init.folder,
+    [exitIs(init, 0), exists(join(project, "antelope.config.ts"))],
+    { critical: true },
+  );
+  context.tree("scaffolded tree", project);
+  const install = await context.command(
+    "pnpm install",
+    "pnpm",
+    ["install", "--frozen-lockfile", "--prefer-offline"],
+    { cwd: project },
+  );
+  context.expect(install.folder, [exitIs(install, 0)], { critical: true });
+  return project;
+}
+
+/** Scaffolds and installs a project from the template, runs it until it is ready, and stops it. */
+const scaffoldDev: BuiltinJourney = {
+  title: "a project scaffolded from the template installs, starts and answers",
   entryPoint:
-    "`ajs project init --template` from the interfaces manifest, then `pnpm run checks` and `ajs project dev`",
+    "`ajs project init --template` from the interfaces manifest, then `ajs project dev --watch`, as the template's `pnpm dev` runs it",
   async run(context) {
-    const project = join(context.work, "app");
-    const init = await context.scaffold("ajs project init", project);
-    context.expect(
-      init.folder,
-      [exitIs(init, 0), exists(join(project, "antelope.config.ts"))],
-      { critical: true },
+    const app = await context.dev(
+      "ajs project dev --watch",
+      await scaffoldProject(context),
+      { args: ["--watch"] },
     );
-    context.tree("scaffolded tree", project);
-    const install = await context.command(
-      "pnpm install",
-      "pnpm",
-      ["install", "--frozen-lockfile", "--prefer-offline"],
-      { cwd: project },
-    );
-    context.expect(install.folder, [exitIs(install, 0)], { critical: true });
+    const stopped = await context.stop("SIGINT", app);
+    context.expect(stopped.folder, [interrupted(stopped)]);
+  },
+};
+
+/** Scaffolds and installs a project from the template and runs its own `pnpm run checks`. */
+const scaffoldChecks: BuiltinJourney = {
+  title: "a project scaffolded from the template passes its own checks",
+  entryPoint:
+    "`ajs project init --template` from the interfaces manifest, then `pnpm run checks`",
+  async run(context) {
+    const project = await scaffoldProject(context);
     const checks = await context.command(
       "pnpm run checks",
       "pnpm",
@@ -66,9 +87,6 @@ const scaffold: BuiltinJourney = {
       { cwd: project },
     );
     context.expect(checks.folder, [exitIs(checks, 0)]);
-    const app = await context.dev("ajs project dev", project);
-    const stopped = await context.stop("SIGINT", app);
-    context.expect(stopped.folder, [interrupted(stopped)]);
   },
 };
 
@@ -76,5 +94,5 @@ const scaffold: BuiltinJourney = {
 export const BUILTIN_JOURNEYS = {
   interface: INTERFACE_JOURNEYS,
   module: { "module-dev": moduleDev },
-  template: { scaffold },
+  template: { "scaffold-dev": scaffoldDev, "scaffold-checks": scaffoldChecks },
 } satisfies { [Kind in VerifyKind]: { [id: string]: BuiltinJourney } };

@@ -23,14 +23,19 @@ const DEFAULT_USER_FACING = {
   template: ["**"],
 };
 
-const NOT_USER_FACING = [
-  "**/*.test.ts",
-  "**/test/**",
-  "**/tests/**",
-  ".agents/**",
-  ".claude/**",
-  ".github/**",
-];
+const VERIFICATION_LAYER = [".agents/**", ".claude/**", ".github/**"];
+
+/** Tests are user-facing in a template, whose whole tree is what `ajs` copies. */
+const NOT_USER_FACING = {
+  interface: [
+    "**/*.test.ts",
+    "**/test/**",
+    "**/tests/**",
+    ...VERIFICATION_LAYER,
+  ],
+  module: ["**/*.test.ts", "**/test/**", "**/tests/**", ...VERIFICATION_LAYER],
+  template: VERIFICATION_LAYER,
+};
 
 function frontmatterLists(text: string): Map<string, string[]> {
   const lists = new Map<string, string[]>();
@@ -76,7 +81,9 @@ function matches(file: string, globs: string[]): boolean {
 function userFacing(workspace: Workspace, file: string): boolean {
   const globs =
     workspace.config.userFacing ?? DEFAULT_USER_FACING[workspace.kind];
-  return matches(file, globs) && !matches(file, NOT_USER_FACING);
+  return (
+    matches(file, globs) && !matches(file, NOT_USER_FACING[workspace.kind])
+  );
 }
 
 function trackedFiles(workspace: Workspace): string[] {

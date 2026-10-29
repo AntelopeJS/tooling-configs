@@ -9,7 +9,7 @@ import {
   VERIFY_KINDS,
   type VerifyKind,
 } from "../verify/kinds.ts";
-import { skillText } from "../verify/skills.ts";
+import { skillText, syncedFiles } from "../verify/skills.ts";
 import type { Manifest } from "./package.ts";
 import { bin, put, read, testRepo } from "./helpers/test-repo.ts";
 
@@ -103,18 +103,20 @@ test("--check reports both missing synced paths as drift and writes nothing", (t
   assert.equal(hasLayer(root, "module"), false);
 });
 
-test("an edited SKILL.md is drift under --check and sync restores it", (t) => {
+test("an edited SKILL.md or skill package.json is drift under --check and sync restores both", (t) => {
   const root = syncedRepo(t, "module");
-  put(root, skillPath("module"), "edited\n");
+  const synced = syncedFiles("module");
+  for (const { path } of synced) put(root, path, "edited\n");
   const check = bin(root, "sync", [...TEMPLATE, "--check"]);
   assert.equal(check.status, 1);
   assert.equal(
     check.stdout,
-    `Drift: ${skillPath("module")}; run antelopejs-sync\n`,
+    synced.map(({ path }) => `Drift: ${path}; run antelopejs-sync\n`).join(""),
   );
   assert.equal(read(root, skillPath("module")), "edited\n");
   assert.equal(bin(root, "sync", TEMPLATE).status, 0);
-  assert.equal(read(root, skillPath("module")), skillText("module"));
+  for (const { path, content } of synced)
+    assert.equal(read(root, path), content);
 });
 
 test("a deleted or retargeted link is drift under --check and sync restores it", (t) => {

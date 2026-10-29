@@ -16,6 +16,7 @@ export type {
   CallResult,
   Check,
   CommandResult,
+  DevOptions,
   DoorKind,
   DoorRule,
   DoorRules,
