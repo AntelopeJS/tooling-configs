@@ -21,6 +21,7 @@ import {
   isTestSource,
   outputRoot,
   packagesAt,
+  isExportPath,
   type ExportTarget,
   type ProofManifest,
 } from "./typescript.ts";
@@ -79,8 +80,7 @@ function runtimeTargets(
     return target.flatMap((value, index) =>
       runtimeTargets(value, `${entry}/${index}`, subpath),
     );
-  if (target.constructor === String)
-    return [{ entry, target: String(target), subpath }];
+  if (isExportPath(target)) return [{ entry, target, subpath }];
   return Object.entries(target).flatMap(([key, value]) => {
     if (key === "types") return [];
     if (["browser", "deno", "react-native"].includes(key))
