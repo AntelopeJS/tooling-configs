@@ -10,6 +10,7 @@ import {
   type JsonObject,
   type JsonValue,
 } from "../garden/json.ts";
+import { referencedDeclarations } from "./surface-types.ts";
 
 /** The declared function surface of a package: function path to normalized signature text. */
 export type Surface = Map<string, string>;
@@ -111,19 +112,21 @@ function signatureTexts(
 
 function callableText(walk: Walk, type: ts.Type): string | undefined {
   const callable = walk.checker.getNonNullableType(type);
+  const calls = callable.getCallSignatures();
+  const constructs = callable.getConstructSignatures();
   const texts = [
-    ...signatureTexts(
-      walk,
-      callable.getCallSignatures(),
-      ts.SignatureKind.Call,
-    ),
-    ...signatureTexts(
-      walk,
-      callable.getConstructSignatures(),
-      ts.SignatureKind.Construct,
-    ),
+    ...signatureTexts(walk, calls, ts.SignatureKind.Call),
+    ...signatureTexts(walk, constructs, ts.SignatureKind.Construct),
   ];
-  return texts.length === 0 ? undefined : texts.join(" | ");
+  if (texts.length === 0) return undefined;
+  const reached = referencedDeclarations(
+    walk.checker,
+    (symbol) => declaredHere(walk, symbol),
+    [...calls, ...constructs],
+  );
+  return reached.length === 0
+    ? texts.join(" | ")
+    : `${texts.join(" | ")} where ${reached.join(" ")}`;
 }
 
 function typeOf(walk: Walk, symbol: ts.Symbol): ts.Type {
