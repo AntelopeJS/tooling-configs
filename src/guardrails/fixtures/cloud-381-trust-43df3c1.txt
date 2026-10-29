@@ -1,0 +1,39 @@
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import {
+  Agent,
+  type RequestInit as TlsRequestInit,
+  fetch as tlsFetch,
+} from "undici";
+import type { FetchLike } from "../fetch";
+
+interface KubernetesTrust {
+  ca: string;
+  agent: Agent;
+}
+
+const kubernetesTrust = new Map<string, KubernetesTrust>();
+
+/**
+ * A fetch that trusts the apiserver through the CA projected next to the
+ * ServiceAccount token — never an insecure TLS exception, never the public
+ * CAs. The agent is rebuilt when the projected CA rotates.
+ *
+ * @param tokenPath Projected ServiceAccount token; `ca.crt` sits beside it
+ */
+export async function kubernetesCaFetch(tokenPath: string): Promise<FetchLike> {
+  const path = join(dirname(tokenPath), "ca.crt");
+  const ca = await readFile(path, "utf8");
+  let trust = kubernetesTrust.get(path);
+  if (!trust || trust.ca !== ca) {
+    if (trust) await trust.agent.close();
+    trust = { ca, agent: new Agent({ connect: { ca } }) };
+    kubernetesTrust.set(path, trust);
+  }
+  const dispatcher = trust.agent;
+  return (url, options) => {
+    const dispatch = { ...options, dispatcher } as TlsRequestInit;
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- undici's Response type does not sufficiently overlap the global Response (it lacks `bytes`), so a single assertion is rejected
+    return tlsFetch(url, dispatch) as unknown as Promise<Response>;
+  };
+}

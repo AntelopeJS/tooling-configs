@@ -1,0 +1,23 @@
+## Left under the ratchet
+
+34 findings.
+
+- **Disappears with the new interface contract (22).** interface-database types `QueryStage.args` as `any[]` and `options` as `any`, and a query value as `Value<unknown>`. So `DecodeValue` and `DecodeLiteralValue` return `unknown`, and every stage handler and helper that receives a decoded operand takes `unknown`. Their raw-value branch returns the caller's value unchanged, so no local guard can narrow it without changing what non-plain values (symbols, functions, class instances) decode to.
+  - `no-unknown-parameters` (16):
+    - `expression.ts:69, 75` (`Expression` constructor and `decode` start value);
+    - `expression.ts:136 ×2, 141, 179, 184, 209, 219, 264` (stage operands);
+    - `expression.ts:296` (`stage_obj_has`), `342` (`needsLiteral`), `353` (`IsConstantValue`);
+    - `pipeline.ts:116` (`setRoot`);
+    - `selection.ts:42, 51` (decoded index keys).
+  - `no-unknown-returns` (3): `expression.ts:21` (`ValueDecoder`), `311` (`DecodeValue`), `375` (`DecodeLiteralValue`).
+  - `require-safety-comment-for-type-assertion` (3): `pipeline.ts:205, 233, 277`, on `(stage.args[0] as Stream<any>).build()` in union, join and lookup. A local guard has to either throw for a non-`Stream` argument or check `instanceof Stream`, and both change behaviour. A different error replaces the `TypeError`, and `instanceof` refuses a `Stream` from another installed copy of interface-database. Dropping the cast would only read the `any` unchecked.
+- **Promise rejection reasons (9 `no-unknown-parameters`, 1 `no-unknown-returns`).** A rejection reason is `any` in the promise contract. The honest local type is `unknown`. Every consumer passes it on unchanged (to `TypedWriteError`, to a retry decision, or to a test's recorded value), so there is no boundary to parse it at.
+  - `no-unknown-parameters`:
+    - `atomic.ts:90` and `selection.ts:259` (`.catch` into `TypedWriteError`);
+    - `schema-initialization.ts:171` (`.then` rejection callback), `199` (`handleFailure`), `223` (`isInterruption`);
+    - `test/schema-initialization.test.ts:170` (`destroy().catch`);
+    - `test/schema-initialization-helpers.ts:9, 21` (`Deferred.reject`).
+  - `no-unknown-returns`: `test/duplicate-keys.test.ts:76` (`refusal` returns the caught reason).
+- **Open dictionaries (2 `no-known-value-widening`).** `query.ts:20` (`LIFECYCLE_HANDLERS`) and `selection.ts:243` (`RUNNERS`). The lookups answer inherited `Object.prototype` keys (#64). A closed literal type with a `key in table` guard would claim those keys are handlers, and an own-key check would change behaviour, so main's `Record` stays until #64 is fixed.
+- **Message text (1).** `no-runtime-typeof` at `utils.ts:60`, the `${typeof id}` in the `normalizeInstanceId` error message.
+
