@@ -4,6 +4,8 @@ import { isMap, isScalar, isSeq, parseDocument } from "yaml";
 
 const CI_NODE_PATTERN =
   /^AntelopeJS\/\.github\/\.github\/workflows\/ci-node\.yml@\S+$/;
+const CI_RENOVATE_SYNC_PATTERN =
+  /^AntelopeJS\/\.github\/\.github\/workflows\/ci-renovate-sync\.yml@\S+$/;
 
 export const MISSING_CHECKS_WORKFLOW =
   "No workflow in .github/workflows runs pnpm run checks. Add a step running `pnpm run checks` (or `pnpm checks`), or a job using AntelopeJS/.github/.github/workflows/ci-node.yml@<ref>.";
@@ -47,21 +49,30 @@ export interface CiCaller {
   named: boolean;
 }
 
-/** Jobs of a workflow file that call the shared Node CI; empty when the YAML does not parse. */
-export function ciNodeCallers(text: string): CiCaller[] {
+function callers(text: string, pattern: RegExp): CiCaller[] {
   const document = parseDocument(text);
   const jobs = document.errors.length ? undefined : document.get("jobs", true);
   if (!isMap(jobs)) return [];
-  const callers: CiCaller[] = [];
+  const found: CiCaller[] = [];
   for (const { key, value: job } of jobs.items) {
     if (!isMap(job)) continue;
     const uses = job.get("uses", true);
-    if (isScalar(uses) && CI_NODE_PATTERN.test(String(uses.value)))
-      callers.push({
+    if (isScalar(uses) && pattern.test(String(uses.value)))
+      found.push({
         id: String(isScalar(key) ? key.value : key),
         uses: String(uses.value),
         named: job.has("name"),
       });
   }
-  return callers;
+  return found;
+}
+
+/** Jobs of a workflow file that call the shared Node CI; empty when the YAML does not parse. */
+export function ciNodeCallers(text: string): CiCaller[] {
+  return callers(text, CI_NODE_PATTERN);
+}
+
+/** Jobs of a workflow file that call the shared Renovate sync at any ref; empty when the YAML does not parse. */
+export function ciRenovateSyncCallers(text: string): CiCaller[] {
+  return callers(text, CI_RENOVATE_SYNC_PATTERN);
 }

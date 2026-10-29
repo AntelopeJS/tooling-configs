@@ -45,7 +45,7 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 - Without `--json` it prints failures only. The exit code is non-zero only when a check could not run.
 - `--apply-pauses` sets the repository variable `NEXT_AUTOMERGE` to `shadow` on repositories where it is `on`, when `checks` is red on `next`, the ratchet file is back on a Clean repository, or governance drifted. It never sets `on` and writes nothing else.
 
-`antelopejs-sync` (full profile) writes the weekly mutation caller `.github/workflows/mutation.yml`, and both profiles keep the shared CI caller on the job id `ci`, so the check is reported as `ci / checks`.
+`antelopejs-sync` (full profile) writes the weekly mutation caller `.github/workflows/mutation.yml`, and both profiles keep the shared CI caller on the job id `ci`, so the check is reported as `ci / checks`. The `ci` job is read-only (`contents: read`) and passes `renovate-sync: false`; the `contents: write` and `actions: write` grants that let the Renovate sync push its commit and dispatch the caller live on a separate `renovate-sync` job calling `ci-renovate-sync.yml`, which sync adds when it is missing and never re-pins.
 
 ## Shared verification skills
 

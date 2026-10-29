@@ -52,7 +52,7 @@ test("a repository on the shared CI, the preset, the latest pack and a green ci 
 
 test("a caller job not named ci is reported even though the file calls ci-node.yml@v1", async () => {
   const api = conformant(world()).repo("mongodb", {
-    ".github/workflows/ci.yml": CALLER.replace("  ci:", "  checks:"),
+    ".github/workflows/ci.yml": CALLER.replace("\n  ci:", "\n  checks:"),
     "renovate.json": RENOVATE,
     "package.json": PACKAGE,
     "pnpm-lock.yaml": LOCK("0.2.7"),
@@ -64,7 +64,10 @@ test("a caller job not named ci is reported even though the file calls ci-node.y
 
 test("a caller pinned to another ref or missing is a ci-caller finding", async () => {
   const pinned = conformant(world()).repo("mongodb", {
-    ".github/workflows/ci.yml": CALLER.replace("@v1", "@main"),
+    ".github/workflows/ci.yml": CALLER.replace(
+      "ci-node.yml@v1",
+      "ci-node.yml@main",
+    ),
     "renovate.json": RENOVATE,
     "package.json": PACKAGE,
     "pnpm-lock.yaml": LOCK("0.2.7"),
@@ -81,6 +84,29 @@ test("a caller pinned to another ref or missing is a ci-caller finding", async (
   });
   assert.ok(
     subjects(await conformance.run(inline.context())).includes("ci-caller"),
+  );
+});
+
+test("a caller without a ci-renovate-sync job, or pinned to another ref, is a ci-renovate-sync finding", async () => {
+  const withCaller = (workflow: string) =>
+    conformant(world()).repo("mongodb", {
+      ".github/workflows/ci.yml": workflow,
+      "renovate.json": RENOVATE,
+      "package.json": PACKAGE,
+      "pnpm-lock.yaml": LOCK("0.2.7"),
+    });
+  const missing = CALLER.slice(0, CALLER.indexOf("  renovate-sync:"));
+  assert.deepEqual(
+    subjects(await conformance.run(withCaller(missing).context())),
+    ["ci-renovate-sync"],
+  );
+  const pinned = CALLER.replace(
+    "ci-renovate-sync.yml@v1",
+    "ci-renovate-sync.yml@main",
+  );
+  assert.deepEqual(
+    subjects(await conformance.run(withCaller(pinned).context())),
+    ["ci-renovate-sync"],
   );
 });
 
