@@ -6,7 +6,12 @@ import { readCeilings } from "./ceilings.ts";
 import { lintDiagnostics, type Diagnostic } from "./oxlint.ts";
 import { withPreviousTree } from "./previous-tree.ts";
 import { renamedPaths } from "./renames.ts";
-import { stagedAdditions } from "./staged-additions.ts";
+import {
+  previousLine,
+  stagedAdditions,
+  stagedChanges,
+  type StagedChanges,
+} from "./staged-additions.ts";
 import { suppressionBase } from "./suppression-base.ts";
 
 function stagedNames(root: string, filter: string): string[] {
@@ -59,11 +64,11 @@ function comparisonBase(root: string): Comparison {
   };
 }
 
-function previousCounts(
+function previousDiagnostics(
   root: string,
   targets: string[],
   revision: string | undefined,
-): Map<string, number> {
+): Diagnostic[] {
   const renames = renamedPaths(
     root,
     true,
@@ -79,21 +84,44 @@ function previousCounts(
       ...stagedNames(root, "D").map((file) => deletedFrom.get(file) ?? file),
     ]),
   ];
-  return countByRule(
-    withPreviousTree(
-      root,
-      revision ?? "HEAD",
-      previous.filter((file) => !LINT_CONFIG.test(file)),
-      (tree) => {
-        const existing = previous.filter((file) =>
-          existsSync(join(tree, file)),
-        );
-        return existing.length
-          ? lintDiagnostics(tree, undefined, existing)
-          : [];
-      },
-    ),
+  return withPreviousTree(
+    root,
+    revision ?? "HEAD",
+    previous.filter((file) => !LINT_CONFIG.test(file)),
+    (tree) => {
+      const existing = previous.filter((file) => existsSync(join(tree, file)));
+      return existing.length ? lintDiagnostics(tree, undefined, existing) : [];
+    },
   );
+}
+
+/**
+ * How many of `staged` sit on a line unchanged since the base and match a
+ * finding `previous` reports on that line of the base, each base finding
+ * matched once.
+ */
+function keptFindings(
+  staged: Diagnostic[],
+  previous: Diagnostic[],
+  changes: Map<string, StagedChanges>,
+): number {
+  const pool = new Map<string, number>();
+  for (const { file, line } of previous) {
+    const key = `${file}:${line}`;
+    pool.set(key, (pool.get(key) ?? 0) + 1);
+  }
+  let kept = 0;
+  for (const { file, line } of staged) {
+    const change = changes.get(file);
+    if (line === undefined || change === undefined) continue;
+    const from = previousLine(change.hunks, line);
+    const key = `${change.previous}:${from}`;
+    const left = pool.get(key) ?? 0;
+    if (from === undefined || left === 0) continue;
+    pool.set(key, left - 1);
+    kept += 1;
+  }
+  return kept;
 }
 
 function inRanges(
@@ -110,9 +138,10 @@ function inRanges(
 /**
  * Fails each ceilinged rule whose findings in the staged files outnumber both
  * what the same files, rename sources and deleted files had at HEAD and the
- * staged findings on lines unchanged since the merge-base of HEAD with the pull
- * request base (`GITHUB_BASE_REF`, else `origin/HEAD`), up to the count those
- * files had there; without a merge-base, HEAD alone.
+ * staged findings that sit, on a line unchanged since the merge-base of HEAD
+ * with the pull request base (`GITHUB_BASE_REF`, else `origin/HEAD`), where
+ * the merge-base has a finding of the same rule; without a merge-base, HEAD
+ * alone.
  * The count is net across the staged files, so a block moved between them, a
  * legacy line that is reformatted, a line restored to its base form, or an
  * edit of a file a legacy finding moved into earlier on the branch passes; a
@@ -128,29 +157,27 @@ export function stagedRatchet(root: string, files?: string[]): string[] {
   );
   if (!after.length) return [];
   const base = comparisonBase(root);
-  const atHead = previousCounts(root, targets, undefined);
+  const atHead = countByRule(previousDiagnostics(root, targets, undefined));
   const headAdditions = stagedAdditions(root, targets);
   const atBase =
     base.revision === undefined
       ? undefined
-      : previousCounts(root, targets, base.revision);
-  const baseAdditions =
+      : previousDiagnostics(root, targets, base.revision);
+  const baseChanges =
     base.revision === undefined
       ? undefined
-      : stagedAdditions(root, targets, base.revision);
+      : stagedChanges(root, targets, base.revision);
   const failures: string[] = [];
   for (const [rule, total] of countByRule(after)) {
     const head = atHead.get(rule) ?? 0;
     const matches = after.filter((diagnostic) => diagnostic.rule === rule);
     const kept =
-      atBase === undefined || baseAdditions === undefined
+      atBase === undefined || baseChanges === undefined
         ? undefined
-        : Math.min(
-            atBase.get(rule) ?? 0,
-            matches.filter(
-              ({ file, line }) =>
-                line !== undefined && !inRanges(baseAdditions, file, line),
-            ).length,
+        : keptFindings(
+            matches,
+            atBase.filter((diagnostic) => diagnostic.rule === rule),
+            baseChanges,
           );
     const rise = total - Math.max(head, kept ?? 0);
     if (rise <= 0) continue;
@@ -158,7 +185,8 @@ export function stagedRatchet(root: string, files?: string[]): string[] {
       ({ file, line }) =>
         line !== undefined &&
         inRanges(headAdditions, file, line) &&
-        (baseAdditions === undefined || inRanges(baseAdditions, file, line)),
+        (baseChanges === undefined ||
+          previousLine(baseChanges.get(file)?.hunks ?? [], line) === undefined),
     );
     const counts =
       kept === undefined || base.revision === undefined
