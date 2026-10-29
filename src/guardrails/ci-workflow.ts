@@ -1,10 +1,13 @@
 import {
   isMap,
   isScalar,
+  isPair,
   isSeq,
   parseDocument,
+  visit,
   type Document,
   type Node,
+  type YAMLSeq,
   type YAMLMap,
 } from "yaml";
 
@@ -51,6 +54,8 @@ jobs:
     uses: ${CI_RENOVATE_SYNC_REF}
 `;
 
+const PRINT_WIDTH = 80;
+
 const WEEK_MINUTES = 7 * 24 * 60;
 
 /** Spreads the weekly runs of different repositories over the week so they do not queue together. */
@@ -75,6 +80,43 @@ jobs:
   mutation:
     uses: ${MUTATION_REF}
 `;
+}
+
+function flatSequence(seq: YAMLSeq): string | undefined {
+  const items: string[] = [];
+  for (const item of seq.items) {
+    if (!isScalar(item)) return undefined;
+    items.push(String(item.source ?? item.value));
+  }
+  return `[${items.join(", ")}]`;
+}
+
+/**
+ * oxfmt pads flow maps but not flow sequences and breaks a long flow sequence in a style YAML serializers cannot
+ * produce, so a rewritten file is only left formatted by turning every non-empty flow map and every flow sequence that
+ * would overflow the print width into block style.
+ */
+function blockOverflowingFlow(document: Document): void {
+  visit(document, {
+    Map(_key, map) {
+      if (map.flow && map.items.length) map.flow = false;
+    },
+    Seq(_key, seq, path) {
+      if (!seq.flow) return;
+      const flat = flatSequence(seq);
+      const parent = path.at(-1);
+      const owner = isPair(parent) && isScalar(parent.key) ? parent.key : null;
+      const nesting = path.filter(
+        (ancestor) => isMap(ancestor) || isSeq(ancestor),
+      ).length;
+      const lead = owner === null ? 2 : String(owner.value).length + 2;
+      if (
+        flat === undefined ||
+        2 * Math.max(nesting - 1, 0) + lead + flat.length > PRINT_WIDTH
+      )
+        seq.flow = false;
+    },
+  });
 }
 
 function renameNeeds(document: Document, from: string, to: string): void {
@@ -177,6 +219,23 @@ function ensureSyncJob(
   return changed;
 }
 
+function assertNoClash(
+  jobs: YAMLMap,
+  callerId: string,
+  hasSyncCaller: boolean,
+): void {
+  if (callerId !== CI_JOB_ID && jobs.has(CI_JOB_ID))
+    throw new Error(
+      `${CI_PATH}: a job named ${CI_JOB_ID} already exists besides the ${callerId} job that calls ci-node.yml. Rename or merge them, then rerun antelopejs-sync.`,
+    );
+  if (hasSyncCaller || !jobs.has(RENOVATE_SYNC_JOB_ID)) return;
+  throw new Error(
+    callerId === RENOVATE_SYNC_JOB_ID
+      ? `${CI_PATH}: the job ${RENOVATE_SYNC_JOB_ID} calls ci-node.yml, but that id is reserved for the job calling ci-renovate-sync.yml. Rename it, then rerun antelopejs-sync.`
+      : `${CI_PATH}: a job named ${RENOVATE_SYNC_JOB_ID} already exists and does not call ci-renovate-sync.yml. Rename or merge it, then rerun antelopejs-sync.`,
+  );
+}
+
 /**
  * Keeps the shared CI caller on the job id `ci` with no `name`, so the shared workflow reports `ci / checks`,
  * dispatchable and read-only, with the Renovate sync it would otherwise run turned off. The write permissions the sync
@@ -198,14 +257,7 @@ export function ciWorkflow(
   const jobs = document.get("jobs", true);
   if (!isMap(jobs)) return current;
   const caller = callers.find(({ id }) => id === CI_JOB_ID) ?? callers[0];
-  if (caller.id !== CI_JOB_ID && jobs.has(CI_JOB_ID))
-    throw new Error(
-      `${CI_PATH}: a job named ${CI_JOB_ID} already exists besides the ${caller.id} job that calls ci-node.yml. Rename or merge them, then rerun antelopejs-sync.`,
-    );
-  if (!syncCallers.length && jobs.has(RENOVATE_SYNC_JOB_ID))
-    throw new Error(
-      `${CI_PATH}: a job named ${RENOVATE_SYNC_JOB_ID} already exists and does not call ci-renovate-sync.yml. Rename or merge it, then rerun antelopejs-sync.`,
-    );
+  assertNoClash(jobs, caller.id, syncCallers.length > 0);
   const pair = jobs.items.find(
     ({ key }) => isScalar(key) && key.value === caller.id,
   );
@@ -227,5 +279,7 @@ export function ciWorkflow(
     addDispatch(document);
     changed = true;
   }
-  return changed ? document.toString({ lineWidth: 0 }) : current;
+  if (!changed) return current;
+  blockOverflowingFlow(document);
+  return document.toString({ lineWidth: 0, flowCollectionPadding: false });
 }

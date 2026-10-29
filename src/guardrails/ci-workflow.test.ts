@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 import test from "node:test";
 import { parseDocument } from "yaml";
 
@@ -11,7 +13,14 @@ import {
   mutationCaller,
 } from "./ci-workflow.ts";
 import { MANAGED_ARTIFACTS, syncRepository } from "./sync.ts";
-import { bin, commit, put, read, testRepo } from "./helpers/test-repo.ts";
+import {
+  PACKAGE_ROOT,
+  bin,
+  commit,
+  put,
+  read,
+  testRepo,
+} from "./helpers/test-repo.ts";
 import { ciNodeCallers, ciRenovateSyncCallers } from "./workflow.ts";
 
 function rewrite(text: string): string {
@@ -23,7 +32,7 @@ interface JobView {
   with?: Record<string, string | boolean>;
   uses?: string;
   if?: string;
-  needs?: string;
+  needs?: string | string[];
   "runs-on"?: string;
   steps?: string[];
 }
@@ -83,8 +92,8 @@ test("a caller under another id is renamed to ci, loses its name, keeps its inpu
     { id: "ci", uses: CI_NODE_REF, named: false },
   ]);
   assert.match(rewritten, /docs-files: README\.md/);
-  assert.match(rewritten, /needs: \[ ci \]/);
-  assert.match(rewritten, /needs: ci\n/);
+  assert.deepEqual(jobs(rewritten).deploy.needs, ["ci"]);
+  assert.equal(jobs(rewritten).notify.needs, "ci");
   assert.equal(rewrite(rewritten), rewritten);
 });
 
@@ -159,6 +168,36 @@ test("a renovate-sync job that does not call ci-renovate-sync.yml blocks the syn
     () => rewrite(clash),
     /a job named renovate-sync already exists/,
   );
+});
+
+test("a ci-node.yml caller that itself uses the id renovate-sync gets its own error, not the one about a foreign job", () => {
+  const text = `on: workflow_dispatch\njobs:\n  renovate-sync:\n    uses: ${CI_NODE_REF}\n`;
+  assert.throws(
+    () => rewrite(text),
+    /the job renovate-sync calls ci-node\.yml, but that id is reserved/,
+  );
+});
+
+test("a rewritten caller passes the pack's own formatter check, whether old-shape, renamed with flow needs, or with a long flow list", (t) => {
+  const root = testRepo(t, false);
+  const long =
+    "[checks, backend, frontend-test, frontend-verify, docs-playground, verify-map, formal]";
+  const cases = {
+    old: WRITE_GRANTED_CALLER,
+    renamed: `name: ci\non: { push: { branches: [main] }, pull_request: {} }\njobs:\n  checks:\n    name: Checks\n    uses: ${CI_NODE_REF}\n    with: { docs-files: README.md }\n  deploy:\n    needs: [checks]\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo done\n  notify:\n    needs: ${long}\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo done\n`,
+  };
+  for (const [name, text] of Object.entries(cases)) {
+    const rewritten = rewrite(text);
+    assert.notEqual(rewritten, text, name);
+    put(root, `${name}.yml`, rewritten);
+    const check = spawnSync(
+      join(PACKAGE_ROOT, "node_modules/.bin/oxfmt"),
+      ["-c", join(PACKAGE_ROOT, "oxfmt.config.ts"), "--check", `${name}.yml`],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(check.status, 0, `${name}: ${check.stdout}${check.stderr}`);
+    assert.equal(rewrite(rewritten), rewritten, name);
+  }
 });
 
 test("a renamed caller still gets a renovate-sync job and keeps its dependents", () => {
