@@ -97,6 +97,44 @@ test("a caller under another id is renamed to ci, loses its name, keeps its inpu
   assert.equal(rewrite(rewritten), rewritten);
 });
 
+const DMS_AGGREGATE = `name: ci
+on:
+  push:
+    branches: [main]
+jobs:
+  checks:
+    uses: ${CI_NODE_REF}
+  ubuntu:
+    needs: [checks, other]
+    if: always() && needs.checks.result == 'skipped'
+    runs-on: ubuntu-latest
+    env:
+      CI_RESULT: \${{ needs['checks'].result }}
+      KEPT: \${{ needs.checks-extra.result }}
+    steps:
+      - if: needs.checks.result == 'skipped' || needs.other.result == 'failure'
+        run: echo "needs.checks stays in plain text"
+      - run: echo \${{ needs.checks.result }}
+  other:
+    runs-on: ubuntu-latest
+    steps: []
+`;
+
+test("renaming the caller to ci also rewrites needs.<old-id> in if, env and run expressions and leaves other ids and plain text alone", () => {
+  const rewritten = rewrite(DMS_AGGREGATE);
+  const aggregate = jobs(rewritten).ubuntu;
+  assert.equal(aggregate.if, "always() && needs.ci.result == 'skipped'");
+  assert.match(rewritten, /CI_RESULT: \$\{\{ needs\['ci'\]\.result \}\}/);
+  assert.match(rewritten, /KEPT: \$\{\{ needs\.checks-extra\.result \}\}/);
+  assert.match(
+    rewritten,
+    /- if: needs\.ci\.result == 'skipped' \|\| needs\.other\.result == 'failure'/,
+  );
+  assert.match(rewritten, /echo "needs\.checks stays in plain text"/);
+  assert.match(rewritten, /echo \$\{\{ needs\.ci\.result \}\}/);
+  assert.equal(rewrite(rewritten), rewritten);
+});
+
 test("a conformant caller is returned byte for byte, comments and extra jobs included", () => {
   const text = `# keep me\nname: ci\non: [push, workflow_dispatch]\njobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      docs-files: README.md # docs\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n  deploy:\n    needs: ci\n    runs-on: ubuntu-latest\n    steps: []\n`;
   assert.equal(rewrite(text), text);

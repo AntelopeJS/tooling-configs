@@ -143,3 +143,75 @@ test("an import aliased to a name that a local variable also has is changed when
     true,
   );
 });
+
+test("an import of a non-function retargeted to a covered module that declares a function of the same name is changed", (t) => {
+  const consumer = (from: string) =>
+    `import { helper } from "${from}";\nexport function run() {\n  return helper();\n}\n`;
+  assert.equal(
+    changed(
+      t,
+      {
+        "src/a.ts": "export const helper = () => 1;\n",
+        "src/b.ts": "export function helper() {\n  return 2;\n}\n",
+        "src/c.ts": consumer("./a"),
+      },
+      {
+        "src/a.ts": "export const helper = () => 1;\n",
+        "src/b.ts": "export function helper() {\n  return 2;\n}\n",
+        "src/c.ts": consumer("./b"),
+      },
+    ),
+    true,
+  );
+});
+
+test("export * retargeted between covered modules is changed", (t) => {
+  const files = (target: string) => ({
+    "src/index.ts": `export * from "${target}";\n`,
+    "src/a.ts": "export const x = 1;\n",
+    "src/b.ts": "export const x = 2;\n",
+    "src/c.ts":
+      'import { x } from "./index";\nexport function run() {\n  return x;\n}\n',
+  });
+  assert.equal(changed(t, files("./a"), files("./b")), true);
+});
+
+test("a function moved to another covered file that declares a function of the same name as one it calls is changed", (t) => {
+  const helper = (value: number) =>
+    `export function helper() {\n  return ${value};\n}\n`;
+  const run = "export function run() {\n  return helper();\n}\n";
+  assert.equal(
+    changed(
+      t,
+      {
+        "src/a.ts": helper(1) + run,
+        "src/b.ts": helper(2),
+        "src/c.ts": 'import { run } from "./a";\nrun();\n',
+      },
+      {
+        "src/a.ts": helper(1),
+        "src/b.ts": helper(2) + run,
+        "src/c.ts": 'import { run } from "./b";\nrun();\n',
+      },
+    ),
+    true,
+  );
+});
+
+test("a side-effect import swapped with a binding import is changed", (t) => {
+  const main = (first: string, second: string) => `${first}\n${second}\nf();\n`;
+  const polyfill = 'import "./polyfill";';
+  const lib = 'import { f } from "./lib";';
+  const sources = {
+    "src/polyfill.ts": "globalThis.ready = true;\n",
+    "src/lib.ts": "export function f() {\n  return globalThis.ready;\n}\n",
+  };
+  assert.equal(
+    changed(
+      t,
+      { ...sources, "src/main.ts": main(polyfill, lib) },
+      { ...sources, "src/main.ts": main(lib, polyfill) },
+    ),
+    true,
+  );
+});

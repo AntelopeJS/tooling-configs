@@ -109,6 +109,13 @@ test("containments fails a Data door that has no seeded door patch", (t) => {
   assert.match(result.stdout, /^NO-DOOR data store\/catches: /);
 });
 
+test("containments passes and prints nothing on a repository with no Data or Format door", (t) => {
+  const { root, tmp } = containmentRepo(t, "catches", "contract");
+  const result = verify(root, tmp, ["containments"]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.stdout, "");
+});
+
 function result(
   status: JourneyResult["status"],
   failing: boolean,
