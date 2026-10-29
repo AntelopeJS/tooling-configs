@@ -29,11 +29,9 @@ function countByRule(diagnostics: Diagnostic[]): Map<string, number> {
 const LINT_CONFIG =
   /(?:^|\/)(?:oxlint\.config\.[cm]?[jt]s|\.oxlintrc\.jsonc?)$/u;
 
-interface Comparison {
-  revision: string | undefined;
-  label: string;
-  note?: string;
-}
+type Comparison =
+  | { revision: string; label: string }
+  | { revision: undefined; note: string };
 
 function comparisonBase(root: string): Comparison {
   const base = suppressionBase(root);
@@ -43,8 +41,7 @@ function comparisonBase(root: string): Comparison {
   if (base === undefined)
     return {
       revision: undefined,
-      label: "HEAD",
-      note: "No pull request base resolved (GITHUB_BASE_REF or origin/HEAD), so this compared with HEAD. Run `git remote set-head origin --auto` to compare with the merge-base, as CI does.",
+      note: "No pull request base resolved (GITHUB_BASE_REF or origin/HEAD), so this compared with HEAD only. Run `git remote set-head origin --auto` to also compare with the merge-base, as CI does.",
     };
   const result = spawnSync("git", ["merge-base", base, "HEAD"], {
     cwd: root,
@@ -53,8 +50,7 @@ function comparisonBase(root: string): Comparison {
   if (result.status !== 0)
     return {
       revision: undefined,
-      label: "HEAD",
-      note: `HEAD has no merge-base with ${name}, so this compared with HEAD. Fetch ${name} with its history to compare with the merge-base, as CI does.`,
+      note: `HEAD has no merge-base with ${name}, so this compared with HEAD only. Run \`git fetch --unshallow origin\` (or \`git fetch origin <default-branch>\` when HEAD is not shallow) to also compare with the merge-base, as CI does.`,
     };
   const revision = result.stdout.trim();
   return {
@@ -63,7 +59,7 @@ function comparisonBase(root: string): Comparison {
   };
 }
 
-function baseCounts(
+function previousCounts(
   root: string,
   targets: string[],
   revision: string | undefined,
@@ -100,14 +96,27 @@ function baseCounts(
   );
 }
 
+function inRanges(
+  ranges: Map<string, { start: number; end: number }[]>,
+  file: string,
+  line: number,
+): boolean {
+  return (
+    ranges.get(file)?.some(({ start, end }) => line >= start && line <= end) ??
+    false
+  );
+}
+
 /**
- * Fails each ceilinged rule whose findings in the staged files outnumber those
- * the same files, rename sources and deleted files had at the merge-base of
- * HEAD with the pull request base (`GITHUB_BASE_REF`, else `origin/HEAD`), or
- * at HEAD when no base resolves. The count is net across the staged files, so
- * a block moved between them, a legacy line that is reformatted, or a line
- * restored to its base form passes; any net rise fails, and lists the findings
- * on the lines that differ from the base.
+ * Fails each ceilinged rule whose findings in the staged files outnumber both
+ * what the same files, rename sources and deleted files had at HEAD and what
+ * they had at the merge-base of HEAD with the pull request base
+ * (`GITHUB_BASE_REF`, else `origin/HEAD`); without a merge-base, HEAD alone.
+ * The count is net across the staged files, so a block moved between them, a
+ * legacy line that is reformatted, a line restored to its base form, or an
+ * edit of a file a legacy finding moved into earlier on the branch passes; a
+ * rise above both fails, and lists the findings on the lines that differ from
+ * HEAD and from the base.
  */
 export function stagedRatchet(root: string, files?: string[]): string[] {
   const targets = files ?? stagedNames(root, "ACMR");
@@ -118,27 +127,42 @@ export function stagedRatchet(root: string, files?: string[]): string[] {
   );
   if (!after.length) return [];
   const base = comparisonBase(root);
-  const before = baseCounts(root, targets, base.revision);
-  const additions = stagedAdditions(root, targets, base.revision);
+  const atHead = previousCounts(root, targets, undefined);
+  const headAdditions = stagedAdditions(root, targets);
+  const atBase =
+    base.revision === undefined
+      ? undefined
+      : previousCounts(root, targets, base.revision);
+  const baseAdditions =
+    base.revision === undefined
+      ? undefined
+      : stagedAdditions(root, targets, base.revision);
   const failures: string[] = [];
   for (const [rule, total] of countByRule(after)) {
-    const rise = total - (before.get(rule) ?? 0);
+    const head = atHead.get(rule) ?? 0;
+    const merged = atBase === undefined ? undefined : (atBase.get(rule) ?? 0);
+    const rise = total - Math.max(head, merged ?? 0);
     if (rise <= 0) continue;
     const matches = after.filter((diagnostic) => diagnostic.rule === rule);
     const added = matches.filter(
       ({ file, line }) =>
         line !== undefined &&
-        additions
-          .get(file)
-          ?.some(({ start, end }) => line >= start && line <= end),
+        inRanges(headAdditions, file, line) &&
+        (baseAdditions === undefined || inRanges(baseAdditions, file, line)),
     );
+    const counts =
+      merged === undefined || base.revision === undefined
+        ? `${head} at HEAD`
+        : `${head} at HEAD, ${merged} at ${base.label}`;
     failures.push(
-      `${rule}: this commit adds ${rise} to the staged files (${before.get(rule) ?? 0} at ${base.label}, ${total} staged); the ceiling covers only legacy findings.`,
+      `${rule}: this commit adds ${rise} to the staged files (${counts}, ${total} staged); the ceiling covers only legacy findings.`,
       ...(added.length ? added : matches).map(
         (diagnostic) =>
           `  ${diagnostic.location}: ${diagnostic.message}\n    Fix: ${diagnostic.help ?? "Resolve this finding; moving, reformatting or restoring a legacy finding to its base form is allowed, adding one is not."}`,
       ),
     );
   }
-  return failures.length && base.note ? [...failures, base.note] : failures;
+  return failures.length && base.revision === undefined
+    ? [...failures, base.note]
+    : failures;
 }
