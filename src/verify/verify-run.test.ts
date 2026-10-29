@@ -64,6 +64,8 @@ function judgement(run: string, value: Judged): void {
 interface Judged {
   doors: { none?: string; rows?: { [field: string]: string }[] };
   docs: { page: string; matches: boolean; note?: string }[];
+  notVerified?: string[];
+  attention?: string[];
   verifier: string;
 }
 
@@ -131,6 +133,37 @@ test("missing sandbox keys make every journey NOT VERIFIED without running it, a
   const verdict = verify(root, tmp, ["verdict", run, "--pr", "7"]);
   assert.equal(verdict.status, 1, verdict.stderr);
   assert.match(verdict.stdout, /^## Verify: NOT VERIFIED\n/);
+});
+
+test("notes never soften a NOT VERIFIED journey, and stay PASS+NOTES when every required journey passed", (t) => {
+  const keyed = runRepo(
+    t,
+    `saas: { env: ["DEMO_SANDBOX_KEY"], sandbox: "demo" },`,
+  );
+  const unverified = newRun(keyed.root, keyed.tmp);
+  verify(keyed.root, keyed.tmp, ["journey", unverified, "smoke"]);
+  judgement(unverified, {
+    ...JUDGED,
+    notVerified: ["a note"],
+    attention: ["look here"],
+  });
+  const blocked = verify(keyed.root, keyed.tmp, [
+    "verdict",
+    unverified,
+    "--pr",
+    "7",
+  ]);
+  assert.match(blocked.stdout, /^## Verify: NOT VERIFIED\n/);
+  const { root, tmp } = runRepo(t);
+  const run = newRun(root, tmp);
+  verify(root, tmp, ["journey", run, "smoke"]);
+  judgement(run, {
+    ...JUDGED,
+    notVerified: ["a note"],
+  });
+  const noted = verify(root, tmp, ["verdict", run, "--pr", "7"]);
+  assert.equal(noted.status, 0, noted.stderr);
+  assert.match(noted.stdout, /^## Verify: PASS\+NOTES\n/);
 });
 
 test("a verdict without a One-way doors section or a verifier is void", (t) => {

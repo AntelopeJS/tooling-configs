@@ -33,6 +33,7 @@ const INTERFACE: KindText = {
   gotchas: [
     "A function the consumer awaits forever, such as a getter no provider resolved, fails after 15 seconds with a `Timeout` value.",
     "`minor-bump` needs the npm registry. Without it the journey is not verified, never passed.",
+    "A containment journey of a Data or Format door must check what that door's seeded patch changes, for example the arguments the stub provider logged. `containments` reports one that still passes with its door as `MISSED`.",
   ],
 };
 
@@ -47,12 +48,13 @@ const MODULE: KindText = {
     "- `module-dev`: a fixture project installs the module as `local` with `moduleConfig(services)` as its config, plus a consumer module. `ajs project dev` must answer, the consumer must load every implemented interface, Ctrl+C must exit 130 and the port must refuse afterwards.",
   layer: `- \`services\`: image, port, readiness command and a \`reset\` command run before every journey, so each starts from a clean state.
 - \`moduleConfig(services)\`: the module's configuration, pointing at the run's containers.
-- \`saas: { env, sandbox }\`: a SaaS module runs against the provider's sandbox with keys from these environment variables. Without every key, each journey is not verified and so is the verdict, never PASS.
+- \`saas: { env, sandbox }\`: a SaaS module runs against the provider's sandbox with keys from these environment variables. Without every key, each journey is NOT VERIFIED and so is the verdict, never PASS or PASS+NOTES.
 - \`journeys\`: the module's own journeys. Each writes through the module with \`context.call(...)\` and reads the result back with \`context.native(...)\` (\`redis-cli\`, \`mongosh\`, \`psql\`, the Mailpit API) inside the service container.`,
   smoke: "`module-dev` and one write read back through the native client",
   gotchas: [
     "Every container is the run's own. Never point a journey at a shared instance such as a developer's local database.",
     "A sandbox key missing from the environment is a NOT VERIFIED verdict, which sets status `verify` to `error`.",
+    "A containment journey of a Data or Format door must read back, through the native client, the state that door's seeded patch corrupts. `containments` reports one that still passes with its door as `MISSED`.",
   ],
 };
 
@@ -72,6 +74,7 @@ const TEMPLATE: KindText = {
   gotchas: [
     "`ajs` copies the whole repository, `.agents/` and `.claude/` included, so the scaffolded project carries this skill too.",
     "Every file a user gets is user-facing here, tests included; only `.agents/`, `.claude/` and `.github/` are not.",
+    "A containment journey of a Data or Format door must check the scaffolded files or endpoint that door's seeded patch changes. `containments` reports one that still passes with its door as `MISSED`.",
   ],
 };
 
