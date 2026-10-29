@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.15
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.14...v0.2.15)
+
+### 🩹 Fixes
+
+- **verify:** Require containments to fail with their door, and follow-ups ([#62](https://github.com/AntelopeJS/tooling-configs/pull/62))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.2.14
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.13...v0.2.14)
