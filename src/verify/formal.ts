@@ -73,17 +73,23 @@ function violatedRules(
   return exitCode === 0 ? [] : ["property"];
 }
 
-function passingRules(check: FormalCheck, output: string): string[] {
-  return check.passing
-    ? [...new Set([...output.matchAll(check.passing)].map((match) => match[1]))]
-    : [];
+function passingRules(
+  check: FormalCheck,
+  exitCode: number | null,
+  output: string,
+): string[] {
+  if (check.passing)
+    return [
+      ...new Set([...output.matchAll(check.passing)].map((match) => match[1])),
+    ];
+  return !check.violation && exitCode === 0 ? ["property"] : [];
 }
 
 function rulesOf(check: FormalCheck, run: SpawnSyncReturns<string>): Rules {
   return {
     exitCode: run.status,
     violated: violatedRules(check, run.status, run.stdout ?? ""),
-    passing: passingRules(check, run.stdout ?? ""),
+    passing: passingRules(check, run.status, run.stdout ?? ""),
   };
 }
 

@@ -44,7 +44,7 @@ export interface FormalCheck {
   /** Runs from the repository root; exits 0 while every finding breaks as recorded. */
   command: string[];
   violation: RegExp | null;
-  /** The first capture group names a rule the output reports as holding; a base finding counts as fixed only when HEAD reports it so. */
+  /** The first capture group names a rule the output reports as holding; a base finding counts as fixed only when HEAD reports it so. Without `passing` and `violation`, a zero exit is the one rule `property` holding. */
   passing?: RegExp | null;
   /** How a diff is judged to change the covered behaviour; `emit` by default. */
   behaviour?: BehaviourMethod;

@@ -122,10 +122,10 @@ function compareEmit(
 ): Differences {
   const structure = (item: EmitItem) => item.structure;
   const removed = difference(base.functions, head.functions, structure).map(
-    (item) => `function ${item.text}`,
+    (item) => `hoisted ${item.text}`,
   );
   const added = difference(head.functions, base.functions, structure).map(
-    (item) => `function ${item.text}`,
+    (item) => `hoisted ${item.text}`,
   );
   for (const path of new Set([
     ...Object.keys(base.files),
