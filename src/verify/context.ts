@@ -234,7 +234,11 @@ export class VerifyContext implements JourneyContext {
       options.moduleConfig ??
       this.workspace.config.moduleConfig?.(this.services()) ??
       {};
-    const fixture = writeFixture(this.workspace, this.state, this.work, config);
+    const folder =
+      this.fixtures.size === 0
+        ? this.work
+        : join(this.work, `fixture-${this.fixtures.size + 1}`);
+    const fixture = writeFixture(this.workspace, this.state, folder, config);
     this.fixtures.set(fixture.project, fixture);
     this.tree("fixture project", fixture.project);
     return fixture.project;

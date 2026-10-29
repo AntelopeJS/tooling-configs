@@ -188,7 +188,7 @@ export interface JourneyContext {
   service(name: string): ServiceEndpoint;
   /** Runs a command inside a service's container: the read-back through the native client. */
   native(name: string, service: string, args: string[]): Promise<CommandResult>;
-  /** Writes the fixture project of the interface or module kind and returns its folder. */
+  /** Writes the fixture project of the interface or module kind and returns its folder. Each call writes a fresh project, so a journey can hold several. */
   fixture(options?: { moduleConfig?: JsonObject }): string;
   /** Starts `ajs project dev` in a project and waits until it is ready. */
   dev(name: string, project: string, options?: DevOptions): Promise<App>;
