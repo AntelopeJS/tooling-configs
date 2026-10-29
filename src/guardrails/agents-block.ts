@@ -96,6 +96,14 @@ const SHARED_RULES = [
   ],
   ["No-upward rules reject same-tier peers", "review and import probes"],
   ["No `@ts-ignore`", "`typescript/ban-ts-comment`"],
+  [
+    "No once-used type parameter standing in for `unknown`",
+    "`typescript/no-unnecessary-type-parameters`",
+  ],
+  [
+    "No `any` passed, assigned or returned where a type is declared",
+    "`typescript/no-unsafe-{argument,assignment,return}`",
+  ],
 ] as const;
 
 const FULL_RULES = [

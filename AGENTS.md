@@ -62,6 +62,8 @@ Verify a boundary against the imports a developer or agent would plausibly write
 | Evasion-only and patched-internal findings go under Attention                  | review; no tool                                     |
 | No-upward rules reject same-tier peers                                         | review and import probes                            |
 | No `@ts-ignore`                                                                | `typescript/ban-ts-comment`                         |
+| No once-used type parameter standing in for `unknown`                          | `typescript/no-unnecessary-type-parameters`         |
+| No `any` passed, assigned or returned where a type is declared                 | `typescript/no-unsafe-{argument,assignment,return}` |
 | Files ≤ 20,000 bytes, tests included                                           | `antelopejs-check-size` (pre-commit)                |
 | Suppressions stay within `guardrails.suppressions.json`                        | `antelopejs-suppressions` (pre-commit, checks)      |
 | No lint config switches off a rule to stay under the budget                    | `antelopejs-suppressions` (pre-commit, checks)      |
