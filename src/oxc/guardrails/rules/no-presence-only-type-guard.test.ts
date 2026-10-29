@@ -83,6 +83,18 @@ function isDevRegistry(value: unknown): value is { pid: number; servers: object 
         code: "function isHandshake(value: unknown): value is Pick<DevHandshake, 'pid'> { return isObjectLike(value) && typeof value.pid === 'number'; }",
       },
       {
+        name: "cloud@f784b41e:src/auth/device-workspaces.ts:52, a null filter with an inferred parameter",
+        code: "interface Membership { tenantId: string } const kept = checks.filter((membership): membership is Membership => membership !== null);",
+      },
+      {
+        name: "dms-automation@85c0a32:packages/dms-automation/src/types/graph.ts:83, a discriminant on a typed parameter",
+        code: "interface GroupNode { kind: 'group'; ports: Port[]; subgraph: Graph } export function isGroupNode(n: GraphNode): n is GroupNode { return n.kind === 'group'; }",
+      },
+      {
+        name: "cloud@f784b41e:src/secrets/transit.ts:226, members checked through computed keys",
+        code: "interface Fields { iv: string; ciphertext: string } function isFields(value: unknown): value is Fields { if (!isObjectLike(value)) return false; const fields = value; return ['iv', 'ciphertext'].every((key) => typeof fields[key] === 'string'); }",
+      },
+      {
         name: "a nested callback's in check on another binding",
         code: "function allKnown(keys: string[]): keys is Known[] { return keys.every((key) => Object.hasOwn(KNOWN, key)); }",
       },
@@ -173,6 +185,11 @@ function isDevHandshake(value: unknown): value is DevHandshake {
         name: "an assertion function",
         code: "interface Point { x: number; y: number } function assertPoint(value: unknown): asserts value is Point { if (!isObjectLike(value) || typeof value.x !== 'number') throw new TypeError('not a point'); }",
         errors: [uncheckedMember],
+      },
+      {
+        name: "dms-ai@a55de00:sidecar/src/agent/typecheck.ts:73, an object check claims three members",
+        code: "interface ExecFailure { stdout: string; stderr: string; code: number } function isExecFailure(err: unknown): err is ExecFailure { return typeof err === 'object' && err !== null; }",
+        errors: [uncheckedMember, uncheckedMember, uncheckedMember],
       },
       {
         name: "an inline type literal with a presence-only member",

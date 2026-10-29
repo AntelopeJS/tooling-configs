@@ -19,6 +19,10 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       code: "const T: Record<string, number> = { a: 1 }; const a = T['a'] + T[`a`] + T.a;",
     },
     {
+      name: "mollie@02d8aa5:src/test/support/target.ts:32, a key held in a string constant",
+      code: "const LIVE_KEY_VARIABLE = 'MOLLIE_API_KEY'; function select(environment: Record<string, string | undefined>) { return environment[LIVE_KEY_VARIABLE]; }",
+    },
+    {
       name: "a write is not a lookup",
       code: "const out: Record<string, number> = {}; function f(name: string) { out[name] = 1; delete out[name]; }",
     },
@@ -41,6 +45,10 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
     {
       name: "keys from Object.keys and for-in are own keys",
       code: "const T: Record<string, number> = { a: 1 }; for (const k of Object.keys(T)) use(T[k]); for (const k in T) use(T[k]); Object.keys(T).map((k) => T[k]);",
+    },
+    {
+      name: "tooling-configs src/guardrails/ci-workflow.ts:205, keys listed into a variable first",
+      code: "function grants(expected: Record<string, string>) { const names = Object.keys(expected); return names.every((name) => read(name) === expected[name]); }",
     },
     {
       name: "a table keyed by a closed union",
