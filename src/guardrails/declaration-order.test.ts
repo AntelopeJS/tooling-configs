@@ -75,7 +75,7 @@ test("a changed property type, optionality or readonly still differs", () => {
   );
 });
 
-test("tuple elements, parameters, overloads, enum members and union constituents keep their order", () => {
+test("tuple elements, parameters, overloads and enum members keep their order", () => {
   assert.notEqual(
     norm("export type T = [string, number];"),
     norm("export type T = [number, string];"),
@@ -97,7 +97,44 @@ test("tuple elements, parameters, overloads, enum members and union constituents
     norm("export enum E { B, A }"),
   );
   assert.notEqual(
-    norm("export type T = { b: 1 } | { a: 1 };"),
+    norm("export interface I { (a: string): 1 }"),
+    norm("export interface I { (a: number): 1 }"),
+  );
+});
+
+test("declarations differing only in union constituent order compare equal, at any depth", () => {
+  assert.equal(
+    norm("export type T = { b: 1 } | { a: 1 } | null;"),
+    norm("export type T = null | { a: 1 } | { b: 1 };"),
+  );
+  assert.equal(
+    norm(
+      "export declare function f(x: 'b' | 'a'): Promise<{ y: 2 | 1; x: 'q' | 'p' } | undefined>;",
+    ),
+    norm(
+      "export declare function f(x: 'a' | 'b'): Promise<undefined | { x: 'p' | 'q'; y: 1 | 2 }>;",
+    ),
+  );
+});
+
+test("a changed, added or removed union constituent still differs", () => {
+  assert.notEqual(
+    norm("export type T = 'a' | 'b' | 'c';"),
+    norm("export type T = 'c' | 'b' | 'd';"),
+  );
+  assert.notEqual(
+    norm("export type T = 'a' | 'b';"),
+    norm("export type T = 'b' | 'a' | 'c';"),
+  );
+  assert.notEqual(
     norm("export type T = { a: 1 } | { b: 1 };"),
+    norm("export type T = { a: 1 } | { b: 2 };"),
+  );
+});
+
+test("intersection constituents keep their order, because function intersections are overloads", () => {
+  assert.notEqual(
+    norm("export type F = ((a: string) => 1) & ((a: number) => 2);"),
+    norm("export type F = ((a: number) => 2) & ((a: string) => 1);"),
   );
 });
