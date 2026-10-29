@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -19,12 +19,38 @@ function verified(root: string, ref: string): string | undefined {
   return result.status === 0 ? result.stdout.trim() : undefined;
 }
 
+function fetchBase(root: string, branch: string, remote: string): void {
+  const result = spawnSync(
+    "git",
+    [
+      "fetch",
+      "--quiet",
+      "--no-tags",
+      "--depth=1",
+      "origin",
+      `+refs/heads/${branch}:${remote}`,
+    ],
+    {
+      cwd: root,
+      encoding: "utf8",
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      stdio: ["ignore", "ignore", "pipe"],
+    },
+  );
+  if (result.status === 0) return;
+  const detail = result.error?.message ?? result.stderr.trim();
+  throw new Error(
+    `Cannot compare with the pull request base: ${remote} is missing and fetching ${branch} from origin failed${detail ? ` (${detail})` : ""}. In CI, fetch the base branch before this check with credentials, or pass --base.`,
+  );
+}
+
 /**
  * The commit a pull request merges into: `base` when given; in CI the
- * `GITHUB_BASE_REF` branch, fetched from `origin` when a shallow checkout
- * lacks it; otherwise `origin/HEAD`, the remote's default branch. A requested
- * base that cannot be resolved is an error; without one, a repository with no
- * `origin/HEAD` has no base.
+ * `GITHUB_BASE_REF` branch, taken from the local `origin/<branch>` ref when
+ * present and otherwise fetched from `origin`, an error naming the missing ref
+ * when the fetch fails; otherwise `origin/HEAD`, the remote's default branch.
+ * A requested base that cannot be resolved is an error; without one, a
+ * repository with no `origin/HEAD` has no base.
  */
 export function suppressionBase(
   root: string,
@@ -34,19 +60,7 @@ export function suppressionBase(
   const branch = process.env.GITHUB_BASE_REF;
   if (branch) {
     const remote = `refs/remotes/origin/${branch}`;
-    if (verified(root, remote) === undefined)
-      execFileSync(
-        "git",
-        [
-          "fetch",
-          "--quiet",
-          "--no-tags",
-          "--depth=1",
-          "origin",
-          `+refs/heads/${branch}:${remote}`,
-        ],
-        { cwd: root, stdio: ["ignore", "ignore", "pipe"] },
-      );
+    if (verified(root, remote) === undefined) fetchBase(root, branch, remote);
     return resolveRevision(root, remote);
   }
   return verified(root, "refs/remotes/origin/HEAD");
