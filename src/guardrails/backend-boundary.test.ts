@@ -394,7 +394,12 @@ test("sync restores a copied backend boundary for the package that holds the lay
   put(
     root,
     "fmt.json",
-    JSON.stringify({ useTabs: false, singleQuote: true, semi: false }),
+    JSON.stringify({
+      useTabs: false,
+      singleQuote: false,
+      semi: true,
+      printWidth: 60,
+    }),
   );
   const oxfmt = spawnSync(
     process.execPath,
