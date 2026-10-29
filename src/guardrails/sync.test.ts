@@ -174,6 +174,7 @@ test("sync check reports every drift without writing or measuring counts, includ
     "guardrails.ratchet.json",
     formatCeilings({ rules: { "eslint/max-params": 123 }, oversizeFiles: {} }),
   );
+  put(root, ".agents/skills/verify-runtime/SKILL.md", "Verification skill.\n");
   const before = read(root, "package.json");
   const initial = bin(root, "sync", ["--check"]);
   assert.equal(initial.status, 1);
@@ -233,6 +234,9 @@ test("template profile manages only presets and AGENTS, and appends without repl
   const customFormatter = read(root, "oxfmt.config.ts");
   const result = syncRepository(root, { profile: "template" });
   assert.deepEqual(result.paths.sort(), [
+    ".agents/skills/verify-template/SKILL.md",
+    ".agents/skills/verify-template/package.json",
+    ".claude/skills/verify-template",
     "AGENTS.md",
     "knip.config.ts",
     "oxlint.config.ts",

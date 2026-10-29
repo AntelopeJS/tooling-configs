@@ -52,6 +52,11 @@ import {
   mutationCaller,
 } from "./ci-workflow.ts";
 import { checkEntryOnlyConfiguration } from "./entry-only.ts";
+import {
+  applyVerifyActions,
+  planVerify,
+  type VerifyChoice,
+} from "./verify-skill.ts";
 
 export interface RepoContext extends AgentsBlockContext {
   manager: PackageManager;
@@ -281,24 +286,6 @@ function planSync(
   return plan;
 }
 
-function verificationSkill(root: string): string | undefined {
-  for (const directory of [".agents/skills", ".claude/skills", "skills"]) {
-    if (!existsSync(join(root, directory))) continue;
-    for (const entry of readdirSync(join(root, directory), {
-      withFileTypes: true,
-    }).sort((a, b) => a.name.localeCompare(b.name))) {
-      const path = `${directory}/${entry.name}/SKILL.md`;
-      if (
-        entry.isDirectory() &&
-        entry.name.toLowerCase().includes("verif") &&
-        existsSync(join(root, path))
-      )
-        return path;
-    }
-  }
-  return undefined;
-}
-
 function repositorySnapshot(root: string) {
   const current = new Map<string, string>();
   const modes = new Map<string, number>();
@@ -347,6 +334,7 @@ function repositoryContext(
   root: string,
   current: ReadonlyMap<string, string>,
   profile: AgentsBlockContext["profile"],
+  verificationSkill: string | undefined,
 ): RepoContext {
   const manifest = parseManifest(current.get("package.json") ?? "{}");
   const lint = PRESET_CONFIGS[0];
@@ -371,7 +359,7 @@ function repositoryContext(
         : "",
     packageName: manifest.name ?? "",
     managesCi: current.has(CI_PATH) || !hasChecksWorkflow(root),
-    verificationSkill: verificationSkill(root),
+    verificationSkill,
     glossary: ["GLOSSARY.md", "docs/GLOSSARY.md"].find((file) =>
       existsSync(join(root, file)),
     ),
@@ -408,18 +396,32 @@ function repositoryNotices(root: string, context: RepoContext): string[] {
 /** Measures debt only on first adoption, before sync has written the sync:check script; retired repositories stay retired. */
 export function syncRepository(
   root: string,
-  options: { check?: boolean; profile?: AgentsBlockContext["profile"] } = {},
+  options: {
+    check?: boolean;
+    profile?: AgentsBlockContext["profile"];
+    verify?: VerifyChoice;
+  } = {},
 ) {
   const profile = options.profile ?? "full";
   const { current, modes } = repositorySnapshot(root);
   const manifest = parseManifest(current.get("package.json") ?? "{}");
-  const context = repositoryContext(root, current, profile);
+  const verify = planVerify(root, {
+    flag: options.verify,
+    manifest,
+    profile,
+  });
+  const context = repositoryContext(
+    root,
+    current,
+    profile,
+    verify.verificationSkill,
+  );
   let plan = planSync(current, modes, context);
   const errors = plan
     .filter((artifact) => artifact.kind === "error")
     .map(({ message }) => message);
   const entryOnly = checkEntryOnlyConfiguration(root);
-  errors.push(...entryOnly.errors);
+  errors.push(...entryOnly.errors, ...verify.errors);
   const notes = plan.flatMap((artifact) =>
     artifact.kind === "migrated" ? artifact.notes : [],
   );
@@ -444,7 +446,10 @@ export function syncRepository(
   const writes = plan.filter(
     (artifact) => artifact.kind === "write" || artifact.kind === "migrated",
   );
-  if (!options.check && !errors.length) writeArtifacts(root, writes);
+  if (!options.check && !errors.length) {
+    writeArtifacts(root, writes);
+    applyVerifyActions(root, verify.actions);
+  }
   const requiredDependencies = ["lefthook", "knip"];
   if (context.typeAware) requiredDependencies.push("oxlint-tsgolint");
   const dependenciesAdded =
@@ -452,9 +457,12 @@ export function syncRepository(
     requiredDependencies.some((name) => !manifest.devDependencies?.[name]);
   return {
     artifacts: plan,
-    paths: errors.length ? [] : writes.map(({ path }) => path),
+    paths: errors.length
+      ? []
+      : [...writes, ...verify.actions].map(({ path }) => path),
     errors,
     notes,
+    verifyNotes: verify.notes,
     advisories: entryOnly.advisories,
     dependenciesAdded,
   };
