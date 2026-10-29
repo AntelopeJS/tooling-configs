@@ -139,7 +139,9 @@ test("cloud #379: widening an override that switches rules off to scripts/test-*
   const root = budgetRepo(
     t,
     { "oxlint.config.ts": cloudConfig(["src/test/**"]) },
-    Object.fromEntries(CLOUD_RULES.map((rule) => [rule, 1])),
+    Object.fromEntries(
+      CLOUD_RULES.map((rule) => [`${rule} for src/test/**`, 1]),
+    ),
   );
   assert.equal(bin(root, "suppressions").status, 0);
   put(
@@ -151,7 +153,7 @@ test("cloud #379: widening an override that switches rules off to scripts/test-*
   assert.equal(full.status, 1);
   assert.match(
     full.stderr,
-    /lint config rule-off `typescript\/unbound-method`: 2 exceeds ceiling 1\.\n {2}oxlint\.config\.ts:11\n/,
+    /lint config rule-off `typescript\/unbound-method` for `scripts\/test-\*\.cjs`: 1 exceeds ceiling 0\.\n {2}oxlint\.config\.ts:11\n/,
   );
   assert.match(full.stderr, CONFIG_FIX);
   git(root, ["add", "oxlint.config.ts"]);
@@ -159,7 +161,7 @@ test("cloud #379: widening an override that switches rules off to scripts/test-*
   assert.equal(staged.status, 1);
   assert.match(
     staged.stderr,
-    /lint config rule-off `typescript\/unbound-method`: this commit adds 1 to the staged files\./,
+    /lint config rule-off `typescript\/unbound-method` for `scripts\/test-\*\.cjs`: this commit adds 1 to the staged files\.\n {2}oxlint\.config\.ts:11\n(?! {2})/,
   );
   git(root, ["reset", "-q", "--hard"]);
   put(root, "src/test/drivers.test.ts", "export const driver = 1;\n");
@@ -172,9 +174,9 @@ test("antelope-web #47: an ESLint override switching no-raw-text off for the spl
     t,
     { "eslint.config.mjs": webEslintConfig(false) },
     {
-      "@intlify/vue-i18n/no-raw-text": 1,
-      "@intlify/vue-i18n/no-unused-keys": 1,
-      "vue/no-v-html": 1,
+      "@intlify/vue-i18n/no-raw-text for **/components/OgImage/**": 1,
+      "@intlify/vue-i18n/no-unused-keys for *": 1,
+      "vue/no-v-html for *": 1,
     },
   );
   assert.equal(bin(root, "suppressions").status, 0);
@@ -183,7 +185,7 @@ test("antelope-web #47: an ESLint override switching no-raw-text off for the spl
   assert.equal(full.status, 1);
   assert.match(
     full.stderr,
-    /lint config rule-off `@intlify\/vue-i18n\/no-raw-text`: 3 exceeds ceiling 1\.\n {2}eslint\.config\.mjs:20\n {2}eslint\.config\.mjs:20\n {2}eslint\.config\.mjs:26\n/,
+    /lint config rule-off `@intlify\/vue-i18n\/no-raw-text` for `\*\*\/components\/SettingsShowcase\.vue`: 1 exceeds ceiling 0\.\n {2}eslint\.config\.mjs:20\n/,
   );
   assert.match(full.stderr, CONFIG_FIX);
 });
@@ -233,11 +235,12 @@ test("an .oxlintrc.json with comments counts each rule off, warn or allow and ea
     countSuppressions(suppressionsIn("packages/web/.oxlintrc.json", legacy))
       .config,
     {
-      "category:correctness": 1,
-      "eslint/eqeqeq": 1,
-      "eslint/no-console": 1,
-      "eslint/no-debugger": 1,
-      "typescript/unbound-method": 2,
+      "category:correctness for *": 1,
+      "eslint/eqeqeq for *": 1,
+      "eslint/no-console for *": 1,
+      "eslint/no-debugger for *": 1,
+      "typescript/unbound-method for a/**": 1,
+      "typescript/unbound-method for b/**": 1,
     },
   );
 });
@@ -248,26 +251,26 @@ test("the full check fails a raised config ceiling against the base, and --updat
   });
   put(root, "oxlint.config.ts", cloudConfig(["src/test/**"]));
   assert.equal(bin(root, "suppressions", ["--update"]).status, 0);
+  const lowered = JSON.parse(read(root, "guardrails.suppressions.json")).config;
+  assert.equal(lowered?.["typescript/unbound-method for src/test/**"], 1);
   assert.equal(
-    JSON.parse(read(root, "guardrails.suppressions.json")).config?.[
-      "typescript/unbound-method"
-    ],
-    1,
+    lowered?.["typescript/unbound-method for scripts/test-*.cjs"],
+    0,
   );
   commit(root);
   put(
     root,
     "guardrails.suppressions.json",
     read(root, "guardrails.suppressions.json").replace(
-      '"typescript/unbound-method": 1',
-      '"typescript/unbound-method": 3',
+      '"typescript/unbound-method for src/test/**": 1',
+      '"typescript/unbound-method for src/test/**": 3',
     ),
   );
   const raised = bin(root, "suppressions", ["--base", "HEAD"]);
   assert.equal(raised.status, 1);
   assert.match(
     raised.stderr,
-    /raises lint config rule-off `typescript\/unbound-method` from 1 on the base to 3\./,
+    /raises lint config rule-off `typescript\/unbound-method for src\/test\/\*\*` from 1 on the base to 3\./,
   );
 });
 
@@ -279,10 +282,14 @@ test("sync adopts the config rule-offs into an existing budget at today's counts
   assert.deepEqual(
     JSON.parse(read(root, "guardrails.suppressions.json")).config,
     {
-      ...Object.fromEntries(CLOUD_RULES.map((rule) => [rule, 1])),
-      "@intlify/vue-i18n/no-raw-text": 3,
-      "@intlify/vue-i18n/no-unused-keys": 1,
-      "vue/no-v-html": 1,
+      ...Object.fromEntries(
+        CLOUD_RULES.map((rule) => [`${rule} for src/test/**`, 1]),
+      ),
+      "@intlify/vue-i18n/no-raw-text for **/components/OgImage/**": 1,
+      "@intlify/vue-i18n/no-raw-text for **/components/SettingsShowcase.vue": 1,
+      "@intlify/vue-i18n/no-raw-text for **/components/settings-showcase/**": 1,
+      "@intlify/vue-i18n/no-unused-keys for *": 1,
+      "vue/no-v-html for *": 1,
     },
   );
   const check = bin(root, "suppressions");
@@ -298,14 +305,16 @@ test("an ESLint composer's overrideRules counts like a rules block, and a config
         'export default withNuxt().overrideRules({ "vue/no-v-html": "off", "vue/require-default-prop": "error" });\n',
       ),
     ).config,
-    { "vue/no-v-html": 1 },
+    { "vue/no-v-html for *": 1 },
   );
   const root = budgetRepo(
     t,
     { "oxlint.config.ts": cloudConfig(["src/test/**"]) },
     {
-      ...Object.fromEntries(CLOUD_RULES.map((rule) => [rule, 1])),
-      "antelopejs/require-assertion": 1,
+      ...Object.fromEntries(
+        CLOUD_RULES.map((rule) => [`${rule} for src/test/**`, 1]),
+      ),
+      "antelopejs/require-assertion for src/test/**": 1,
     },
   );
   put(

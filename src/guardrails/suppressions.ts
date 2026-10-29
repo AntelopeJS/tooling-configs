@@ -17,7 +17,7 @@ import { typescript } from "./parser.ts";
  * directive yields one `rule` entry per rule it names, and one with rule `*`
  * when it names none; its reason is the text after ` -- `. A lint config
  * yields one `config` entry per rule it switches off or down to a warning,
- * for each glob it does so for.
+ * for each glob it does so for, counted per rule and glob.
  */
 export type Suppression =
   | {
@@ -392,6 +392,11 @@ export function revisionSuppressions(
   return atRevision(root, revision, suppressionsIn, files);
 }
 
+/** The budget key of a config rule-off: its rule and the glob it is switched off for, so a wider or moved scope is a new key at ceiling 0. */
+export function configKey(rule: string, scope: string): string {
+  return `${rule} for ${scope}`;
+}
+
 /** A count map with its keys sorted, so serialising it is stable. */
 export function sortedKeys(
   counts: Record<string, number>,
@@ -416,9 +421,10 @@ export function countSuppressions(
   for (const suppression of suppressions) {
     if (suppression.kind === "rule")
       rules[suppression.rule] = (rules[suppression.rule] ?? 0) + 1;
-    else if (suppression.kind === "config")
-      config[suppression.rule] = (config[suppression.rule] ?? 0) + 1;
-    else counts[suppression.kind]++;
+    else if (suppression.kind === "config") {
+      const key = configKey(suppression.rule, suppression.scope);
+      config[key] = (config[key] ?? 0) + 1;
+    } else counts[suppression.kind]++;
   }
   return { ...counts, rules: sortedKeys(rules), config: sortedKeys(config) };
 }

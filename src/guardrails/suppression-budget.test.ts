@@ -127,7 +127,7 @@ test("the staged check fails a commit adding an inline directive, nets a suppres
   assert.equal(bin(root, "suppressions", ["--staged"]).status, 0);
 });
 
-test("sync writes the current counts once, never rewrites the budget, restores a deleted one from HEAD, and the template profile writes none", (t) => {
+test("sync writes the current counts once, then only adds config ceilings a budget lacks, restores a deleted one from HEAD, and the template profile writes none", (t) => {
   const root = testRepo(t);
   put(root, "src/routes.ts", ROUTES);
   put(

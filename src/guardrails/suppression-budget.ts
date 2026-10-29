@@ -7,6 +7,7 @@ import { renamedPaths } from "./renames.ts";
 import { stagedAdditions } from "./staged-ratchet.ts";
 import { checkStagedPolicy } from "./suppression-policy.ts";
 import {
+  configKey,
   countSuppressions,
   revisionSuppressions,
   sortedKeys,
@@ -42,7 +43,7 @@ const LABELS = {
 function labelOf(suppression: Suppression): string {
   if (suppression.kind === "rule") return `lint rule \`${suppression.rule}\``;
   if (suppression.kind === "config")
-    return `lint config rule-off \`${suppression.rule}\``;
+    return `lint config rule-off \`${suppression.rule}\` for \`${suppression.scope}\``;
   return LABELS[suppression.kind];
 }
 
@@ -63,7 +64,7 @@ export function safetyCeiling(
 function limitOf(budget: SuppressionCounts, suppression: Suppression): number {
   if (suppression.kind === "rule") return budget.rules[suppression.rule] ?? 0;
   if (suppression.kind === "config")
-    return budget.config?.[suppression.rule] ?? 0;
+    return budget.config?.[configKey(suppression.rule, suppression.scope)] ?? 0;
   return budget[suppression.kind];
 }
 
@@ -149,6 +150,11 @@ export function adoptedBudget(root: string, current?: string): string {
   return formatBudget(countSuppressions(worktreeSuppressions(root)));
 }
 
+/** Each `file:line` once, indented, in the order found. */
+function locations(found: Suppression[]): string[] {
+  return [...new Set(found.map(({ file, line }) => `  ${file}:${line}`))];
+}
+
 function groupByKey(suppressions: Suppression[]): Map<string, Suppression[]> {
   const groups = new Map<string, Suppression[]>();
   for (const suppression of suppressions) {
@@ -219,7 +225,7 @@ export function checkSuppressions(root: string, update = false): string[] {
     const shown = inChanged.length ? inChanged : found;
     failures.push(
       `${SUPPRESSIONS_FILE}: ${key}: ${found.length} exceeds ceiling ${limit}.`,
-      ...shown.map(({ file, line }) => `  ${file}:${line}`),
+      ...locations(shown),
       ...(shown.length < found.length
         ? [
             `  ...and ${found.length - shown.length} in files this change does not touch.`,
@@ -319,9 +325,7 @@ function stagedBudget(
     );
     failures.push(
       `${key}: this commit adds ${rise} to the staged files.`,
-      ...(added.length ? added : found).map(
-        ({ file, line }) => `  ${file}:${line}`,
-      ),
+      ...locations(added.length ? added : found),
     );
   }
   return [...failures, ...fixesFor(failed)];

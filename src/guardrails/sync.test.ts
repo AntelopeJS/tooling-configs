@@ -382,7 +382,7 @@ test("first adoption without debt writes no ratchet file, scripts or hook, but k
     tsExpectError: 0,
     tsIgnore: 0,
     safety: 0,
-    config: { "category:correctness": 1 },
+    config: { "category:correctness for *": 1 },
   });
   assert.match(read(root, "lefthook.yml"), /antelopejs-suppressions --staged/);
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
