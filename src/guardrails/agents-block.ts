@@ -101,8 +101,8 @@ const SHARED_RULES = [
     "`typescript/no-unnecessary-type-parameters`",
   ],
   [
-    "No `any` assigned to a typed binding or returned as a typed result",
-    "`typescript/no-unsafe-{assignment,return}`",
+    "No `any` passed, assigned or returned where a type is declared",
+    "`typescript/no-unsafe-{argument,assignment,return}`",
   ],
 ] as const;
 

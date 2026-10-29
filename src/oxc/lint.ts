@@ -225,15 +225,17 @@ function complexityPreset(thresholds: ComplexityThresholds) {
 }
 
 /**
- * Besides the base set, four rules reject an `any` or a type parameter that
+ * Besides the base set, five rules reject an `any` or a type parameter that
  * stands in for `unknown`, which the anti-slop `unknown` and assertion rules
- * never see: a once-used type parameter, `any` assigned to a typed binding or
- * returned as a typed result, and an untyped `.catch` callback variable.
+ * never see: a once-used type parameter, `any` passed as a typed argument,
+ * assigned to a typed binding or returned as a typed result, and an untyped
+ * `.catch` callback variable.
  */
 function typeAwarePreset() {
   return defineConfig({
     rules: {
       "typescript/no-unnecessary-type-parameters": "error",
+      "typescript/no-unsafe-argument": "error",
       "typescript/no-unsafe-assignment": "error",
       "typescript/no-unsafe-return": "error",
       "typescript/use-unknown-in-catch-callback-variable": "error",
