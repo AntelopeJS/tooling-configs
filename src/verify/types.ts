@@ -24,12 +24,27 @@ export interface DoorRule {
 /** Every door kind with its rule, or `null` when the kind cannot apply to the repository. */
 export type DoorRules = { [Kind in DoorKind]: DoorRule | null };
 
+/**
+ * How `formal` decides whether a diff changed what the covered code does:
+ * `emit` compares the covered files' JavaScript statements on the base and
+ * on HEAD; `probe` runs `command` with a worktree of each commit as its last
+ * argument and compares what it prints.
+ */
+export type BehaviourMethod =
+  | { kind: "emit" }
+  | { kind: "probe"; command: string[] };
+
 /** A formal check, the source files it covers, the command that runs it and how its output names a violated rule. */
 export interface FormalCheck {
   name: string;
   covers: string[];
+  /** Runs from the repository root; exits 0 while every finding breaks as recorded. */
   command: string[];
   violation: RegExp | null;
+  /** How a diff is judged to change the covered behaviour; `emit` by default. */
+  behaviour?: BehaviourMethod;
+  /** The command run on a worktree of the base to tell which findings HEAD fixed; `command` by default. */
+  baseCommand?: string[];
 }
 
 /** A backing service the harness runs in Docker for every run, published on a free loopback port. */

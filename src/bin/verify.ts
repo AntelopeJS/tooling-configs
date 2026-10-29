@@ -7,7 +7,7 @@ import { runCliAsync } from "../guardrails/cli.ts";
 import { repositoryRoot } from "../guardrails/files.ts";
 import { doorLine, flaggedDoors, patchFiles } from "../verify/doors.ts";
 import {
-  readFormalResult,
+  formalGate,
   runFormalCheck,
   touchedFormalChecks,
 } from "../verify/formal.ts";
@@ -33,7 +33,7 @@ const USAGE = `Usage: antelopejs-verify <command>
   new [--base <ref>] [--title <t>]   build, prepare an isolated run, print its folder
   doctor <run>                       check the run is worth driving
   journey <run> <feature> [ids...]   run a feature's journeys and record evidence
-  formal <run> [--all]               run the formal checks that cover the diff, or every one
+  formal <run> [--all]               run the formal checks that cover the diff and gate them on changed behaviour
   doors [patch] [--base <ref>]       print the One-way-door line for a patch, or for the diff
   seeded <feature...> [--base <ref>] run each feature unpatched and with its seeded break
   seeded-doors                       check every seeded door is flagged with its kind
@@ -90,21 +90,26 @@ async function runJourneys(
 
 function runFormal(workspace: Workspace, dir: string, all: boolean): number {
   const state = loadRun(dir);
-  const checks = all
-    ? (workspace.config.formal ?? [])
-    : touchedFormalChecks(workspace, planFor(workspace, state.baseRef).changed);
+  const plan = planFor(workspace, state.baseRef);
+  const touched = touchedFormalChecks(workspace, plan.changed);
+  const checks = all ? (workspace.config.formal ?? []) : touched;
+  let fails = false;
   for (const check of checks) {
-    const result = runFormalCheck(workspace, state, check);
+    const gates = touched.includes(check);
+    const result = runFormalCheck(
+      workspace,
+      state,
+      check,
+      gates ? { baseSha: plan.baseSha, headSha: plan.headSha } : null,
+    );
+    const weight = formalGate(result);
+    fails ||= gates && weight.fails;
     print(
-      `${result.violated.length > 0 ? "VIOLATED" : result.exitCode === 0 ? "HOLDS" : "ERROR"} ${check.name}${result.violated.length > 0 ? `: ${result.violated.join(", ")}` : ""} (exit ${result.exitCode})`,
+      `${gates ? (weight.fails ? "FAIL" : "PASS") : "INFO"} ${check.name}: ${weight.outcome}`,
     );
   }
   if (checks.length === 0) print("no formal check covers the diff");
-  return checks.every(
-    (check) => readFormalResult(state, check.name)?.exitCode === 0,
-  )
-    ? 0
-    : 1;
+  return fails ? 1 : 0;
 }
 
 function printDoors(workspace: Workspace, files: string[]): number {

@@ -66,7 +66,7 @@ ${BIN} clean <run>
 - \`verify.config.ts\` default-exports a \`VerifyConfig\` from \`@antelopejs/tooling-configs/verify\`:
   - \`doors\`: one entry per door kind (\`data\`, \`format\`, \`contract\`, \`outbound\`, \`exposure\`, \`publish\`), each \`null\` when it cannot apply or \`{ globs, funnels, containments, why }\`. \`containments\` names the \`feature/journey\` that contains a Data or Format door.
   - \`journeys\`: the repository's journeys by id, each \`{ title, entryPoint, run(context) }\`, using the check helpers the same import exports.
-  - \`env\`, \`setup\` (commands replacing the build), \`userFacing\` (globs replacing the kind's default) and \`formal\` (formal checks with the files they cover).
+  - \`env\`, \`setup\` (commands replacing the build), \`userFacing\` (globs replacing the kind's default) and \`formal\` (formal checks: \`name\`, \`covers\`, \`command\`, \`violation\`, and optionally \`behaviour\` and \`baseCommand\`).
 ${text.layer}
 - \`features/<feature>.md\`: frontmatter lists \`covers:\` (source globs), \`docs:\` (pages a verdict judges) and \`journeys:\`, then the sections Sub-features, How to get to it (user POV), Driving it with antelopejs-verify, and Gotchas. \`features/smoke.md\` covers nothing and runs on every verdict; here it runs ${text.smoke}.
 - \`seeded-breaks/<feature>.patch\`: one minimal product bug per feature that its journeys must catch.
@@ -84,7 +84,12 @@ ${BIN} map
 2. **An unmapped surface fails the verdict.** A changed user-facing file no feature covers needs a feature entry, its journeys and its seeded break in the same PR.
 3. **Every registered journey of a feature in \`run\` must have run and passed.** Run whole features. A journey that could not reach the product is not verified, and so is the verdict, never PASS.
 4. **Docs.** Judge every \`docs:\` page of a touched feature against what the journeys showed. A stale page fails the verdict.
-5. **Formal checks.** \`${BIN} formal <run>\` runs every formal check of \`verify.config.ts\` that covers the diff. One that did not run, violates a rule or errors fails the verdict.
+5. **Formal checks.** \`${BIN} formal <run>\` runs every formal check of \`verify.config.ts\` that covers the diff and records it under \`evidence/formal/<name>/\`. For each one it decides, without judgement, whether the diff changed what the covered code does. \`emit\` (the default) compares the JavaScript statements of the covered files on the base and on HEAD, leaving out types, comments, formatting, imports, re-exports and \`export\` keywords, so a verbatim move between covered files counts as unchanged. \`probe\` runs the check's \`behaviour.command\` with a worktree of each commit and compares what it prints. Then:
+   - a covered check that did not run, or exits non-zero (a tool error, or a check that no longer matches its record), fails the verdict;
+   - recorded findings fail the verdict only when the covered behaviour changed; when it did not, the verdict reports them as known findings;
+   - when the covered behaviour changed, \`formal\` also runs the check on the base (\`baseCommand\` when set) and reports the rules HEAD no longer violates as fixed; a change that leaves no violated rule passes.
+
+   The decision never reads the check's output, so a model whose rule names stay the same still fails on a changed behaviour. It is conservative: a local rename or an extracted helper counts as changed, and code outside \`covers\` is invisible to it. \`--all\` also runs the checks that do not cover the diff, without gating.
 6. **One-way doors.** The section comes right after the result line and is mandatory. \`${BIN} doors\` prints the \`One-way-door:\` line of the diff. Every file the path rules flag needs a door row or a false positive with its reason. A Data or Format row names a \`containments\` journey that passed in this run.
 7. **Result.** FAIL if any rule fails. NOT VERIFIED when a journey could not reach the product. PASS+NOTES when something is not verified or needs the owner's attention. PASS otherwise.
 
