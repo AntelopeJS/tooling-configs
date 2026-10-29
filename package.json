@@ -29,7 +29,8 @@
     "antelopejs-garden": "./dist/bin/garden.mjs",
     "antelopejs-ratchet": "./dist/bin/ratchet.mjs",
     "antelopejs-suppressions": "./dist/bin/suppressions.mjs",
-    "antelopejs-sync": "./dist/bin/sync.mjs"
+    "antelopejs-sync": "./dist/bin/sync.mjs",
+    "antelopejs-verify": "./dist/bin/verify.mjs"
   },
   "files": [
     "dist"
@@ -41,7 +42,8 @@
     "./oxc/anti-slop": "./dist/oxc/anti-slop/index.mjs",
     "./oxc/guardrails": "./dist/oxc/guardrails/index.mjs",
     "./knip": "./dist/knip.mjs",
-    "./eslint": "./dist/eslint.mjs"
+    "./eslint": "./dist/eslint.mjs",
+    "./verify": "./dist/verify/index.mjs"
   },
   "publishConfig": {
     "access": "public",

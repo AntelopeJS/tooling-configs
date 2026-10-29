@@ -235,6 +235,7 @@ test("template profile manages only presets and AGENTS, and appends without repl
   const result = syncRepository(root, { profile: "template" });
   assert.deepEqual(result.paths.sort(), [
     ".agents/skills/verify-template/SKILL.md",
+    ".agents/skills/verify-template/package.json",
     ".claude/skills/verify-template",
     "AGENTS.md",
     "knip.config.ts",

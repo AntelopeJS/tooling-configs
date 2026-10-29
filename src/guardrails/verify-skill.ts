@@ -19,7 +19,7 @@ import {
   VERIFY_KINDS,
   type VerifyKind,
 } from "../verify/kinds.ts";
-import { skillText } from "../verify/skills.ts";
+import { syncedFiles } from "../verify/skills.ts";
 import type { AgentsBlockContext } from "./agents-block.ts";
 import type { Manifest } from "./package.ts";
 
@@ -131,14 +131,14 @@ function planSharedKind(
 ): Pick<VerifyPlan, "actions" | "errors"> {
   const actions: VerifyAction[] = [];
   const errors: string[] = [];
-  const skill = skillPath(kind);
-  const content = skillText(kind);
-  if (lstatSync(join(root, skill), { throwIfNoEntry: false })?.isDirectory())
-    errors.push(
-      `${skill} is a folder. Move it away, then rerun antelopejs-sync.`,
-    );
-  else if (readIfPresent(root, skill) !== content)
-    actions.push({ kind: "write", path: skill, content });
+  for (const { path, content } of syncedFiles(kind)) {
+    if (lstatSync(join(root, path), { throwIfNoEntry: false })?.isDirectory())
+      errors.push(
+        `${path} is a folder. Move it away, then rerun antelopejs-sync.`,
+      );
+    else if (readIfPresent(root, path) !== content)
+      actions.push({ kind: "write", path, content });
+  }
   const link = claudeLink(kind);
   const target = claudeLinkTarget(kind);
   const stat = lstatSync(join(root, link), { throwIfNoEntry: false });
@@ -161,11 +161,11 @@ function planStaleKinds(
   for (const kind of VERIFY_KINDS) {
     if (kind === keep) continue;
     const before = actions.length;
-    const skill = lstatSync(join(root, skillPath(kind)), {
-      throwIfNoEntry: false,
-    });
-    if (skill?.isFile() || skill?.isSymbolicLink())
-      actions.push({ kind: "remove", path: skillPath(kind) });
+    for (const { path } of syncedFiles(kind)) {
+      const synced = lstatSync(join(root, path), { throwIfNoEntry: false });
+      if (synced?.isFile() || synced?.isSymbolicLink())
+        actions.push({ kind: "remove", path });
+    }
     if (
       lstatSync(join(root, claudeLink(kind)), {
         throwIfNoEntry: false,
@@ -176,7 +176,10 @@ function planStaleKinds(
     const folder = skillFolder(kind);
     const kept =
       existsSync(join(root, folder)) &&
-      readdirSync(join(root, folder)).some((name) => name !== "SKILL.md");
+      readdirSync(join(root, folder)).some(
+        (name) =>
+          !syncedFiles(kind).some(({ path }) => path === `${folder}/${name}`),
+      );
     notes.push(
       `Removed the synced files of verify-${kind}.${kept ? ` Kept its repo-owned files in ${folder}.` : ""}`,
     );
