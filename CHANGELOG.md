@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.16
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.15...v0.2.16)
+
+### 🩹 Fixes
+
+- **verify:** Close the residual emit holes and sync rename leftovers ([#64](https://github.com/AntelopeJS/tooling-configs/pull/64))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.2.15
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.14...v0.2.15)
