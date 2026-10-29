@@ -3,8 +3,12 @@ import {
   CI_JOB_ID,
   CI_NODE_REF,
   CI_PATH,
+  CI_RENOVATE_SYNC_REF,
 } from "../../guardrails/ci-workflow.ts";
-import { ciNodeCallers } from "../../guardrails/workflow.ts";
+import {
+  ciNodeCallers,
+  ciRenovateSyncCallers,
+} from "../../guardrails/workflow.ts";
 import { perRepo, type Check } from "../check.ts";
 import { GardenContext, type GardenRepo } from "../context.ts";
 import { tooling } from "../npm.ts";
@@ -78,6 +82,18 @@ async function ciCaller(
         "ci-job-id",
         `The caller job is ${callers[0].id}${callers[0].named ? " with a name" : ""}, so the check is not reported as ${CI_CONTEXT}.`,
         `antelopejs-sync has renamed the caller job to ${CI_JOB_ID} and removed its name.`,
+      ),
+    );
+  const syncCallers = ciRenovateSyncCallers(text);
+  if (!syncCallers.some(({ uses }) => uses === CI_RENOVATE_SYNC_REF))
+    findings.push(
+      problem(
+        repo,
+        "ci-renovate-sync",
+        syncCallers.length
+          ? `${CI_PATH} calls ${syncCallers[0].uses}.`
+          : `${CI_PATH} has no job calling ci-renovate-sync.yml.`,
+        `${CI_PATH} has a job calling ${CI_RENOVATE_SYNC_REF}.`,
       ),
     );
   return findings;

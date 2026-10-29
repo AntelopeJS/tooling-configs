@@ -42,6 +42,7 @@ import {
 } from "./templates.ts";
 import {
   ciNodeCallers,
+  ciRenovateSyncCallers,
   hasChecksWorkflow,
   MISSING_CHECKS_WORKFLOW,
 } from "./workflow.ts";
@@ -155,6 +156,7 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
       content: ciWorkflow(
         current,
         current === undefined ? [] : ciNodeCallers(current),
+        current === undefined ? [] : ciRenovateSyncCallers(current),
       ),
       notes: [],
     }),

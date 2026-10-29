@@ -1,9 +1,13 @@
 import {
   isMap,
   isScalar,
+  isPair,
   isSeq,
   parseDocument,
+  visit,
   type Document,
+  type Node,
+  type YAMLSeq,
   type YAMLMap,
 } from "yaml";
 
@@ -12,8 +16,11 @@ export const MUTATION_PATH = ".github/workflows/mutation.yml";
 export const CI_JOB_ID = "ci";
 /** The status context GitHub derives from the caller job id and the shared workflow's `checks` job. */
 export const CI_CONTEXT = `${CI_JOB_ID} / checks`;
+const RENOVATE_SYNC_JOB_ID = "renovate-sync";
 export const CI_NODE_REF =
   "AntelopeJS/.github/.github/workflows/ci-node.yml@v1";
+export const CI_RENOVATE_SYNC_REF =
+  "AntelopeJS/.github/.github/workflows/ci-renovate-sync.yml@v1";
 const MUTATION_REF = "AntelopeJS/.github/.github/workflows/mutation.yml@v1";
 
 export const CI_CALLER = `name: ci
@@ -32,10 +39,22 @@ permissions:
 jobs:
   ${CI_JOB_ID}:
     permissions:
+      contents: read
+    uses: ${CI_NODE_REF}
+    with:
+      renovate-sync: false
+  ${RENOVATE_SYNC_JOB_ID}:
+    if: >-
+      github.event_name == 'pull_request'
+      && startsWith(github.head_ref, 'renovate/')
+      && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
       contents: write
       actions: write
-    uses: ${CI_NODE_REF}
+    uses: ${CI_RENOVATE_SYNC_REF}
 `;
+
+const PRINT_WIDTH = 80;
 
 const WEEK_MINUTES = 7 * 24 * 60;
 
@@ -61,6 +80,43 @@ jobs:
   mutation:
     uses: ${MUTATION_REF}
 `;
+}
+
+function flatSequence(seq: YAMLSeq): string | undefined {
+  const items: string[] = [];
+  for (const item of seq.items) {
+    if (!isScalar(item)) return undefined;
+    items.push(String(item.source ?? item.value));
+  }
+  return `[${items.join(", ")}]`;
+}
+
+/**
+ * oxfmt pads flow maps but not flow sequences and breaks a long flow sequence in a style YAML serializers cannot
+ * produce, so a rewritten file is only left formatted by turning every non-empty flow map and every flow sequence that
+ * would overflow the print width into block style.
+ */
+function blockOverflowingFlow(document: Document): void {
+  visit(document, {
+    Map(_key, map) {
+      if (map.flow && map.items.length) map.flow = false;
+    },
+    Seq(_key, seq, path) {
+      if (!seq.flow) return;
+      const flat = flatSequence(seq);
+      const parent = path.at(-1);
+      const owner = isPair(parent) && isScalar(parent.key) ? parent.key : null;
+      const nesting = path.filter(
+        (ancestor) => isMap(ancestor) || isSeq(ancestor),
+      ).length;
+      const lead = owner === null ? 2 : String(owner.value).length + 2;
+      if (
+        flat === undefined ||
+        2 * Math.max(nesting - 1, 0) + lead + flat.length > PRINT_WIDTH
+      )
+        seq.flow = false;
+    },
+  });
 }
 
 function renameNeeds(document: Document, from: string, to: string): void {
@@ -101,24 +157,95 @@ function addDispatch(document: Document): void {
     );
 }
 
-function grantsDispatch(job: YAMLMap): boolean {
+function grants(job: YAMLMap, expected: Record<string, string>): boolean {
   const granted = job.get("permissions", true);
+  const names = Object.keys(expected);
   return (
     isMap(granted) &&
-    granted.items.length === 2 &&
-    granted.get("contents") === "write" &&
-    granted.get("actions") === "write"
+    granted.items.length === names.length &&
+    names.every((name) => granted.get(name) === expected[name])
+  );
+}
+
+function grant(
+  document: Document,
+  job: YAMLMap,
+  expected: Record<string, string>,
+): boolean {
+  if (grants(job, expected)) return false;
+  job.set("permissions", document.createNode(expected));
+  return true;
+}
+
+function skipsRenovateSync(job: YAMLMap): boolean {
+  const inputs = job.get("with", true);
+  return isMap(inputs) && inputs.get("renovate-sync") === false;
+}
+
+function skipRenovateSync(document: Document, job: YAMLMap): boolean {
+  if (skipsRenovateSync(job)) return false;
+  const inputs = job.get("with", true);
+  if (isMap(inputs)) inputs.set("renovate-sync", false);
+  else job.set("with", document.createNode({ "renovate-sync": false }));
+  return true;
+}
+
+function canonicalSyncJob(): Node {
+  const job = parseDocument(CI_CALLER).getIn(
+    ["jobs", RENOVATE_SYNC_JOB_ID],
+    true,
+  );
+  if (!isMap(job)) throw new Error("CI_CALLER has no renovate-sync job");
+  return job;
+}
+
+function ensureSyncJob(
+  document: Document,
+  jobs: YAMLMap,
+  syncCallers: { id: string }[],
+): boolean {
+  if (!syncCallers.length) {
+    jobs.set(RENOVATE_SYNC_JOB_ID, canonicalSyncJob());
+    return true;
+  }
+  let changed = false;
+  for (const { id } of syncCallers) {
+    const job = jobs.get(id, true);
+    if (isMap(job))
+      changed =
+        grant(document, job, { contents: "write", actions: "write" }) ||
+        changed;
+  }
+  return changed;
+}
+
+function assertNoClash(
+  jobs: YAMLMap,
+  callerId: string,
+  hasSyncCaller: boolean,
+): void {
+  if (callerId !== CI_JOB_ID && jobs.has(CI_JOB_ID))
+    throw new Error(
+      `${CI_PATH}: a job named ${CI_JOB_ID} already exists besides the ${callerId} job that calls ci-node.yml. Rename or merge them, then rerun antelopejs-sync.`,
+    );
+  if (hasSyncCaller || !jobs.has(RENOVATE_SYNC_JOB_ID)) return;
+  throw new Error(
+    callerId === RENOVATE_SYNC_JOB_ID
+      ? `${CI_PATH}: the job ${RENOVATE_SYNC_JOB_ID} calls ci-node.yml, but that id is reserved for the job calling ci-renovate-sync.yml. Rename it, then rerun antelopejs-sync.`
+      : `${CI_PATH}: a job named ${RENOVATE_SYNC_JOB_ID} already exists and does not call ci-renovate-sync.yml. Rename or merge it, then rerun antelopejs-sync.`,
   );
 }
 
 /**
  * Keeps the shared CI caller on the job id `ci` with no `name`, so the shared workflow reports `ci / checks`,
- * dispatchable and granted the write permissions the renovate-sync job needs to dispatch it.
- * A workflow with no caller job is repository-specific CI and is left as it is.
+ * dispatchable and read-only, with the Renovate sync it would otherwise run turned off. The write permissions the sync
+ * needs to push and dispatch the caller live on a separate job calling ci-renovate-sync.yml, which is added when missing.
+ * No `uses:` ref is ever rewritten. A workflow with no caller job is repository-specific CI and is left as it is.
  */
 export function ciWorkflow(
   current: string | undefined,
   callers: { id: string; named: boolean }[],
+  syncCallers: { id: string }[],
 ): string {
   if (current === undefined) return CI_CALLER;
   if (!callers.length) return current;
@@ -130,10 +257,7 @@ export function ciWorkflow(
   const jobs = document.get("jobs", true);
   if (!isMap(jobs)) return current;
   const caller = callers.find(({ id }) => id === CI_JOB_ID) ?? callers[0];
-  if (caller.id !== CI_JOB_ID && jobs.has(CI_JOB_ID))
-    throw new Error(
-      `${CI_PATH}: a job named ${CI_JOB_ID} already exists besides the ${caller.id} job that calls ci-node.yml. Rename or merge them, then rerun antelopejs-sync.`,
-    );
+  assertNoClash(jobs, caller.id, syncCallers.length > 0);
   const pair = jobs.items.find(
     ({ key }) => isScalar(key) && key.value === caller.id,
   );
@@ -148,16 +272,14 @@ export function ciWorkflow(
     renameNeeds(document, caller.id, CI_JOB_ID);
     changed = true;
   }
-  if (!grantsDispatch(pair.value)) {
-    pair.value.set(
-      "permissions",
-      document.createNode({ contents: "write", actions: "write" }),
-    );
-    changed = true;
-  }
+  changed = grant(document, pair.value, { contents: "read" }) || changed;
+  changed = skipRenovateSync(document, pair.value) || changed;
+  changed = ensureSyncJob(document, jobs, syncCallers) || changed;
   if (!hasDispatch(document)) {
     addDispatch(document);
     changed = true;
   }
-  return changed ? document.toString({ lineWidth: 0 }) : current;
+  if (!changed) return current;
+  blockOverflowingFlow(document);
+  return document.toString({ lineWidth: 0, flowCollectionPadding: false });
 }

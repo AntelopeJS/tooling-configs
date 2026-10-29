@@ -51,7 +51,22 @@ export function pull(
   };
 }
 
-export const CALLER =
-  "name: ci\non: push\njobs:\n  ci:\n    uses: AntelopeJS/.github/.github/workflows/ci-node.yml@v1\n";
+export const CALLER = [
+  "name: ci",
+  "on: push",
+  "jobs:",
+  "  ci:",
+  "    permissions:",
+  "      contents: read",
+  "    uses: AntelopeJS/.github/.github/workflows/ci-node.yml@v1",
+  "    with:",
+  "      renovate-sync: false",
+  "  renovate-sync:",
+  "    permissions:",
+  "      contents: write",
+  "      actions: write",
+  "    uses: AntelopeJS/.github/.github/workflows/ci-renovate-sync.yml@v1",
+  "",
+].join("\n");
 export const LOCK = (version: string) =>
   `importers:\n  .:\n    devDependencies:\n      '@antelopejs/tooling-configs':\n        specifier: ^${version}\n        version: ${version}(oxlint@1.81.0)\n`;
