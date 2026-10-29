@@ -58,10 +58,15 @@ function isPropertyName(node: ts.Identifier): boolean {
   );
 }
 
-/** The covered files: their module keys, and the names of their top-level function declarations, which move freely between them. */
+/**
+ * The covered files: their module keys, the names of the top-level function
+ * declarations of each, which move freely between them, and the names declared
+ * by more than one covered file, which cannot.
+ */
 interface Covered {
   modules: Set<string>;
-  functions: Set<string>;
+  functions: Map<string, Set<string>>;
+  duplicated: Set<string>;
 }
 
 /** Where each value-imported binding of a file comes from, and the entries that are not statements: `entries` may move freely, `ordered` keep their order in the file. */
@@ -72,13 +77,14 @@ interface Origins {
 }
 
 /**
- * A binding from a covered module is its name alone when it is a function
- * declaration, which may move between covered files, and `module#name`
- * otherwise, so a variable or class of one file never reads as one of the same
- * name in another.
+ * A binding is its name alone when that module declares it as a function
+ * declaration no other covered file declares, which may move between covered
+ * files, and `module#name` otherwise, so a variable or class of one file, or a
+ * function of the same name in another, never reads as it.
  */
 function bindingOrigin(covered: Covered, module: string, name: string): string {
-  return covered.modules.has(module) && covered.functions.has(name)
+  return covered.functions.get(module)?.has(name) &&
+    !covered.duplicated.has(name)
     ? name
     : `${module}#${name}`;
 }
@@ -116,10 +122,9 @@ function reexportTexts(
   covered: Covered,
 ): string[] {
   const exported = statement.exportClause;
-  const inside = covered.modules.has(module);
-  if (exported === undefined) return inside ? [] : [`export * from ${module}`];
+  if (exported === undefined) return [`export * from ${module}`];
   if (ts.isNamespaceExport(exported))
-    return inside ? [] : [`export * as ${exported.name.text} from ${module}`];
+    return [`export * as ${exported.name.text} from ${module}`];
   return exported.elements.flatMap((element) => {
     const origin = bindingOrigin(
       covered,
@@ -162,7 +167,7 @@ function localExportTexts(
  * what a use refers to. A binding from a covered module is its name alone
  * when it is a function declaration, so moving the declaration between
  * covered files keeps every use the same; any other binding is keyed by its
- * module. Side-effect imports keep their order in the file. Re-exports and
+ * module. A side-effect import keeps its order in the file relative to the binding imports before it, and `export *` is an entry like any re-export. Re-exports and
  * renamed or imported exports become entries keyed by the origin they export.
  */
 function originsOf(
@@ -174,6 +179,7 @@ function originsOf(
   const bindings = new Map<string, string>();
   const texts: string[] = [];
   const ordered: string[] = [];
+  const earlier: string[] = [];
   const exports: ts.ExportDeclaration[] = [];
   for (const statement of file.statements) {
     if (
@@ -187,9 +193,10 @@ function originsOf(
     const module = moduleKey(path, specifier.text);
     if (ts.isImportDeclaration(statement)) {
       if (statement.importClause === undefined) {
-        ordered.push(`import ${module}`);
+        ordered.push(`import ${module} after ${earlier.join(",")}`);
         continue;
       }
+      earlier.push(module);
       for (const [name, origin] of importedBindings(
         statement.importClause,
         module,
@@ -305,8 +312,8 @@ function isFunctionDeclaration(
   );
 }
 
-/** The top-level variables, classes and enums of a script, each keyed by its file and name: what a function moved into another file must not pick up by name. */
-function localsOf(script: Script): Map<string, string> {
+/** The top-level variables, classes and enums of a script, and its functions that another covered file also declares, each keyed by its file and name: what a function moved into another file must not pick up by name. */
+function localsOf(script: Script, covered: Covered): Map<string, string> {
   const file = script.path.replace(MODULE_EXTENSION, "");
   const names = script.file.statements.flatMap((statement) => {
     if (ts.isVariableStatement(statement))
@@ -319,11 +326,16 @@ function localsOf(script: Script): Map<string, string> {
       ? [statement.name.text]
       : [];
   });
-  return new Map(names.map((name) => [name, `${file}#${name}`]));
+  const clashing = [...(covered.functions.get(file) ?? [])].filter((name) =>
+    covered.duplicated.has(name),
+  );
+  return new Map(
+    [...names, ...clashing].map((name) => [name, `${file}#${name}`]),
+  );
 }
 
 function scriptItems(script: Script, covered: Covered): EmitItem[] {
-  const locals = localsOf(script);
+  const locals = localsOf(script, covered);
   const origins = originsOf(script.path, covered, script.file, locals);
   const inFunctions = new Map([...locals, ...origins.bindings]);
   const statements = script.file.statements
@@ -411,15 +423,25 @@ export function emitFingerprint(
     const source = fileAt(repo, sha, path);
     return source === null ? [] : [parsedFile(path, source)];
   });
-  const covered: Covered = {
-    modules: new Set(files.map((path) => path.replace(MODULE_EXTENSION, ""))),
-    functions: new Set(
-      parsed.flatMap(({ scripts }) =>
+  const functions = new Map(
+    parsed.map(({ path, scripts }) => [
+      path.replace(MODULE_EXTENSION, ""),
+      new Set(
         scripts.flatMap(({ file }) =>
           file.statements
             .filter(isFunctionDeclaration)
             .map(({ name }) => name.text),
         ),
+      ),
+    ]),
+  );
+  const declarations = [...functions.values()].flatMap((names) => [...names]);
+  const covered: Covered = {
+    modules: new Set(files.map((path) => path.replace(MODULE_EXTENSION, ""))),
+    functions,
+    duplicated: new Set(
+      declarations.filter(
+        (name, index) => declarations.indexOf(name) !== index,
       ),
     ),
   };
