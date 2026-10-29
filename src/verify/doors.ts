@@ -18,12 +18,12 @@ const RELEASE_FILES = [
   ".github/workflows/release.yml",
 ];
 
-/** The pack's default path rules per repository kind; a repo's `doors` block adds to them. */
 /** Door globs per kind, for the kinds a repository kind defaults. */
 type DoorDefaults = {
   [Kind in VerifyKind]: { [Door in DoorKind]?: string[] };
 };
 
+/** The pack's default path rules per repository kind; a repo's `doors` block adds to them. */
 const DEFAULT_DOOR_GLOBS: DoorDefaults = {
   interface: { contract: ["src/**", "package.json"], publish: RELEASE_FILES },
   module: { contract: ["package.json"], publish: RELEASE_FILES },

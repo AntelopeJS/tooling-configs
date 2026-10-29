@@ -155,10 +155,14 @@ test("every shell block of every shared skill is one antelopejs-verify command p
   }
 });
 
-test("seeded leaves no scratch worktree behind when a patch does not apply", (t) => {
+test("seeded fails with the failing setup command and its output, and leaves no scratch worktree behind", (t) => {
   const { root, tmp } = mapRepo(t);
   const seeded = verify(root, tmp, ["seeded", "core"]);
   assert.equal(seeded.status, 1);
+  assert.match(
+    seeded.stderr,
+    /^pnpm install --frozen-lockfile --prefer-offline --ignore-scripts exited 1 in .*\n[\s\S]*configured to use npm/,
+  );
   const worktrees = execFileSync("git", ["worktree", "list", "--porcelain"], {
     cwd: root,
     encoding: "utf8",

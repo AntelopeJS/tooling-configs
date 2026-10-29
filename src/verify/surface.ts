@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import ts from "typescript";
 
 import {
@@ -10,6 +10,7 @@ import {
   type JsonObject,
   type JsonValue,
 } from "../garden/json.ts";
+import { referencedDeclarations } from "./surface-types.ts";
 
 /** The declared function surface of a package: function path to normalized signature text. */
 export type Surface = Map<string, string>;
@@ -111,19 +112,21 @@ function signatureTexts(
 
 function callableText(walk: Walk, type: ts.Type): string | undefined {
   const callable = walk.checker.getNonNullableType(type);
+  const calls = callable.getCallSignatures();
+  const constructs = callable.getConstructSignatures();
   const texts = [
-    ...signatureTexts(
-      walk,
-      callable.getCallSignatures(),
-      ts.SignatureKind.Call,
-    ),
-    ...signatureTexts(
-      walk,
-      callable.getConstructSignatures(),
-      ts.SignatureKind.Construct,
-    ),
+    ...signatureTexts(walk, calls, ts.SignatureKind.Call),
+    ...signatureTexts(walk, constructs, ts.SignatureKind.Construct),
   ];
-  return texts.length === 0 ? undefined : texts.join(" | ");
+  if (texts.length === 0) return undefined;
+  const reached = referencedDeclarations(
+    walk.checker,
+    (symbol) => declaredHere(walk, symbol),
+    [...calls, ...constructs],
+  );
+  return reached.length === 0
+    ? texts.join(" | ")
+    : `${texts.join(" | ")} where ${reached.join(" ")}`;
 }
 
 function typeOf(walk: Walk, symbol: ts.Symbol): ts.Type {
@@ -228,6 +231,18 @@ function unresolvedImports(walk: Walk, program: ts.Program): string[] {
   return missing;
 }
 
+/** The nearest `node_modules/@types` holding `@types/node`, so declarations importing `node:` built-ins resolve. */
+function nodeTypeRoot(folder: string): string | undefined {
+  let current = folder;
+  while (
+    !existsSync(join(current, "node_modules", "@types", "node", "package.json"))
+  ) {
+    if (dirname(current) === current) return undefined;
+    current = dirname(current);
+  }
+  return join(current, "node_modules", "@types");
+}
+
 function readManifest(folder: string): JsonObject {
   const manifest = parseJson(
     readFileSync(join(folder, "package.json"), "utf8"),
@@ -252,6 +267,7 @@ export function declaredSurface(packageFolder: string): Surface {
       throw new Error(`${subpath}: ${declaration} is missing`);
     files.set(subpath, file);
   }
+  const nodeTypes = nodeTypeRoot(folder);
   const program = ts.createProgram([...files.values()], {
     noEmit: true,
     skipLibCheck: true,
@@ -259,7 +275,9 @@ export function declaredSurface(packageFolder: string): Surface {
     target: ts.ScriptTarget.ESNext,
     module: ts.ModuleKind.ESNext,
     moduleResolution: ts.ModuleResolutionKind.Bundler,
-    types: [],
+    ...(nodeTypes === undefined
+      ? { types: [] }
+      : { typeRoots: [nodeTypes], types: ["node"] }),
   });
   const walk: Walk = {
     checker: program.getTypeChecker(),
@@ -269,7 +287,7 @@ export function declaredSurface(packageFolder: string): Surface {
   const missing = unresolvedImports(walk, program);
   if (missing.length > 0) {
     throw new Error(
-      `unresolved imports in declarations: ${missing.join(", ")}`,
+      `unresolved imports in declarations: ${missing.join(", ")}${nodeTypes === undefined && missing.some((entry) => entry.includes("-> node:")) ? "; install @types/node so node: built-ins resolve" : ""}`,
     );
   }
   for (const [subpath, file] of files) {

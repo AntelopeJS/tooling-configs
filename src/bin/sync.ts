@@ -35,7 +35,9 @@ runCli(() => {
   if (result.errors.length) return 1;
   for (const path of result.paths)
     process.stdout.write(
-      `${values.check ? "Drift" : "Updated"}: ${path}${values.check ? "; run antelopejs-sync" : ""}\n`,
+      values.check
+        ? `Drift: ${path}; run antelopejs-sync\n`
+        : `${result.removed.includes(path) ? "Removed" : "Updated"}: ${path}\n`,
     );
   if (!result.paths.length) process.stdout.write("Guardrails are in sync.\n");
   if (!values.check && result.dependenciesAdded)

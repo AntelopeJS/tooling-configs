@@ -460,9 +460,12 @@ export function syncRepository(
     paths: errors.length
       ? []
       : [...writes, ...verify.actions].map(({ path }) => path),
+    removed: verify.actions
+      .filter((action) => action.kind === "remove")
+      .map(({ path }) => path),
     errors,
     notes,
-    verifyNotes: verify.notes,
+    verifyNotes: options.check || errors.length ? [] : verify.notes,
     advisories: entryOnly.advisories,
     dependenciesAdded,
   };

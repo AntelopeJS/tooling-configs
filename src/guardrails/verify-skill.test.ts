@@ -163,10 +163,19 @@ test("repo-owned files stay byte-identical across sync, a kind change and --veri
     claudeLink("module"),
   ])
     assert.match(preview.stdout, new RegExp(`Drift: ${path}; run`));
+  assert.doesNotMatch(preview.stdout, /Note:/);
   assert.equal(hasLayer(root, "interface"), false);
   const changed = bin(root, "sync", [...TEMPLATE, "--verify", "interface"]);
   assert.equal(changed.status, 0, changed.stderr);
-  assert.match(changed.stdout, /Note: .*verify-module.*Kept.*repo-owned/);
+  assert.match(changed.stdout, /Note: .*verify-module and kept its repo-owned/);
+  assert.match(
+    changed.stdout,
+    /^Removed: \.agents\/skills\/verify-module\/SKILL\.md$/m,
+  );
+  assert.doesNotMatch(
+    changed.stdout,
+    /Updated: \.agents\/skills\/verify-module/,
+  );
   assert.equal(hasLayer(root, "module"), false);
   assert.equal(read(root, skillPath("interface")), skillText("interface"));
   assert.deepEqual(ownedFiles(root, "module"), expected);
@@ -174,7 +183,10 @@ test("repo-owned files stay byte-identical across sync, a kind change and --veri
   put(root, OWN_SKILL, "Own verification skill.\n");
   const custom = bin(root, "sync", [...TEMPLATE, "--verify", "custom"]);
   assert.equal(custom.status, 0, custom.stderr);
-  assert.match(custom.stdout, /Note: .*verify-interface.*Kept.*repo-owned/);
+  assert.match(
+    custom.stdout,
+    /Note: .*verify-interface and kept its repo-owned/,
+  );
   assert.equal(hasLayer(root, "interface"), false);
   assert.deepEqual(ownedFiles(root, "interface"), expected);
   assert.deepEqual(ownedFiles(root, "module"), expected);
@@ -182,6 +194,20 @@ test("repo-owned files stay byte-identical across sync, a kind change and --veri
   const after = bin(root, "sync", [...TEMPLATE, "--check"]);
   assert.equal(after.status, 0, after.stderr);
   assert.equal(after.stdout, IN_SYNC);
+});
+
+test("--verify custom over a layer with no repo-owned files reports each removal, prints no note and leaves no empty folder", (t) => {
+  const root = syncedRepo(t, "module");
+  put(root, OWN_SKILL, "Own verification skill.\n");
+  const custom = bin(root, "sync", [...TEMPLATE, "--verify", "custom"]);
+  assert.equal(custom.status, 0, custom.stderr);
+  assert.doesNotMatch(custom.stdout, /Note:/);
+  for (const path of [
+    ...syncedFiles("module").map((file) => file.path),
+    claudeLink("module"),
+  ])
+    assert.match(custom.stdout, new RegExp(`^Removed: ${path}$`, "m"));
+  assert.equal(existsSync(join(root, skillFolder("module"))), false);
 });
 
 test("--verify custom fails without an own skill and keeps a shared layer, which never counts as own", (t) => {

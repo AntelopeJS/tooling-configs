@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test, { after } from "node:test";
 
 import type { JsonValue } from "../garden/json.ts";
+import { PACKAGE_ROOT } from "../guardrails/helpers/test-repo.ts";
 import {
   declaredSurface,
   diffSurface,
@@ -23,6 +30,7 @@ after(() => {
 function surfaceOf(
   manifest: JsonValue,
   files: [string, string][],
+  nodeTypes = false,
 ): Record<string, string> {
   const folder = mkdtempSync(join(tmpdir(), "surface-"));
   folders.push(folder);
@@ -34,8 +42,20 @@ function surfaceOf(
     mkdirSync(dirname(join(folder, name)), { recursive: true });
     writeFileSync(join(folder, name), content);
   }
+  if (nodeTypes) {
+    mkdirSync(join(folder, "node_modules", "@types"), { recursive: true });
+    symlinkSync(
+      join(PACKAGE_ROOT, "node_modules", "@types", "node"),
+      join(folder, "node_modules", "@types", "node"),
+      "dir",
+    );
+  }
   return Object.fromEntries(declaredSurface(folder));
 }
+
+/** The public part of the class the class test declares, as a function reaching it records it. */
+const STORE =
+  "class Store { constructor(name: string); get(key: string): string; value: number; static open(): Store; }";
 
 const NONE: SurfaceDiff = { added: [], removed: [], changed: [] };
 const ADDED: SurfaceDiff = { added: [".:Ping"], removed: [], changed: [] };
@@ -96,7 +116,8 @@ test("a subpath export reads its nested types condition and skips package.json a
   );
   assert.deepEqual(surface, {
     ".:root": "() => void",
-    "./util:Greeter": "new () => Greeter",
+    "./util:Greeter":
+      "new () => Greeter where class Greeter { greet(name: string): string; }",
     "./util:Greeter.prototype.greet": "(name: string) => string",
   });
 });
@@ -130,9 +151,9 @@ test("a class lists its constructors, public methods and static methods but not 
     ],
   ]);
   assert.deepEqual(surface, {
-    ".:Store": "new (name: string) => Store",
+    ".:Store": `new (name: string) => Store where ${STORE}`,
     ".:Store.prototype.get": "(key: string) => string",
-    ".:Store.open": "() => Store",
+    ".:Store.open": `() => Store where ${STORE}`,
   });
 });
 
@@ -179,7 +200,7 @@ export declare class Holder { client: Client; }`,
   ]);
   assert.deepEqual(surface, {
     ".:connect": "() => Client",
-    ".:Holder": "new () => Holder",
+    ".:Holder": "new () => Holder where class Holder { client: Client; }",
   });
 });
 
@@ -193,6 +214,58 @@ test("an import the package cannot resolve fails loudly instead of yielding a pa
         ],
       ]),
     /missing-dep/,
+  );
+});
+
+const STREAM_DECLARATION: [string, string] = [
+  "index.d.ts",
+  `import type { Readable } from "node:stream";\nexport declare function Open(path: string): Readable;`,
+];
+
+test("a declaration importing a Node built-in reads through the @types/node the package resolves", () => {
+  const surface = surfaceOf(
+    { name: "a", types: "index.d.ts" },
+    [STREAM_DECLARATION],
+    true,
+  );
+  assert.deepEqual(surface, { ".:Open": "(path: string) => Readable" });
+});
+
+test("without @types/node a node: import still fails loudly and says what to install", () => {
+  assert.throws(
+    () => surfaceOf({ name: "a", types: "index.d.ts" }, [STREAM_DECLARATION]),
+    /index\.d\.ts -> node:stream; install @types\/node so node: built-ins resolve/,
+  );
+});
+
+const ROW_SAMPLE = (rows: string): [string, string] => [
+  "index.d.ts",
+  `export type SampledValue = string | number;\nexport interface RowSample {\n  columns: string[];\n  rows: ${rows};\n}\nexport declare function Sample(table: string): Promise<RowSample>;`,
+];
+
+test("a member type changing inside a declaration a function answers is a changed function the minor rule flags", () => {
+  const manifest = { name: "a", types: "index.d.ts" };
+  const published = surfaceOf(manifest, [ROW_SAMPLE("SampledValue[][]")]);
+  const head = surfaceOf(manifest, [ROW_SAMPLE("SampledValue[]")]);
+  assert.match(head[".:Sample"], /rows: SampledValue\[\];/);
+  const diff = diffSurface(
+    new Map(Object.entries(published)),
+    new Map(Object.entries(head)),
+  );
+  assert.deepEqual(
+    diff.changed.map((entry) => entry.path),
+    [".:Sample"],
+  );
+  const verdict = minorRule({
+    published: "1.4.2",
+    headVersion: "1.4.2",
+    titles: ["fix: sample rows flat"],
+    diff,
+  });
+  assert.equal(verdict.ok, false);
+  assert.match(
+    verdict.reason,
+    /changed \.:Sample: needs at least 1\.5\.0 against 1\.4\.2/,
   );
 });
 
