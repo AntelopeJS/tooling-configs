@@ -23,6 +23,10 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       code: "const LIVE_KEY_VARIABLE = 'MOLLIE_API_KEY'; function select(environment: Record<string, string | undefined>) { return environment[LIVE_KEY_VARIABLE]; }",
     },
     {
+      name: "postgres@302e570:src/implementations/database/value.ts:93, a typeof key",
+      code: "const PRIMITIVE_TYPES: Record<string, SqlType> = { string: 'text' }; function typeOf(value: unknown) { return PRIMITIVE_TYPES[typeof value]; }",
+    },
+    {
       name: "a write is not a lookup",
       code: "const out: Record<string, number> = {}; function f(name: string) { out[name] = 1; delete out[name]; }",
     },
@@ -217,6 +221,44 @@ const A: Lookup = {};
 const B: Registry = {};
 function f(name: string) { return A[name] ?? B[name]; }`,
       errors: [lookup, lookup],
+    },
+    {
+      name: "dms-automation@85c0a32:packages/dms-automation/src/runtime/executor.ts:420, a table asserted to Record",
+      code: "const LABELS = { open: 'Open' } as Record<string, string>; function label(s: string) { return LABELS[s]; }",
+      errors: [lookup],
+    },
+    {
+      name: "dms-builder engine/project-config.ts:271, a Record parameter that may be undefined",
+      code: "function f(m: Record<string, number> | undefined, n: Record<string, number> | null, k: string) { return m?.[k] ?? n?.[k]; }",
+      errors: [lookup, lookup],
+    },
+    {
+      name: "interface-database-decorators@fc2cead:src/common.ts:57-60, a class-field table read through this",
+      code: `
+class SchemaModel {
+  public readonly indexes: Record<string, Array<string>> = {};
+  addIndex(key: string, group: string) {
+    if (!(group in this.indexes)) {
+      this.indexes[group] = [];
+    }
+    this.indexes[group].push(key);
+  }
+}`,
+      errors: [inOperator, lookup],
+    },
+    {
+      name: "interface-api@4927ada:src/controller.ts:187-189, a class-field table keyed by PropertyKey",
+      code: `
+class ControllerProto {
+  private computed_props: Record<PropertyKey, ComputedParameter> = {};
+  getComputedParameter(key: PropertyKey) {
+    if (!(key in this.computed_props)) {
+      this.computed_props[key] = { modifiers: [] };
+    }
+    return this.computed_props[key];
+  }
+}`,
+      errors: [inOperator, lookup],
     },
     {
       name: "a guard on a different key does not cover the read",
