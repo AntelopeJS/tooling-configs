@@ -323,3 +323,43 @@ test("an ESLint composer's overrideRules counts like a rules block, and a config
     /oxlint\.config\.ts:8: lint config rule-off `antelopejs\/require-assertion` for `src\/test\/\*\*`: this rule is never suppressed\. Fix: assert on the behaviour, or delete the test\./,
   );
 });
+
+const SCOPE_MOVES: [string, string, string][] = [
+  [
+    "widening src/test/** to src/** in place",
+    "src/**",
+    cloudConfig(["src/**"]),
+  ],
+  ["widening src/test/** to **/* in place", "**/*", cloudConfig(["**/*"])],
+  [
+    "deleting the override's files",
+    "*",
+    CLOUD_TEST_RULES.replace("files: [__FILES__], ", ""),
+  ],
+  [
+    "moving the override's rules to the top level",
+    "*",
+    CLOUD_TEST_RULES.replace(
+      "  overrides: [{ files: [__FILES__], rules: TEST_RULES }],",
+      "  rules: TEST_RULES,",
+    ),
+  ],
+];
+
+for (const [move, scope, config] of SCOPE_MOVES)
+  test(`cloud #379 r3: ${move} switches the rules off for a new scope and fails, staged and full`, (t) => {
+    const root = adoptedRepo(t, {
+      "oxlint.config.ts": cloudConfig(["src/test/**"]),
+    });
+    put(root, "oxlint.config.ts", config);
+    const label = new RegExp(
+      `lint config rule-off \`typescript/unbound-method\` for \`${scope.replaceAll("*", "\\*")}\``,
+    );
+    const full = bin(root, "suppressions");
+    assert.equal(full.status, 1);
+    assert.match(full.stderr, label);
+    git(root, ["add", "oxlint.config.ts"]);
+    const staged = bin(root, "suppressions", ["--staged"]);
+    assert.equal(staged.status, 1);
+    assert.match(staged.stderr, label);
+  });
