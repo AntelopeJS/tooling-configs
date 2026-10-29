@@ -35,12 +35,7 @@ function git(root: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 }
 
-function branchRepo(
-  t: TestContext,
-  file: string,
-  base: string,
-  branch: string,
-): string {
+function baseRepo(t: TestContext, files: Record<string, string>): string {
   const root = testRepo(t);
   linkOxlint(root);
   put(
@@ -65,7 +60,7 @@ function branchRepo(
       oversizeFiles: {},
     }),
   );
-  put(root, file, base);
+  for (const [file, content] of Object.entries(files)) put(root, file, content);
   commit(root);
   git(root, "update-ref", "refs/remotes/origin/main", "HEAD");
   git(
@@ -74,6 +69,16 @@ function branchRepo(
     "refs/remotes/origin/HEAD",
     "refs/remotes/origin/main",
   );
+  return root;
+}
+
+function branchRepo(
+  t: TestContext,
+  file: string,
+  base: string,
+  branch: string,
+): string {
+  const root = baseRepo(t, { [file]: base });
   put(root, file, branch);
   commit(root);
   return root;
@@ -139,7 +144,7 @@ test("staged ratchet fails a finding the base does not have and lists only it", 
   assert.match(
     result.stderr,
     new RegExp(
-      `${SAFETY}: this commit adds 1 to the staged files \\(1 at merge-base ${base} with origin/HEAD, 2 staged\\)`,
+      `${SAFETY}: this commit adds 1 to the staged files \\(0 at HEAD, 1 at merge-base ${base} with origin/HEAD, 2 staged\\)`,
     ),
   );
   assert.match(result.stderr, /creation\.ts:8:/);
@@ -161,4 +166,57 @@ test("staged ratchet compares with HEAD and says so when no base resolves", (t) 
     result.stderr,
     /No pull request base resolved \(GITHUB_BASE_REF or origin\/HEAD\), so this compared with HEAD/,
   );
+});
+
+const SETTLE =
+  "export function settle(mollie: object): Own {\n  return readOwn(mollie) as Own;\n}\n";
+const MOVE_SOURCE = `${MOLLIE_5_PRELUDE}export const x = 1;\n${SETTLE}`;
+const MOVE_TARGET = `${MOLLIE_5_PRELUDE}export const y = 1;\n`;
+
+function movedRepo(t: TestContext): string {
+  const root = baseRepo(t, { "x.ts": MOVE_SOURCE, "y.ts": MOVE_TARGET });
+  put(root, "x.ts", `${MOLLIE_5_PRELUDE}export const x = 1;\n`);
+  put(root, "y.ts", `${MOVE_TARGET}${SETTLE}`);
+  stage(root, "x.ts", "y.ts");
+  const move = check(root, "x.ts", "y.ts");
+  assert.equal(move.status, 0, move.stderr);
+  commit(root);
+  return root;
+}
+
+test("staged ratchet passes an edit of a file a legacy finding moved into in an earlier branch commit", (t) => {
+  const root = movedRepo(t);
+  put(root, "y.ts", `${MOVE_TARGET.replace("y = 1", "y = 2")}${SETTLE}`);
+  stage(root, "y.ts");
+  const edit = check(root, "y.ts");
+  assert.equal(edit.status, 0, edit.stderr);
+  put(
+    root,
+    "y.ts",
+    `${MOVE_TARGET}${SETTLE}export const extra = readOwn({}) as Own;\n`,
+  );
+  stage(root, "y.ts");
+  const added = check(root, "y.ts");
+  assert.equal(added.status, 1);
+  const base = git(root, "rev-parse", "--short=12", "origin/main");
+  assert.match(
+    added.stderr,
+    new RegExp(
+      `adds 1 to the staged files \\(1 at HEAD, 0 at merge-base ${base} with origin/HEAD, 2 staged\\)`,
+    ),
+  );
+  assert.match(added.stderr, /y\.ts:10:/);
+  assert.doesNotMatch(added.stderr, /y\.ts:8:/);
+});
+
+test("staged ratchet passes a stacked branch editing a file its parent branch moved a legacy finding into", (t) => {
+  const root = movedRepo(t);
+  git(root, "update-ref", "refs/remotes/origin/feature-a", "HEAD");
+  git(root, "checkout", "-q", "-b", "feature-b");
+  put(root, "z.ts", "export const z = 1;\n");
+  commit(root);
+  put(root, "y.ts", `${MOVE_TARGET.replace("y = 1", "y = 2")}${SETTLE}`);
+  stage(root, "y.ts");
+  const result = check(root, "y.ts");
+  assert.equal(result.status, 0, result.stderr);
 });
