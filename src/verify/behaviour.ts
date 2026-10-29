@@ -1,9 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { extname, join } from "node:path";
-import ts from "typescript";
+import { join } from "node:path";
 
+import {
+  emitFingerprint,
+  type EmitFingerprint,
+  type EmitItem,
+} from "./emit.ts";
 import type { FormalCheck } from "./types.ts";
 import { git } from "./workspace.ts";
 
@@ -21,79 +25,9 @@ export interface BehaviourChange {
   added: string[];
 }
 
-const CODE_EXTENSIONS = new Set([
-  ".ts",
-  ".mts",
-  ".cts",
-  ".tsx",
-  ".js",
-  ".mjs",
-  ".cjs",
-  ".jsx",
-]);
 const DETAIL_LIMIT = 5;
 const DETAIL_LENGTH = 160;
 const OUTPUT_LIMIT = 64 * 1024 * 1024;
-
-function fileAt(repo: string, sha: string, path: string): string | null {
-  const shown = spawnSync("git", ["show", `${sha}:${path}`], {
-    cwd: repo,
-    encoding: "utf8",
-    maxBuffer: OUTPUT_LIMIT,
-  });
-  return shown.status === 0 ? shown.stdout : null;
-}
-
-function scriptStatements(path: string, source: string): string[] {
-  const { outputText } = ts.transpileModule(source, {
-    fileName: path,
-    compilerOptions: {
-      target: ts.ScriptTarget.ES2022,
-      module: ts.ModuleKind.ESNext,
-      removeComments: true,
-      experimentalDecorators: true,
-    },
-  });
-  const file = ts.createSourceFile(
-    "emit.js",
-    outputText,
-    ts.ScriptTarget.ES2022,
-    true,
-    ts.ScriptKind.JS,
-  );
-  const printer = ts.createPrinter({ removeComments: true });
-  return file.statements
-    .filter((statement) => !ts.isImportDeclaration(statement))
-    .filter(
-      (statement) =>
-        !(ts.isExportDeclaration(statement) && statement.moduleSpecifier),
-    )
-    .map((statement) =>
-      printer
-        .printNode(ts.EmitHint.Unspecified, statement, file)
-        .replace(/^export (default )?/, ""),
-    );
-}
-
-function statementsOf(path: string, source: string): string[] {
-  if (CODE_EXTENSIONS.has(extname(path))) return scriptStatements(path, source);
-  return [`file ${source.replace(/\s+/g, " ").trim()}`];
-}
-
-/**
- * What the covered code does at a commit, as the sorted top-level statements
- * of its JavaScript: types, comments, formatting, imports, re-exports and
- * `export` keywords left out, so a type-only edit, a comment or a verbatim
- * move between covered files keeps the same fingerprint.
- */
-function emitFingerprint(repo: string, sha: string, files: string[]): string[] {
-  return files
-    .flatMap((path) => {
-      const source = fileAt(repo, sha, path);
-      return source === null ? [] : statementsOf(path, source);
-    })
-    .sort((left, right) => left.localeCompare(right));
-}
 
 /** Runs `action` in a throwaway worktree of `sha` whose `node_modules` links the checkout's, then removes it. */
 export function inWorktree<Result>(
@@ -132,13 +66,18 @@ function probeFingerprint(
   });
 }
 
-function difference(left: string[], right: string[]): string[] {
+function difference<Item>(
+  left: Item[],
+  right: Item[],
+  key: (item: Item) => string,
+): Item[] {
   const counts = new Map<string, number>();
-  for (const item of right) counts.set(item, (counts.get(item) ?? 0) + 1);
+  for (const item of right)
+    counts.set(key(item), (counts.get(key(item)) ?? 0) + 1);
   return left.filter((item) => {
-    const count = counts.get(item) ?? 0;
+    const count = counts.get(key(item)) ?? 0;
     if (count === 0) return true;
-    counts.set(item, count - 1);
+    counts.set(key(item), count - 1);
     return false;
   });
 }
@@ -151,12 +90,77 @@ function sample(lines: string[]): string[] {
     );
 }
 
+interface Differences {
+  removed: string[];
+  added: string[];
+}
+
+function sequenceChanges(
+  path: string,
+  base: EmitItem[],
+  head: EmitItem[],
+): Differences {
+  const length = Math.max(base.length, head.length);
+  for (let index = 0; index < length; index += 1) {
+    if (base[index]?.structure !== head[index]?.structure) {
+      return {
+        removed: [
+          `${path} statement ${index + 1}: ${base[index]?.text ?? "(none)"}`,
+        ],
+        added: [
+          `${path} statement ${index + 1}: ${head[index]?.text ?? "(none)"}`,
+        ],
+      };
+    }
+  }
+  return { removed: [], added: [] };
+}
+
+function compareEmit(
+  base: EmitFingerprint,
+  head: EmitFingerprint,
+): Differences {
+  const structure = (item: EmitItem) => item.structure;
+  const removed = difference(base.functions, head.functions, structure).map(
+    (item) => `function ${item.text}`,
+  );
+  const added = difference(head.functions, base.functions, structure).map(
+    (item) => `function ${item.text}`,
+  );
+  for (const path of new Set([
+    ...Object.keys(base.files),
+    ...Object.keys(head.files),
+  ])) {
+    const change = sequenceChanges(
+      path,
+      base.files[path] ?? [],
+      head.files[path] ?? [],
+    );
+    removed.push(...change.removed);
+    added.push(...change.added);
+  }
+  return { removed, added };
+}
+
+function compareProbe(base: string[], head: string[]): Differences {
+  if (JSON.stringify(base) === JSON.stringify(head))
+    return { removed: [], added: [] };
+  const line = (item: string) => item;
+  const removed = difference(base, head, line);
+  const added = difference(head, base, line);
+  return removed.length + added.length > 0
+    ? { removed, added }
+    : { removed: ["(order)"], added: ["(order)"] };
+}
+
 /**
  * Whether a diff changed the behaviour of the code a formal check covers,
- * decided without judgement: the check's `behaviour` probe prints the same
- * lines on the base and on HEAD, or, for `emit` (the default), the covered
- * files keep the same JavaScript statements. The check's own output never
- * enters the decision, so a model that cannot see the code still gates it.
+ * decided without judgement. For `emit` (the default), each covered file
+ * keeps its top-level statements, in order, with the same structure, and the
+ * covered function declarations stay the same wherever they live; for
+ * `probe`, the check's probe prints the same lines on a checkout of the base
+ * and of HEAD. The check's own output never enters the decision, so a model
+ * that cannot see the code still gates it.
  */
 export function behaviourChange(
   repo: string,
@@ -165,18 +169,20 @@ export function behaviourChange(
 ): BehaviourChange {
   const probe =
     check.behaviour?.kind === "probe" ? check.behaviour.command : undefined;
-  const fingerprint = (sha: string) =>
+  const change =
     probe === undefined
-      ? emitFingerprint(repo, sha, check.covers)
-      : probeFingerprint(repo, probe, sha);
-  const base = fingerprint(commits.baseSha);
-  const head = fingerprint(commits.headSha);
-  const removed = difference(base, head);
-  const added = difference(head, base);
+      ? compareEmit(
+          emitFingerprint(repo, commits.baseSha, check.covers),
+          emitFingerprint(repo, commits.headSha, check.covers),
+        )
+      : compareProbe(
+          probeFingerprint(repo, probe, commits.baseSha),
+          probeFingerprint(repo, probe, commits.headSha),
+        );
   return {
     method: probe === undefined ? "emit" : `probe ${probe.join(" ")}`,
-    changed: removed.length + added.length > 0,
-    removed: sample(removed),
-    added: sample(added),
+    changed: change.removed.length + change.added.length > 0,
+    removed: sample(change.removed),
+    added: sample(change.added),
   };
 }

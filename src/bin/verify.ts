@@ -100,7 +100,13 @@ function runFormal(workspace: Workspace, dir: string, all: boolean): number {
       workspace,
       state,
       check,
-      gates ? { baseSha: plan.baseSha, headSha: plan.headSha } : null,
+      gates
+        ? {
+            baseSha: plan.baseSha,
+            headSha: plan.headSha,
+            changed: plan.changed,
+          }
+        : null,
     );
     const weight = formalGate(result);
     fails ||= gates && weight.fails;

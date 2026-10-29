@@ -15,7 +15,8 @@ import {
 
 const SKILL = ".agents/skills/verify-module";
 const ADD = "export function add(a, b) {\n  return a + b;\n}\n";
-const OPS = 'export const label = "ops";\n';
+const OPS =
+  'export const label = "ops";\nexport const mark = label.toUpperCase();\n';
 
 /** A model-like check: it prints the same rule names whatever the code looks like, as long as it behaves the same. */
 const CHECK = `import { join } from "node:path";
@@ -24,18 +25,24 @@ const { add } = await import(pathToFileURL(join(process.cwd(), "src/math.js")).h
 if (add(1, 2) !== 3) {
   console.log("BROKEN AddWorks");
   process.exitCode = 1;
-}
+} else console.log("holds AddWorks");
 if (Object.is(add(-0, -0), -0)) console.log("finding NegativeZero");
+else console.log("holds NegativeZero");
 `;
+
+/** The same check after a rewrite that no longer reports the NegativeZero rule at all. */
+const CHECK_WITHOUT_RULE = CHECK.replace(/if \(Object\.is[\s\S]*$/, "");
 
 const CONFIG = `export default {
   doors: ${PUBLISH_DOORS},
   formal: [
     {
       name: "formal-add",
-      covers: ["src/math.js", "src/ops.js"],
+      covers: ["src/math.js", "src/ops.js", "src/typed.ts"],
+      files: [".agents/skills/formal-add/**"],
       command: ["node", ".agents/skills/formal-add/check.mjs"],
       violation: /^(?:finding|BROKEN) (\\w+)/gm,
+      passing: /^holds (\\w+)/gm,
     },
   ],
 };
@@ -48,6 +55,8 @@ function formalRepo(t: TestContext, head: Record<string, string>) {
     "README.md": "# Demo\n",
     "src/math.js": ADD,
     "src/ops.js": OPS,
+    "src/typed.ts":
+      "export const total = [1, 2, 3].reduce((sum, n) => sum + n, 0);\n",
     ".agents/skills/formal-add/check.mjs": CHECK,
     [`${SKILL}/verify.config.ts`]: CONFIG,
     [`${SKILL}/features/smoke.md`]: feature([], ["module-dev"]),
@@ -88,6 +97,73 @@ test("a verbatim move of covered code keeps its recorded finding as known and do
     /`formal-add` \(covers the diff, gates the verdict\): covered behaviour unchanged \(emit\): known findings NegativeZero\./,
   );
   assert.doesNotMatch(verdict, /- formal check formal-add/);
+});
+
+test("reordering the statements of a covered file fails, though the same statements remain", (t) => {
+  const { root, tmp, run } = formalRepo(t, {
+    "src/ops.js":
+      'export const mark = label.toUpperCase();\nexport const label = "ops";\n',
+  });
+  const formal = verify(root, tmp, ["formal", run]);
+  assert.equal(formal.status, 1);
+  assert.equal(
+    formal.stdout,
+    "FAIL formal-add: covered behaviour changed (emit), violated NegativeZero\n",
+  );
+});
+
+test("moving a statement to the top level of another covered file fails", (t) => {
+  const { root, tmp, run } = formalRepo(t, {
+    "src/ops.js": "export const mark = label.toUpperCase();\n",
+    "src/math.js": `export const label = "ops";\n${ADD}`,
+  });
+  const formal = verify(root, tmp, ["formal", run]);
+  assert.equal(formal.status, 1);
+  assert.equal(
+    formal.stdout,
+    "FAIL formal-add: covered behaviour changed (emit), violated NegativeZero\n",
+  );
+});
+
+test("a reformat with redundant parentheses, other quotes and other line breaks keeps the recorded finding as known", (t) => {
+  const { root, tmp, run } = formalRepo(t, {
+    "src/math.js":
+      "export function add(\n  a,\n  b,\n) {\n  return (a + b);\n}\n",
+    "src/ops.js":
+      "export const label = ('ops');\nexport const mark =\n  label.toUpperCase();\n",
+  });
+  const formal = verify(root, tmp, ["formal", run]);
+  assert.equal(formal.status, 0, formal.stdout + formal.stderr);
+  assert.equal(
+    formal.stdout,
+    "PASS formal-add: covered behaviour unchanged (emit): known findings NegativeZero\n",
+  );
+});
+
+test("a type-only edit that the formatter reflows keeps the recorded finding as known", (t) => {
+  const { root, tmp, run } = formalRepo(t, {
+    "src/typed.ts":
+      "export const total: Readonly<Record<string, number>>[number] = [\n  1, 2, 3,\n].reduce(\n  (sum: number, n: number) => sum + n,\n  0,\n);\n",
+  });
+  const formal = verify(root, tmp, ["formal", run]);
+  assert.equal(formal.status, 0, formal.stdout + formal.stderr);
+  assert.equal(
+    formal.stdout,
+    "PASS formal-add: covered behaviour unchanged (emit): known findings NegativeZero\n",
+  );
+});
+
+test("a rule the base broke that the check no longer reports at all fails instead of counting as fixed", (t) => {
+  const { root, tmp, run } = formalRepo(t, {
+    "src/math.js": ADD.replace("a + b", "a + b + 0"),
+    ".agents/skills/formal-add/check.mjs": CHECK_WITHOUT_RULE,
+  });
+  const formal = verify(root, tmp, ["formal", run]);
+  assert.equal(formal.status, 1);
+  assert.equal(
+    formal.stdout,
+    "FAIL formal-add: rules the base broke are absent at HEAD: NegativeZero\n",
+  );
 });
 
 test("a seeded behaviour change that breaks a rule fails, whatever the base reported", (t) => {
