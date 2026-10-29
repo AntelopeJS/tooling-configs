@@ -160,7 +160,7 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
         current,
         current === undefined ? [] : ciNodeCallers(current),
         current === undefined ? [] : ciRenovateSyncCallers(current),
-        context.docs?.docsFiles,
+        context.docs,
       ),
       notes: [],
     }),

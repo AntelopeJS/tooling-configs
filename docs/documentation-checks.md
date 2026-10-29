@@ -72,9 +72,11 @@ markers stays; delete hand-written compatibility prose yourself. Do not edit the
 block: `antelopejs-sync --check` reports it as drift.
 
 Sync also sets the `docs-files` input of every job calling `ci-node.yml` in
-`.github/workflows/ci.yml` to the root `README.md` and `docs`, and the
-`README.md` and `docs` of each package with a block, listing only paths that
-exist. Its other inputs stay as they are.
+`.github/workflows/ci.yml`. It lists the existing `README.md` and `docs` of the
+root and of every workspace package that is not private, then keeps the paths
+already listed there that still exist, so hand-added entries such as a site's
+content directory stay covered. A listed path that no longer exists is dropped.
+The caller's other inputs stay as they are.
 
 ## Declare compatibility explicitly
 

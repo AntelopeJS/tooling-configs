@@ -130,6 +130,8 @@ export interface DocsPlan {
   readmes: { path: string; current: string | undefined; content: string }[];
   docsFiles: string[];
   errors: string[];
+  /** Whether a path relative to the repository root exists, for keeping hand-listed `docs-files` entries. */
+  exists: (path: string) => boolean;
 }
 
 function relative(directory: string, name: string): string {
@@ -306,7 +308,8 @@ function readLock(root: string): Document | undefined {
 
 /**
  * Plans the docs-compat block of the root and of every workspace package that is not private and declares an
- * `@antelopejs/*` peer, runtime or optional dependency, and the `docs-files` lines covering the root and those packages.
+ * `@antelopejs/*` peer, runtime or optional dependency, and the `docs-files` lines covering the root and every workspace
+ * package that is not private.
  * Tested with comes from pnpm-lock.yaml; other package managers get a dash.
  */
 export function planDocs(root: string, manager: PackageManager): DocsPlan {
@@ -315,13 +318,19 @@ export function planDocs(root: string, manager: PackageManager): DocsPlan {
     const manifest = directory ? readManifest(root, directory) : rootManifest;
     return {
       directory,
+      published: !directory || !manifest.private,
       ranges: manifest.private
         ? new Map<string, string>()
         : declaredRanges(manifest),
     };
   });
   const qualifying = packages.filter(({ ranges }) => ranges.size > 0);
-  const plan: DocsPlan = { readmes: [], docsFiles: [], errors: [] };
+  const plan: DocsPlan = {
+    readmes: [],
+    docsFiles: [],
+    errors: [],
+    exists: (path) => existsSync(join(root, path)),
+  };
   const lock = manager === "pnpm" ? readLock(root) : undefined;
   if (manager === "pnpm" && qualifying.length && !lock) {
     plan.errors.push(
@@ -329,11 +338,11 @@ export function planDocs(root: string, manager: PackageManager): DocsPlan {
     );
     return plan;
   }
-  for (const { directory, ranges } of packages) {
+  for (const { directory, ranges, published } of packages) {
     const readme = relative(directory, "README.md");
     const docs = relative(directory, "docs");
     const generated = ranges.size > 0;
-    if (directory && !generated) continue;
+    if (!published) continue;
     if (generated || existsSync(join(root, readme)))
       plan.docsFiles.push(readme);
     if (isDirectory(root, docs)) plan.docsFiles.push(docs);
