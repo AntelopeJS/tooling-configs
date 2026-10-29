@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { coveredLimits } from "./config-scopes.ts";
 import { changedFiles } from "./files.ts";
 import { renamedPaths } from "./renames.ts";
-import { stagedAdditions } from "./staged-ratchet.ts";
+import { stagedAdditions } from "./staged-additions.ts";
 import { checkStagedPolicy } from "./suppression-policy.ts";
 import {
   configKey,

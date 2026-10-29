@@ -19,9 +19,9 @@ function git(root: string, args: string[], env: NodeJS.ProcessEnv, input = "") {
   });
 }
 
-function headEntries(root: string): Map<string, string> {
+function revisionEntries(root: string, revision: string): Map<string, string> {
   const entries = new Map<string, string>();
-  for (const entry of git(root, ["ls-tree", "-r", "-z", "HEAD"], {}).split(
+  for (const entry of git(root, ["ls-tree", "-r", "-z", revision], {}).split(
     "\0",
   )) {
     const tab = entry.indexOf("\t");
@@ -32,18 +32,20 @@ function headEntries(root: string): Map<string, string> {
 
 /**
  * Runs `use` on a checkout of the index in which each of `paths` holds its
- * HEAD content, or is absent when HEAD does not have it, so the files are
- * linted under the staged configuration. The checkout is deleted afterwards.
+ * content at `revision`, or is absent when `revision` does not have it or does
+ * not exist, so the files are linted under the staged configuration. The
+ * checkout is deleted afterwards.
  */
 export function withPreviousTree<Result>(
   root: string,
+  revision: string,
   paths: string[],
   use: (tree: string) => Result,
 ): Result {
   const scratch = mkdtempSync(join(tmpdir(), "antelopejs-previous."));
   try {
-    const hasHead =
-      spawnSync("git", ["rev-parse", "--verify", "HEAD"], {
+    const exists =
+      spawnSync("git", ["rev-parse", "--verify", `${revision}^{commit}`], {
         cwd: root,
         stdio: "ignore",
       }).status === 0;
@@ -57,7 +59,9 @@ export function withPreviousTree<Result>(
       index,
     );
     const env = { GIT_INDEX_FILE: index };
-    const head = hasHead ? headEntries(root) : new Map<string, string>();
+    const head = exists
+      ? revisionEntries(root, revision)
+      : new Map<string, string>();
     const restored = paths.filter((path) => head.has(path));
     const removed = paths.filter((path) => !head.has(path));
     if (restored.length)
