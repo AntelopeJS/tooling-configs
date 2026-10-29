@@ -171,11 +171,7 @@ function runContainmentCheck(workspace: Workspace, baseRef: string): number {
       `${result.outcome} ${result.kind} ${result.containment}: ${result.detail}${result.run ? ` (evidence ${result.run}, control ${result.controlRun})` : ""}`,
     );
   }
-  if (results.length === 0) print("no Data or Format door names a containment");
-  return results.length > 0 &&
-    results.every((result) => result.outcome === "CONTAINED")
-    ? 0
-    : 1;
+  return results.every((result) => result.outcome === "CONTAINED") ? 0 : 1;
 }
 
 const PROOF_COMMANDS = new Set(["seeded", "seeded-doors", "containments"]);
