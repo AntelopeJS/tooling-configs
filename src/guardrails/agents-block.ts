@@ -135,6 +135,10 @@ const FULL_RULES = [
   ["No dead files, exports, or dependencies", "knip"],
   ["Managed files match the pack", "`antelopejs-sync --check`"],
   ["Entry-only rules exempt no tracked outsider", "`antelopejs-sync --check`"],
+  [
+    "A DMS layer's `build/backend-boundary.ts` is the pack's plugin",
+    "`antelopejs-sync --check`",
+  ],
   ["A test names the wrong implementation it catches", "review; no tool"],
 ] as const;
 
