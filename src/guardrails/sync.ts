@@ -53,6 +53,7 @@ import {
   mutationCaller,
 } from "./ci-workflow.ts";
 import { checkEntryOnlyConfiguration } from "./entry-only.ts";
+import { planDocs, type DocsPlan } from "./docs-compat.ts";
 import {
   applyVerifyActions,
   planVerify,
@@ -71,6 +72,8 @@ export interface RepoContext extends AgentsBlockContext {
   packageName: string;
   /** Whether sync owns .github/workflows/ci.yml: it exists, or no other workflow runs the checks. */
   managesCi: boolean;
+  /** The docs-compat READMEs and caller `docs-files` lines, planned under the full profile only. */
+  docs: DocsPlan | undefined;
 }
 
 interface ArtifactContent {
@@ -152,11 +155,12 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
   {
     path: CI_PATH,
     profiles: ["full", "template"],
-    desired: (current) => ({
+    desired: (current, context) => ({
       content: ciWorkflow(
         current,
         current === undefined ? [] : ciNodeCallers(current),
         current === undefined ? [] : ciRenovateSyncCallers(current),
+        context.docs?.docsFiles,
       ),
       notes: [],
     }),
@@ -285,7 +289,24 @@ function planSync(
       });
     }
   }
+  plan.push(...plannedDocs(context.docs));
   return plan;
+}
+
+function plannedDocs(docs: DocsPlan | undefined): PlannedArtifact[] {
+  if (!docs) return [];
+  return [
+    ...docs.errors.map((message): PlannedArtifact => ({
+      kind: "error",
+      path: "README.md",
+      message,
+    })),
+    ...docs.readmes.map(({ path, current, content }): PlannedArtifact =>
+      current === content
+        ? { kind: "unchanged", path }
+        : { kind: "write", path, content, mode: undefined },
+    ),
+  ];
 }
 
 function repositorySnapshot(root: string) {
@@ -341,10 +362,11 @@ function repositoryContext(
   const manifest = parseManifest(current.get("package.json") ?? "{}");
   const lint = PRESET_CONFIGS[0];
   const desiredLint = current.get(lint.path) ?? lint.content;
+  const manager = packageManager(manifest);
   return {
     profile,
     ratchet: current.has(CEILINGS_FILE),
-    manager: packageManager(manifest),
+    manager,
     versions: toolingVersions(),
     tools: repositoryTools(manifest),
     typeAware: /\btypeAware["']?\s*:\s*true\b/.test(desiredLint),
@@ -365,6 +387,10 @@ function repositoryContext(
     glossary: ["GLOSSARY.md", "docs/GLOSSARY.md"].find((file) =>
       existsSync(join(root, file)),
     ),
+    docs:
+      profile === "full" && current.has("package.json")
+        ? planDocs(root, manager)
+        : undefined,
   };
 }
 

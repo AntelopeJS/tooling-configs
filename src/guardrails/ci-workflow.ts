@@ -1,6 +1,7 @@
 import {
   isMap,
   isScalar,
+  Scalar,
   isPair,
   isSeq,
   parseDocument,
@@ -229,6 +230,47 @@ function skipRenovateSync(document: Document, job: YAMLMap): boolean {
   return true;
 }
 
+function lines(text: string): string[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function setDocsFiles(
+  document: Document,
+  job: YAMLMap,
+  files: readonly string[],
+): boolean {
+  const inputs = job.get("with", true);
+  const current = isMap(inputs) ? inputs.get("docs-files", true) : undefined;
+  if (
+    isScalar(current) &&
+    lines(String(current.value)).join("\n") === files.join("\n")
+  )
+    return false;
+  const value = new Scalar(`${files.join("\n")}\n`);
+  value.type = Scalar.BLOCK_LITERAL;
+  if (isMap(inputs)) inputs.set("docs-files", value);
+  else job.set("with", document.createNode({ "docs-files": value }));
+  return true;
+}
+
+function setCallersDocsFiles(
+  document: Document,
+  jobs: YAMLMap,
+  callers: readonly { id: string }[],
+  files: readonly string[] = [],
+): boolean {
+  let changed = false;
+  if (!files.length) return false;
+  for (const { id } of callers) {
+    const job = jobs.get(id, true);
+    if (isMap(job)) changed = setDocsFiles(document, job, files) || changed;
+  }
+  return changed;
+}
+
 function canonicalSyncJob(): Node {
   const job = parseDocument(CI_CALLER).getIn(
     ["jobs", RENOVATE_SYNC_JOB_ID],
@@ -280,11 +322,13 @@ function assertNoClash(
  * dispatchable and read-only, with the Renovate sync it would otherwise run turned off. The write permissions the sync
  * needs to push and dispatch the caller live on a separate job calling ci-renovate-sync.yml, which is added when missing.
  * No `uses:` ref is ever rewritten. A workflow with no caller job is repository-specific CI and is left as it is.
+ * When `docsFiles` is given and not empty, every caller's `docs-files` input lists exactly those paths.
  */
 export function ciWorkflow(
   current: string | undefined,
   callers: { id: string; named: boolean }[],
   syncCallers: { id: string }[],
+  docsFiles?: readonly string[],
 ): string {
   if (current === undefined) return CI_CALLER;
   if (!callers.length) return current;
@@ -301,7 +345,7 @@ export function ciWorkflow(
     ({ key }) => isScalar(key) && key.value === caller.id,
   );
   if (!pair || !isMap(pair.value)) return current;
-  let changed = false;
+  let changed = setCallersDocsFiles(document, jobs, callers, docsFiles);
   if (caller.named) {
     pair.value.delete("name");
     changed = true;

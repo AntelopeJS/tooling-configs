@@ -39,6 +39,43 @@ resolve from that config's directory, and imported packages must already exist
 (including any necessary generated declarations). The action does not install
 the consumer, build project references, or execute examples.
 
+## Generated compatibility block
+
+`antelopejs-sync` (full profile) writes the compatibility table of every package
+that is not private and declares an `@antelopejs/*` peer, runtime or optional
+dependency: the root package and each workspace package (pnpm-workspace.yaml
+`packages`, else package.json `workspaces`). The block lives in the package's
+`README.md`:
+
+```md
+<!-- antelopejs-docs-compat:start -->
+
+| Package                      | Supported        | Tested with |
+| ---------------------------- | ---------------- | ----------- |
+| `@antelopejs/interface-core` | `>=0.2.4 <1.0.0` | `0.3.0`     |
+
+<!-- antelopejs-docs-compat:end -->
+```
+
+Supported is the declared range, taken from `peerDependencies` before
+`dependencies` before `optionalDependencies`. Tested with is the version
+`pnpm-lock.yaml` resolves for that package; a workspace link shows the linked
+package's version, and a dependency the lockfile does not resolve shows `—`.
+Without `pnpm-lock.yaml` a pnpm repository fails sync until `pnpm install` writes
+it; other package managers get `—` in every Tested with cell.
+
+Sync replaces the block between its markers. A README without them gets the
+block in place of its first `<!-- docs-compat: ./package.json#... -->` table
+(other such tables are removed), else right under its `## Compatibility`
+heading, else in a new `## Compatibility` section at the end. Prose outside the
+markers stays; delete hand-written compatibility prose yourself. Do not edit the
+block: `antelopejs-sync --check` reports it as drift.
+
+Sync also sets the `docs-files` input of every job calling `ci-node.yml` in
+`.github/workflows/ci.yml` to the root `README.md` and `docs`, and the
+`README.md` and `docs` of each package with a block, listing only paths that
+exist. Its other inputs stay as they are.
+
 ## Declare compatibility explicitly
 
 Put a `docs-compat` comment immediately before a top-level Markdown table with
