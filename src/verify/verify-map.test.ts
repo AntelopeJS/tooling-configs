@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -152,4 +153,15 @@ test("every shell block of every shared skill is one antelopejs-verify command p
         `${kind}: ${line}`,
       );
   }
+});
+
+test("seeded leaves no scratch worktree behind when a patch does not apply", (t) => {
+  const { root, tmp } = mapRepo(t);
+  const seeded = verify(root, tmp, ["seeded", "core"]);
+  assert.equal(seeded.status, 1);
+  const worktrees = execFileSync("git", ["worktree", "list", "--porcelain"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(worktrees.match(/^worktree /gm)?.length, 1, worktrees);
 });

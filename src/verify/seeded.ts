@@ -56,20 +56,25 @@ function prepareWorktree(
     ["worktree", "add", "--detach", "--force", worktree, "HEAD"],
     { cwd: workspace.root, stdio: "ignore" },
   );
-  const skill = join(worktree, relative(workspace.root, workspace.skill));
-  rmSync(skill, { recursive: true, force: true });
-  cpSync(workspace.skill, skill, { recursive: true, verbatimSymlinks: true });
-  if (feature !== null)
-    inTree(worktree, "git", [
-      "apply",
-      join(skill, "seeded-breaks", `${feature}.patch`),
+  try {
+    const skill = join(worktree, relative(workspace.root, workspace.skill));
+    rmSync(skill, { recursive: true, force: true });
+    cpSync(workspace.skill, skill, { recursive: true, verbatimSymlinks: true });
+    if (feature !== null)
+      inTree(worktree, "git", [
+        "apply",
+        join(skill, "seeded-breaks", `${feature}.patch`),
+      ]);
+    inTree(worktree, "pnpm", [
+      "install",
+      "--frozen-lockfile",
+      "--prefer-offline",
+      "--ignore-scripts",
     ]);
-  inTree(worktree, "pnpm", [
-    "install",
-    "--frozen-lockfile",
-    "--prefer-offline",
-    "--ignore-scripts",
-  ]);
+  } catch (error) {
+    removeWorktree(workspace, worktree);
+    throw error;
+  }
   return worktree;
 }
 
