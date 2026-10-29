@@ -249,6 +249,11 @@ test("a stamped comment-proof block passes as printed and fails once edited by h
   assert.equal(proof.status, 0, proof.stdout + proof.stderr);
   const body = `## Proofs\n\n${proof.stdout}\n`;
   assert.deepEqual(checkBody(root, body), []);
+  const indented = proof.stdout.replaceAll(/^(?=.)/gmu, "\t");
+  assert.deepEqual(
+    checkBody(root, `- Output:\n\n\t\`\`\`\n${indented}\t\`\`\`\n`),
+    [],
+  );
   const edited = body.replace(
     "| Lint suppressions, all rules | 1 | 1 |",
     "| Lint suppressions, all rules | 1 | 0 |",
