@@ -269,6 +269,54 @@ test("a member type changing inside a declaration a function answers is a change
   );
 });
 
+const TYPES_MANIFEST = { name: "a", types: "index.d.ts" };
+
+function changedPaths(before: string, after: string): string[] {
+  const published = surfaceOf(TYPES_MANIFEST, [["index.d.ts", before]]);
+  const head = surfaceOf(TYPES_MANIFEST, [["index.d.ts", after]]);
+  const diff = diffSurface(
+    new Map(Object.entries(published)),
+    new Map(Object.entries(head)),
+  );
+  return diff.changed.map((entry) => entry.path);
+}
+
+test("a member type changing in a base interface is a changed function that answers the derived interface", () => {
+  const source = (type: string) =>
+    `interface Base { id: ${type}; }\ninterface Row extends Base { name: string; }\nexport declare function row(): Row;\n`;
+  assert.deepEqual(changedPaths(source("number"), source("string")), [".:row"]);
+});
+
+test("a constraint changing on a generic parameter is a changed function", () => {
+  const source = (type: string) =>
+    `interface Shape { size: ${type}; }\nexport declare function measure<T extends Shape>(value: T): T;\n`;
+  assert.deepEqual(changedPaths(source("number"), source("string")), [
+    ".:measure",
+  ]);
+});
+
+test("an enum member value changing is a changed function that takes the member", () => {
+  const source = (value: number) =>
+    `export declare enum Mode { Fast = ${value}, Slow = 5 }\nexport declare function run(mode: Mode.Fast): void;\n`;
+  assert.deepEqual(changedPaths(source(1), source(2)), [".:run"]);
+});
+
+test("two declarations of one name in different modules are both reached", () => {
+  const source = () =>
+    `import type { Item as Left } from "./left";\nimport type { Item as Right } from "./right";\nexport declare function pair(left: Left, right: Right): void;\n`;
+  const published = surfaceOf(TYPES_MANIFEST, [
+    ["index.d.ts", source()],
+    ["left.d.ts", "export interface Item { a: number; }\n"],
+    ["right.d.ts", "export interface Item { b: number; }\n"],
+  ]);
+  const head = surfaceOf(TYPES_MANIFEST, [
+    ["index.d.ts", source()],
+    ["left.d.ts", "export interface Item { a: number; }\n"],
+    ["right.d.ts", "export interface Item { b: string; }\n"],
+  ]);
+  assert.notEqual(head[".:pair"], published[".:pair"]);
+});
+
 test("diffSurface lists added, removed and changed paths sorted", () => {
   const published = new Map([
     ["b", "() => void"],

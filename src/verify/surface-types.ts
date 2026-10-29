@@ -37,7 +37,7 @@ function publicPart(declaration: ts.Declaration): ts.Node {
 
 /** Walks the types a set of signatures reaches and prints every declaration of the package among them. */
 class DeclarationWalk {
-  readonly found = new Map<string, string>();
+  private readonly declarations = new Map<ts.Symbol, string>();
   private readonly seen = new Set<ts.Type>();
   private readonly printer = ts.createPrinter({ removeComments: true });
   private readonly checker: ts.TypeChecker;
@@ -51,7 +51,13 @@ class DeclarationWalk {
     this.isLocal = isLocal;
   }
 
+  get found(): string[] {
+    return [...this.declarations.values()];
+  }
+
   signature(signature: ts.Signature): void {
+    for (const parameter of signature.getTypeParameters() ?? [])
+      this.type(parameter);
     for (const parameter of signature.getParameters())
       this.type(this.checker.getTypeOfSymbol(parameter));
     this.type(signature.getReturnType());
@@ -59,7 +65,7 @@ class DeclarationWalk {
 
   private record(symbol: ts.Symbol): void {
     if (
-      this.found.has(symbol.name) ||
+      this.declarations.has(symbol) ||
       (symbol.flags & NAMED) === 0 ||
       !this.isLocal(symbol)
     )
@@ -74,7 +80,26 @@ class DeclarationWalk {
         .replace(/\s+/g, " ")
         .replace(/^(?:export )?(?:declare )?/, ""),
     );
-    this.found.set(symbol.name, texts.join(" "));
+    this.declarations.set(symbol, texts.join(" "));
+    for (const declaration of symbol.declarations ?? [])
+      this.generics(declaration);
+  }
+
+  private generics(declaration: ts.Declaration): void {
+    if (
+      ts.isClassDeclaration(declaration) ||
+      ts.isInterfaceDeclaration(declaration) ||
+      ts.isTypeAliasDeclaration(declaration)
+    )
+      for (const parameter of declaration.typeParameters ?? [])
+        this.type(this.checker.getTypeAtLocation(parameter));
+    if (
+      ts.isClassDeclaration(declaration) ||
+      ts.isInterfaceDeclaration(declaration)
+    )
+      for (const clause of declaration.heritageClauses ?? [])
+        for (const base of clause.types)
+          this.type(this.checker.getTypeAtLocation(base));
   }
 
   private members(type: ts.Type): void {
@@ -94,6 +119,11 @@ class DeclarationWalk {
       for (const part of type.types) this.type(part);
       return;
     }
+    if (type.flags & ts.TypeFlags.TypeParameter) {
+      this.type(type.getConstraint() ?? type);
+      this.type(type.getDefault() ?? type);
+      return;
+    }
     if (type.aliasSymbol) this.record(type.aliasSymbol);
     for (const argument of type.aliasTypeArguments ?? []) this.type(argument);
     if (isObjectType(type) && isReference(type))
@@ -101,6 +131,12 @@ class DeclarationWalk {
         this.type(argument);
     const symbol = type.getSymbol();
     if (symbol === undefined || !this.isLocal(symbol)) return;
+    for (const declaration of symbol.declarations ?? []) {
+      const owner = ts.isEnumMember(declaration)
+        ? this.checker.getSymbolAtLocation(declaration.parent.name)
+        : undefined;
+      if (owner) this.record(owner);
+    }
     this.record(symbol);
     this.members(type);
   }
@@ -119,7 +155,5 @@ export function referencedDeclarations(
 ): string[] {
   const walk = new DeclarationWalk(checker, isLocal);
   for (const signature of signatures) walk.signature(signature);
-  return [...walk.found]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([, text]) => text);
+  return walk.found.sort((left, right) => left.localeCompare(right));
 }
