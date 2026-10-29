@@ -179,6 +179,7 @@ pnpm install
 | `CLAUDE.md`                                             | `@AGENTS.md`                                                                                                                                                                                                                                 |
 | `guardrails.ratchet.json`                               | Records non-empty debt on first adoption, before `sync:check` exists                                                                                                                                                                         |
 | `guardrails.suppressions.json`                          | Records the current suppression counts when the file is missing; restores the committed file instead when HEAD has one; otherwise only adds `config` at today's counts when the file predates it                                             |
+| `<layer>/build/backend-boundary.ts`                     | Where a DMS frontend layer tracks one, restores the pack's backend boundary plugin for the package that holds the layer. A formatter's rewrite is not drift; any other edit is                                                               |
 
 `--profile template` writes only the three preset configs and a user-facing `AGENTS.md` block, for template repositories. `antelopejs-sync --check` writes nothing and exits 1 on any drift; `pnpm run checks` runs it.
 

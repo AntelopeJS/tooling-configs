@@ -52,6 +52,7 @@ import {
   MUTATION_PATH,
   mutationCaller,
 } from "./ci-workflow.ts";
+import { backendBoundaryArtifacts } from "./backend-boundary.ts";
 import { checkEntryOnlyConfiguration } from "./entry-only.ts";
 import { planDocs, type DocsPlan } from "./docs-compat.ts";
 import {
@@ -444,7 +445,8 @@ export function syncRepository(
     profile,
     verify.verificationSkill,
   );
-  let plan = planSync(current, modes, context);
+  const boundaries = backendBoundaryArtifacts(root);
+  let plan = [...planSync(current, modes, context), ...boundaries];
   const errors = plan
     .filter((artifact) => artifact.kind === "error")
     .map(({ message }) => message);
@@ -469,7 +471,7 @@ export function syncRepository(
     );
     context.ratchet = !isRetired(baseline);
     context.baseline = formatCeilings(baseline);
-    plan = planSync(current, modes, context);
+    plan = [...planSync(current, modes, context), ...boundaries];
   }
   const writes = plan.filter(
     (artifact) => artifact.kind === "write" || artifact.kind === "migrated",
