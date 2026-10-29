@@ -114,9 +114,10 @@ function sortedCounts(counts: Record<string, number>): Record<string, number> {
 
 /** Serializes ceilings with sorted keys, so rewriting an unchanged file is a no-op. */
 export function formatCeilings(ceilings: Ceilings): string {
-  const sorted: Ceilings = { rules: {}, oversizeFiles: {} };
-  if (ceilings.pack !== undefined) sorted.pack = ceilings.pack;
-  sorted.rules = sortedCounts(ceilings.rules);
-  sorted.oversizeFiles = sortedCounts(ceilings.oversizeFiles);
+  const sorted = {
+    pack: ceilings.pack,
+    rules: sortedCounts(ceilings.rules),
+    oversizeFiles: sortedCounts(ceilings.oversizeFiles),
+  };
   return `${JSON.stringify(sorted, null, 2)}\n`;
 }

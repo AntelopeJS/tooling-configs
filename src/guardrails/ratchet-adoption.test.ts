@@ -97,6 +97,7 @@ test("#69 upgrade: ratchet --update records the counts of the rules the pack ena
     /Adopted typescript\/no-unsafe-assignment: 2, enabled by the pack in 0\.2\.17\./,
   );
   const recorded = read(root, "guardrails.ratchet.json");
+  assert.match(recorded, /^\{\n {2}"pack": "0\.2\.17",\n {2}"rules": \{/);
   const again = ratchet(root, "--update");
   assert.equal(again.status, 0, again.stderr);
   assert.doesNotMatch(again.stdout, /Adopted/);
