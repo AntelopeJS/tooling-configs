@@ -25,6 +25,7 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 | `./knip`           | `import { antelopeKnipConfig } from "@antelopejs/tooling-configs/knip"`   | Knip for AntelopeJS modules                                                                             |
 | `./oxc/anti-slop`  | Loaded by the oxlint preset as a JS plugin                                | The vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules                                   |
 | `./oxc/guardrails` | Loaded by the oxlint preset as a JS plugin                                | The `antelopejs` comment and test-quality rules                                                         |
+| `./verify`         | `import type { VerifyConfig } from "@antelopejs/tooling-configs/verify"`  | Types and check helpers for a shared verification skill's `verify.config.ts`                            |
 | bin                | `antelopejs-sync`                                                         | Writes the guardrail pack into a repository; `--check` reports drift                                    |
 | bin                | `antelopejs-checks`                                                       | Runs every check and prints only the failures                                                           |
 | bin                | `antelopejs-ratchet`                                                      | Fails when recorded debt grows; `--update` lowers the record                                            |
@@ -34,6 +35,7 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 | bin                | `antelopejs-comment-proof <base-ref>`                                     | Compares comment-free JavaScript emit against committed HEAD                                            |
 | bin                | `antelopejs-check-interface-ranges`                                       | Fails on interface ranges that break module startup                                                     |
 | bin                | `antelopejs-garden [--json] [--apply-pauses]`                             | The Gardener's scans of the organization through the GitHub API and npm                                 |
+| bin                | `antelopejs-verify <command>`                                             | The harness of the shared `verify-interface`, `verify-module` and `verify-template` skills              |
 
 ## antelopejs-garden
 
@@ -44,6 +46,12 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 - `--apply-pauses` sets the repository variable `NEXT_AUTOMERGE` to `shadow` on repositories where it is `on`, when `checks` is red on `next`, the ratchet file is back on a Clean repository, or governance drifted. It never sets `on` and writes nothing else.
 
 `antelopejs-sync` (full profile) writes the weekly mutation caller `.github/workflows/mutation.yml`, and both profiles keep the shared CI caller on the job id `ci`, so the check is reported as `ci / checks`.
+
+## Shared verification skills
+
+`antelopejs-sync` writes one shared verification skill into a repository: `verify-interface` for an interface, `verify-module` for an implementation module (inferred from `antelopeJs.implements`) and `verify-template` under `--profile template`. Pass `--verify interface|module|template` to choose, or `--verify custom` for a repository that keeps its own `.agents/skills/verify-<repo>/`. Sync writes `SKILL.md` and `package.json` in `.agents/skills/verify-<kind>/` with a `.claude/skills/verify-<kind>` link, and `--check` reports them as drift. It never touches the repository's own layer beside them: `verify.config.ts`, `features/`, `seeded-breaks/` and `seeded-doors/`.
+
+Every deterministic step of a verification is an `antelopejs-verify` command: `map`, `plan`, `new`, `doctor`, `journey`, `formal`, `doors`, `seeded`, `seeded-doors`, `clean`, `verdict` and `publish`. The synced `SKILL.md` documents each one for the agent that verifies.
 
 ## Install
 
