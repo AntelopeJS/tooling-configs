@@ -109,9 +109,10 @@ function inRanges(
 
 /**
  * Fails each ceilinged rule whose findings in the staged files outnumber both
- * what the same files, rename sources and deleted files had at HEAD and what
- * they had at the merge-base of HEAD with the pull request base
- * (`GITHUB_BASE_REF`, else `origin/HEAD`); without a merge-base, HEAD alone.
+ * what the same files, rename sources and deleted files had at HEAD and the
+ * staged findings on lines unchanged since the merge-base of HEAD with the pull
+ * request base (`GITHUB_BASE_REF`, else `origin/HEAD`), up to the count those
+ * files had there; without a merge-base, HEAD alone.
  * The count is net across the staged files, so a block moved between them, a
  * legacy line that is reformatted, a line restored to its base form, or an
  * edit of a file a legacy finding moved into earlier on the branch passes; a
@@ -140,10 +141,19 @@ export function stagedRatchet(root: string, files?: string[]): string[] {
   const failures: string[] = [];
   for (const [rule, total] of countByRule(after)) {
     const head = atHead.get(rule) ?? 0;
-    const merged = atBase === undefined ? undefined : (atBase.get(rule) ?? 0);
-    const rise = total - Math.max(head, merged ?? 0);
-    if (rise <= 0) continue;
     const matches = after.filter((diagnostic) => diagnostic.rule === rule);
+    const kept =
+      atBase === undefined || baseAdditions === undefined
+        ? undefined
+        : Math.min(
+            atBase.get(rule) ?? 0,
+            matches.filter(
+              ({ file, line }) =>
+                line !== undefined && !inRanges(baseAdditions, file, line),
+            ).length,
+          );
+    const rise = total - Math.max(head, kept ?? 0);
+    if (rise <= 0) continue;
     const added = matches.filter(
       ({ file, line }) =>
         line !== undefined &&
@@ -151,9 +161,9 @@ export function stagedRatchet(root: string, files?: string[]): string[] {
         (baseAdditions === undefined || inRanges(baseAdditions, file, line)),
     );
     const counts =
-      merged === undefined || base.revision === undefined
+      kept === undefined || base.revision === undefined
         ? `${head} at HEAD`
-        : `${head} at HEAD, ${merged} at ${base.label}`;
+        : `${head} at HEAD, ${kept} unchanged since ${base.label}`;
     failures.push(
       `${rule}: this commit adds ${rise} to the staged files (${counts}, ${total} staged); the ceiling covers only legacy findings.`,
       ...(added.length ? added : matches).map(
