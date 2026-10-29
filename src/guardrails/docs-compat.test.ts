@@ -142,7 +142,10 @@ importers:
 const DOCS_INPUTS = `      renovate-sync: false
       # The interface examples compile against this project.
       docs-typescript-project: packages/a/tsconfig.json
-      docs-files: README.md
+      docs-files: |
+        README.md
+        site/docs
+        gone/docs
       extra-commands: |
         pnpm --dir packages/a check
 `;
@@ -219,6 +222,8 @@ function workspace(t: TestContext): string {
     }),
   );
   put(root, "packages/c/README.md", "# C\n");
+  put(root, "packages/c/docs/guide.md", "# Guide\n");
+  put(root, "site/docs/index.md", "# Site\n");
   put(
     root,
     "packages/d/package.json",
@@ -242,10 +247,13 @@ function workspace(t: TestContext): string {
 const DOCS_FILES = `README.md
 packages/a/README.md
 packages/a/docs
+packages/b/README.md
+packages/b/docs
 packages/d/README.md
+site/docs
 `;
 
-test("sync writes the block of every qualifying workspace package and the caller's docs-files, and --check reports both without writing", (t) => {
+test("sync writes the block of every qualifying workspace package, lists every published package's docs in docs-files while keeping existing hand entries, and --check reports both without writing", (t) => {
   const root = workspace(t);
   const before = ["packages/a/README.md", ".github/workflows/ci.yml"].map(
     (path) => read(root, path),
