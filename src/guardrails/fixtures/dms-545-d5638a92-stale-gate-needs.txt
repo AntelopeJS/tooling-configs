@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: AntelopeJS/.github/.github/workflows/ci-node.yml@v1
+    with:
+      docs-files: |
+        README.md
+        packages/dms/README.md
+      extra-commands: |
+        pnpm --dir packages/interface-dms check:exports
+      renovate-sync: false
+    permissions:
+      contents: read
+
+  backend:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [unit, integration]
+    steps:
+      - uses: actions/checkout@v4
+      - run: pnpm --dir packages/dms test:${{ matrix.suite }}
+
+  docs-playground:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f Dockerfile.playground -t dms-playground:ci .
+
+  ubuntu:
+    if: always()
+    needs:
+      [
+        ci,
+        backend,
+        docs-playground,
+      ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - if: >-
+          contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || needs.checks.result == 'skipped' || needs.backend.result == 'skipped' || (github.event_name != 'pull_request' && needs.docs-playground.result == 'skipped')
+        run: exit 1
+  renovate-sync:
+    if: >-
+      github.event_name == 'pull_request'
+      && startsWith(github.head_ref, 'renovate/')
+      && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+      actions: write
+    uses: AntelopeJS/.github/.github/workflows/ci-renovate-sync.yml@v1
