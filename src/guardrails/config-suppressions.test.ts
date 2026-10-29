@@ -441,3 +441,75 @@ test("widening by renaming src/test/** to src/** in the config and the budget st
     /raises lint config rule-off `typescript\/unbound-method for src\/\*\*` from 0 on the base to 1\./,
   );
 });
+
+const ROOT_PRESET =
+  'import type {} from "@antelopejs/tooling-configs/oxc/lint";\n';
+const NESTED_OFF = 'export default { categories: { correctness: "off" } };\n';
+const VUE_OFF =
+  'export default { overrides: [{ files: ["**/*.vue"], categories: { correctness: "off" } }] };\n';
+
+const NESTED_MOVES: [string, string, string, string][] = [
+  [
+    "to the root config's top level, keeping the bare scope",
+    NESTED_OFF,
+    ROOT_PRESET + NESTED_OFF,
+    "*",
+  ],
+  [
+    "to a narrower-looking root override for src/**",
+    NESTED_OFF,
+    `${ROOT_PRESET}export default { overrides: [{ files: ["src/**"], categories: { correctness: "off" } }] };\n`,
+    "src/**",
+  ],
+  [
+    "to a root override with the same glob text",
+    VUE_OFF,
+    ROOT_PRESET + VUE_OFF,
+    "**/*.vue",
+  ],
+];
+
+for (const [move, nested, moved, scope] of NESTED_MOVES)
+  test(`cloud frontend-vue: moving a nested config's rule-off ${move} widens it and fails, staged, full and --base`, (t) => {
+    const root = adoptedRepo(t, {
+      "oxlint.config.ts": `${ROOT_PRESET}export default {};\n`,
+      "frontend-vue/oxlint.config.ts": nested,
+    });
+    assert.equal(
+      Object.keys(JSON.parse(read(root, "guardrails.suppressions.json")).config)
+        .length,
+      1,
+    );
+    const adopted = head(root);
+    put(root, "frontend-vue/oxlint.config.ts", "export default {};\n");
+    put(root, "oxlint.config.ts", moved);
+    const label = new RegExp(
+      `lint config rule-off \`category:correctness\` for \`${scope.replaceAll("*", "\\*")}\``,
+    );
+    const full = bin(root, "suppressions");
+    assert.equal(full.status, 1);
+    assert.match(full.stderr, label);
+    git(root, ["add", "."]);
+    const staged = bin(root, "suppressions", ["--staged"]);
+    assert.equal(staged.status, 1);
+    assert.match(staged.stderr, label);
+    bin(root, "suppressions", ["--update"]);
+    commit(root);
+    assert.equal(bin(root, "suppressions", ["--base", adopted]).status, 1);
+  });
+
+test("a nested config's scopes are anchored at its directory, and a block without files covers only that directory", () => {
+  assert.deepEqual(
+    countSuppressions(
+      suppressionsIn(
+        "frontend-vue/eslint.config.mjs",
+        'export default [{ rules: { "no-undef": "off" } }, { files: ["**/*.vue", "./tests/**"], rules: { "vue/multi-word-component-names": "off" } }];\n',
+      ),
+    ).config,
+    {
+      "no-undef for frontend-vue/**": 1,
+      "vue/multi-word-component-names for frontend-vue/**/*.vue": 1,
+      "vue/multi-word-component-names for frontend-vue/tests/**": 1,
+    },
+  );
+});

@@ -21,6 +21,9 @@ test("a glob contains only globs it names every file of, conservatively", () => 
     ["src/test/**", "*"],
     ["src/?", "src/*"],
     ["src/{a,b}/**", "src/a/**"],
+    ["src/test/**", "src/test/../**"],
+    ["src/test/**", "src/test/**/../../**"],
+    ["src/test/**", "src/test/./../**"],
   ];
   for (const [wide, narrow] of contained)
     assert.equal(globContains(wide, narrow), true, `${wide} ⊇ ${narrow}`);
