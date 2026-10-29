@@ -16,6 +16,13 @@ export type ExportTarget =
   | ExportTarget[]
   | { [condition: string]: ExportTarget };
 
+/** A package `exports` leaf: a path rather than a fallback list or a condition map. */
+export function isExportPath(
+  target: ExportTarget | undefined,
+): target is string {
+  return typeof target === "string";
+}
+
 export interface ProofManifest {
   name?: string;
   private?: boolean;

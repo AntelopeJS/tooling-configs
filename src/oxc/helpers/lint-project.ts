@@ -14,9 +14,32 @@ const guardrailsPlugin = fileURLToPath(
 const oxlint = fileURLToPath(
   new URL("../bin/oxlint", import.meta.resolve("oxlint")),
 );
+const tsgolint = fileURLToPath(
+  new URL(
+    "bin/tsgolint.js",
+    import.meta.resolve("oxlint-tsgolint/package.json"),
+  ),
+);
+const nodeTypes = fileURLToPath(
+  new URL("..", import.meta.resolve("@types/node/package.json")),
+);
 
-/** A real temporary consumer, with only plugin specifiers redirected to the unbuilt source. */
-export function lintProject() {
+/** Type information for the temporary project: strict, with Node's types. */
+const typeAwareTsconfig = JSON.stringify({
+  compilerOptions: {
+    strict: true,
+    target: "es2022",
+    module: "nodenext",
+    typeRoots: [nodeTypes],
+    types: ["node"],
+  },
+});
+
+/**
+ * A real temporary consumer, with only plugin specifiers redirected to the unbuilt source.
+ * `typeAware` sets `options.typeAware` as a synced consumer does and writes a strict tsconfig.
+ */
+export function lintProject(typeAware = false) {
   const root = mkdtempSync(join(tmpdir(), "antelope-lint-"));
   function write(path: string, source: string) {
     const destination = join(root, path);
@@ -34,9 +57,10 @@ for (const layer of preset.extends) {
     specifier: plugin.name === "anti-slop" ? ${JSON.stringify(antiSlopPlugin)} : ${JSON.stringify(guardrailsPlugin)},
   }));
 }
-export default { extends: [preset] };
+export default { extends: [preset]${typeAware ? ", options: { typeAware: true }" : ""} };
 `,
   );
+  if (typeAware) write("tsconfig.json", typeAwareTsconfig);
   return {
     root,
     write,
@@ -44,6 +68,7 @@ export default { extends: [preset] };
     run(measure: boolean | string = false, directory = root) {
       const env = { ...process.env };
       delete env.ANTELOPEJS_RATCHET_MEASURE;
+      env.OXLINT_TSGOLINT_PATH = tsgolint;
       if (measure !== false)
         env.ANTELOPEJS_RATCHET_MEASURE = measure === true ? "1" : measure;
       const result = spawnSync(process.execPath, [oxlint, "-f", "json"], {

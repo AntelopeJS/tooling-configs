@@ -105,6 +105,7 @@ test("type directives and SAFETY: comments count wherever they sit", () => {
     tsExpectError: 1,
     tsIgnore: 1,
     safety: 2,
+    config: {},
   });
 });
 

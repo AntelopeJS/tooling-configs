@@ -7,3 +7,4 @@ The upstream project is meant to be vendored, not installed from npm. The `effec
 ## Local edits
 
 - `rules/require-safety-comment-for-type-assertion.ts` exports `DEFAULT_SAFETY_MARKERS` and `markerPattern`, so the guardrails suppression counter counts exactly the `SAFETY:` comments this rule accepts.
+- `rules/no-runtime-typeof.ts` also reports `x.constructor === String` (and `Number`, `Boolean`, `BigInt`, `Symbol`, `Function`), a `typeof` check in another form, with the same `allowInTypeGuards` exemption.
