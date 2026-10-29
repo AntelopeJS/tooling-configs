@@ -1,8 +1,137 @@
 import { skillFolder, type VerifyKind } from "./kinds.ts";
+import { KIND_TEXT } from "./skill-kinds.ts";
+
+const BIN = "pnpm exec antelopejs-verify";
+
+function bullets(lines: string[]): string {
+  return lines.map((line) => `- ${line}`).join("\n");
+}
 
 /** The synced SKILL.md of a kind, the part of the skill `antelopejs-sync` owns. */
 export function skillText(kind: VerifyKind): string {
-  return `---\nname: verify-${kind}\ndescription: "Placeholder until the skill text lands."\n---\n\n# Verify ${kind}\n`;
+  const text = KIND_TEXT[kind];
+  const folder = skillFolder(kind);
+  return `---
+name: verify-${kind}
+description: ${JSON.stringify(text.description)}
+---
+
+# ${text.title}
+
+${text.user} Every deterministic step is an \`antelopejs-verify\` command: you choose which journeys to run and judge what they show. Never replace a command with a shell recipe. When a journey you need does not exist, add it to \`verify.config.ts\`, name it in its feature file, then run it.
+
+\`antelopejs-sync\` writes this file and \`package.json\` here, and keeps them in sync. Everything else in \`${folder}/\` is the repository's own layer, which sync never touches.
+
+## Launch
+
+\`\`\`bash
+${BIN} new --base origin/main --title "<PR title>"
+\`\`\`
+
+\`new\` prints the run folder; pass it as \`<run>\` below. ${text.launch} Every journey gets its own \`HOME\` and scratch folder, \`CI=1\`, \`AJS_NO_UPDATE_CHECK=1\`, \`NO_COLOR=1\` and a free port from the kernel, so two runs never share an instance. Run it from the repository root after installing dependencies.
+
+## Doctor
+
+\`\`\`bash
+${BIN} doctor <run>
+\`\`\`
+
+Doctor checks that HEAD has not moved since \`new\`, \`ajs\` comes from the repository's \`@antelopejs/core\`, the build is newer than \`src/\`, what \`new\` prepared is there, and no process the run recorded is still alive. Do not drive a run that fails doctor.
+
+## Drive
+
+\`\`\`bash
+${BIN} plan --base origin/main
+${BIN} journey <run> <feature> [journey...]
+\`\`\`
+
+\`plan\` maps the diff to features and lists unmapped surfaces. \`journey\` runs a feature's journeys, or the ones named. The pack ships these journeys for this kind; a feature file names them next to the repository's own:
+
+${text.builtins}
+
+## Evidence
+
+Each step writes \`<run>/evidence/<feature>/<journey>/<NN-step>/\` with \`command.txt\`, \`stdout.txt\`, \`stderr.txt\`, \`exit-code.txt\`, \`pid.txt\` for background processes, \`tree.txt\`, \`http.json\` for every request, and \`checks.json\`. \`result.json\` holds a journey's result and \`feature.json\` the merged results of the feature. Read the evidence before you judge a PASS: a check proves only what it asserts.
+
+## Cleanup
+
+\`\`\`bash
+${BIN} clean <run>
+\`\`\`
+
+\`clean\` stops what the run started, by recorded PID and container name, and removes everything but \`evidence/\` and \`run.json\`. Run it after every run, failed ones included.
+
+## The repository's own layer
+
+- \`verify.config.ts\` default-exports a \`VerifyConfig\` from \`@antelopejs/tooling-configs/verify\`:
+  - \`doors\`: one entry per door kind (\`data\`, \`format\`, \`contract\`, \`outbound\`, \`exposure\`, \`publish\`), each \`null\` when it cannot apply or \`{ globs, funnels, containments, why }\`. \`containments\` names the \`feature/journey\` that contains a Data or Format door.
+  - \`journeys\`: the repository's journeys by id, each \`{ title, entryPoint, run(context) }\`, using the check helpers the same import exports.
+  - \`env\`, \`setup\` (commands replacing the build), \`userFacing\` (globs replacing the kind's default) and \`formal\` (formal checks with the files they cover).
+${text.layer}
+- \`features/<feature>.md\`: frontmatter lists \`covers:\` (source globs), \`docs:\` (pages a verdict judges) and \`journeys:\`, then the sections Sub-features, How to get to it (user POV), Driving it with antelopejs-verify, and Gotchas. \`features/smoke.md\` covers nothing and runs on every verdict; here it runs ${text.smoke}.
+- \`seeded-breaks/<feature>.patch\`: one minimal product bug per feature that its journeys must catch.
+- \`seeded-doors/<kind>.patch\`: one change per door kind that applies.
+
+\`\`\`bash
+${BIN} map
+\`\`\`
+
+\`map\` fails on a user-facing file no feature covers, a feature without journeys, docs or seeded break, an unknown journey, and an applicable door kind without its seeded door.
+
+## Verdict rules
+
+1. **Run every feature whose \`covers:\` globs the diff touches, plus \`smoke\`.** \`plan\` prints that list as \`run\`.
+2. **An unmapped surface fails the verdict.** A changed user-facing file no feature covers needs a feature entry, its journeys and its seeded break in the same PR.
+3. **Every registered journey of a feature in \`run\` must have run and passed.** Run whole features. A journey that could not reach the product is not verified, and so is the verdict, never PASS.
+4. **Docs.** Judge every \`docs:\` page of a touched feature against what the journeys showed. A stale page fails the verdict.
+5. **Formal checks.** \`${BIN} formal <run>\` runs every formal check of \`verify.config.ts\` that covers the diff. One that did not run, violates a rule or errors fails the verdict.
+6. **One-way doors.** The section comes right after the result line and is mandatory. \`${BIN} doors\` prints the \`One-way-door:\` line of the diff. Every file the path rules flag needs a door row or a false positive with its reason. A Data or Format row names a \`containments\` journey that passed in this run.
+7. **Result.** FAIL if any rule fails. NOT VERIFIED when a journey could not reach the product. PASS+NOTES when something is not verified or needs the owner's attention. PASS otherwise.
+
+Write your judgement to \`<run>/evidence/judgement.json\`:
+
+\`\`\`json
+{
+  "doors": {
+    "none": "why the diff opens no door",
+    "rows": [],
+    "falsePositives": [{ "kind": "publish", "location": "package.json", "reason": "only devDependencies changed" }]
+  },
+  "docs": [{ "page": "README.md", "matches": true, "note": "" }],
+  "notVerified": ["What no journey reached, and why"],
+  "attention": ["What the owner should look at that the journeys cannot judge"],
+  "verifier": "the fresh thread that judged this run, not the author"
+}
+\`\`\`
+
+A door row is \`{ "kind", "location", "irreversible", "containment", "containmentJourney" }\`. Then render and publish:
+
+\`\`\`bash
+${BIN} verdict <run> --pr <n>
+${BIN} publish <run> --pr <n>
+\`\`\`
+
+\`verdict\` writes \`evidence/verdict.md\` and exits 1 unless the result is PASS or PASS+NOTES. \`publish\` commits the evidence to the orphan branch \`verify-evidence\` under \`pr-<n>/<sha>/\` from a temporary worktree, posts the verdict as a PR comment, sets commit status \`verify\` on the head SHA (\`success\` for PASS and PASS+NOTES, \`error\` for NOT VERIFIED, \`failure\` for FAIL) and reads it back. It prints the error GitHub answers when the token cannot write statuses. A new push voids the status. Post a verdict only from a thread that did not write the change.
+
+## Trust
+
+The skill is not Trusted yet. It becomes Trusted when it catches every seeded break and flags every seeded door, passes a shadow run of 10 consecutive agent PRs, and its last maintain pass is newer than the last change to the repository or its \`@antelopejs\` dependencies and at most 30 days old.
+
+## Seeded breaks and doors
+
+\`\`\`bash
+${BIN} seeded <feature...>
+${BIN} seeded-doors
+\`\`\`
+
+\`seeded\` runs each feature's journeys in a scratch worktree of HEAD without the patch, as the control, and with \`seeded-breaks/<feature>.patch\` applied. It prints \`CAUGHT\` only when a journey that passes in the control fails one of its checks with the patch. Journeys failing in the control and failures without a failing check do not count. \`seeded-doors\` prints \`FLAGGED\` when the path rules flag each patch with its own kind.
+
+## Gotchas
+
+${bullets(text.gotchas)}
+- Runs live under the system temp folder (\`TMPDIR\`), and the shared caches under \`~/.cache/antelopejs-verify\`.
+- A repository that outgrows this skill runs \`antelopejs-sync --verify custom\` and keeps its own \`.agents/skills/verify-<repo>/\`.
+`;
 }
 
 /** The skill folder's package.json: it makes verify.config.ts an ES module and keeps the folder out of published packages. */
