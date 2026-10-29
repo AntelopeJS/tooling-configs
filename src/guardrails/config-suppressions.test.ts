@@ -99,6 +99,13 @@ function git(root: string, args: string[]): void {
   execFileSync("git", args, { cwd: root });
 }
 
+function head(root: string): string {
+  return execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+}
+
 function adoptedRepo(
   t: Parameters<typeof testRepo>[0],
   files: Record<string, string>,
@@ -371,4 +378,66 @@ for (const [move, scope, config] of SCOPE_MOVES)
     const staged = bin(root, "suppressions", ["--staged"]);
     assert.equal(staged.status, 1);
     assert.match(staged.stderr, label);
+    const adopted = head(root);
+    bin(root, "suppressions", ["--update"]);
+    commit(root);
+    assert.equal(bin(root, "suppressions", ["--base", adopted]).status, 1);
   });
+
+const NARROWINGS: [string, string[]][] = [
+  ["narrowing src/test/** to src/test/unit/** in place", ["src/test/unit/**"]],
+  [
+    "splitting src/test/** into src/test/unit/** and src/test/e2e/**",
+    ["src/test/unit/**", "src/test/e2e/**"],
+  ],
+];
+
+for (const [narrowing, globs] of NARROWINGS)
+  test(`${narrowing} is burn-down: staged, full, --update and --base pass, and --update moves the ceiling to the narrower keys`, (t) => {
+    const root = adoptedRepo(t, {
+      "oxlint.config.ts": cloudConfig(["src/test/**"]),
+    });
+    const adopted = head(root);
+    put(root, "oxlint.config.ts", cloudConfig(globs));
+    git(root, ["add", "oxlint.config.ts"]);
+    const staged = bin(root, "suppressions", ["--staged"]);
+    assert.equal(staged.status, 0, staged.stderr);
+    const full = bin(root, "suppressions");
+    assert.equal(full.status, 0, full.stderr);
+    const update = bin(root, "suppressions", ["--update"]);
+    assert.equal(update.status, 0, update.stderr);
+    const config = JSON.parse(
+      read(root, "guardrails.suppressions.json"),
+    ).config;
+    assert.equal(config["typescript/unbound-method for src/test/**"], 0);
+    for (const glob of globs)
+      assert.equal(config[`typescript/unbound-method for ${glob}`], 1);
+    commit(root);
+    assert.equal(bin(root, "suppressions").status, 0);
+    const base = bin(root, "suppressions", ["--base", adopted]);
+    assert.equal(base.status, 0, base.stderr);
+  });
+
+test("widening by renaming src/test/** to src/** in the config and the budget still fails against the base", (t) => {
+  const root = adoptedRepo(t, {
+    "oxlint.config.ts": cloudConfig(["src/test/**"]),
+  });
+  const adopted = head(root);
+  put(root, "oxlint.config.ts", cloudConfig(["src/**"]));
+  put(
+    root,
+    "guardrails.suppressions.json",
+    read(root, "guardrails.suppressions.json").replaceAll(
+      " for src/test/**",
+      " for src/**",
+    ),
+  );
+  commit(root);
+  assert.equal(bin(root, "suppressions").status, 0);
+  const base = bin(root, "suppressions", ["--base", adopted]);
+  assert.equal(base.status, 1);
+  assert.match(
+    base.stderr,
+    /raises lint config rule-off `typescript\/unbound-method for src\/\*\*` from 0 on the base to 1\./,
+  );
+});
