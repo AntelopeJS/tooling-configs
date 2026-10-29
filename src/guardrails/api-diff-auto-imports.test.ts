@@ -212,3 +212,35 @@ test("api-diff names the declaration form to use when registerAutoImports is not
     /registerAutoImports\(\["app\/composables", \.\.\.\]\)/u,
   );
 });
+
+test("api-diff compares an auto-imported interface by its members: a reorder passes, a narrowed member fails", (t) => {
+  const root = frontendRepo(t);
+  const interfaceFile = `${FRONTEND}/layers/dms-core/app/types/page.ts`;
+  put(
+    root,
+    interfaceFile,
+    "export interface PageQuery {\n  page: number;\n  sort?: string | number;\n}\n",
+  );
+  commit(root);
+  execFileSync("git", ["tag", "-f", "base"], { cwd: root });
+  put(
+    root,
+    interfaceFile,
+    "export interface PageQuery {\n  sort?: number | string;\n  page: number;\n}\n",
+  );
+  commit(root);
+  const reordered = apiDiff(root);
+  assert.equal(reordered.status, 0, reordered.text);
+  put(
+    root,
+    interfaceFile,
+    "export interface PageQuery {\n  sort?: string;\n  page: number;\n}\n",
+  );
+  commit(root);
+  const narrowed = apiDiff(root);
+  assert.equal(narrowed.status, 1, narrowed.text);
+  assert.match(
+    narrowed.text,
+    /^\+PageQuery \(type\): \{ "page": number; "sort"\?: string \| undefined; \}$/mu,
+  );
+});
