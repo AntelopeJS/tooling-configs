@@ -39,7 +39,7 @@ export type BehaviourMethod =
 export interface FormalCheck {
   name: string;
   covers: string[];
-  /** Globs of the check's own files (its model, its tests): a diff that changes one also runs the check on the base. */
+  /** Globs of the check's own files (its model, its tests): a diff that changes one runs the check, even when no covered file changed, and also runs it on the base. */
   files?: string[];
   /** Runs from the repository root; exits 0 while every finding breaks as recorded. */
   command: string[];

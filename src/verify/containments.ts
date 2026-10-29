@@ -15,11 +15,7 @@ import type { Workspace } from "./workspace.ts";
 const CONTAINED = ["data", "format"] as const;
 
 /** How one containment journey fared against its kind's seeded door. */
-export type ContainmentOutcome =
-  | "CONTAINED"
-  | "MISSED"
-  | "UNPROVEN"
-  | "NO-DOOR";
+type ContainmentOutcome = "CONTAINED" | "MISSED" | "UNPROVEN" | "NO-DOOR";
 
 /** One containment journey judged against the unpatched control and the run with its seeded door applied. */
 export interface ContainmentResult {

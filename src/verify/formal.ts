@@ -49,13 +49,21 @@ export interface FormalGate {
   outcome: string;
 }
 
-/** The formal checks of verify.config.ts whose covered files the change touches. */
+function changesCheckFiles(check: FormalCheck, changed: string[]): boolean {
+  return changed.some((file) =>
+    (check.files ?? []).some((glob) => matchesGlob(file, glob)),
+  );
+}
+
+/** The formal checks of verify.config.ts whose covered files or own `files` the change touches. */
 export function touchedFormalChecks(
   workspace: Workspace,
   changed: string[],
 ): FormalCheck[] {
-  return (workspace.config.formal ?? []).filter((check) =>
-    changed.some((file) => check.covers.includes(file)),
+  return (workspace.config.formal ?? []).filter(
+    (check) =>
+      changed.some((file) => check.covers.includes(file)) ||
+      changesCheckFiles(check, changed),
   );
 }
 
@@ -139,9 +147,7 @@ function gateFields(
   head: Rules,
 ): Partial<FormalResult> {
   const behaviour = behaviourChange(workspace.root, check, diff);
-  const checkChanged = diff.changed.some((file) =>
-    (check.files ?? []).some((glob) => matchesGlob(file, glob)),
-  );
+  const checkChanged = changesCheckFiles(check, diff.changed);
   if (!behaviour.changed && !checkChanged)
     return { behaviour, checkChanged, base: null, fixed: [], missing: [] };
   const base = baseRun(workspace, check, diff.baseSha, folder);
