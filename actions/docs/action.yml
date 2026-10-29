@@ -1,5 +1,5 @@
 name: Check documentation
-description: Check local Markdown links and explicit compatibility, example, and API contracts
+description: Check local Markdown links, explicit compatibility and API contracts, and typecheck every TypeScript fence
 inputs:
   files:
     description: Newline-separated Markdown files or directories, relative to the consumer checkout (no globs)
@@ -7,7 +7,7 @@ inputs:
       README.md
       docs
   typescript-project:
-    description: Consumer tsconfig for docs-check fences and docs-api declarations; requires consumer TypeScript
+    description: Consumer tsconfig for TypeScript fences and docs-api declarations (empty uses the root tsconfig.json); requires consumer TypeScript
     default: ""
 runs:
   using: composite

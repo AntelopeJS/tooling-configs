@@ -128,7 +128,7 @@ Import sorting is off because it moves value imports across side-effect imports,
 
 ### Options
 
-```ts
+```ts fragment
 antelopePreset({
   antiSlop: false, // true (default)
   guardrails: false, // true (default)
@@ -277,7 +277,7 @@ The house style sets every field, so `.editorconfig` files cannot override it: `
 
 The preset leaves import order to the linter and ignores `CHANGELOG.md`, which changelogen writes unformatted on every release. Other options of oxfmt pass through. Two are specific:
 
-```ts
+```ts fragment
 // oxfmt.config.ts
 export default antelopeFmtPreset({
   ignorePatterns: ["frontend-vue/**"], // added to the shared ignores, not replacing them
@@ -347,10 +347,11 @@ An implementer must never be handed a breaking minor it does not implement. `wor
 ## Documentation guardrail
 
 The [documentation action](./docs/documentation-checks.md) checks local Markdown
-links and explicitly labeled compatibility tables. Consumers can also opt in
-complete TypeScript examples and reference-page export coverage. Pin
+links, explicitly labeled compatibility tables, and reference-page export
+coverage, and typechecks every TypeScript fence against the repository's own
+source; a fence opts out only with a `fragment` marker. Pin
 `AntelopeJS/tooling-configs/actions/docs` to a full commit SHA; no npm release is
-required. The guide includes CI and local commands, annotation syntax, and the
+required. The guide includes CI and local commands, marker syntax, and the
 checks that remain the author's responsibility.
 
 ## Contributing

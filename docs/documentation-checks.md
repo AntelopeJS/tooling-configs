@@ -34,10 +34,13 @@ spaces work. Local links resolve from their containing document, including links
 to sibling packages inside the checkout.
 
 The only other input is `typescript-project`, a consumer-owned tsconfig path.
-Install the consumer's locked dependencies first when using it. TypeScript must
-resolve from that config's directory, and imported packages must already exist
-(including any necessary generated declarations). The action does not install
-the consumer, build project references, or execute examples.
+When it is empty and the selected files contain a TypeScript fence or a
+`docs-api` page, the checkout's root `tsconfig.json` is used; without one the
+check fails and names the input. Install the consumer's locked dependencies
+first: TypeScript must resolve from that config's directory, and third-party
+packages must already exist. The repository's own packages need no build (see
+below). The action does not install the consumer, build project references, or
+execute examples.
 
 ## Declare compatibility explicitly
 
@@ -66,16 +69,17 @@ Unlabeled prose and tables are not checked. This check does not require a table
 for every dependency or establish that a dependency range is actually supported
 at runtime. Authors select the compatibility claims they intend to maintain.
 
-## Mark complete TypeScript examples
+## Typecheck every TypeScript example
 
-Add `docs-check` to the info string of a complete `ts`, `typescript`, or `tsx`
-fence. Imports resolve as if the example were a module beside the Markdown file.
-Each example is isolated, so examples cannot depend on variables in other fences.
+Every `ts`, `typescript`, `tsx`, `mts`, and `cts` fence is typechecked as a
+complete module. Imports resolve as if the example were a module beside the
+Markdown file. Each example is isolated, so examples cannot depend on variables
+in other fences.
 
 For example, in `docs/usage.md`:
 
 ````md
-```ts docs-check
+```ts
 import { createClient } from "../src/index.js";
 
 const client = createClient({ timeout: 5000 });
@@ -83,7 +87,45 @@ await client.connect();
 ```
 ````
 
-Pass the tsconfig in the action:
+A fence opts out only with the word `fragment` in its info string. Use it for
+partial snippets, option excerpts, and pseudocode. MDC filename labels and
+highlight groups are not flags, so the marker may come before or after them:
+
+````md
+```ts fragment
+antelopePreset({ antiSlop: false });
+```
+
+```ts [nuxt.config.ts] fragment
+modules: ["@antelopejs/dms"],
+```
+````
+
+Other languages (`js`, `bash`, `json`, `vue`, …) are not checked. The former
+`docs-check` opt-in is still accepted and does nothing on a TypeScript fence:
+complete is the default. On any other fence it still fails.
+
+### The repository's own packages resolve to source
+
+An import of the repository's own package name, and of every workspace package's
+name in a monorepo, resolves to that package's TypeScript source, never to a
+`node_modules` copy or a stale or missing `dist`. Workspace packages come from
+`pnpm-workspace.yaml` `packages` or `package.json` `workspaces` (negated `!`
+patterns excluded). For each package export subpath (or `types`/`main` without
+`exports`), the checker takes:
+
+1. a `source` condition, used as is;
+2. otherwise a build target (`types`, `import`, `default`, …) mapped from the
+   package tsconfig's `outDir` to its `rootDir`, then from `dist` to `src`, with
+   the output extension replaced by `.ts`, `.tsx`, `.mts`, `.cts`, or `/index.ts`.
+
+Wildcard exports (`"./*": "./dist/*.js"`) map the same way. A subpath with no
+matching source file keeps its normal resolution. These mappings override the
+tsconfig's own `paths` for the same specifier.
+
+### The docs program
+
+Pass the tsconfig in the action when the root one does not fit:
 
 ```yaml
 - uses: AntelopeJS/tooling-configs/actions/docs@<full-commit-sha>
@@ -99,23 +141,23 @@ For a typical package, `docs/tsconfig.json` can extend its normal compiler setti
 ```json
 {
   "extends": "../tsconfig.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "rootDir": "..",
-    "composite": false,
-    "incremental": false
-  },
+  "compilerOptions": { "module": "NodeNext", "noUnusedLocals": false },
   "include": ["../src/**/*.ts", "./**/*.ts"]
 }
 ```
 
 Adjust this config to the package's actual module resolution, JSX, ambient types,
-and workspace layout. The checker checks the project's included sources as well
-as virtual example modules. It forces `noCheck: false` and never emits files.
-Diagnostics identify the
-Markdown filename and numbered example, with line numbers relative to that
-example. An annotation without `typescript-project` fails instead of silently
-skipping the check. Unannotated fences remain pseudocode or partial illustrations.
+and workspace layout. Examples follow its `module` setting, so top-level `await`
+needs an ES module target. The checker checks the project's included sources as
+well as virtual example modules. It forces `noEmit: true` and `noCheck: false`,
+clears `rootDir`, `outDir`, `declarationDir`, `tsBuildInfoFile`, and
+`emitDeclarationOnly`, disables `composite` and `incremental`, and ignores
+project references: virtual examples live beside the Markdown files, outside
+any build layout. It never emits files.
+
+Diagnostics name the Markdown file, the line inside it, and the TypeScript code,
+for example `docs/usage.md:14: TS2322: Type 'string' is not assignable to type
+'number'.` Diagnostics in other files name that file relative to the checkout.
 
 ## Check a reference page against public exports
 
@@ -138,7 +180,7 @@ Describe the function's inputs, result, and lifecycle here.
 Describe the supported options here.
 ```
 
-This also requires `typescript-project`. Named re-exports, type exports, `export
+This uses the same tsconfig as the examples. Named re-exports, type exports, `export
 *`, and the name `default` count. Missing headings and headings naming removed
 exports fail. On a declared API page, reserve headings consisting solely of an
 inline-code name for exports. Use ordinary text for other headings. Use a separate
@@ -186,7 +228,7 @@ git clone --quiet https://github.com/AntelopeJS/tooling-configs.git "$guardrail"
 git -C "$guardrail" checkout --quiet "$DOCS_SHA"
 npm ci --prefix "$guardrail/actions/docs" --omit=dev --ignore-scripts --no-audit --no-fund
 node "$guardrail/actions/docs/check.mjs" README.md docs
-# Add --typescript-project docs/tsconfig.json for annotated examples/API pages.
+# Add --typescript-project docs/tsconfig.json when the root tsconfig.json does not fit.
 rm -rf "$guardrail"
 ```
 
