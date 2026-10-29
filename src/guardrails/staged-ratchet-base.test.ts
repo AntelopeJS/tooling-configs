@@ -144,7 +144,7 @@ test("staged ratchet fails a finding the base does not have and lists only it", 
   assert.match(
     result.stderr,
     new RegExp(
-      `${SAFETY}: this commit adds 1 to the staged files \\(0 at HEAD, 1 at merge-base ${base} with origin/HEAD, 2 staged\\)`,
+      `${SAFETY}: this commit adds 1 to the staged files \\(0 at HEAD, 1 unchanged since merge-base ${base} with origin/HEAD, 2 staged\\)`,
     ),
   );
   assert.match(result.stderr, /creation\.ts:8:/);
@@ -202,7 +202,7 @@ test("staged ratchet passes an edit of a file a legacy finding moved into in an 
   assert.match(
     added.stderr,
     new RegExp(
-      `adds 1 to the staged files \\(1 at HEAD, 0 at merge-base ${base} with origin/HEAD, 2 staged\\)`,
+      `adds 1 to the staged files \\(1 at HEAD, 0 unchanged since merge-base ${base} with origin/HEAD, 2 staged\\)`,
     ),
   );
   assert.match(added.stderr, /y\.ts:10:/);
@@ -219,4 +219,59 @@ test("staged ratchet passes a stacked branch editing a file its parent branch mo
   stage(root, "y.ts");
   const result = check(root, "y.ts");
   assert.equal(result.status, 0, result.stderr);
+});
+
+test("staged ratchet fails a finding added to a file a legacy finding moved out of in an earlier branch commit", (t) => {
+  const root = movedRepo(t);
+  put(
+    root,
+    "x.ts",
+    `${MOLLIE_5_PRELUDE}export const x = 1;\nexport const extra = readOwn({}) as Own;\n`,
+  );
+  stage(root, "x.ts");
+  const result = check(root, "x.ts");
+  assert.equal(result.status, 1);
+  const base = git(root, "rev-parse", "--short=12", "origin/main");
+  assert.match(
+    result.stderr,
+    new RegExp(
+      `adds 1 to the staged files \\(0 at HEAD, 0 unchanged since merge-base ${base} with origin/HEAD, 1 staged\\)`,
+    ),
+  );
+  assert.match(result.stderr, /x\.ts:7:/);
+});
+
+test("staged ratchet fails a new finding in a file whose base finding the branch fixed earlier", (t) => {
+  const root = branchRepo(t, "creation.ts", MOLLIE_5_BASE, MOLLIE_5_BRANCH);
+  put(
+    root,
+    "creation.ts",
+    MOLLIE_5_BRANCH.replace(
+      "  return own;\n",
+      "  return (readOwn(own) as Own) ?? own;\n",
+    ),
+  );
+  stage(root, "creation.ts");
+  const result = check(root, "creation.ts");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /creation\.ts:8:/);
+});
+
+test("staged ratchet fails a new finding in another file staged with the file whose base finding the branch fixed", (t) => {
+  const root = baseRepo(t, {
+    "creation.ts": MOLLIE_5_BASE,
+    "y.ts": MOVE_TARGET,
+  });
+  put(root, "creation.ts", MOLLIE_5_BRANCH);
+  commit(root);
+  put(
+    root,
+    "creation.ts",
+    MOLLIE_5_BRANCH.replace("own;\n}", "own;\n}\nexport const z = 1;"),
+  );
+  put(root, "y.ts", `${MOVE_TARGET}export const extra = readOwn({}) as Own;\n`);
+  stage(root, "creation.ts", "y.ts");
+  const result = check(root, "creation.ts", "y.ts");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /y\.ts:7:/);
 });
