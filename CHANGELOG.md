@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.14
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.13...v0.2.14)
+
+### 🩹 Fixes
+
+- **sync:** Grant write permissions only to the renovate-sync caller job ([#60](https://github.com/AntelopeJS/tooling-configs/pull/60))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.2.13
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.12...v0.2.13)
