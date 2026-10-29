@@ -212,8 +212,8 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
   {
     path: SUPPRESSIONS_FILE,
     profiles: ["full"],
-    desired: (current, context) => ({
-      content: current ?? context.suppressionBudget,
+    desired: (_current, context) => ({
+      content: context.suppressionBudget,
       notes: [],
     }),
   },
@@ -356,8 +356,8 @@ function repositoryContext(
     claude: profile === "full" ? claudeProse(root, current) : "",
     baseline: "",
     suppressionBudget:
-      profile === "full" && !current.has(SUPPRESSIONS_FILE)
-        ? adoptedBudget(root)
+      profile === "full"
+        ? adoptedBudget(root, current.get(SUPPRESSIONS_FILE))
         : "",
     packageName: manifest.name ?? "",
     managesCi: current.has(CI_PATH) || !hasChecksWorkflow(root),
