@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { coveredLimits } from "./config-scopes.ts";
 import { resolveRevision } from "./files.ts";
 import {
   parseBudget,
@@ -69,7 +70,8 @@ export function suppressionBase(
 /**
  * Fails each ceiling of the working-tree budget that is higher than on
  * `revision`, and each rule that `revision` lists but the working tree
- * dropped, config rule-offs included once the base has their ceilings. The
+ * dropped, config rule-offs included once the base has their ceilings; a
+ * config ceiling may rise by what a containing scope of its rule falls. The
  * safety ceiling may rise by what the SAFETY rule's own ceiling falls. A
  * base without a budget, a first adoption, passes.
  */
@@ -112,6 +114,7 @@ export function raisedCeilings(root: string, revision: string): string[] {
         : (current.rules[rule] ?? 0),
     );
   const baseConfig = base.config ?? {};
+  const covered = coveredLimits(baseConfig, current.config ?? {});
   for (const rule of new Set([
     ...Object.keys(baseConfig),
     ...Object.keys(current.config ?? {}),
@@ -119,7 +122,7 @@ export function raisedCeilings(root: string, revision: string): string[] {
     if (base.config !== undefined)
       compare(
         `lint config rule-off \`${rule}\``,
-        baseConfig[rule] ?? 0,
+        covered[rule] ?? 0,
         current.config === undefined ||
           (Object.hasOwn(baseConfig, rule) &&
             !Object.hasOwn(current.config, rule))

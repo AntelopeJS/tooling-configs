@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { coveredLimits } from "./config-scopes.ts";
 import { changedFiles } from "./files.ts";
 import { renamedPaths } from "./renames.ts";
 import { stagedAdditions } from "./staged-ratchet.ts";
@@ -201,15 +202,18 @@ function lowered(
  * it touches none). SAFETY comments may also use the room the
  * directives disabling the SAFETY rule leave below their ceiling. `update`
  * lowers every ceiling to its current count, moving that room to `safety`;
- * no command ever raises the two together.
+ * no command ever raises the two together. A config rule-off may use the
+ * room a containing scope of its rule gives up, and `update` moves that room
+ * to the narrower key.
  */
 export function checkSuppressions(root: string, update = false): string[] {
   const path = join(root, SUPPRESSIONS_FILE);
   if (!existsSync(path))
     throw new Error(`${SUPPRESSIONS_FILE} is missing. Run antelopejs-sync.`);
-  const budget = parseBudget(readFileSync(path, "utf8"), SUPPRESSIONS_FILE);
+  const committed = parseBudget(readFileSync(path, "utf8"), SUPPRESSIONS_FILE);
   const suppressions = worktreeSuppressions(root);
   const counts = countSuppressions(suppressions);
+  const budget = withCoveredScopes(committed, counts);
   const changed = changedFiles(root);
   const failures: string[] = [];
   const failed: Suppression[] = [];
@@ -235,6 +239,18 @@ export function checkSuppressions(root: string, update = false): string[] {
   }
   if (update) writeFileSync(path, formatBudget(lowered(budget, counts)));
   return [...failures, ...fixesFor(failed)];
+}
+
+/** `budget` with each config ceiling widened by the room containing scopes of its rule give up at `counts`. */
+function withCoveredScopes(
+  budget: SuppressionCounts,
+  counts: SuppressionCounts,
+): SuppressionCounts {
+  if (budget.config === undefined) return budget;
+  return {
+    ...budget,
+    config: coveredLimits(budget.config, counts.config ?? {}),
+  };
 }
 
 function budgetAt(root: string, revision: string) {
@@ -285,6 +301,29 @@ export function stagedSuppressions(root: string): string[] {
   ];
 }
 
+/**
+ * How much a staged config key may rise: what the staged budget raises its
+ * ceiling, plus what a containing scope of its rule falls in the staged files.
+ */
+function stagedScopes(
+  head: SuppressionCounts,
+  index: SuppressionCounts,
+  before: Record<string, number>,
+  after: Record<string, number>,
+): (rule: string, scope: string, previous: number) => number {
+  const limits = { ...before };
+  for (const key of new Set([
+    ...Object.keys(index.config ?? {}),
+    ...Object.keys(head.config ?? {}),
+  ]))
+    limits[key] =
+      (limits[key] ?? 0) +
+      Math.max(0, (index.config?.[key] ?? 0) - (head.config?.[key] ?? 0));
+  const covered = coveredLimits(limits, after);
+  return (rule, scope, previous) =>
+    (covered[configKey(rule, scope)] ?? 0) - previous;
+}
+
 function stagedBudget(
   root: string,
   staged: string[],
@@ -293,8 +332,16 @@ function stagedBudget(
   const head = budgetAt(root, "HEAD");
   if (head === undefined) return [];
   const index = budgetAt(root, "") ?? head;
-  const before = groupByKey(revisionSuppressions(root, "HEAD", previous));
-  const after = groupByKey(revisionSuppressions(root, "", staged));
+  const headSuppressions = revisionSuppressions(root, "HEAD", previous);
+  const stagedSuppressions = revisionSuppressions(root, "", staged);
+  const before = groupByKey(headSuppressions);
+  const after = groupByKey(stagedSuppressions);
+  const scopes = stagedScopes(
+    head,
+    index,
+    countSuppressions(headSuppressions).config ?? {},
+    countSuppressions(stagedSuppressions).config ?? {},
+  );
   const additions = stagedAdditions(root, [
     ...new Set([...after.values()].flat().map(({ file }) => file)),
   ]);
@@ -315,7 +362,9 @@ function stagedBudget(
     const allowance =
       found[0].kind === "safety"
         ? converted + Math.max(0, raised - Math.max(0, freed))
-        : Math.max(0, raised);
+        : found[0].kind === "config"
+          ? scopes(found[0].rule, found[0].scope, found.length - rise)
+          : Math.max(0, raised);
     if (rise <= allowance) continue;
     failed.push(found[0]);
     const added = found.filter(({ file, line }) =>
