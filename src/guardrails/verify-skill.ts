@@ -5,6 +5,7 @@ import {
   readFileSync,
   readdirSync,
   readlinkSync,
+  rmdirSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -180,9 +181,10 @@ function planStaleKinds(
         (name) =>
           !syncedFiles(kind).some(({ path }) => path === `${folder}/${name}`),
       );
-    notes.push(
-      `Removed the synced files of verify-${kind}.${kept ? ` Kept its repo-owned files in ${folder}.` : ""}`,
-    );
+    if (kept)
+      notes.push(
+        `Removed the synced files of verify-${kind} and kept its repo-owned files in ${folder}.`,
+      );
   }
   return { actions, notes };
 }
@@ -228,6 +230,7 @@ export function applyVerifyActions(
     const path = join(root, action.path);
     if (action.kind === "remove") {
       unlinkSync(path);
+      if (readdirSync(dirname(path)).length === 0) rmdirSync(dirname(path));
       continue;
     }
     mkdirSync(dirname(path), { recursive: true });
