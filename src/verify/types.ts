@@ -39,7 +39,7 @@ export type BehaviourMethod =
 export interface FormalCheck {
   name: string;
   covers: string[];
-  /** Globs of the check's own files (its model, its tests): a diff that changes one also runs the check on the base. */
+  /** Globs of the check's own files (its model, its tests): a diff that changes one runs the check, even when no covered file changed, and also runs it on the base. */
   files?: string[];
   /** Runs from the repository root; exits 0 while every finding breaks as recorded. */
   command: string[];
@@ -188,7 +188,7 @@ export interface JourneyContext {
   service(name: string): ServiceEndpoint;
   /** Runs a command inside a service's container: the read-back through the native client. */
   native(name: string, service: string, args: string[]): Promise<CommandResult>;
-  /** Writes the fixture project of the interface or module kind and returns its folder. */
+  /** Writes the fixture project of the interface or module kind and returns its folder. Each call writes a fresh project, so a journey can hold several. */
   fixture(options?: { moduleConfig?: JsonObject }): string;
   /** Starts `ajs project dev` in a project and waits until it is ready. */
   dev(name: string, project: string, options?: DevOptions): Promise<App>;
@@ -219,8 +219,8 @@ export interface InterfaceCall<Api> {
 
 /** Repo-owned hooks of the interface kind for contracts that are not interface proxies. */
 export interface InterfaceHooks<Api> {
-  /** Runs in the stub provider module after the generic stubs attach, for example to call `internal.SetClient`. */
-  provide?(api: Api): void | Promise<void>;
+  /** Runs in the stub provider module after the generic stubs attach, for example to call `internal.SetClient`; `services` are the run's backing services as they answer from the host. */
+  provide?(api: Api, services: ServiceEndpoint[]): void | Promise<void>;
   /** Plain exported functions, by path such as `.:GetClient`, called by the driver module. */
   calls?: { [path: string]: InterfaceCall<Api> };
   /** Exported functions only a provider calls, by path, with why the consumer never calls them. */

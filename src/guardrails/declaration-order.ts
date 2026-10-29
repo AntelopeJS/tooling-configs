@@ -77,7 +77,22 @@ function sortMembers<T extends Member>(
   return compiler.factory.createNodeArray(keyed.map(({ member }) => member));
 }
 
-/** Rewrites every object type literal, interface and class in `file`, whose nodes were parsed from `source`, so its members appear in a canonical order. Member order does not change a type, so two declaration texts that differ only in it print identically. Tuple elements, parameters, overloads of one name, enum members, union and intersection constituents and statement bodies of namespaces keep the order they were written in. */
+/** Orders the constituents of a union by their printed text. Union order does not change a type, but the checker prints constituents in the order it created them, which varies with the files around the declaration. Intersections keep their order, because the order of intersected function types is the order of their overloads. */
+function sortUnionTypes(
+  compiler: Compiler,
+  visited: ts.NodeArray<ts.TypeNode>,
+  file: ts.SourceFile,
+): ts.NodeArray<ts.TypeNode> {
+  const printer = compiler.createPrinter({ removeComments: true });
+  const keyed = visited.map((type) => ({
+    type,
+    text: printer.printNode(compiler.EmitHint.Unspecified, type, file),
+  }));
+  keyed.sort((a, b) => (a.text === b.text ? 0 : a.text < b.text ? -1 : 1));
+  return compiler.factory.createNodeArray(keyed.map(({ type }) => type));
+}
+
+/** Rewrites every object type literal, interface and class in `file`, whose nodes were parsed from `source`, so its members appear in a canonical order. Member order does not change a type, so two declaration texts that differ only in it print identically. Union constituents are ordered by their printed text. Tuple elements, parameters, overloads of one name, enum members, intersection constituents and statement bodies of namespaces keep the order they were written in. */
 function sortDeclarationMembers(
   compiler: Compiler,
   file: ts.SourceFile,
@@ -95,6 +110,11 @@ function sortDeclarationMembers(
           return factory.updateTypeLiteralNode(
             visited,
             sortMembers(compiler, visited.members, node.members, source),
+          );
+        if (compiler.isUnionTypeNode(node) && compiler.isUnionTypeNode(visited))
+          return factory.updateUnionTypeNode(
+            visited,
+            sortUnionTypes(compiler, visited.types, file),
           );
         if (
           compiler.isInterfaceDeclaration(node) &&

@@ -91,8 +91,8 @@ async function packInterface(
 /**
  * Creates an isolated run: runs the setup (the build by default), then
  * prepares what the kind drives. An interface is packed as npm would publish
- * it, a module's backing services start in Docker on free ports, and a
- * template is served from an offline manifest repository.
+ * it, a template is served from an offline manifest repository, and every
+ * kind's backing `services` start in Docker on free ports.
  */
 export async function createRun(
   workspace: Workspace,
@@ -104,8 +104,7 @@ export async function createRun(
   await runSetup(workspace, state);
   if (workspace.kind === "interface")
     state.pack = await packInterface(workspace, state);
-  if (workspace.kind === "module")
-    startServices(workspace, state, containerPrefix());
+  startServices(workspace, state, containerPrefix());
   if (workspace.kind === "template") {
     state.manifestUrl = seedSources(workspace, state);
     state.templateName = templateName(workspace);
@@ -149,6 +148,14 @@ function buildLine(workspace: Workspace): DoctorLine {
   };
 }
 
+function serviceLines(state: RunState): DoctorLine[] {
+  return state.containers.map((container) => ({
+    check: `service ${container.service}`,
+    ok: containerRunning(container.name),
+    detail: `${container.name} on ${container.host}:${container.port}`,
+  }));
+}
+
 function kindLines(workspace: Workspace, state: RunState): DoctorLine[] {
   if (workspace.kind === "interface")
     return [
@@ -157,6 +164,7 @@ function kindLines(workspace: Workspace, state: RunState): DoctorLine[] {
         ok: existsSync(join(state.pack, "package.json")),
         detail: state.pack,
       },
+      ...serviceLines(state),
     ];
   if (workspace.kind === "template")
     return [
@@ -165,6 +173,7 @@ function kindLines(workspace: Workspace, state: RunState): DoctorLine[] {
         ok: existsSync(join(state.dir, "sources", "interfaces.git")),
         detail: `${state.templateName} at ${state.manifestUrl}`,
       },
+      ...serviceLines(state),
     ];
   const keys = {
     check: "provider sandbox keys",
@@ -174,14 +183,7 @@ function kindLines(workspace: Workspace, state: RunState): DoctorLine[] {
         ? "present or not needed"
         : `missing ${state.missingKeys.join(", ")}: every journey is not verified`,
   };
-  return [
-    keys,
-    ...state.containers.map((container) => ({
-      check: `service ${container.service}`,
-      ok: containerRunning(container.name),
-      detail: `${container.name} on ${container.host}:${container.port}`,
-    })),
-  ];
+  return [keys, ...serviceLines(state)];
 }
 
 /** Read-only checks that answer whether a run is worth driving. */

@@ -18,7 +18,7 @@ const INTERFACE: KindText = {
   title: "Verify interface",
   user: "The user of an interface is a module author: one module implements it, others import it and call its functions through core.",
   launch:
-    "`new` runs the setup (`pnpm run build` by default), then packs the interface with `pnpm pack` and extracts it, so journeys load what npm would publish, `files` and `exports` included.",
+    "`new` runs the setup (`pnpm run build` by default), then packs the interface with `pnpm pack` and extracts it, so journeys load what npm would publish, `files` and `exports` included. Every `services` entry of `verify.config.ts` then starts in its own Docker container on a free loopback port, as for a module.",
   builtins: `- \`every-function\`: a fixture project loads the packed interface with a stub provider and a consumer module. The consumer walks the loaded interface, and every function the \`.d.ts\` files declare is called through core:
   - an async proxy answers the stub's echo, and the stub's call log shows the same arguments (the second view);
   - a registering proxy registers and unregisters, and the stub logs both;
@@ -26,13 +26,15 @@ const INTERFACE: KindText = {
   - a plain function runs the \`interface.calls\` hook of \`verify.config.ts\` and must return its \`expect\`; one only providers call is listed in \`interface.providerSide\` with why.
   A declared function with none of these fails the journey.
 - \`minor-bump\`: reads the declared functions of the packed head and of the published version (\`npm pack <name>@<latest>\`). An added, changed or removed function needs a release of at least the next minor. The release is the head version when it is already bumped, otherwise what changelogen makes of the change title (\`new --title\`) or the commit subjects since the base.`,
-  layer: `- \`interface.provide(api)\` runs in the stub provider after the generic stubs attach, for example to hand a stub client to \`internal.SetClient\`.
+  layer: `- \`services\`: image, port, readiness command and a \`reset\` command run before every journey, as for a module. \`new\` starts them in Docker on free ports; a journey reads them with \`context.service(name)\` and \`context.native(...)\`.
+- \`interface.provide(api, services)\` runs in the stub provider after the generic stubs attach, for example to hand a client pointed at \`services\` to \`internal.SetClient\`.
 - \`interface.calls["<entry>:<path>"]\` calls a plain exported function from the consumer and states the value it must return.
 - \`interface.providerSide["<entry>:<path>"]\` names a function only providers call, with the reason.`,
   smoke: "`every-function`",
   gotchas: [
     "A function the consumer awaits forever, such as a getter no provider resolved, fails after 15 seconds with a `Timeout` value.",
     "`minor-bump` needs the npm registry. Without it the journey is not verified, never passed.",
+    "A containment journey of a Data or Format door must check what that door's seeded patch changes, for example the arguments the stub provider logged. `containments` reports one that still passes with its door as `MISSED`.",
   ],
 };
 
@@ -47,12 +49,13 @@ const MODULE: KindText = {
     "- `module-dev`: a fixture project installs the module as `local` with `moduleConfig(services)` as its config, plus a consumer module. `ajs project dev` must answer, the consumer must load every implemented interface, Ctrl+C must exit 130 and the port must refuse afterwards.",
   layer: `- \`services\`: image, port, readiness command and a \`reset\` command run before every journey, so each starts from a clean state.
 - \`moduleConfig(services)\`: the module's configuration, pointing at the run's containers.
-- \`saas: { env, sandbox }\`: a SaaS module runs against the provider's sandbox with keys from these environment variables. Without every key, each journey is not verified and so is the verdict, never PASS.
+- \`saas: { env, sandbox }\`: a SaaS module runs against the provider's sandbox with keys from these environment variables. Without every key, each journey is NOT VERIFIED and so is the verdict, never PASS or PASS+NOTES.
 - \`journeys\`: the module's own journeys. Each writes through the module with \`context.call(...)\` and reads the result back with \`context.native(...)\` (\`redis-cli\`, \`mongosh\`, \`psql\`, the Mailpit API) inside the service container.`,
   smoke: "`module-dev` and one write read back through the native client",
   gotchas: [
     "Every container is the run's own. Never point a journey at a shared instance such as a developer's local database.",
     "A sandbox key missing from the environment is a NOT VERIFIED verdict, which sets status `verify` to `error`.",
+    "A containment journey of a Data or Format door must read back, through the native client, the state that door's seeded patch corrupts. `containments` reports one that still passes with its door as `MISSED`.",
   ],
 };
 
@@ -62,16 +65,18 @@ const TEMPLATE: KindText = {
   title: "Verify template",
   user: "The user of a template is someone running `ajs project init --template`: they get a copy of the whole repository and expect it to install, pass its checks and run.",
   launch:
-    "`new` copies the working tree, uncommitted changes included, into a local git repository, and lists it in an offline interfaces manifest (`templates`, or `projectTemplates` when `template.project` is set) under `template.name`. Journeys point `ajs config set git` at it, so no step reaches GitHub.",
+    "`new` copies the working tree, uncommitted changes included, into a local git repository, and lists it in an offline interfaces manifest (`templates`, or `projectTemplates` when `template.project` is set) under `template.name`. Journeys point `ajs config set git` at it, so no step reaches GitHub. Every `services` entry of `verify.config.ts` then starts in its own Docker container on a free loopback port, as for a module.",
   builtins: `- \`scaffold-dev\`: \`ajs project init <app> --template <name> --pm pnpm --git-init\`, \`pnpm install --frozen-lockfile\`, then \`ajs project dev --watch\` with \`PORT\` set until \`template.probe\` answers: a path and status on that port, or a \`log\` line followed by \`settleMs\` of still running. Ctrl+C must exit 130.
 - \`scaffold-checks\`: the same scaffold and install, then the project's own \`pnpm run checks\`.`,
   layer: `- \`template.name\`: the listing name users pass to \`--template\`.
 - \`template.project\`: list it under \`projectTemplates\`.
+- \`services\`: image, port, readiness command and \`reset\`, as for a module. \`new\` starts them in Docker on free ports; a journey reads them with \`context.service(name)\` and \`context.native(...)\` and passes their endpoints to the project it starts through the \`env\` of \`context.dev\`.
 - \`template.probe\`: \`path\`, \`status\` and \`body\` for an HTTP welcome page or endpoint, or \`log\` and \`settleMs\` for a template that serves nothing.`,
   smoke: "`scaffold-dev` and `scaffold-checks`",
   gotchas: [
     "`ajs` copies the whole repository, `.agents/` and `.claude/` included, so the scaffolded project carries this skill too.",
     "Every file a user gets is user-facing here, tests included; only `.agents/`, `.claude/` and `.github/` are not.",
+    "A containment journey of a Data or Format door must check the scaffolded files or endpoint that door's seeded patch changes. `containments` reports one that still passes with its door as `MISSED`.",
   ],
 };
 

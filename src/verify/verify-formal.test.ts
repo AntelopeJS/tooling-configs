@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
-import { commit, put } from "../guardrails/helpers/test-repo.ts";
+import { commit, put, read } from "../guardrails/helpers/test-repo.ts";
 import {
   feature,
   newRun,
@@ -229,5 +229,41 @@ test("a covered check whose run did not compare behaviour with the base fails th
   assert.match(
     judged(root, tmp, run),
     /- formal check formal-add covers the diff but its run did not compare the covered behaviour with the base\n/,
+  );
+});
+
+function formalResult(run: string) {
+  return JSON.parse(read(run, "evidence/formal/formal-add/result.json"));
+}
+
+test("a rule counts as fixed only when HEAD reports it passing, never when HEAD drops it", (t) => {
+  const fixed = formalRepo(t, {
+    "src/math.js": ADD.replace("a + b", "a + b + 0"),
+  });
+  verify(fixed.root, fixed.tmp, ["formal", fixed.run]);
+  assert.deepEqual(formalResult(fixed.run).fixed, ["NegativeZero"]);
+  assert.deepEqual(formalResult(fixed.run).missing, []);
+  const dropped = formalRepo(t, {
+    "src/math.js": ADD.replace("a + b", "a + b + 0"),
+    ".agents/skills/formal-add/check.mjs": CHECK_WITHOUT_RULE,
+  });
+  verify(dropped.root, dropped.tmp, ["formal", dropped.run]);
+  assert.deepEqual(formalResult(dropped.run).fixed, []);
+  assert.deepEqual(formalResult(dropped.run).missing, ["NegativeZero"]);
+});
+
+test("a diff that touches only a check's own files runs the check and gates it against the base", (t) => {
+  const { root, tmp, run } = formalRepo(t, {
+    ".agents/skills/formal-add/check.mjs": CHECK_WITHOUT_RULE,
+  });
+  const formal = verify(root, tmp, ["formal", run]);
+  assert.equal(formal.status, 1);
+  assert.equal(
+    formal.stdout,
+    "FAIL formal-add: rules the base broke are absent at HEAD: NegativeZero\n",
+  );
+  assert.match(
+    judged(root, tmp, run),
+    /- formal check formal-add: rules the base broke are absent at HEAD: NegativeZero\n/,
   );
 });

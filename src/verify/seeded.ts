@@ -48,10 +48,15 @@ function inTree(worktree: string, program: string, args: string[]): string {
   return run.stdout.trim();
 }
 
-function prepareWorktree(
+/**
+ * A scratch worktree of HEAD with the skill folder as it is in the checkout,
+ * `patch` (a path inside the skill folder) applied when given, and dependencies
+ * installed.
+ */
+export function prepareWorktree(
   workspace: Workspace,
   label: string,
-  feature: string | null,
+  patch: string | null,
 ): string {
   const worktree = mkdtempSync(
     join(tmpdir(), `antelopejs-verify-seeded-${label}-`),
@@ -65,11 +70,7 @@ function prepareWorktree(
     const skill = join(worktree, relative(workspace.root, workspace.skill));
     rmSync(skill, { recursive: true, force: true });
     cpSync(workspace.skill, skill, { recursive: true, verbatimSymlinks: true });
-    if (feature !== null)
-      inTree(worktree, "git", [
-        "apply",
-        join(skill, "seeded-breaks", `${feature}.patch`),
-      ]);
+    if (patch !== null) inTree(worktree, "git", ["apply", join(skill, patch)]);
     inTree(worktree, "pnpm", [
       "install",
       "--frozen-lockfile",
@@ -83,18 +84,21 @@ function prepareWorktree(
   return worktree;
 }
 
-function removeWorktree(workspace: Workspace, worktree: string): void {
+/** Removes a scratch worktree made by `prepareWorktree`. */
+export function removeWorktree(workspace: Workspace, worktree: string): void {
   execFileSync("git", ["worktree", "remove", "--force", worktree], {
     cwd: workspace.root,
     stdio: "ignore",
   });
 }
 
-function runFeatureIn(
+/** Runs a feature's journeys, or only `ids`, in a worktree through the bin: `new`, `journey`, then `clean`. */
+export function runFeatureIn(
   bin: string,
   worktree: string,
   feature: string,
   baseRef: string,
+  ids: string[] = [],
 ): FeatureRun {
   const created = spawnSync(process.execPath, [bin, "new", "--base", baseRef], {
     cwd: worktree,
@@ -103,10 +107,14 @@ function runFeatureIn(
   const run = created.stdout.trim().split("\n").at(-1) ?? "";
   if (created.status !== 0 || !existsSync(join(run, "run.json")))
     return { run, results: [], output: `${created.stdout}${created.stderr}` };
-  const journeys = spawnSync(process.execPath, [bin, "journey", run, feature], {
-    cwd: worktree,
-    encoding: "utf8",
-  });
+  const journeys = spawnSync(
+    process.execPath,
+    [bin, "journey", run, feature, ...ids],
+    {
+      cwd: worktree,
+      encoding: "utf8",
+    },
+  );
   const cleaned = spawnSync(process.execPath, [bin, "clean", run], {
     cwd: worktree,
     encoding: "utf8",
@@ -118,7 +126,8 @@ function runFeatureIn(
   };
 }
 
-function failsACheck(result: JourneyResult): boolean {
+/** Whether a journey result carries a failing check, which tells a product failure from a harness error. */
+export function failsACheck(result: JourneyResult): boolean {
   return result.steps.some((step) => step.checks.some((check) => !check.pass));
 }
 
@@ -172,7 +181,11 @@ export function runSeededBreaks(
   try {
     return features.map((feature) => {
       const control = runFeatureIn(bin, controlTree, feature, baseRef);
-      const seededTree = prepareWorktree(workspace, feature, feature);
+      const seededTree = prepareWorktree(
+        workspace,
+        feature,
+        join("seeded-breaks", `${feature}.patch`),
+      );
       try {
         return judgeSeeded(
           feature,
