@@ -2,7 +2,11 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { closeSync, existsSync, lstatSync, openSync, readSync } from "node:fs";
 import { dirname, join, matchesGlob, relative, resolve } from "node:path";
 
-import { AGENT_IGNORE_PATTERNS, IGNORE_PATTERNS } from "../oxc/shared.ts";
+import {
+  AGENT_IGNORE_PATTERNS,
+  IGNORE_PATTERNS,
+  SYNCED_AGENT_PATTERNS,
+} from "../oxc/shared.ts";
 import { MAX_FILE_BYTES } from "./ceilings.ts";
 
 const SIZE_EXCLUSIONS = [
@@ -10,7 +14,7 @@ const SIZE_EXCLUSIONS = [
     kind: "generated",
     patterns: [
       ...IGNORE_PATTERNS,
-      ...AGENT_IGNORE_PATTERNS,
+      ...SYNCED_AGENT_PATTERNS,
       "**/*.generated.*",
       "**/generated/**",
       "**/__snapshots__/**",
@@ -165,7 +169,14 @@ function isBinary(root: string, file: string, staged: boolean): boolean {
   }
 }
 
-/** Whether a repository path is generated output the size guard skips: `dist`, `.nuxt`, agent tooling, `*.generated.*`, snapshots, and package-root `build` or `output`. */
+/** Whether a repository path is in an agent tooling directory, whose repository-authored files the budget records apart from the rest. */
+export function isAgentFile(file: string): boolean {
+  return AGENT_IGNORE_PATTERNS.some((pattern) =>
+    file.startsWith(pattern.slice(0, -"**".length)),
+  );
+}
+
+/** Whether a repository path is generated output the budget and the size guard skip: `dist`, `.nuxt`, the agent files `antelopejs-sync` writes, `*.generated.*`, snapshots, and package-root `build` or `output`. */
 export function generatedOutput(root: string): (file: string) => boolean {
   const packageOutputs = packageOutputPatterns(root);
   const generated = SIZE_EXCLUSIONS.filter(({ kind }) => kind === "generated");

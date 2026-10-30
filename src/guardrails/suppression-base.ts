@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { coveredLimits } from "./config-scopes.ts";
-import { resolveRevision } from "./files.ts";
+import { isAgentFile, resolveRevision } from "./files.ts";
+import { countSuppressions, revisionSuppressions } from "./suppressions.ts";
+import type { SuppressionCounts } from "./suppressions.ts";
 import {
   parseBudget,
   SAFETY_RULE,
@@ -67,13 +69,59 @@ export function suppressionBase(
   return verified(root, "refs/remotes/origin/HEAD");
 }
 
+function agentFilesDropped(
+  base: SuppressionCounts,
+  current: SuppressionCounts,
+): string[] {
+  return base.agentFiles && !current.agentFiles
+    ? [
+        `${SUPPRESSIONS_FILE}: drops agentFiles, which the base has. Keep it; the repository's own files under the agent directories stay counted.`,
+      ]
+    : [];
+}
+
+/** How much each key's ceiling may rise by on adopting the agent directories' files. */
+interface AdoptableRoom {
+  rules: Record<string, number>;
+  config: Record<string, number>;
+  tsExpectError: number;
+  tsIgnore: number;
+  safety: number;
+}
+
+/** What the agent directories hold, when `current` begins recording them and `base` does not; nothing otherwise. */
+function adoptableAgentCounts(
+  root: string,
+  revision: string,
+  base: SuppressionCounts,
+  current: SuppressionCounts,
+): AdoptableRoom {
+  const none = {
+    rules: {},
+    config: {},
+    tsExpectError: 0,
+    tsIgnore: 0,
+    safety: 0,
+  };
+  if (base.agentFiles || !current.agentFiles) return none;
+  const counts = countSuppressions(
+    revisionSuppressions(root, revision).filter(({ file }) =>
+      isAgentFile(file),
+    ),
+  );
+  return { ...counts, config: counts.config ?? {} };
+}
+
 /**
  * Fails each ceiling of the working-tree budget that is higher than on
  * `revision`, and each rule that `revision` lists but the working tree
  * dropped, config rule-offs included once the base has their ceilings; a
  * config ceiling may rise by what a containing scope of its rule falls. The
  * safety ceiling may rise by what the SAFETY rule's own ceiling falls. A
- * base without a budget, a first adoption, passes.
+ * base that does not record the agent directories' files lets the working
+ * tree record them, each ceiling rising by no more than its count there; a
+ * base that does must keep recording them. A base without a budget, a first
+ * adoption, passes.
  */
 export function raisedCeilings(root: string, revision: string): string[] {
   const committed = spawnSync(
@@ -91,15 +139,22 @@ export function raisedCeilings(root: string, revision: string): string[] {
     readFileSync(join(root, SUPPRESSIONS_FILE), "utf8"),
     SUPPRESSIONS_FILE,
   );
-  const failures: string[] = [];
-  const compare = (key: string, before: number, after: number | undefined) => {
+  const failures: string[] = agentFilesDropped(base, current);
+  const room = adoptableAgentCounts(root, revision, base, current);
+  const compare = (
+    key: string,
+    ceiling: number,
+    after: number | undefined,
+    adoptable = 0,
+  ) => {
+    const before = ceiling + adoptable;
     if (after === undefined)
       failures.push(
         `${SUPPRESSIONS_FILE}: removes ${key}, which has ceiling ${before} on the base. Keep the key; lower it with suppressions:update.`,
       );
     else if (after > before)
       failures.push(
-        `${SUPPRESSIONS_FILE}: raises ${key} from ${before} on the base to ${after}.`,
+        `${SUPPRESSIONS_FILE}: raises ${key} from ${ceiling} on the base to ${after}${adoptable ? `, above the ${before} that recording the agent files allows` : ""}.`,
       );
   };
   for (const rule of new Set([
@@ -112,6 +167,7 @@ export function raisedCeilings(root: string, revision: string): string[] {
       Object.hasOwn(base.rules, rule)
         ? current.rules[rule]
         : (current.rules[rule] ?? 0),
+      room.rules[rule],
     );
   const baseConfig = base.config ?? {};
   const covered = coveredLimits(baseConfig, current.config ?? {});
@@ -128,13 +184,20 @@ export function raisedCeilings(root: string, revision: string): string[] {
             !Object.hasOwn(current.config, rule))
           ? undefined
           : (current.config[rule] ?? 0),
+        room.config[rule],
       );
-  compare("`@ts-expect-error`", base.tsExpectError, current.tsExpectError);
-  compare("`@ts-ignore`", base.tsIgnore, current.tsIgnore);
+  compare(
+    "`@ts-expect-error`",
+    base.tsExpectError,
+    current.tsExpectError,
+    room.tsExpectError,
+  );
+  compare("`@ts-ignore`", base.tsIgnore, current.tsIgnore, room.tsIgnore);
   compare(
     "`SAFETY:` comments",
     safetyCeiling(base, current.rules[SAFETY_RULE] ?? 0),
     current.safety,
+    room.safety,
   );
   return failures.length
     ? [

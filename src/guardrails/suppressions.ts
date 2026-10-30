@@ -50,13 +50,14 @@ export interface OpenDisable {
   line: number;
 }
 
-/** Suppression totals: lint directives per named rule (`*` for none), each comment kind, then lint config rule-offs per rule; a budget adopted before config rule-offs were counted has no `config`. */
+/** Suppression totals: lint directives per named rule (`*` for none), each comment kind, then lint config rule-offs per rule; a budget adopted before config rule-offs were counted has no `config`, and one adopted before the repository's own files under the agent directories were counted lacks `agentFiles`. */
 export interface SuppressionCounts {
   rules: Record<string, number>;
   tsExpectError: number;
   tsIgnore: number;
   safety: number;
   config?: Record<string, number>;
+  agentFiles?: true;
 }
 
 /** A comment without its delimiters, whether it is a line comment, and its offset in the file. */

@@ -65,7 +65,7 @@ test("full sync measures once, preserves handwritten text even behind a CLAUDE s
   assert.deepEqual(readCeilings(root).rules, {
     "typescript/no-explicit-any": 1,
   });
-  assert.equal(readCeilings(root).pack, "0.2.17");
+  assert.equal(readCeilings(root).pack, "0.2.18");
   assert.equal(
     read(root, "AGENTS.md"),
     `Handwritten introduction.\n\n${agentsBlock({ profile: "full", ratchet: true, verificationSkill: ".agents/skills/verify-runtime/SKILL.md", glossary: "docs/GLOSSARY.md" }).trimEnd()}\n\nHandwritten footer.\n`,
@@ -385,6 +385,7 @@ test("first adoption without debt writes no ratchet file, scripts or hook, but k
     tsIgnore: 0,
     safety: 0,
     config: { "category:correctness for *": 1 },
+    agentFiles: true,
   });
   assert.match(read(root, "lefthook.yml"), /antelopejs-suppressions --staged/);
   assert.equal(bin(root, "sync", ["--check"]).status, 0);

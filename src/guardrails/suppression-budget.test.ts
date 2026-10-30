@@ -166,6 +166,7 @@ test("sync writes the current counts once, then only adds config ceilings a budg
     tsIgnore: 0,
     safety: 1,
     config: {},
+    agentFiles: true,
   };
   assert.deepEqual(
     JSON.parse(read(root, "guardrails.suppressions.json")),

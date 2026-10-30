@@ -8,8 +8,14 @@ import {
   MAX_FILE_BYTES,
   type Ceilings,
 } from "./ceilings.ts";
-import { adoptedRelease, newlyEnabled, recordedRelease } from "./adoption.ts";
-import { authoredSizes, changedFiles } from "./files.ts";
+import {
+  adoptedRelease,
+  AGENT_FILES_RELEASE,
+  agentFilesPending,
+  newlyEnabled,
+  recordedRelease,
+} from "./adoption.ts";
+import { authoredSizes, changedFiles, isAgentFile } from "./files.ts";
 import { lintDiagnostics, type Diagnostic } from "./oxlint.ts";
 import { readCarriedCeilings } from "./renames.ts";
 import { raisedRatchet } from "./ratchet-raises.ts";
@@ -55,7 +61,7 @@ function lowerCeilings(ceilings: Ceilings, current: Ceilings): string[] {
   return lowered;
 }
 
-/** Records today's count of each rule without a ceiling that the pack enabled after `adopted`. */
+/** Records today's count of each rule without a ceiling that the pack enabled after `adopted`, and the size of each oversize agent file without an allowance when the repository predates counting them. */
 function adopt(
   ceilings: Ceilings,
   current: Ceilings,
@@ -69,6 +75,15 @@ function adopt(
     ceilings.rules[rule] = count;
     adoptions.push(`${rule}: ${count}, enabled by the pack in ${since}.`);
   }
+  if (agentFilesPending(adopted))
+    for (const [file, size] of Object.entries(current.oversizeFiles)) {
+      if (!isAgentFile(file) || Object.hasOwn(ceilings.oversizeFiles, file))
+        continue;
+      ceilings.oversizeFiles[file] = size;
+      adoptions.push(
+        `${file}: ${size} bytes, counted by the size guard from ${AGENT_FILES_RELEASE}.`,
+      );
+    }
   return adoptions;
 }
 
@@ -119,16 +134,23 @@ function sizeFailures(
   root: string,
   ceilings: Ceilings,
   current: Ceilings,
+  adopted: string | undefined,
 ): string[] {
   const failures: string[] = [];
   for (const [file, size] of Object.entries(current.oversizeFiles)) {
     const limit = ceilings.oversizeFiles[file];
-    if (limit === undefined)
-      failures.push(
+    if (limit !== undefined) continue;
+    const hint =
+      isAgentFile(file) && agentFilesPending(adopted)
+        ? ` The size guard counts the repository's own agent files from ${AGENT_FILES_RELEASE}; run ratchet:update to record today's size.`
+        : "";
+    failures.push(
+      `${
         size > MAX_FILE_BYTES
           ? sizeFailure(file, size, MAX_FILE_BYTES)
-          : `${file}: ${size} bytes and an eslint/max-lines diagnostic; this file has no oversize allowance. Split by responsibility into sibling modules, or split tests by behaviour under test, one file per describe.`,
-      );
+          : `${file}: ${size} bytes and an eslint/max-lines diagnostic; this file has no oversize allowance. Split by responsibility into sibling modules, or split tests by behaviour under test, one file per describe.`
+      }${hint}`,
+    );
   }
   const sizes = authoredSizes(root, Object.keys(ceilings.oversizeFiles));
   for (const [file, limit] of Object.entries(ceilings.oversizeFiles)) {
@@ -179,7 +201,7 @@ export function ratchet(
       changedFiles(root),
       adopted,
     ),
-    ...sizeFailures(root, ceilings, current),
+    ...sizeFailures(root, ceilings, current, adopted),
   ];
   const lowered = update ? lowerCeilings(ceilings, current) : [];
   if (update) ceilings.pack = recordedRelease(adopted);
