@@ -195,7 +195,7 @@ function fullBody(context: AgentsBlockContext): string[] {
       ? [
           "### Debt",
           "",
-          "`guardrails.ratchet.json` records the lint findings and oversize files this repository already had. Its numbers only go down. After you remove debt, run `pnpm run ratchet:update` and commit the lowered file. A rule listed there is off for `oxlint`. The ratchet counts it instead, and the pre-commit hook rejects it on every line you add.",
+          "`guardrails.ratchet.json` records the lint findings and oversize files this repository already had. Its numbers only go down. After you remove debt, or after a pack upgrade, run `pnpm run ratchet:update` and commit the file: it lowers the numbers and adds only the rules the new pack release enabled, at today's count. Never edit the numbers by hand; CI fails one added or raised against the base. A rule listed there is off for `oxlint`. The ratchet counts it instead, and the pre-commit hook rejects it on every line you add.",
           "",
         ]
       : []),

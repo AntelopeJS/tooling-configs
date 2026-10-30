@@ -17,25 +17,25 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 
 ## What's in the box
 
-| Export             | Import                                                                    | What it gives                                                                                           |
-| ------------------ | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `./oxc/lint`       | `import { antelopePreset } from "@antelopejs/tooling-configs/oxc/lint"`   | The oxlint preset                                                                                       |
-| `./oxc/fmt`        | `import { antelopeFmtPreset } from "@antelopejs/tooling-configs/oxc/fmt"` | The oxfmt preset (house style)                                                                          |
-| `./eslint`         | `import { antelopeNuxtConfig } from "@antelopejs/tooling-configs/eslint"` | ESLint for Nuxt layers                                                                                  |
-| `./knip`           | `import { antelopeKnipConfig } from "@antelopejs/tooling-configs/knip"`   | Knip for AntelopeJS modules                                                                             |
-| `./oxc/anti-slop`  | Loaded by the oxlint preset as a JS plugin                                | The vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules                                   |
-| `./oxc/guardrails` | Loaded by the oxlint preset as a JS plugin                                | The `antelopejs` comment and test-quality rules                                                         |
-| `./verify`         | `import type { VerifyConfig } from "@antelopejs/tooling-configs/verify"`  | Types and check helpers for a shared verification skill's `verify.config.ts`                            |
-| bin                | `antelopejs-sync`                                                         | Writes the guardrail pack into a repository; `--check` reports drift                                    |
-| bin                | `antelopejs-checks`                                                       | Runs every check and prints only the failures                                                           |
-| bin                | `antelopejs-ratchet`                                                      | Fails when recorded debt grows; `--update` lowers the record                                            |
-| bin                | `antelopejs-suppressions`                                                 | Fails when suppressions exceed their budget or an added one breaks policy; `--update` lowers the budget |
-| bin                | `antelopejs-check-size`                                                   | Fails on authored files over 20,000 bytes and on blanket disable directives                             |
-| bin                | `antelopejs-api-diff <base-ref>`                                          | Compares published declaration bundles against committed HEAD                                           |
-| bin                | `antelopejs-comment-proof <base-ref>`                                     | Compares comment-free JavaScript emit against committed HEAD                                            |
-| bin                | `antelopejs-check-interface-ranges`                                       | Fails on interface ranges that break module startup                                                     |
-| bin                | `antelopejs-garden [--json] [--apply-pauses]`                             | The Gardener's scans of the organization through the GitHub API and npm                                 |
-| bin                | `antelopejs-verify <command>`                                             | The harness of the shared `verify-interface`, `verify-module` and `verify-template` skills              |
+| Export             | Import                                                                    | What it gives                                                                                              |
+| ------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `./oxc/lint`       | `import { antelopePreset } from "@antelopejs/tooling-configs/oxc/lint"`   | The oxlint preset                                                                                          |
+| `./oxc/fmt`        | `import { antelopeFmtPreset } from "@antelopejs/tooling-configs/oxc/fmt"` | The oxfmt preset (house style)                                                                             |
+| `./eslint`         | `import { antelopeNuxtConfig } from "@antelopejs/tooling-configs/eslint"` | ESLint for Nuxt layers                                                                                     |
+| `./knip`           | `import { antelopeKnipConfig } from "@antelopejs/tooling-configs/knip"`   | Knip for AntelopeJS modules                                                                                |
+| `./oxc/anti-slop`  | Loaded by the oxlint preset as a JS plugin                                | The vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules                                      |
+| `./oxc/guardrails` | Loaded by the oxlint preset as a JS plugin                                | The `antelopejs` comment and test-quality rules                                                            |
+| `./verify`         | `import type { VerifyConfig } from "@antelopejs/tooling-configs/verify"`  | Types and check helpers for a shared verification skill's `verify.config.ts`                               |
+| bin                | `antelopejs-sync`                                                         | Writes the guardrail pack into a repository; `--check` reports drift                                       |
+| bin                | `antelopejs-checks`                                                       | Runs every check and prints only the failures                                                              |
+| bin                | `antelopejs-ratchet`                                                      | Fails when recorded debt grows; `--update` lowers the record and adopts rules a pack release newly enabled |
+| bin                | `antelopejs-suppressions`                                                 | Fails when suppressions exceed their budget or an added one breaks policy; `--update` lowers the budget    |
+| bin                | `antelopejs-check-size`                                                   | Fails on authored files over 20,000 bytes and on blanket disable directives                                |
+| bin                | `antelopejs-api-diff <base-ref>`                                          | Compares published declaration bundles against committed HEAD                                              |
+| bin                | `antelopejs-comment-proof <base-ref>`                                     | Compares comment-free JavaScript emit against committed HEAD                                               |
+| bin                | `antelopejs-check-interface-ranges`                                       | Fails on interface ranges that break module startup                                                        |
+| bin                | `antelopejs-garden [--json] [--apply-pauses]`                             | The Gardener's scans of the organization through the GitHub API and npm                                    |
+| bin                | `antelopejs-verify <command>`                                             | The harness of the shared `verify-interface`, `verify-module` and `verify-template` skills                 |
 
 ## antelopejs-garden
 
@@ -193,6 +193,7 @@ pnpm install
 
 ```json
 {
+  "pack": "0.2.17",
   "rules": { "antelopejs/no-comments": 22, "eslint/max-depth": 1 },
   "oversizeFiles": { "src/legacy.ts": 31250 }
 }
@@ -201,7 +202,8 @@ pnpm install
 - A rule listed under `rules` is off for `oxlint`, so editors, hooks and `lint` stay green. `antelopejs-ratchet` counts it with every rule on, and fails when a count rises. It prints the findings in the files the change touched.
 - A file listed under `oversizeFiles` may exceed 20,000 bytes and `max-lines`, up to its recorded size. Any other file over either limit fails. When git sees a listed file renamed (`git mv`, or a staged delete and add), the allowance moves to the new path and never exceeds the old one; a copy or a new file inherits nothing. `antelopejs-ratchet --base <ref>` detects renames against that revision instead of `HEAD`, for a rename that was committed before the file was updated.
 - The pre-commit hook runs `antelopejs-ratchet --staged`: for each rule under `rules` it counts the findings in the staged files and in those files at HEAD and at the merge-base of HEAD with the pull request base (`origin/$GITHUB_BASE_REF`, else `origin/HEAD`), rename sources and deleted files included, linted under the staged configuration. A merge-base finding counts only for a staged finding of the same rule on the same line, unchanged since the merge-base, and only while the files the branch changed hold no more findings of that rule than at the merge-base. It fails a rule whose staged count is above both, and lists the findings on lines that differ from HEAD and from the merge-base. Code moved between staged files, a legacy line that is reformatted or edited, a line restored byte for byte to its base form, a `SAFETY:` comment the branch added and the commit removes, or an edit of a file a legacy finding moved into earlier on the branch, nets out; a new finding does not, even next to a moved block. Locally the base is always `origin/HEAD`, so a branch stacked on another branch is compared with HEAD and the default branch, not with its parent branch. Without `origin/HEAD` (`git remote set-head origin --auto` sets it) or a merge-base, it compares with HEAD only and says so when it fails.
-- `antelopejs-ratchet --update` lowers each number to the current count and removes what reached zero. It never raises a number or adds an entry. Commit the lowered file.
+- `antelopejs-ratchet --update` lowers each number to the current count and removes what reached zero. It never raises a number. The only entries it adds are rules a pack release enabled after the release recorded under `pack`: `PACK_NEW_RULES` in `src/guardrails/adoption.ts` lists each such rule with the release that enabled it. After a pack upgrade, the update records today's count of each one that has findings, then moves `pack` forward, so a rule fixed to zero and later broken again is never adopted twice. Without `pack`, the repository's adopted release is the pack its lockfile installs at the pull request base (pnpm or npm), and an unknown one predates every listed rule. A clean repository with findings for such a rule gets a ratchet file holding only those rules; run `antelopejs-sync` afterwards for the ratchet scripts and hook. Commit the file.
+- Against the pull request base (`GITHUB_BASE_REF` in CI, else `origin/HEAD`, or `--base <ref>`), `antelopejs-ratchet` fails an entry added or raised by hand: a rule the pack did not newly enable, a pack-new rule above its count, an oversize allowance for a file that is not a rename of one, and a lowered or dropped `pack`. A first adoption (no ratchet file and no suppression budget at the base) passes.
 
 When every rule count is zero and `oversizeFiles` is empty, the ratchet is retired. `antelopejs-ratchet --update` deletes the file and asks you to run `antelopejs-sync`. Sync then removes `ratchet`, `ratchet:update`, the ratchet hook and the Debt instructions. Commit those changes together. An empty baseline on first adoption creates no file. Later syncs never recreate it because the `sync:check` script marks adoption.
 

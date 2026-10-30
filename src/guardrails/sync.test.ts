@@ -65,6 +65,7 @@ test("full sync measures once, preserves handwritten text even behind a CLAUDE s
   assert.deepEqual(readCeilings(root).rules, {
     "typescript/no-explicit-any": 1,
   });
+  assert.equal(readCeilings(root).pack, "0.2.17");
   assert.equal(
     read(root, "AGENTS.md"),
     `Handwritten introduction.\n\n${agentsBlock({ profile: "full", ratchet: true, verificationSkill: ".agents/skills/verify-runtime/SKILL.md", glossary: "docs/GLOSSARY.md" }).trimEnd()}\n\nHandwritten footer.\n`,

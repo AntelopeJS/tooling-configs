@@ -57,7 +57,7 @@ function carryAllowances(
     ]);
   }
   for (const [file, allowance] of moved) oversizeFiles[file] = allowance;
-  return { rules: ceilings.rules, oversizeFiles };
+  return { ...ceilings, oversizeFiles };
 }
 
 /** The ceilings at `root` with allowances carried across the renames in `staged` or working-tree scope. */
