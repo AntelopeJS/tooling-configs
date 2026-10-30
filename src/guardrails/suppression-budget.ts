@@ -138,7 +138,7 @@ function budgeted(
 }
 
 /** The totals of the working tree's suppressions in the agent directories. */
-export function agentCounts(root: string): SuppressionCounts {
+function agentCounts(root: string): SuppressionCounts {
   return countSuppressions(
     worktreeSuppressions(root).filter(({ file }) => isAgentFile(file)),
   );

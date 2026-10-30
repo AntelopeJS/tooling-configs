@@ -3,10 +3,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { coveredLimits } from "./config-scopes.ts";
-import { resolveRevision } from "./files.ts";
+import { isAgentFile, resolveRevision } from "./files.ts";
+import { countSuppressions, revisionSuppressions } from "./suppressions.ts";
 import type { SuppressionCounts } from "./suppressions.ts";
 import {
-  agentCounts,
   parseBudget,
   SAFETY_RULE,
   safetyCeiling,
@@ -92,6 +92,7 @@ interface AdoptableRoom {
 /** What the agent directories hold, when `current` begins recording them and `base` does not; nothing otherwise. */
 function adoptableAgentCounts(
   root: string,
+  revision: string,
   base: SuppressionCounts,
   current: SuppressionCounts,
 ): AdoptableRoom {
@@ -103,7 +104,11 @@ function adoptableAgentCounts(
     safety: 0,
   };
   if (base.agentFiles || !current.agentFiles) return none;
-  const counts = agentCounts(root);
+  const counts = countSuppressions(
+    revisionSuppressions(root, revision).filter(({ file }) =>
+      isAgentFile(file),
+    ),
+  );
   return { ...counts, config: counts.config ?? {} };
 }
 
@@ -135,7 +140,7 @@ export function raisedCeilings(root: string, revision: string): string[] {
     SUPPRESSIONS_FILE,
   );
   const failures: string[] = agentFilesDropped(base, current);
-  const room = adoptableAgentCounts(root, base, current);
+  const room = adoptableAgentCounts(root, revision, base, current);
   const compare = (
     key: string,
     ceiling: number,

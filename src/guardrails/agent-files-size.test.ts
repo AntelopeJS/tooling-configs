@@ -40,6 +40,7 @@ test("dms .agents/probes: the size guard fails an oversize repository-authored a
     result.stderr,
     /^\.agents\/probes\/backend-boundaries\.cjs: 20001 bytes, 1 bytes over the 20000-byte ceiling\./mu,
   );
+  assert.match(result.stderr, /antelopejs-ratchet --update/u);
   assert.doesNotMatch(result.stderr, /verify-module|fixtures/u);
 });
 

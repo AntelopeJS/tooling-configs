@@ -20,6 +20,18 @@ function committed(root: string, revision: string, path: string) {
   return result.status === 0 ? result.stdout : undefined;
 }
 
+function committedSize(
+  root: string,
+  revision: string,
+  path: string,
+): number | undefined {
+  const result = spawnSync("git", ["cat-file", "-s", `${revision}:${path}`], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  return result.status === 0 ? Number(result.stdout) : undefined;
+}
+
 function packFailure(base: Ceilings, ceilings: Ceilings): string[] {
   if (base.pack === undefined) return [];
   if (ceilings.pack === undefined)
@@ -65,27 +77,37 @@ function ruleFailures(
   return failures;
 }
 
+/** The base revision an oversize allowance is judged against. */
+interface OversizeBase {
+  root: string;
+  revision: string;
+  renames: Map<string, string>;
+  adopted: string | undefined;
+}
+
 function oversizeFailures(
+  { root, revision, renames, adopted }: OversizeBase,
   base: Ceilings,
   ceilings: Ceilings,
   measured: Ceilings,
-  renames: Map<string, string>,
-  adopted: string | undefined,
 ): string[] {
   const failures: string[] = [];
   for (const [file, limit] of Object.entries(ceilings.oversizeFiles)) {
     const before =
       base.oversizeFiles[file] ?? base.oversizeFiles[renames.get(file) ?? file];
     if (before === undefined) {
-      if (
-        isAgentFile(file) &&
-        agentFilesPending(adopted) &&
-        limit <= (measured.oversizeFiles[file] ?? 0)
-      )
-        continue;
-      failures.push(
-        `${CEILINGS_FILE}: adds an oversize allowance for ${file}.`,
-      );
+      const adoptable = isAgentFile(file) && agentFilesPending(adopted);
+      const existing = adoptable
+        ? committedSize(root, revision, renames.get(file) ?? file)
+        : undefined;
+      if (existing === undefined)
+        failures.push(
+          `${CEILINGS_FILE}: adds an oversize allowance for ${file}.`,
+        );
+      else if (limit > Math.min(existing, measured.oversizeFiles[file] ?? 0))
+        failures.push(
+          `${CEILINGS_FILE}: raises the oversize allowance of ${file} from ${existing} bytes on the base to ${limit}.`,
+        );
     } else if (limit > before)
       failures.push(
         `${CEILINGS_FILE}: raises the oversize allowance of ${file} from ${before} bytes on the base to ${limit}.`,
@@ -98,8 +120,8 @@ function oversizeFailures(
  * Fails each ceiling of `ceilings` added or raised against the ratchet file
  * at `revision`, except a rule the pack enabled after the base's adopted
  * release, recorded at no more than its `measured` count, and an oversize
- * agent file allowed at no more than its measured size while the base
- * predates counting those files; and a recorded pack
+ * agent file that exists at the base, allowed at no more than its size there
+ * and its measured size, while the base predates counting those files; and a recorded pack
  * release dropped or lowered. Renamed files keep their allowance. A base with
  * neither a ratchet file nor a suppression budget, a first adoption, passes.
  */
@@ -124,11 +146,15 @@ export function raisedRatchet(
     ...packFailure(base, ceilings),
     ...ruleFailures(base, ceilings, measured, adopted),
     ...oversizeFailures(
+      {
+        root,
+        revision,
+        renames: renamedPaths(root, false, [revision]),
+        adopted,
+      },
       base,
       ceilings,
       measured,
-      renamedPaths(root, false, [revision]),
-      adopted,
     ),
   ];
   return failures.length
