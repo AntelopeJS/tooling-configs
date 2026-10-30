@@ -53,6 +53,7 @@ import {
   MUTATION_PATH,
   mutationCaller,
 } from "./ci-workflow.ts";
+import { backendBoundaryArtifacts } from "./backend-boundary.ts";
 import { checkEntryOnlyConfiguration } from "./entry-only.ts";
 import {
   applyVerifyActions,
@@ -419,7 +420,8 @@ export function syncRepository(
     profile,
     verify.verificationSkill,
   );
-  let plan = planSync(current, modes, context);
+  const boundaries = backendBoundaryArtifacts(root);
+  let plan = [...planSync(current, modes, context), ...boundaries];
   const errors = plan
     .filter((artifact) => artifact.kind === "error")
     .map(({ message }) => message);
@@ -447,7 +449,7 @@ export function syncRepository(
       ...baseline,
       pack: recordedRelease(undefined),
     });
-    plan = planSync(current, modes, context);
+    plan = [...planSync(current, modes, context), ...boundaries];
   }
   const writes = plan.filter(
     (artifact) => artifact.kind === "write" || artifact.kind === "migrated",
