@@ -173,7 +173,7 @@ function lowerEach(
   return Object.fromEntries(
     Object.entries(limits).map(([rule, limit]) => [
       rule,
-      Math.min(limit, current[rule] ?? 0),
+      Math.min(limit, Object.hasOwn(current, rule) ? current[rule] : 0),
     ]),
   );
 }

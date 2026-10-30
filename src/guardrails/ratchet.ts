@@ -16,19 +16,19 @@ import { raisedRatchet } from "./ratchet-raises.ts";
 import { sizeFailure } from "./size.ts";
 
 function baseline(root: string, diagnostics: Diagnostic[]): Ceilings {
-  const rules: Record<string, number> = {};
+  const rules = new Map<string, number>();
   const oversizeFiles: Record<string, number> = {};
   const sizes = authoredSizes(root);
   for (const diagnostic of diagnostics) {
     if (diagnostic.rule === "eslint/max-lines") {
       const size = sizes.get(diagnostic.file);
       if (size !== undefined) oversizeFiles[diagnostic.file] = size;
-    } else rules[diagnostic.rule] = (rules[diagnostic.rule] ?? 0) + 1;
+    } else rules.set(diagnostic.rule, (rules.get(diagnostic.rule) ?? 0) + 1);
   }
   for (const [file, size] of sizes) {
     if (size > MAX_FILE_BYTES) oversizeFiles[file] = size;
   }
-  return { rules, oversizeFiles };
+  return { rules: Object.fromEntries(rules), oversizeFiles };
 }
 
 export function measureBaseline(root: string, config?: string): Ceilings {

@@ -11,6 +11,8 @@ import { toolingVersions } from "./package.ts";
  * predates it; a rule not listed here is never adopted.
  */
 export const PACK_NEW_RULES = new Map([
+  ["antelopejs/no-inherited-key-lookup", "0.2.17"],
+  ["antelopejs/no-presence-only-type-guard", "0.2.17"],
   ["typescript/no-unnecessary-type-parameters", "0.2.17"],
   ["typescript/no-unsafe-argument", "0.2.17"],
   ["typescript/no-unsafe-assignment", "0.2.17"],

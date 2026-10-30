@@ -70,6 +70,18 @@ const SHARED_RULES = [
     "`antelopejs/no-typeof-function-only-test`",
   ],
   [
+    "String-keyed object tables are read through own keys only",
+    "`antelopejs/no-inherited-key-lookup`",
+  ],
+  [
+    "A type guard checks each member it narrows to; keys with `Object.hasOwn`",
+    "`antelopejs/no-presence-only-type-guard`",
+  ],
+  [
+    "A type guard checks the nested elements and values it claims",
+    "review; no tool",
+  ],
+  [
     "Params ≤ 5, function ≤ 120 lines, file ≤ 500 lines, depth ≤ 4, complexity ≤ 20",
     "`eslint/max-*`, `eslint/complexity`",
   ],

@@ -39,48 +39,53 @@ export function list(value: JsonValue, path: string): JsonValue[] {
   return value;
 }
 
+/** The field's value when the payload has it as an own key; never one inherited from `Object.prototype`. */
+function field(source: JsonObject, key: string): JsonValue | undefined {
+  return Object.hasOwn(source, key) ? source[key] : undefined;
+}
+
 export function str(source: JsonObject, key: string): string {
-  const value = source[key];
+  const value = field(source, key);
   if (value === undefined || !isString(value))
     throw new DecodeError(`${key}: expected a string`);
   return value;
 }
 
 export function optStr(source: JsonObject, key: string): string | undefined {
-  const value = source[key];
+  const value = field(source, key);
   return value !== undefined && isString(value) ? value : undefined;
 }
 
 export function num(source: JsonObject, key: string): number {
-  const value = source[key];
+  const value = field(source, key);
   if (value === undefined || !isNumber(value))
     throw new DecodeError(`${key}: expected a number`);
   return value;
 }
 
 export function optNum(source: JsonObject, key: string): number | undefined {
-  const value = source[key];
+  const value = field(source, key);
   return value !== undefined && isNumber(value) ? value : undefined;
 }
 
 export function flag(source: JsonObject, key: string): boolean {
-  return source[key] === true;
+  return field(source, key) === true;
 }
 
 export function child(source: JsonObject, key: string): JsonObject {
-  const value = source[key];
+  const value = field(source, key);
   return value === undefined ? {} : object(value, key);
 }
 
 export function children(source: JsonObject, key: string): JsonObject[] {
-  const value = source[key];
+  const value = field(source, key);
   return value === undefined
     ? []
     : list(value, key).map((entry) => object(entry, key));
 }
 
 export function strings(source: JsonObject, key: string): string[] {
-  const value = source[key];
+  const value = field(source, key);
   return value === undefined
     ? []
     : list(value, key).filter((entry) => isString(entry));
