@@ -8,9 +8,11 @@ import {
   MAX_FILE_BYTES,
   type Ceilings,
 } from "./ceilings.ts";
+import { adoptedRelease, newlyEnabled, recordedRelease } from "./adoption.ts";
 import { authoredSizes, changedFiles } from "./files.ts";
 import { lintDiagnostics, type Diagnostic } from "./oxlint.ts";
 import { readCarriedCeilings } from "./renames.ts";
+import { raisedRatchet } from "./ratchet-raises.ts";
 import { sizeFailure } from "./size.ts";
 
 function baseline(root: string, diagnostics: Diagnostic[]): Ceilings {
@@ -53,18 +55,51 @@ function lowerCeilings(ceilings: Ceilings, current: Ceilings): string[] {
   return lowered;
 }
 
-export function ratchet(root: string, update = false, base = "HEAD") {
-  if (!existsSync(join(root, CEILINGS_FILE)))
-    throw new Error(`${CEILINGS_FILE} is missing. Run antelopejs-sync first.`);
-  const ceilings = readCarriedCeilings(root, false, [base]);
-  const diagnostics = lintDiagnostics(root);
-  const current = baseline(root, diagnostics);
-  const changed = changedFiles(root);
+/** Records today's count of each rule without a ceiling that the pack enabled after `adopted`. */
+function adopt(
+  ceilings: Ceilings,
+  current: Ceilings,
+  adopted: string | undefined,
+): string[] {
+  const adoptions: string[] = [];
+  for (const [rule, count] of Object.entries(current.rules)) {
+    if (Object.hasOwn(ceilings.rules, rule)) continue;
+    const since = newlyEnabled(rule, adopted);
+    if (since === undefined) continue;
+    ceilings.rules[rule] = count;
+    adoptions.push(`${rule}: ${count}, enabled by the pack in ${since}.`);
+  }
+  return adoptions;
+}
+
+function adoptionHint(
+  rule: string,
+  ceilings: Ceilings,
+  adopted: string | undefined,
+): string {
+  const since = Object.hasOwn(ceilings.rules, rule)
+    ? undefined
+    : newlyEnabled(rule, adopted);
+  if (since === undefined) return "";
+  const after =
+    adopted === undefined ? "" : `, after this repository's ${adopted}`;
+  return ` The pack enabled this rule in ${since}${after}; run ratchet:update to record today's count.`;
+}
+
+function ruleFailures(
+  ceilings: Ceilings,
+  current: Ceilings,
+  diagnostics: Diagnostic[],
+  changed: Set<string>,
+  adopted: string | undefined,
+): string[] {
   const failures: string[] = [];
   for (const [rule, count] of Object.entries(current.rules)) {
     const limit = ceilings.rules[rule] ?? 0;
     if (count <= limit) continue;
-    failures.push(`${rule}: ${count} diagnostics exceeds ceiling ${limit}.`);
+    failures.push(
+      `${rule}: ${count} diagnostics exceeds ceiling ${limit}.${adoptionHint(rule, ceilings, adopted)}`,
+    );
     const matches = diagnostics.filter(
       (diagnostic) => diagnostic.rule === rule,
     );
@@ -77,6 +112,15 @@ export function ratchet(root: string, update = false, base = "HEAD") {
         `  ...and ${matches.length - shown.length} recorded in files this change does not touch.`,
       );
   }
+  return failures;
+}
+
+function sizeFailures(
+  root: string,
+  ceilings: Ceilings,
+  current: Ceilings,
+): string[] {
+  const failures: string[] = [];
   for (const [file, size] of Object.entries(current.oversizeFiles)) {
     const limit = ceilings.oversizeFiles[file];
     if (limit === undefined)
@@ -92,12 +136,57 @@ export function ratchet(root: string, update = false, base = "HEAD") {
     if (size !== undefined && size > limit)
       failures.push(sizeFailure(file, size, limit));
   }
+  return failures;
+}
+
+/** Writes `ceilings`, or deletes the file once no debt is left; a clean repository gets a file only when it adopted a rule. */
+function persist(root: string, ceilings: Ceilings, create: boolean) {
+  const path = join(root, CEILINGS_FILE);
+  const present = existsSync(path);
+  const retired = present && isRetired(ceilings);
+  if (retired) unlinkSync(path);
+  else if (present || create) writeFileSync(path, formatCeilings(ceilings));
+  return { retired, created: !present && create };
+}
+
+/**
+ * Fails each rule above its ceiling and each file above its allowance. With
+ * `update`, first records today's count of each rule the pack enabled after
+ * the repository's adopted release (creating the file in a clean
+ * repository), then lowers the other ceilings and moves the recorded release
+ * forward. With `pullBase`, also fails each entry added or raised against
+ * that revision that is not such an adoption.
+ */
+export function ratchet(
+  root: string,
+  update = false,
+  base = "HEAD",
+  pullBase?: string,
+) {
+  if (!update && !existsSync(join(root, CEILINGS_FILE)))
+    throw new Error(`${CEILINGS_FILE} is missing. Run antelopejs-sync first.`);
+  const carried = readCarriedCeilings(root, false, [base]);
+  const ceilings: Ceilings = { ...carried, rules: { ...carried.rules } };
+  const adopted = adoptedRelease(root, ceilings.pack, pullBase ?? "HEAD");
+  const diagnostics = lintDiagnostics(root);
+  const current = baseline(root, diagnostics);
+  const adoptions = update ? adopt(ceilings, current, adopted) : [];
+  const failures = [
+    ...ruleFailures(
+      ceilings,
+      current,
+      diagnostics,
+      changedFiles(root),
+      adopted,
+    ),
+    ...sizeFailures(root, ceilings, current),
+  ];
   const lowered = update ? lowerCeilings(ceilings, current) : [];
-  const retired = update && isRetired(ceilings);
-  if (update) {
-    const path = join(root, CEILINGS_FILE);
-    if (retired) unlinkSync(path);
-    else writeFileSync(path, formatCeilings(ceilings));
-  }
-  return { failures, lowered, retired };
+  if (update) ceilings.pack = recordedRelease(adopted);
+  if (pullBase !== undefined)
+    failures.push(...raisedRatchet(root, pullBase, ceilings, current));
+  const { retired, created } = update
+    ? persist(root, ceilings, adoptions.length > 0)
+    : { retired: false, created: false };
+  return { failures, lowered, adoptions, retired, created };
 }

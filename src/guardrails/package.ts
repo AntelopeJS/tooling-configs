@@ -57,11 +57,11 @@ export function toolingVersions() {
         const lefthook = manifest.devDependencies?.lefthook;
         const knip = manifest.devDependencies?.knip;
         const tsgolint = manifest.devDependencies?.["oxlint-tsgolint"];
-        if (!lefthook || !knip || !tsgolint)
+        if (!lefthook || !knip || !tsgolint || !manifest.version)
           throw new Error(
-            "tooling-configs must declare lefthook, knip and oxlint-tsgolint devDependencies.",
+            "tooling-configs must declare its version and lefthook, knip and oxlint-tsgolint devDependencies.",
           );
-        return { lefthook, knip, tsgolint };
+        return { lefthook, knip, tsgolint, pack: manifest.version };
       }
     }
     const parent = dirname(directory);

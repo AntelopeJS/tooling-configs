@@ -292,6 +292,7 @@ test("ratchet ignores growth of listed JSON and binary files and drops their all
   const result = bin(root, "ratchet", ["--update"]);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(readCeilings(root), {
+    pack: "0.2.17",
     rules: { "typescript/no-explicit-any": 1 },
     oversizeFiles: {},
   });

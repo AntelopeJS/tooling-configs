@@ -10,6 +10,7 @@ import {
   resolveRevision,
 } from "../guardrails/files.ts";
 import { ratchet } from "../guardrails/ratchet.ts";
+import { suppressionBase } from "../guardrails/suppression-base.ts";
 import { stagedRatchet } from "../guardrails/staged-ratchet.ts";
 
 runCli(() => {
@@ -37,7 +38,9 @@ runCli(() => {
             : undefined,
         ),
         lowered: [],
+        adoptions: [],
         retired: false,
+        created: false,
       }
     : ratchet(
         root,
@@ -45,7 +48,14 @@ runCli(() => {
         values.base === undefined
           ? undefined
           : resolveRevision(root, values.base),
+        suppressionBase(root, values.base),
       );
+  if (result.created)
+    process.stdout.write(
+      `Created ${CEILINGS_FILE} for the rules the pack newly enabled. Run antelopejs-sync.\n`,
+    );
+  for (const message of result.adoptions)
+    process.stdout.write(`Adopted ${message}\n`);
   if (result.retired)
     process.stdout.write(
       `Deleted ${CEILINGS_FILE}: no debt left. Run antelopejs-sync.\n`,
