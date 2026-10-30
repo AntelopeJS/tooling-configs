@@ -149,7 +149,7 @@ test("api-diff fails when a composable changes the type argument of an unimporte
   assert.equal(result.status, 1, result.text);
   assert.match(
     result.text,
-    /^-useCurrentUser \(value\): \(\) => \{ user: Ref<User \| null>; label: ComputedRef<string>; \}$/mu,
+    /^-useCurrentUser \(value\): \(\) => \{ label: ComputedRef<string>; user: Ref<User \| null>; \}$/mu,
   );
 });
 

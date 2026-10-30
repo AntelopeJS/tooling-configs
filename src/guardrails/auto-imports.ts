@@ -8,9 +8,16 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, parse, posix } from "node:path";
+import { dirname, isAbsolute, join, posix } from "node:path";
 import type ts from "typescript";
 
+import {
+  autoImports,
+  exportedNames,
+  injectingHost,
+  presetModules,
+  sourceSpecifier,
+} from "./auto-import-globals.ts";
 import { normalizeBundle } from "./declaration-order.ts";
 import { resolveRevision } from "./files.ts";
 import { compareRevisions } from "./revisions.ts";
@@ -38,8 +45,6 @@ const PRIVATE_DIRECTORY = /(?:^|\/)app\/build(?:\/|$)/u;
 
 /** The extensions unimport's directory scan reads exports from. */
 const SCANNED_FILE = /\.(?:mts|cts|ts|tsx|mjs|cjs|js|jsx)$/u;
-
-const NAME_SEPARATOR = /[-_.]/u;
 
 const HINT =
   "Auto-imports: every export of a file under a directory that dms.frontend.build.ts passes to registerAutoImports is auto-imported into every frontend module, so a removed, added or changed name above changes what those modules compile against. @internal does not hide an auto-import and --allow-added does not apply to one. Keep removed and changed names (or release the change as breaking), and move a helper that must stay private under app/build/, which is never auto-imported.\n";
@@ -166,22 +171,6 @@ function compilerOptions(
     types: [],
     paths,
   };
-}
-
-/** The name unimport gives a default export: the file name, or its directory's for an index file, in camel case when it has a separator. */
-function defaultExportName(file: string): string {
-  const own = parse(file).name;
-  const name = own === "index" ? parse(dirname(file)).name : own;
-  if (!NAME_SEPARATOR.test(name)) return name;
-  return name
-    .split(/[-_.]+/u)
-    .filter(Boolean)
-    .map((word, index) =>
-      index === 0
-        ? `${word.charAt(0).toLowerCase()}${word.slice(1)}`
-        : `${word.charAt(0).toUpperCase()}${word.slice(1)}`,
-    )
-    .join("");
 }
 
 const FORMAT_FLAGS = (compiler: Compiler) =>
@@ -335,25 +324,41 @@ function moduleSurface(worktree: string, directory: string): ModuleSurface {
       posix.join(directory, BUILD_FILE),
     ),
   );
+  const options = compilerOptions(compiler, moduleRoot);
+  const presets = presetModules(compiler, moduleRoot, options);
+  const plain = compiler.createProgram(
+    [...files, ...presets.map(({ file }) => file)],
+    options,
+  );
+  const scanned = new Map(
+    files.flatMap((file) => {
+      const source = plain.getSourceFile(file);
+      return source === undefined ? [] : [[source.fileName, source] as const];
+    }),
+  );
+  const sources = [
+    ...presets.flatMap(({ file, specifier }) => {
+      const source = plain.getSourceFile(file);
+      return source === undefined ? [] : [{ source, specifier }];
+    }),
+    ...[...scanned.values()].map((source) => ({
+      source,
+      specifier: sourceSpecifier(source.fileName),
+    })),
+  ];
+  const imports = autoImports(plain.getTypeChecker(), sources);
   const program = compiler.createProgram(
     files,
-    compilerOptions(compiler, moduleRoot),
+    options,
+    injectingHost(compiler, options, scanned, imports),
   );
   const checker = program.getTypeChecker();
   const lines = new Set<string>();
   for (const file of files) {
     const source = program.getSourceFile(file);
-    const owner =
-      source === undefined ? undefined : checker.getSymbolAtLocation(source);
-    if (source === undefined || owner === undefined) continue;
-    for (const exported of checker.getExportsOfModule(owner))
-      for (const line of describe(
-        compiler,
-        checker,
-        exported.name === "default" ? defaultExportName(file) : exported.name,
-        exported,
-        source,
-      ))
+    if (source === undefined) continue;
+    for (const { name, symbol } of exportedNames(checker, source))
+      for (const line of describe(compiler, checker, name, symbol, source))
         lines.add(line.split(worktree).join("<root>"));
   }
   return { lines: [...lines].sort(), notice };
