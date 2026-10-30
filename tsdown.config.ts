@@ -10,6 +10,7 @@ export default defineConfig({
     "./src/knip.ts",
     "./src/eslint.ts",
     "./src/verify/index.ts",
+    "./src/formal/index.ts",
     "./src/bin/check-interface-ranges.ts",
     "./src/bin/sync.ts",
     "./src/bin/check-size.ts",

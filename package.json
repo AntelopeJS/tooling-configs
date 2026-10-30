@@ -44,7 +44,8 @@
     "./oxc/guardrails": "./dist/oxc/guardrails/index.mjs",
     "./knip": "./dist/knip.mjs",
     "./eslint": "./dist/eslint.mjs",
-    "./verify": "./dist/verify/index.mjs"
+    "./verify": "./dist/verify/index.mjs",
+    "./formal": "./dist/formal/index.mjs"
   },
   "publishConfig": {
     "access": "public",
