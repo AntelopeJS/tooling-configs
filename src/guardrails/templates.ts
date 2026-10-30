@@ -6,13 +6,26 @@ import {
   type repositoryTools,
 } from "./package.ts";
 
+/** A preset config file `antelopejs-sync` writes once and then leaves to the repository. */
+interface PresetConfig {
+  path: keyof ReturnType<typeof repositoryTools>["presets"];
+  legacy: string[];
+  specifier: string;
+  content: string;
+  /** Earlier templates, replaced as they stand. */
+  previous?: string[];
+}
+
 export const PRESET_CONFIGS = [
   {
     path: "oxlint.config.ts",
     legacy: [".oxlintrc.json"],
     specifier: "@antelopejs/tooling-configs/oxc/lint",
     content:
+      'import { defineConfig } from "oxlint";\nimport {\n  ANTELOPE_IGNORE_PATTERNS,\n  antelopePreset,\n} from "@antelopejs/tooling-configs/oxc/lint";\n\nexport default defineConfig({\n  extends: [antelopePreset()],\n  ignorePatterns: ANTELOPE_IGNORE_PATTERNS,\n  options: { typeAware: true },\n});\n',
+    previous: [
       'import { defineConfig } from "oxlint";\nimport { antelopePreset } from "@antelopejs/tooling-configs/oxc/lint";\n\nexport default defineConfig({\n  extends: [antelopePreset()],\n  options: { typeAware: true },\n});\n',
+    ],
   },
   {
     path: "oxfmt.config.ts",
@@ -28,16 +41,11 @@ export const PRESET_CONFIGS = [
     content:
       'import { antelopeKnipConfig } from "@antelopejs/tooling-configs/knip";\n\nexport default antelopeKnipConfig();\n',
   },
-] satisfies {
-  path: keyof ReturnType<typeof repositoryTools>["presets"];
-  legacy: string[];
-  specifier: string;
-  content: string;
-}[];
+] satisfies PresetConfig[];
 
 export function presetConfig(
   current: string | undefined,
-  preset: (typeof PRESET_CONFIGS)[number],
+  preset: PresetConfig,
   tools: ReturnType<typeof repositoryTools>,
 ): string {
   const target = tools.presets[preset.path];
@@ -45,8 +53,14 @@ export function presetConfig(
   const imported = new RegExp(
     `(?:\\bfrom\\s*|\\bimport\\s*\\(?\\s*)["']${specifier}["']`,
   );
-  if (current === undefined)
-    return preset.content.replace(preset.specifier, target);
+  const fresh = preset.content.replace(preset.specifier, target);
+  if (
+    current === undefined ||
+    preset.previous?.some(
+      (previous) => previous.replace(preset.specifier, target) === current,
+    )
+  )
+    return fresh;
   if (imported.test(current)) return current;
   const importLine = preset.content
     .split("\n")

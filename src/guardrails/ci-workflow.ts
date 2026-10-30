@@ -12,6 +12,8 @@ import {
   type YAMLMap,
 } from "yaml";
 
+import { staleNeeds } from "./workflow-needs.ts";
+
 export const CI_PATH = ".github/workflows/ci.yml";
 export const MUTATION_PATH = ".github/workflows/mutation.yml";
 export const CI_JOB_ID = "ci";
@@ -381,6 +383,8 @@ export function ciWorkflow(
     addDispatch(document);
     changed = true;
   }
+  const stale = staleNeeds(document, CI_PATH);
+  if (stale.length) throw new Error(stale.join("\n"));
   if (!changed) return current;
   blockOverflowingFlow(document);
   return document.toString({ lineWidth: 0, flowCollectionPadding: false });

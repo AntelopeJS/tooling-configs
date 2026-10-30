@@ -7,8 +7,9 @@ import {
 	type TypeEnvironment,
 } from "../shared/dictionary-types.ts";
 import { visibleTypeAlias } from "../shared/type-alias-resolution.ts";
+import { enclosingTypeGuard } from "../shared/type-guards.ts";
 
-import type { ESTree } from "@oxlint/plugins";
+import type { ESTree, SourceCode } from "@oxlint/plugins";
 
 const typeNodeKinds: ReadonlySet<string> = new Set([
 	"JSDocNonNullableType",
@@ -56,6 +57,42 @@ function isTypeNode(node: ESTree.Node): node is ESTree.TSType {
 
 function typeReferenceName(type: ESTree.TSTypeReference): string | null {
 	return type.typeName.type === "Identifier" ? type.typeName.name : null;
+}
+
+/** Return whether a type is literally `Record<string, unknown>`. */
+function isStringUnknownRecord(node: ESTree.TSType): boolean {
+	if (node.type !== "TSTypeReference" || typeReferenceName(node) !== "Record") return false;
+	const params = node.typeArguments?.params ?? [];
+	const [key, value] = params;
+	return (
+		params.length === 2 &&
+		key?.type === "TSStringKeyword" &&
+		value?.type === "TSUnknownKeyword"
+	);
+}
+
+/** Return whether a type is the whole target of a `value is T` predicate. */
+function isTypePredicateTarget(node: ESTree.TSType): boolean {
+	const annotation = node.parent;
+	return (
+		annotation.type === "TSTypeAnnotation" &&
+		annotation.parent.type === "TSTypePredicate" &&
+		!annotation.parent.asserts
+	);
+}
+
+/** Return whether a type is written in the body of its nearest function, and that function is a type guard. */
+function isInsideTypeGuardBody(node: ESTree.TSType, sourceCode: SourceCode, filename: string): boolean {
+	const body = enclosingTypeGuard(node, sourceCode, filename)?.body;
+	return body !== undefined && body !== null && node.start >= body.start && node.end <= body.end;
+}
+
+/** `Record<string, unknown>` is the narrowing a type guard establishes before it reads keys, so it passes as a predicate target or inside a guard body. */
+function isTypeGuardRecord(node: ESTree.TSType, sourceCode: SourceCode, filename: string): boolean {
+	return (
+		isStringUnknownRecord(node) &&
+		(isTypePredicateTarget(node) || isInsideTypeGuardBody(node, sourceCode, filename))
+	);
 }
 
 function isInsideTypeAliasDeclaration(node: ESTree.Node): boolean {
@@ -121,6 +158,7 @@ export const noUnsafeDictionaryTypeRule = defineRule({
 		};
 		const reportIfUnsafe = (node: ESTree.TSType) => {
 			if (environment === null || !shouldReportType(node, environment)) return;
+			if (isTypeGuardRecord(node, context.sourceCode, context.filename)) return;
 			const unsafe = classifyUnsafeDictionary(node, environment);
 			if (unsafe === null) return;
 			report(node, unsafe.unsafeValue);
