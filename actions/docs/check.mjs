@@ -13,9 +13,9 @@ import { parseArgs } from "node:util";
 import { decodeHTML } from "entities";
 import GithubSlugger from "github-slugger";
 import { marked } from "marked";
-import semver from "semver";
 
 import { checkTypescript } from "./typescript.mjs";
+import { checkVersionClaims, plain, sameRange } from "./versions.mjs";
 
 const markdown = /\.(md|mdc)$/i;
 const fields = new Set([
@@ -45,15 +45,6 @@ const FRAGMENT = "fragment";
 
 /** URLs are never fetched, and `/paths` belong to Nuxt/MDC, not the filesystem. */
 const UNCHECKED_LINK = /^(?:[a-z][a-z\d+.-]*:|\/)/i;
-
-function plain(tokens) {
-  return tokens
-    .map((token) => {
-      if (token.type === "html") return "";
-      return token.tokens ? plain(token.tokens) : decodeHTML(token.text ?? "");
-    })
-    .join("");
-}
 
 function attributes(html, attribute) {
   const pattern = new RegExp(
@@ -120,12 +111,14 @@ function document(path) {
   const locate = fenceLocator(text, firstLine);
   const doc = {
     path,
+    frontmatter,
     text,
     firstLine,
     tokens,
     links: [],
     anchors: new Set(),
     examples: [],
+    code: [],
     api: [],
     exports: new Set(),
     compatibility: [],
@@ -143,7 +136,14 @@ function document(path) {
         doc.exports.add(token.tokens[0].text);
       }
     }
-    if (token.type === "code") collectExample(doc, token, locate(token));
+    if (token.type === "code") {
+      const line = locate(token);
+      collectExample(doc, token, line);
+      doc.code.push([
+        line,
+        line + token.raw.trimEnd().split(/\r?\n/).length - 1,
+      ]);
+    }
     if (token.type !== "html") return;
     const html = token.text.replace(HTML_COMMENT, "");
     for (const tag of html.matchAll(/<[a-z][^>]*>/gi)) {
@@ -177,35 +177,6 @@ function document(path) {
   return doc;
 }
 
-/**
- * npm excludes prereleases unless a comparator explicitly admits that tuple;
- * subset() otherwise treats <2.0.0 as wider than the caret bound <2.0.0-0.
- */
-function comparableRange(spec) {
-  if (!semver.validRange(spec)) return null;
-  return new semver.Range(spec).set
-    .map((comparators) =>
-      comparators
-        .map((comparator) => {
-          const version = comparator.semver;
-          const admitsPrerelease = comparators.some(
-            (other) =>
-              other.semver.prerelease?.length &&
-              other.semver.major === version.major &&
-              other.semver.minor === version.minor &&
-              other.semver.patch === version.patch,
-          );
-          return comparator.operator === "<" &&
-            !version.prerelease.length &&
-            !admitsPrerelease
-            ? `<${version.version}-0`
-            : comparator.value;
-        })
-        .join(" "),
-    )
-    .join(" || ");
-}
-
 function checkCompatibility(doc, localPath, fail) {
   for (const { declaration, table } of doc.compatibility) {
     const [file, field, extra] = declaration.split("#");
@@ -232,17 +203,7 @@ function checkCompatibility(doc, localPath, fail) {
     for (const row of table.rows) {
       const name = plain(row[packageColumn].tokens).trim();
       const documented = plain(row[rangeColumn].tokens).trim();
-      const declared = manifest[field]?.[name];
-      const documentedRange = comparableRange(documented);
-      const declaredRange = comparableRange(declared);
-      const equivalent =
-        declared !== undefined &&
-        (documented === declared ||
-          (documentedRange !== null &&
-            declaredRange !== null &&
-            semver.subset(documentedRange, declaredRange) &&
-            semver.subset(declaredRange, documentedRange)));
-      if (!documented || !equivalent) {
+      if (!sameRange(documented, manifest[field]?.[name])) {
         fail(
           `${doc.path}: compatibility drift for ${name} in ${file}#${field}`,
         );
@@ -327,11 +288,13 @@ export function checkDocs({ root = process.cwd(), files, project = "" }) {
     return cache.get(path);
   };
   const documents = [...selected].map(load);
-  const context = { load, localPath, fail };
+  const context = { root, load, localPath, fail };
   let links = 0;
+  let blocks = 0;
   for (const doc of documents) {
     links += checkLinks(doc, context);
     checkCompatibility(doc, localPath, fail);
+    blocks += checkVersionClaims(doc, context);
     for (const entry of doc.api) localPath(resolve(dirname(doc.path), entry));
   }
   const typed = documents.some((doc) => doc.api.length || doc.examples.length);
@@ -352,7 +315,7 @@ export function checkDocs({ root = process.cwd(), files, project = "" }) {
     apis: documents.filter((doc) => doc.api.length).length,
     compatibility: documents.reduce(
       (total, doc) => total + doc.compatibility.length,
-      0,
+      blocks,
     ),
   };
 }

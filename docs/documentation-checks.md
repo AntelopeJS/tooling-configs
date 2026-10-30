@@ -42,6 +42,61 @@ packages must already exist. The repository's own packages need no build (see
 below). The action does not install the consumer, build project references, or
 execute examples.
 
+## Keep versions in the generated compatibility block
+
+`antelopejs-sync` writes each package's `@antelopejs/*` ranges into a block in
+its README. The block is the only place a version of an `@antelopejs/*` package
+may appear in the selected documents:
+
+```md
+<!-- antelopejs-docs-compat:start -->
+
+| Package                      | Supported        | Tested with |
+| ---------------------------- | ---------------- | ----------- |
+| `@antelopejs/interface-core` | `>=0.2.4 <1.0.0` | `0.3.0`     |
+
+<!-- antelopejs-docs-compat:end -->
+```
+
+The action checks each block against the `package.json` in the same directory.
+Every `@antelopejs/*` entry of `peerDependencies`, `dependencies`, and
+`optionalDependencies` needs a row (the peer range wins when a package is in
+more than one), its Supported cell must agree with the manifest under the
+semver comparison below, and a row for anything else fails. A block with no
+`package.json` beside it, a missing end marker, or a block without `Package` and
+`Supported` columns fails too. Tested with is not checked: it records what the
+lockfile resolved. Each failure says to run `antelopejs-sync`.
+
+Outside the block, these fail, each with its file, line, and the fix (run
+`antelopejs-sync` and delete the prose):
+
+- an `@antelopejs/<name>` followed by a version or range (`^1.2.0`, `~1`,
+  `>=0.1.1 <1.0.0`, `1.x`, `0.4`, `v1`, `@1.2.3`), in prose, emphasis, or inline
+  code, across inline code spans, parentheses, quotes, a dash, or one connector
+  word (`version`, `as`, `to`, `from`, `at`);
+- a table row that pairs a package with a range, whether the package is anywhere
+  in a cell of the row or in the column heading; cells under a Node.js, pnpm,
+  npm, Yarn, Bun, Deno, or TypeScript heading and sizes such as `1.2 MB` are not
+  ranges;
+- "requires" or "needs" followed by AntelopeJS and at most one word, then any
+  version or range; or followed by a phrase naming AntelopeJS (such as "the
+  `@antelopejs/core` package"), then `>= x` or `x.y or later` (also `newer`,
+  `higher`, `above`), unless the phrase joins another requirement with "and",
+  "or", "with", "plus" or "on";
+- the same claims in YAML frontmatter, since `title` and `description` render.
+
+These are not claims: fenced and indented code blocks (an install command such as
+`pnpm add` with a pinned package in a `bash` fence, a `package.json` excerpt),
+HTML comments, URLs and badges (the name follows `/`), package names without a
+version, ranges of other packages, Node.js or tool versions, and sizes,
+durations, multipliers such as `3.5x`, and IP addresses after a package name.
+Files named `CHANGELOG.md` keep their version history. Migration guides are
+documentation: name the release line in the heading or the file name instead of
+pairing it with the package name.
+
+Legacy `docs-compat` tables, described next, are manifest-checked, so their rows
+are not prose; `antelopejs-sync` replaces them with the block.
+
 ## Declare compatibility explicitly
 
 Put a `docs-compat` comment immediately before a top-level Markdown table with
@@ -49,7 +104,8 @@ Put a `docs-compat` comment immediately before a top-level Markdown table with
 fragment selects `peerDependencies`, `dependencies`, `optionalDependencies`, or
 `devDependencies`. Use multiple labeled tables to document different fields.
 
-For a README beside a manifest that declares `@antelopejs/core` as `^1.2.0`:
+For a README beside a manifest whose `peerDependencies` hold the range in this
+table:
 
 ```md
 <!-- docs-compat: ./package.json#peerDependencies -->
@@ -65,9 +121,10 @@ equivalent spellings such as `^1.2.0` and `>=1.2.0 <2.0.0` pass. Workspace, file
 link, and other non-semver specs must match exactly. Copying the manifest's range
 is the clearest convention. Escape table pipes as `\|` in semver unions.
 
-Unlabeled prose and tables are not checked. This check does not require a table
-for every dependency or establish that a dependency range is actually supported
-at runtime. Authors select the compatibility claims they intend to maintain.
+Unlabeled tables that pair an `@antelopejs/*` package with a range fail as
+prose (above); ranges of other packages are not checked. This check does not
+require a table for every dependency or establish that a dependency range is
+actually supported at runtime.
 
 ## Typecheck every TypeScript example
 
