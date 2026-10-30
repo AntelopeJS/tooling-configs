@@ -134,6 +134,14 @@ function countRows(base: SuppressionCounts, head: SuppressionCounts) {
   const rules = [
     ...new Set([...Object.keys(base.rules), ...Object.keys(head.rules)]),
   ].sort((a, b) => a.localeCompare(b));
+  const configTotal = (counts: SuppressionCounts) =>
+    Object.values(counts.config ?? {}).reduce((sum, count) => sum + count, 0);
+  const configRules = [
+    ...new Set([
+      ...Object.keys(base.config ?? {}),
+      ...Object.keys(head.config ?? {}),
+    ]),
+  ].sort((a, b) => a.localeCompare(b));
   return [
     ["Lint suppressions, all rules", total(base), total(head)],
     ...rules.map((rule) => [
@@ -144,6 +152,12 @@ function countRows(base: SuppressionCounts, head: SuppressionCounts) {
     ["`@ts-expect-error`", base.tsExpectError, head.tsExpectError],
     ["`@ts-ignore`", base.tsIgnore, head.tsIgnore],
     ["`SAFETY:` comments", base.safety, head.safety],
+    ["Lint config rule-offs, all rules", configTotal(base), configTotal(head)],
+    ...configRules.map((rule) => [
+      `Lint config rule-offs, \`${rule}\``,
+      base.config?.[rule] ?? 0,
+      head.config?.[rule] ?? 0,
+    ]),
   ];
 }
 

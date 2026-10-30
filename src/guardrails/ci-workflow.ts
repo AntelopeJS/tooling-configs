@@ -1,6 +1,7 @@
 import {
   isMap,
   isScalar,
+  Scalar,
   isPair,
   isSeq,
   parseDocument,
@@ -10,6 +11,8 @@ import {
   type YAMLSeq,
   type YAMLMap,
 } from "yaml";
+
+import { staleNeeds } from "./workflow-needs.ts";
 
 export const CI_PATH = ".github/workflows/ci.yml";
 export const MUTATION_PATH = ".github/workflows/mutation.yml";
@@ -229,6 +232,64 @@ function skipRenovateSync(document: Document, job: YAMLMap): boolean {
   return true;
 }
 
+function lines(text: string): string[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+/** The `docs-files` lines sync computes, and how to tell whether a hand-listed path still exists. */
+export interface DocsFilesPlan {
+  docsFiles: readonly string[];
+  exists: (path: string) => boolean;
+}
+
+function normalizePath(path: string): string {
+  return path.replace(/^(?:\.\/)+/, "").replace(/\/+$/, "");
+}
+
+function mergedDocsFiles(current: string[], plan: DocsFilesPlan): string[] {
+  const computed = new Set(plan.docsFiles);
+  const kept = current
+    .map(normalizePath)
+    .filter((path) => path && !computed.has(path) && plan.exists(path));
+  return [...new Set([...plan.docsFiles, ...kept])];
+}
+
+function setDocsFiles(
+  document: Document,
+  job: YAMLMap,
+  plan: DocsFilesPlan,
+): boolean {
+  const inputs = job.get("with", true);
+  const current = isMap(inputs) ? inputs.get("docs-files", true) : undefined;
+  const existing = isScalar(current) ? lines(String(current.value)) : [];
+  const files = mergedDocsFiles(existing, plan);
+  if (isScalar(current) && existing.join("\n") === files.join("\n"))
+    return false;
+  const value = new Scalar(`${files.join("\n")}\n`);
+  value.type = Scalar.BLOCK_LITERAL;
+  if (isMap(inputs)) inputs.set("docs-files", value);
+  else job.set("with", document.createNode({ "docs-files": value }));
+  return true;
+}
+
+function setCallersDocsFiles(
+  document: Document,
+  jobs: YAMLMap,
+  callers: readonly { id: string }[],
+  plan: DocsFilesPlan | undefined,
+): boolean {
+  let changed = false;
+  if (!plan?.docsFiles.length) return false;
+  for (const { id } of callers) {
+    const job = jobs.get(id, true);
+    if (isMap(job)) changed = setDocsFiles(document, job, plan) || changed;
+  }
+  return changed;
+}
+
 function canonicalSyncJob(): Node {
   const job = parseDocument(CI_CALLER).getIn(
     ["jobs", RENOVATE_SYNC_JOB_ID],
@@ -280,11 +341,14 @@ function assertNoClash(
  * dispatchable and read-only, with the Renovate sync it would otherwise run turned off. The write permissions the sync
  * needs to push and dispatch the caller live on a separate job calling ci-renovate-sync.yml, which is added when missing.
  * No `uses:` ref is ever rewritten. A workflow with no caller job is repository-specific CI and is left as it is.
+ * When `docsFiles` computes paths, every caller's `docs-files` input lists them first, then keeps its hand-listed paths
+ * that still exist, so sync never drops coverage.
  */
 export function ciWorkflow(
   current: string | undefined,
   callers: { id: string; named: boolean }[],
   syncCallers: { id: string }[],
+  docsFiles?: DocsFilesPlan,
 ): string {
   if (current === undefined) return CI_CALLER;
   if (!callers.length) return current;
@@ -301,7 +365,7 @@ export function ciWorkflow(
     ({ key }) => isScalar(key) && key.value === caller.id,
   );
   if (!pair || !isMap(pair.value)) return current;
-  let changed = false;
+  let changed = setCallersDocsFiles(document, jobs, callers, docsFiles);
   if (caller.named) {
     pair.value.delete("name");
     changed = true;
@@ -319,6 +383,8 @@ export function ciWorkflow(
     addDispatch(document);
     changed = true;
   }
+  const stale = staleNeeds(document, CI_PATH);
+  if (stale.length) throw new Error(stale.join("\n"));
   if (!changed) return current;
   blockOverflowingFlow(document);
   return document.toString({ lineWidth: 0, flowCollectionPadding: false });

@@ -1,4 +1,9 @@
-import { skillFolder, type VerifyKind } from "./kinds.ts";
+import {
+  skillFolder,
+  SYNCED_SKILL_FILES,
+  type SyncedSkillFile,
+  type VerifyKind,
+} from "./kinds.ts";
 import { KIND_TEXT } from "./skill-kinds.ts";
 
 const BIN = "pnpm exec antelopejs-verify";
@@ -20,7 +25,7 @@ description: ${JSON.stringify(text.description)}
 
 ${text.user} Every deterministic step is an \`antelopejs-verify\` command: you choose which journeys to run and judge what they show. Never replace a command with a shell recipe. When a journey you need does not exist, add it to \`verify.config.ts\`, name it in its feature file, then run it.
 
-\`antelopejs-sync\` writes this file and \`package.json\` here, and keeps them in sync. Everything else in \`${folder}/\` is the repository's own layer, which sync never touches.
+\`antelopejs-sync\` writes this file, \`package.json\` and \`tsconfig.json\` here, and keeps them in sync. Everything else in \`${folder}/\` is the repository's own layer, which sync never touches.
 
 ## Launch
 
@@ -143,12 +148,38 @@ ${bullets(text.gotchas)}
 /** The skill folder's package.json: it makes verify.config.ts an ES module and keeps the folder out of published packages. */
 const SKILL_PACKAGE = `${JSON.stringify({ private: true, type: "module" }, null, 2)}\n`;
 
+/**
+ * The skill folder's tsconfig.json: it gives the repository's files there the root compiler options with ES module resolution,
+ * so type-aware lint sees real types. The root tsconfig cannot include them: its `rootDir` is usually `src`.
+ */
+const SKILL_TSCONFIG = `${JSON.stringify(
+  {
+    extends: "../../../tsconfig.json",
+    compilerOptions: {
+      rootDir: "../../..",
+      module: "nodenext",
+      moduleResolution: "nodenext",
+      allowImportingTsExtensions: true,
+      composite: false,
+      noEmit: true,
+    },
+    include: ["**/*.ts"],
+  },
+  null,
+  2,
+)}\n`;
+
 /** Every file of a kind's synced layer, by path relative to the repository root. */
 export function syncedFiles(
   kind: VerifyKind,
 ): { path: string; content: string }[] {
-  return [
-    { path: `${skillFolder(kind)}/SKILL.md`, content: skillText(kind) },
-    { path: `${skillFolder(kind)}/package.json`, content: SKILL_PACKAGE },
-  ];
+  const content: Record<SyncedSkillFile, string> = {
+    "SKILL.md": skillText(kind),
+    "package.json": SKILL_PACKAGE,
+    "tsconfig.json": SKILL_TSCONFIG,
+  };
+  return SYNCED_SKILL_FILES.map((file) => ({
+    path: `${skillFolder(kind)}/${file}`,
+    content: content[file],
+  }));
 }
