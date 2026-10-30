@@ -90,3 +90,9 @@ test("staged ratchet refuses to read a project that fails to load as zero findin
   assert.match(result.stderr, /tsconfig/);
   assert.match(result.stderr, /Cannot find type definition file for 'node'/);
 });
+
+test("full ratchet does not reject a project that fails to load", (t) => {
+  const root = workspaceRepo(t, false);
+  const result = bin(root, "ratchet", []);
+  assert.doesNotMatch(result.stderr, /cannot be measured/);
+});
