@@ -7,7 +7,7 @@ import {
   symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 function git(root: string, args: string[], env: NodeJS.ProcessEnv, input = "") {
   return execFileSync("git", args, {
@@ -28,6 +28,24 @@ function revisionEntries(root: string, revision: string): Map<string, string> {
     if (tab > 0) entries.set(entry.slice(tab + 1), entry.slice(0, tab));
   }
   return entries;
+}
+
+/** Links the `node_modules` of the repository root and of each tracked package into `tree`, so the checkout resolves dependencies as the real one does. */
+function linkModules(root: string, tree: string, env: NodeJS.ProcessEnv): void {
+  const manifests = git(
+    root,
+    ["ls-files", "-z", "--", "package.json", ":(glob)**/package.json"],
+    env,
+  )
+    .split("\0")
+    .filter(Boolean);
+  for (const manifest of manifests) {
+    const directory = dirname(manifest);
+    const modules = join(root, directory, "node_modules");
+    const target = join(tree, directory, "node_modules");
+    if (existsSync(modules) && !existsSync(target))
+      symlinkSync(modules, target, "dir");
+  }
 }
 
 /**
@@ -80,12 +98,7 @@ export function withPreviousTree<Result>(
       );
     const tree = join(scratch, "tree");
     git(root, ["checkout-index", "-a", "-f", `--prefix=${tree}/`], env);
-    if (existsSync(join(root, "node_modules")))
-      symlinkSync(
-        join(root, "node_modules"),
-        join(tree, "node_modules"),
-        "dir",
-      );
+    linkModules(root, tree, env);
     return use(tree);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
