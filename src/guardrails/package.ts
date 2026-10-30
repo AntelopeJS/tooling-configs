@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 export interface Manifest {
   name?: string;
   version?: string;
+  private?: boolean;
   packageManager?: string;
   scripts?: Record<string, string>;
   dependencies?: Record<string, string>;
