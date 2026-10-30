@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { join } from "node:path";
 import type ts from "typescript";
 
@@ -8,13 +7,17 @@ import {
   DEFAULT_SAFETY_MARKERS,
   markerPattern,
 } from "../oxc/anti-slop/rules/require-safety-comment-for-type-assertion.ts";
+import { configRuleOffs, LINT_CONFIG_FILE } from "./config-suppressions.ts";
 import { generatedOutput, gitFiles } from "./files.ts";
+import { typescript } from "./parser.ts";
 
 /**
  * One suppression in an authored code file, at the line where its comment
  * starts, with the reason its comment gives, whitespace collapsed. A lint
  * directive yields one `rule` entry per rule it names, and one with rule `*`
- * when it names none; its reason is the text after ` -- `.
+ * when it names none; its reason is the text after ` -- `. A lint config
+ * yields one `config` entry per rule it switches off or down to a warning,
+ * for each glob it does so for, counted per rule and glob.
  */
 export type Suppression =
   | {
@@ -22,6 +25,13 @@ export type Suppression =
       rule: string;
       directive: string;
       reason: string;
+      file: string;
+      line: number;
+    }
+  | {
+      kind: "config";
+      rule: string;
+      scope: string;
       file: string;
       line: number;
     }
@@ -40,12 +50,13 @@ export interface OpenDisable {
   line: number;
 }
 
-/** Suppression totals: lint directives per named rule (`*` for none), then each comment kind. */
+/** Suppression totals: lint directives per named rule (`*` for none), each comment kind, then lint config rule-offs per rule; a budget adopted before config rule-offs were counted has no `config`. */
 export interface SuppressionCounts {
   rules: Record<string, number>;
   tsExpectError: number;
   tsIgnore: number;
   safety: number;
+  config?: Record<string, number>;
 }
 
 /** A comment without its delimiters, whether it is a line comment, and its offset in the file. */
@@ -65,15 +76,6 @@ const SAFETY_COMMENT = markerPattern(DEFAULT_SAFETY_MARKERS);
 const TS_DIRECTIVE = /^[/*\s]*@ts-(expect-error|ignore)(?![\w-])/u;
 const SAFETY_REASON = /SAFETY\s*:([\s\S]*)$/u;
 const ENABLE_DIRECTIVE = /^((?:oxlint|eslint)-enable)(?=\s|$)([\s\S]*)$/u;
-
-let compiler: typeof ts | undefined;
-
-/** This package's own TypeScript 5, loaded on first use, so the count never depends on the compiler a repository installs (TypeScript 7 has no parser API). */
-function typescript(): typeof ts {
-  /* SAFETY: the `typescript` dependency is pinned to 5.x, which exports the parser API. */
-  compiler ??= createRequire(import.meta.url)("typescript") as typeof ts;
-  return compiler;
-}
 
 function scriptKind(lang: string): ts.ScriptKind {
   const kinds = typescript().ScriptKind;
@@ -219,14 +221,16 @@ function lineOf(text: string, offset: number): number {
   return text.slice(0, offset).split("\n").length;
 }
 
-/** The suppressions in one code file's text; `file` decides the language and labels each entry. */
+/** The suppressions in one code file's or lint config's text; `file` decides the language and labels each entry. */
 export function suppressionsIn(file: string, text: string): Suppression[] {
+  const found: Suppression[] = configRuleOffs(file, text).map(
+    ({ rule, scope, line }) => ({ kind: "config", rule, scope, file, line }),
+  );
   if (
     !CODE_FILE.test(file) ||
     !(CANDIDATE.test(text) || SAFETY_COMMENT.test(text))
   )
-    return [];
-  const found: Suppression[] = [];
+    return found;
   for (const comment of fileComments(file, text)) {
     const line = lineOf(text, comment.start);
     for (const { directive, rule, reason } of lintDirective(comment.value))
@@ -290,10 +294,13 @@ function generatedIn(root: string): (file: string) => boolean {
 
 function authoredCode(root: string, files: string[]): string[] {
   const generated = generatedIn(root);
-  return files.filter((file) => CODE_FILE.test(file) && !generated(file));
+  return files.filter(
+    (file) =>
+      (CODE_FILE.test(file) || LINT_CONFIG_FILE.test(file)) && !generated(file),
+  );
 }
 
-/** What `read` finds in the working tree's authored code files: tracked and untracked, ignored files and generated output left out. */
+/** What `read` finds in the working tree's authored code files and lint configs: tracked and untracked, ignored files and generated output left out. */
 export function inWorktree<T>(
   root: string,
   read: (file: string, text: string) => T[],
@@ -385,7 +392,21 @@ export function revisionSuppressions(
   return atRevision(root, revision, suppressionsIn, files);
 }
 
-/** Totals by budget key, rules sorted by id. */
+/** The budget key of a config rule-off: its rule and the glob it is switched off for, so a wider or moved scope is a new key at ceiling 0. */
+export function configKey(rule: string, scope: string): string {
+  return `${rule} for ${scope}`;
+}
+
+/** A count map with its keys sorted, so serialising it is stable. */
+export function sortedKeys(
+  counts: Record<string, number>,
+): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)),
+  );
+}
+
+/** Totals by budget key, rules and config rule-offs sorted by id. */
 export function countSuppressions(
   suppressions: Suppression[],
 ): SuppressionCounts {
@@ -395,14 +416,19 @@ export function countSuppressions(
     tsIgnore: 0,
     safety: 0,
   };
+  const rules = new Map<string, number>();
+  const config = new Map<string, number>();
   for (const suppression of suppressions) {
     if (suppression.kind === "rule")
-      counts.rules[suppression.rule] =
-        (counts.rules[suppression.rule] ?? 0) + 1;
-    else counts[suppression.kind]++;
+      rules.set(suppression.rule, (rules.get(suppression.rule) ?? 0) + 1);
+    else if (suppression.kind === "config") {
+      const key = configKey(suppression.rule, suppression.scope);
+      config.set(key, (config.get(key) ?? 0) + 1);
+    } else counts[suppression.kind]++;
   }
-  counts.rules = Object.fromEntries(
-    Object.entries(counts.rules).sort(([a], [b]) => a.localeCompare(b)),
-  );
-  return counts;
+  return {
+    ...counts,
+    rules: sortedKeys(Object.fromEntries(rules)),
+    config: sortedKeys(Object.fromEntries(config)),
+  };
 }

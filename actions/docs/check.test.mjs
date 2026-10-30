@@ -1,32 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import {
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
 import { it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { checkDocs } from "./check.mjs";
-
-function fixture(t, files) {
-  const root = mkdtempSync(join(tmpdir(), "docs-check-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const write = (path, text) => {
-    mkdirSync(dirname(join(root, path)), { recursive: true });
-    writeFileSync(join(root, path), text);
-  };
-  for (const [path, text] of Object.entries(files)) write(path, text);
-  return { root, write };
-}
-
-const fence = (language, code) => `\n\n\`\`\`${language}\n${code}\n\`\`\`\n`;
+import { fence, fixture } from "./fixtures.mjs";
 
 it("accepts monorepo links, encoded paths, references, HTML, and heading anchors", (t) => {
   const { root } = fixture(t, {
@@ -107,7 +85,7 @@ Navigation
 ::
 \`[inline example](missing.md)\`
 ${fence("md", "[example](missing.md)\n<!-- docs-api: missing.ts -->")}
-${fence("ts", "const incomplete: string = 42;")}
+${fence("ts fragment", "const incomplete: string = 42;")}
 `,
   });
   const result = checkDocs({ root, files: ["docs"] });
@@ -219,156 +197,6 @@ it("checks only labeled rows, accepts matching workspace specs, and fails malfor
     checkDocs({ root, files: ["README.md"] }).failures[0],
     /needs.*table/,
   );
-});
-
-function typescriptFixture(t, text) {
-  const setup = fixture(t, {
-    "README.md": text,
-    "package.json": '{"type":"module"}',
-    "src/value.ts":
-      "export const answer: number = 42; export type Answer = number;",
-    "src/index.ts": 'export { answer, type Answer } from "./value.js";',
-    "tsconfig.json": JSON.stringify({
-      compilerOptions: {
-        strict: true,
-        module: "NodeNext",
-        target: "ES2022",
-        types: [],
-        skipLibCheck: true,
-        noCheck: true,
-      },
-      include: ["src/**/*.ts"],
-    }),
-  });
-  mkdirSync(join(setup.root, "node_modules"));
-  const require = createRequire(import.meta.url);
-  symlinkSync(
-    dirname(require.resolve("typescript/package.json")),
-    join(setup.root, "node_modules/typescript"),
-    "dir",
-  );
-  return setup;
-}
-
-it("checks annotated examples with consumer import resolution without executing them", (t) => {
-  const { root, write } = typescriptFixture(
-    t,
-    fence(
-      "ts docs-check",
-      `import { answer } from "./src/index.js";
-const result: number = answer;
-throw new Error("must never execute");`,
-    ),
-  );
-  const check = () =>
-    checkDocs({ root, files: ["README.md"], project: "tsconfig.json" });
-  assert.deepEqual(check().failures, []);
-  assert.equal(check().examples, 1);
-  write(
-    "README.md",
-    fence(
-      "ts docs-check",
-      'import { answer } from "./src/index.js";\nconst result: string = answer;',
-    ),
-  );
-  assert.match(check().failures.join("\n"), /TS2322/);
-  write(
-    "README.md",
-    fence("ts docs-check", 'import { absent } from "./src/index.js";'),
-  );
-  assert.match(check().failures.join("\n"), /TS2305/);
-  write("README.md", fence("ts", "this is deliberately incomplete pseudocode"));
-  assert.deepEqual(check().failures, []);
-});
-
-it("checks TSX props using the consumer's JSX settings", (t) => {
-  const { root, write } = typescriptFixture(t, "");
-  write(
-    "tsxconfig.json",
-    JSON.stringify({
-      extends: "./tsconfig.json",
-      compilerOptions: { jsx: "preserve" },
-    }),
-  );
-  const check = () =>
-    checkDocs({ root, files: ["README.md"], project: "tsxconfig.json" });
-  write(
-    "README.md",
-    fence(
-      "tsx docs-check",
-      "declare function Widget(props: { count: number }): null;\n<Widget count={42} />;",
-    ),
-  );
-  assert.deepEqual(check().failures, []);
-  write(
-    "README.md",
-    fence(
-      "tsx docs-check",
-      'declare function Widget(props: { count: number }): null;\n<Widget count="wrong" />;',
-    ),
-  );
-  assert.match(check().failures.join("\n"), /TS2322/);
-});
-
-it("requires the project for annotations and isolates complete examples", (t) => {
-  const { root, write } = typescriptFixture(
-    t,
-    fence("ts docs-check", "const value: string = 'ok';") +
-      fence("typescript docs-check", "const value: number = 123;"),
-  );
-  assert.match(
-    checkDocs({ root, files: ["README.md"] }).failures[0],
-    /require --typescript-project/,
-  );
-  const result = checkDocs({
-    root,
-    files: ["README.md"],
-    project: "tsconfig.json",
-  });
-  assert.deepEqual(result.failures, []);
-  assert.equal(result.examples, 2);
-  write(
-    "docs/tsconfig.json",
-    JSON.stringify({
-      compilerOptions: { strict: true, types: [] },
-      include: ["*.ts"],
-    }),
-  );
-  assert.deepEqual(
-    checkDocs({ root, files: ["README.md"], project: "docs/tsconfig.json" })
-      .failures,
-    [],
-  );
-});
-
-it("compares API headings with actual named and type re-exports, detecting missing and stale names", (t) => {
-  const declaration = "<!-- docs-api: ./src/index.ts -->\n\n";
-  const { root, write } = typescriptFixture(
-    t,
-    `${declaration}## \`answer\`\n\n## \`Answer\`\n`,
-  );
-  const check = () =>
-    checkDocs({ root, files: ["README.md"], project: "tsconfig.json" });
-  assert.deepEqual(check().failures, []);
-  write("README.md", `${declaration}## \`answer\`\n\n## \`Removed\`\n`);
-  const { failures } = check();
-  assert.equal(failures.length, 2);
-  assert.ok(
-    failures.some((failure) =>
-      failure.includes("missing API heading for export Answer"),
-    ),
-  );
-  assert.ok(
-    failures.some((failure) =>
-      failure.includes("API heading Removed is not exported"),
-    ),
-  );
-  write("src/index.ts", 'export * from "./value.js"; export default 1;');
-  write(
-    "README.md",
-    `${declaration}## \`answer\`\n\n## \`Answer\`\n\n## \`default\`\n`,
-  );
-  assert.deepEqual(check().failures, []);
 });
 
 it("rejects paths outside the checkout, missing selections, and empty selections", (t) => {
