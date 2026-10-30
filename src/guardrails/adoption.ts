@@ -20,6 +20,9 @@ export const PACK_NEW_RULES = new Map([
   ["typescript/use-unknown-in-catch-callback-variable", "0.2.17"],
 ]);
 
+/** The first pack release whose size guard counts a repository's own files under the agent directories; `ratchet:update` records the oversize ones once, in a repository recorded before it. */
+export const AGENT_FILES_RELEASE = "0.2.18";
+
 function parts(release: string): number[] {
   return release.split(".").map(Number);
 }
@@ -109,10 +112,21 @@ export function newlyEnabled(
     : undefined;
 }
 
-/** The release an update records: the latest of `adopted`, the installed pack and every listed rule's release, so no listed rule is adopted twice. */
+/** Whether `adopted` predates the release that began counting the repository's own agent files in the size guard. */
+export function agentFilesPending(adopted: string | undefined): boolean {
+  return (
+    adopted === undefined || compareReleases(AGENT_FILES_RELEASE, adopted) > 0
+  );
+}
+
+/** The release an update records: the latest of `adopted`, the installed pack and every listed rule's release and the agent files' release, so none is adopted twice. */
 export function recordedRelease(adopted: string | undefined): string {
   return (
-    latest([adopted, toolingVersions().pack, ...PACK_NEW_RULES.values()]) ??
-    "0.0.0"
+    latest([
+      adopted,
+      toolingVersions().pack,
+      AGENT_FILES_RELEASE,
+      ...PACK_NEW_RULES.values(),
+    ]) ?? "0.0.0"
   );
 }

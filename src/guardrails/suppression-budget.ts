@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { coveredLimits } from "./config-scopes.ts";
-import { changedFiles } from "./files.ts";
+import { changedFiles, isAgentFile } from "./files.ts";
 import { renamedPaths } from "./renames.ts";
 import { stagedAdditions } from "./staged-additions.ts";
 import { checkStagedPolicy } from "./suppression-policy.ts";
@@ -109,6 +109,11 @@ export function parseBudget(text: string, source: string): SuppressionCounts {
   };
   if (parsed.config !== undefined)
     budget.config = counted(parsed.config, `${source}: config`);
+  if (parsed.agentFiles !== undefined) {
+    if (parsed.agentFiles !== true)
+      throw new Error(`${source}: agentFiles must be true`);
+    budget.agentFiles = true;
+  }
   return budget;
 }
 
@@ -122,33 +127,90 @@ export function formatBudget(budget: SuppressionCounts): string {
   return `${JSON.stringify(sorted, null, 2)}\n`;
 }
 
-/** A budget with config rule-off ceilings: `text` itself when it has them or does not parse, else `text` plus today's config rule-offs. */
-function withConfigCeilings(root: string, text: string): string {
+/** `suppressions` without those in the agent directories, unless `budget` records them. */
+function budgeted(
+  budget: SuppressionCounts,
+  suppressions: Suppression[],
+): Suppression[] {
+  return budget.agentFiles
+    ? suppressions
+    : suppressions.filter(({ file }) => !isAgentFile(file));
+}
+
+/** The totals of the working tree's suppressions in the agent directories. */
+export function agentCounts(root: string): SuppressionCounts {
+  return countSuppressions(
+    worktreeSuppressions(root).filter(({ file }) => isAgentFile(file)),
+  );
+}
+
+function summed(base: Record<string, number>, extra: Record<string, number>) {
+  const count = (map: Record<string, number>, key: string) =>
+    Object.hasOwn(map, key) ? map[key] : 0;
+  return Object.fromEntries(
+    [...new Set([...Object.keys(base), ...Object.keys(extra)])].map((key) => [
+      key,
+      count(base, key) + count(extra, key),
+    ]),
+  );
+}
+
+/** `budget` with each ceiling raised by the count of its key in the agent directories, and the repository marked as recording them. */
+function withAgentCeilings(
+  budget: SuppressionCounts,
+  agent: SuppressionCounts,
+): SuppressionCounts {
+  return {
+    rules: summed(budget.rules, agent.rules),
+    tsExpectError: budget.tsExpectError + agent.tsExpectError,
+    tsIgnore: budget.tsIgnore + agent.tsIgnore,
+    safety: budget.safety + agent.safety,
+    config: summed(budget.config ?? {}, agent.config ?? {}),
+    agentFiles: true,
+  };
+}
+
+/**
+ * A budget with config rule-off ceilings and the agent directories' ceilings:
+ * `text` itself when it has both or does not parse, else `text` plus today's
+ * config rule-offs outside the agent directories, and the agent directories'
+ * counts added on top of the ceilings.
+ */
+function withAdoptedCeilings(root: string, text: string): string {
   let budget: SuppressionCounts;
   try {
     budget = parseBudget(text, SUPPRESSIONS_FILE);
   } catch {
     return text;
   }
-  if (budget.config !== undefined) return text;
-  const { config } = countSuppressions(worktreeSuppressions(root));
-  return formatBudget({ ...budget, config });
+  if (budget.config !== undefined && budget.agentFiles) return text;
+  const counted = countSuppressions(
+    budgeted(budget, worktreeSuppressions(root)),
+  );
+  const adopted = { ...budget, config: budget.config ?? counted.config };
+  return formatBudget(
+    budget.agentFiles ? adopted : withAgentCeilings(adopted, agentCounts(root)),
+  );
 }
 
 /**
- * The budget sync writes: `current` with today's config rule-offs adopted
- * when it predates them; when the file is missing, the committed one when it
- * was only deleted, so recreating it never raises a ceiling, else the
- * current counts.
+ * The budget sync writes: `current` with today's config rule-offs and the
+ * agent directories' suppressions adopted when it predates them; when the file
+ * is missing, the committed one when it was only deleted, so recreating it
+ * never raises a ceiling, else the current counts.
  */
 export function adoptedBudget(root: string, current?: string): string {
-  if (current !== undefined) return withConfigCeilings(root, current);
+  if (current !== undefined) return withAdoptedCeilings(root, current);
   const committed = spawnSync("git", ["show", `HEAD:${SUPPRESSIONS_FILE}`], {
     cwd: root,
     encoding: "utf8",
   });
-  if (committed.status === 0) return withConfigCeilings(root, committed.stdout);
-  return formatBudget(countSuppressions(worktreeSuppressions(root)));
+  if (committed.status === 0)
+    return withAdoptedCeilings(root, committed.stdout);
+  return formatBudget({
+    ...countSuppressions(worktreeSuppressions(root)),
+    agentFiles: true,
+  });
 }
 
 /** Each `file:line` once, indented, in the order found. */
@@ -193,6 +255,7 @@ function lowered(
   };
   if (budget.config !== undefined)
     result.config = lowerEach(budget.config, current.config);
+  if (budget.agentFiles) result.agentFiles = true;
   return result;
 }
 
@@ -211,7 +274,7 @@ export function checkSuppressions(root: string, update = false): string[] {
   if (!existsSync(path))
     throw new Error(`${SUPPRESSIONS_FILE} is missing. Run antelopejs-sync.`);
   const committed = parseBudget(readFileSync(path, "utf8"), SUPPRESSIONS_FILE);
-  const suppressions = worktreeSuppressions(root);
+  const suppressions = budgeted(committed, worktreeSuppressions(root));
   const counts = countSuppressions(suppressions);
   const budget = withCoveredScopes(committed, counts);
   const changed = changedFiles(root);
@@ -332,8 +395,14 @@ function stagedBudget(
   const head = budgetAt(root, "HEAD");
   if (head === undefined) return [];
   const index = budgetAt(root, "") ?? head;
-  const headSuppressions = revisionSuppressions(root, "HEAD", previous);
-  const stagedSuppressions = revisionSuppressions(root, "", staged);
+  const headSuppressions = budgeted(
+    index,
+    revisionSuppressions(root, "HEAD", previous),
+  );
+  const stagedSuppressions = budgeted(
+    index,
+    revisionSuppressions(root, "", staged),
+  );
   const before = groupByKey(headSuppressions);
   const after = groupByKey(stagedSuppressions);
   const scopes = stagedScopes(

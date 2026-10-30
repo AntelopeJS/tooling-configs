@@ -43,7 +43,7 @@ Verify a boundary against the imports a developer or agent would plausibly write
 
 const SUPPRESSION_BUDGET = `### Suppression budget
 
-\`guardrails.suppressions.json\` caps the suppressions in authored code: lint directives per rule they name (\`*\` for none), \`@ts-expect-error\`, \`@ts-ignore\` and \`SAFETY:\` comments, and under \`config\` each rule a lint config (\`oxlint.config.*\`, \`.oxlintrc.json\`, \`eslint.config.*\`) switches off or to a warning, keyed by rule and \`files\` glob anchored at the config's directory, so widening or moving a scope is a new ceiling of 0, while narrowing one takes over the room it gives up. Switching a rule off in a config is a suppression too: fix the code its rule reports instead. A suppression over its ceiling fails: fix the code, or remove another suppression of the same kind. A rule that keeps needing suppressions should be changed in the preset. Never raise or remove a number in that file: the check fails a ceiling higher than on the pull request base, and only the operator approves a raise. A directive disabling \`anti-slop/require-safety-comment-for-type-assertion\` is burn-down debt: remove the assertion, or, where it holds, replace the directive with \`SAFETY: <why it holds>\`, which takes over its room without a raise. After you remove suppressions, run \`pnpm run suppressions:update\` and commit the lowered file.`;
+\`guardrails.suppressions.json\` caps the suppressions in authored code, the repository's own files under \`.agents/\`, \`.claude/\` and the other agent directories included (\`agentFiles\`; only what \`antelopejs-sync\` writes there is skipped): lint directives per rule they name (\`*\` for none), \`@ts-expect-error\`, \`@ts-ignore\` and \`SAFETY:\` comments, and under \`config\` each rule a lint config (\`oxlint.config.*\`, \`.oxlintrc.json\`, \`eslint.config.*\`) switches off or to a warning, keyed by rule and \`files\` glob anchored at the config's directory, so widening or moving a scope is a new ceiling of 0, while narrowing one takes over the room it gives up. Switching a rule off in a config is a suppression too: fix the code its rule reports instead. A suppression over its ceiling fails: fix the code, or remove another suppression of the same kind. A rule that keeps needing suppressions should be changed in the preset. Never raise or remove a number in that file: the check fails a ceiling higher than on the pull request base, and only the operator approves a raise. A directive disabling \`anti-slop/require-safety-comment-for-type-assertion\` is burn-down debt: remove the assertion, or, where it holds, replace the directive with \`SAFETY: <why it holds>\`, which takes over its room without a raise. After you remove suppressions, run \`pnpm run suppressions:update\` and commit the lowered file.`;
 
 const SHARED_RULES = [
   ["Formatting", "oxfmt"],
@@ -124,7 +124,7 @@ const SHARED_RULES = [
 
 const FULL_RULES = [
   [
-    "Files ≤ 20,000 bytes, tests included",
+    "Files ≤ 20,000 bytes, tests and agent files included",
     "`antelopejs-check-size` (pre-commit)",
   ],
   [
