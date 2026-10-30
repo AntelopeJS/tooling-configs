@@ -99,6 +99,10 @@ function isDevRegistry(value: unknown): value is { pid: number; servers: object 
         code: "interface Money { amount: number; currency: string } export function isMoney(v: unknown): v is Money { return typeof v === 'object' && v !== null && typeof (v as Money).amount === 'number' && typeof (v as Money).currency === 'string'; }",
       },
       {
+        name: "members read through an angle-bracket cast",
+        code: "interface Money { amount: number; currency: string } export function isMoney(v: unknown): v is Money { return typeof v === 'object' && v !== null && typeof (<Money>v).amount === 'number' && typeof (<Money>v).currency === 'string'; }",
+      },
+      {
         name: "a nested callback's in check on another binding",
         code: "function allKnown(keys: string[]): keys is Known[] { return keys.every((key) => Object.hasOwn(KNOWN, key)); }",
       },
@@ -204,6 +208,11 @@ function isDevHandshake(value: unknown): value is DevHandshake {
         name: "presence written as Reflect.has and hasOwnProperty.call",
         code: "interface Money { amount: number; currency: string } export function isMoneyHas(v: unknown): v is Money { return isObjectLike(v) && Reflect.has(v, 'amount') && Object.prototype.hasOwnProperty.call(v, 'currency'); }",
         errors: [presenceOnly, presenceOnly],
+      },
+      {
+        name: "presence written as {}.hasOwnProperty.call",
+        code: "interface Money { amount: number } export function isMoneyCall(v: unknown): v is Money { return isObjectLike(v) && {}.hasOwnProperty.call(v, 'amount'); }",
+        errors: [presenceOnly],
       },
       {
         name: "an inline type literal with a presence-only member",

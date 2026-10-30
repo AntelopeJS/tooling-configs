@@ -27,6 +27,30 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       code: "const PRIMITIVE_TYPES: Record<string, SqlType> = { string: 'text' }; function typeOf(value: unknown) { return PRIMITIVE_TYPES[typeof value]; }",
     },
     {
+      name: "cloud@f784b41e:src/secrets/transit.ts:230, keys iterated from an array of string literals",
+      code: "function isEnvelope(value: object) { const fields = value as Record<string, unknown>; return ['wrappedKey', 'iv'].every((key) => typeof fields[key] === 'string'); }",
+    },
+    {
+      name: "dms-frontend@49bfafa:templates/vue/frontend-runtime/components.ts:171, for...of over string literals",
+      code: "function names(value: object) { const definition = value as Record<string, unknown>; for (const key of ['component', 'componentName']) use(definition[key]); }",
+    },
+    {
+      name: "dms-frontend@49bfafa:templates/vue/frontend-runtime/fetch.ts:98, keys through a filter and sort chain",
+      code: "function stable(value: object) { const record = value as Record<string, unknown>; return Object.keys(record).filter((name) => record[name] !== undefined).sort().map((name) => record[name]); }",
+    },
+    {
+      name: "keys from Object.entries of the same table, and a chained key list in a variable",
+      code: "const T: Record<string, number> = { a: 1 }; for (const [k] of Object.entries(T)) use(T[k]); Object.entries(T).map(([k]) => T[k]); const names = Object.keys(T).filter(keep); for (const n of names) use(T[n]);",
+    },
+    {
+      name: "cloud@f784b41e:src/infra/prometheus/minute-volumes.ts:266, a key from a same-file constant object",
+      code: "const WORKLOAD_LABELS = { tenantId: 'cloud.tenant' } as const; function claim(identity: Record<string, string> | undefined) { return identity?.[WORKLOAD_LABELS.tenantId]; }",
+    },
+    {
+      name: "a {}.hasOwnProperty.call guard",
+      code: "const T: Record<string, number> = { a: 1 }; function f(key: string) { return {}.hasOwnProperty.call(T, key) ? T[key] : undefined; }",
+    },
+    {
       name: "a write is not a lookup",
       code: "const out: Record<string, number> = {}; function f(name: string) { out[name] = 1; delete out[name]; }",
     },
@@ -259,6 +283,16 @@ class ControllerProto {
   }
 }`,
       errors: [inOperator, lookup],
+    },
+    {
+      name: "tooling-configs@4334123:src/guardrails/config-scopes.ts:86, keys from another table's entries",
+      code: "function covered(limits: Record<string, number>, counts: Record<string, number>) { for (const [key] of Object.entries(counts)) use(limits[key]); }",
+      errors: [lookup],
+    },
+    {
+      name: "an imported constant key is not resolved (cloud minute-volumes.ts imports WORKLOAD_LABELS)",
+      code: "import { WORKLOAD_LABELS } from './metering'; function claim(identity: Record<string, string> | undefined) { return identity?.[WORKLOAD_LABELS.tenantId]; }",
+      errors: [lookup],
     },
     {
       name: "a guard on a different key does not cover the read",
