@@ -47,7 +47,7 @@ function placed(sites: Record<number, string>): string {
   return `${Array.from({ length: last }, (_, index) => sites[index + 1] ?? "").join("\n")}\n`;
 }
 
-/** The rejection-reason sites mongodb#66 left under the ratchet at 0871c38, reduced to one line each at their real line. */
+/** The rejection-reason sites mongodb#66 left under the ratchet at 0871c38, reduced to one line each at their real line. The `.catch` callback at schema-initialization.test.ts:170 and the `reject` declaration at schema-initialization-helpers.ts:21 are exempt since #81, so those two lines are plain parameter sites. */
 function mongodbRejectionReasons(root: string): void {
   put(
     root,
@@ -76,7 +76,7 @@ function mongodbRejectionReasons(root: string): void {
     root,
     "src/test/schema-initialization.test.ts",
     placed({
-      170: "export const teardown = destroy().catch((error: unknown) => error);",
+      170: "export const teardown = (error: unknown) => error;",
     }),
   );
   put(
@@ -84,7 +84,7 @@ function mongodbRejectionReasons(root: string): void {
     "src/test/schema-initialization-helpers.ts",
     placed({
       9: "export type Reject = (error: unknown) => void;",
-      21: "export let reject!: (error: unknown) => void;",
+      21: "export const reject = (error: unknown) => error;",
     }),
   );
   put(
