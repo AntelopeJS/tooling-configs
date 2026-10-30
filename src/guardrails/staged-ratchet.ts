@@ -9,6 +9,7 @@ import {
   type LintOptions,
 } from "./oxlint.ts";
 import { withPreviousTree } from "./previous-tree.ts";
+import { LINT_CONFIG } from "./files.ts";
 import { renamedPaths } from "./renames.ts";
 import {
   previousLine,
@@ -37,9 +38,6 @@ function countByRule(diagnostics: Diagnostic[]): Map<string, number> {
     counts.set(rule, (counts.get(rule) ?? 0) + 1);
   return counts;
 }
-
-const LINT_CONFIG =
-  /(?:^|\/)(?:oxlint\.config\.[cm]?[jt]s|\.oxlintrc\.jsonc?)$/u;
 
 type Comparison =
   | { revision: string; label: string }
