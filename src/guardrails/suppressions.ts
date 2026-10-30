@@ -416,15 +416,19 @@ export function countSuppressions(
     tsIgnore: 0,
     safety: 0,
   };
-  const rules: Record<string, number> = {};
-  const config: Record<string, number> = {};
+  const rules = new Map<string, number>();
+  const config = new Map<string, number>();
   for (const suppression of suppressions) {
     if (suppression.kind === "rule")
-      rules[suppression.rule] = (rules[suppression.rule] ?? 0) + 1;
+      rules.set(suppression.rule, (rules.get(suppression.rule) ?? 0) + 1);
     else if (suppression.kind === "config") {
       const key = configKey(suppression.rule, suppression.scope);
-      config[key] = (config[key] ?? 0) + 1;
+      config.set(key, (config.get(key) ?? 0) + 1);
     } else counts[suppression.kind]++;
   }
-  return { ...counts, rules: sortedKeys(rules), config: sortedKeys(config) };
+  return {
+    ...counts,
+    rules: sortedKeys(Object.fromEntries(rules)),
+    config: sortedKeys(Object.fromEntries(config)),
+  };
 }

@@ -83,7 +83,7 @@ export function coveredLimits(
 ) {
   const covered = { ...limits };
   for (const [key, count] of Object.entries(counts)) {
-    const limit = limits[key] ?? 0;
+    const limit = Object.hasOwn(limits, key) ? limits[key] : 0;
     const narrow = keyParts(key);
     if (count <= limit || narrow === undefined) continue;
     let room = 0;
@@ -94,7 +94,10 @@ export function coveredLimits(
         wide?.rule === narrow.rule &&
         globContains(wide.glob, narrow.glob)
       )
-        room = Math.max(room, wideLimit - (counts[wideKey] ?? 0));
+        room = Math.max(
+          room,
+          wideLimit - (Object.hasOwn(counts, wideKey) ? counts[wideKey] : 0),
+        );
     }
     covered[key] = limit + room;
   }
