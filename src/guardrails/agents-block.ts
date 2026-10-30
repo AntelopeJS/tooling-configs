@@ -29,7 +29,7 @@ Hold every test you write or keep to this checklist:
 
 const CLEANUP_PROOF = `### Cleanup proof
 
-A behaviour-preserving cleanup PR shows \`antelopejs-api-diff <base-ref>\` passing. Published declarations and built runtime exports stay unchanged; pass \`--allow-added <glob>\` (repeatable, e.g. \`'**/internal/**'\`) to let added entries under that glob pass when their module is \`@internal\`, and copy its "Added (allowed)" list. A comment-only PR shows \`antelopejs-comment-proof <base-ref>\` passing instead of a verifier. Both compare committed HEAD.
+A behaviour-preserving cleanup PR shows \`antelopejs-api-diff <base-ref>\` passing. Published declarations, built runtime exports and the names and signatures a DMS frontend module auto-imports stay unchanged; pass \`--allow-added <glob>\` (repeatable, e.g. \`'**/internal/**'\`) to let added entries under that glob pass when their module is \`@internal\`, and copy its "Added (allowed)" list. Every export under a directory that \`dms.frontend.build.ts\` auto-imports is published, \`@internal\` or not; a helper that must stay private goes under \`app/build/\`. A comment-only PR shows \`antelopejs-comment-proof <base-ref>\` passing instead of a verifier. Both compare committed HEAD.
 
 Copy the proof's whole output into the PR body, down to its closing \`<!-- antelopejs-proof ... -->\` line, which stamps the command, base, committed head and a digest. Never type counts by hand. List the lint findings a PR leaves in place by pasting the block \`antelopejs-body-check --findings\` prints and replacing each \`<why>\`. \`antelopejs-body-check <body.md>\` fails an edited or stale proof block, proof output outside one, and a findings line that is not a live diagnostic at HEAD; counts in prose are not checked, so leave them out. The table counts a lint directive once per rule it names, inline directives included.
 
@@ -74,7 +74,7 @@ const SHARED_RULES = [
     "`eslint/max-*`, `eslint/complexity`",
   ],
   [
-    "Cleanup preserves declarations and built runtime export metadata",
+    "Cleanup preserves declarations, runtime exports and DMS auto-imports",
     "`antelopejs-api-diff <base-ref>`",
   ],
   [
