@@ -167,6 +167,8 @@ export function guardrailsRules() {
       ...FRAMEWORK_SPECIFIC_JEST_RULES,
       "jest/expect-expect": "off",
       "antelopejs/no-comments": "error",
+      "antelopejs/no-inherited-key-lookup": "error",
+      "antelopejs/no-presence-only-type-guard": "error",
     },
     overrides: [
       {
