@@ -1,3 +1,5 @@
+import { syncedAgentPaths } from "../verify/kinds.ts";
+
 /**
  * Paths every AntelopeJS project generates or vendors, and that no linter should read.
  * `.github/ISSUE_TEMPLATE/**` holds GitHub's legacy issue templates: Markdown with
@@ -30,3 +32,9 @@ export const AGENT_IGNORE_PATTERNS = [
   ".opencode/**",
   ".windsurf/**",
 ];
+
+/** What `antelopejs-sync` writes under the agent directories, from the list it syncs; the repository's own files there stay linted. */
+export const SYNCED_AGENT_PATTERNS = syncedAgentPaths().flatMap((path) => [
+  path,
+  `${path}/**`,
+]);

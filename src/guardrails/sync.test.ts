@@ -236,6 +236,7 @@ test("template profile manages only presets and AGENTS, and appends without repl
   assert.deepEqual(result.paths.sort(), [
     ".agents/skills/verify-template/SKILL.md",
     ".agents/skills/verify-template/package.json",
+    ".agents/skills/verify-template/tsconfig.json",
     ".claude/skills/verify-template",
     "AGENTS.md",
     "knip.config.ts",
@@ -386,4 +387,19 @@ test("first adoption without debt writes no ratchet file, scripts or hook, but k
   });
   assert.match(read(root, "lefthook.yml"), /antelopejs-suppressions --staged/);
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
+});
+
+test("sync replaces the previous oxlint.config.ts template, whose preset ignores oxlint never read, with one that sets them at the root (interface-auth#30)", (t) => {
+  const root = testRepo(t);
+  put(
+    root,
+    "oxlint.config.ts",
+    'import { defineConfig } from "oxlint";\nimport { antelopePreset } from "@antelopejs/tooling-configs/oxc/lint";\n\nexport default defineConfig({\n  extends: [antelopePreset()],\n  options: { typeAware: true },\n});\n',
+  );
+  const result = syncRepository(root, { profile: "template" });
+  assert.deepEqual(result.errors, []);
+  assert.equal(
+    read(root, "oxlint.config.ts"),
+    'import { defineConfig } from "oxlint";\nimport {\n  ANTELOPE_IGNORE_PATTERNS,\n  antelopePreset,\n} from "@antelopejs/tooling-configs/oxc/lint";\n\nexport default defineConfig({\n  extends: [antelopePreset()],\n  ignorePatterns: ANTELOPE_IGNORE_PATTERNS,\n  options: { typeAware: true },\n});\n',
+  );
 });

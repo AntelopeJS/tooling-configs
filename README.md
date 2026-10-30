@@ -49,7 +49,7 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 
 ## Shared verification skills
 
-`antelopejs-sync` writes one shared verification skill into a repository: `verify-interface` for an interface, `verify-module` for an implementation module (inferred from `antelopeJs.implements`) and `verify-template` under `--profile template`. Pass `--verify interface|module|template` to choose, or `--verify custom` for a repository that keeps its own `.agents/skills/verify-<repo>/`. Sync writes `SKILL.md` and `package.json` in `.agents/skills/verify-<kind>/` with a `.claude/skills/verify-<kind>` link, and `--check` reports them as drift. It never touches the repository's own layer beside them: `verify.config.ts`, `features/`, `seeded-breaks/` and `seeded-doors/`.
+`antelopejs-sync` writes one shared verification skill into a repository: `verify-interface` for an interface, `verify-module` for an implementation module (inferred from `antelopeJs.implements`) and `verify-template` under `--profile template`. Pass `--verify interface|module|template` to choose, or `--verify custom` for a repository that keeps its own `.agents/skills/verify-<repo>/`. Sync writes `SKILL.md`, `package.json` and `tsconfig.json` in `.agents/skills/verify-<kind>/` with a `.claude/skills/verify-<kind>` link, and `--check` reports them as drift. The `tsconfig.json` extends the root one with ES module resolution, so type-aware lint sees the real types of the repository's files there. It never touches the repository's own layer beside them: `verify.config.ts`, `features/`, `seeded-breaks/` and `seeded-doors/`.
 
 Every deterministic step of a verification is an `antelopejs-verify` command: `map`, `plan`, `new`, `doctor`, `journey`, `formal`, `doors`, `seeded`, `seeded-doors`, `clean`, `verdict` and `publish`. The synced `SKILL.md` documents each one for the agent that verifies.
 
@@ -143,7 +143,7 @@ antelopePreset({
 
 ### Add ignore patterns
 
-oxlint does not merge `ignorePatterns` across `extends`: a root config that declares its own replaces the preset's. Spread the shared ones:
+oxlint reads `ignorePatterns` only from the root config, never from `extends`, so the synced `oxlint.config.ts` sets `ignorePatterns: ANTELOPE_IGNORE_PATTERNS`, and sync replaces the earlier template that did not. `ANTELOPE_IGNORE_PATTERNS` holds generated output and what sync writes under the agent directories: the synced files of each shared skill and its `.claude/skills` link, which shows the repository's own files a second time. The repository's own files under `.agents/` and `.claude/` are linted. Spread the shared patterns when adding your own:
 
 ```ts
 // oxlint.config.ts
