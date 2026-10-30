@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 
 import { findingsProblems, formatFindings } from "./body-findings.ts";
 import {
-  CODE_REFERENCE,
+  CODE_MENTION,
   scanBody,
   type BodyBlock,
   type BodyLine,
@@ -33,7 +33,7 @@ function outsideProblems(lines: BodyLine[]): string[] {
       return [
         `line ${line.number}: proof output outside a stamped proof block. Copy the whole output of ${PROOF_COMMANDS}, its closing antelopejs-proof stamp included.`,
       ];
-    const reference = line.inFindingsSection ? CODE_REFERENCE.exec(text) : null;
+    const reference = line.inFindingsSection ? CODE_MENTION.exec(text) : null;
     return reference
       ? [
           `line ${line.number}: \`${reference[0]}\` sits in a findings-left section outside an antelopejs-findings block. Print the list with \`antelopejs-body-check --findings\`, copy its block, and give each finding its reason.`,
