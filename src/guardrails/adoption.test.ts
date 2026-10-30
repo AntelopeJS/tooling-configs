@@ -74,11 +74,14 @@ function enabledRules(
 
 test("every rule the preset enables after 0.2.16 is listed in PACK_NEW_RULES with its release, so ratchet:update can adopt it", () => {
   const enabled = enabledRules(antelopePreset({ importSorting: true }));
-  for (const rule of enabled)
-    assert.ok(
-      RULES_BEFORE_REGISTRY.has(rule) || PACK_NEW_RULES.has(rule),
-      `${rule} is enabled by the preset but missing from PACK_NEW_RULES in src/guardrails/adoption.ts. Add it with the release after the version in package.json.`,
-    );
+  const missing = [...enabled].filter(
+    (rule) => !RULES_BEFORE_REGISTRY.has(rule) && !PACK_NEW_RULES.has(rule),
+  );
+  assert.deepEqual(
+    missing,
+    [],
+    `${missing.join(", ")} enabled by the preset but missing from PACK_NEW_RULES in src/guardrails/adoption.ts. Add each with the release after the version in package.json.`,
+  );
   for (const [rule, release] of PACK_NEW_RULES) {
     assert.ok(
       enabled.has(rule),

@@ -176,6 +176,20 @@ test("a pack-new rule fixed to 0 and later regressed is not adopted again, becau
   );
   assert.doesNotMatch(regressed.stderr, /run ratchet:update/);
   assert.deepEqual(readCeilings(root).rules, { [UNSAFE_RETURN]: 1 });
+  commit(root);
+  put(
+    root,
+    "guardrails.ratchet.json",
+    formatCeilings({
+      pack: "0.2.17",
+      rules: { [UNSAFE_ASSIGNMENT]: 2, [UNSAFE_RETURN]: 1 },
+      oversizeFiles: {},
+    }),
+  );
+  assert.match(
+    ratchet(root, "--base", "HEAD").stderr,
+    /guardrails\.ratchet\.json: adds typescript\/no-unsafe-assignment, which the pack enabled in 0\.2\.17, not after this repository's 0\.2\.17\./,
+  );
 });
 
 test("after adoption the full ratchet and the staged hook fail a finding a change adds", (t) => {

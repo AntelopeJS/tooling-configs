@@ -1,6 +1,11 @@
 import { spawnSync } from "node:child_process";
 
-import { adoptedRelease, compareReleases, newlyEnabled } from "./adoption.ts";
+import {
+  adoptedRelease,
+  compareReleases,
+  newlyEnabled,
+  PACK_NEW_RULES,
+} from "./adoption.ts";
 import { CEILINGS_FILE, parseCeilings, type Ceilings } from "./ceilings.ts";
 import { renamedPaths } from "./renames.ts";
 import { SUPPRESSIONS_FILE } from "./suppression-budget.ts";
@@ -26,6 +31,13 @@ function packFailure(base: Ceilings, ceilings: Ceilings): string[] {
     : [];
 }
 
+function notNewlyEnabled(rule: string, adopted: string | undefined): string {
+  const since = PACK_NEW_RULES.get(rule);
+  return since === undefined
+    ? `${CEILINGS_FILE}: adds ${rule}, which the pack did not newly enable.`
+    : `${CEILINGS_FILE}: adds ${rule}, which the pack enabled in ${since}, not after this repository's ${adopted ?? since}.`;
+}
+
 function ruleFailures(
   base: Ceilings,
   ceilings: Ceilings,
@@ -42,9 +54,7 @@ function ruleFailures(
           `${CEILINGS_FILE}: raises ${rule} from ${before} on the base to ${limit}.`,
         );
     } else if (newlyEnabled(rule, adopted) === undefined)
-      failures.push(
-        `${CEILINGS_FILE}: adds ${rule}, which the pack did not newly enable.`,
-      );
+      failures.push(notNewlyEnabled(rule, adopted));
     else if (limit > count)
       failures.push(
         `${CEILINGS_FILE}: adds ${rule} at ${limit}, above its ${count} findings.`,
