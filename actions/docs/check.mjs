@@ -1,5 +1,11 @@
 #!/usr/bin/env node
-import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -7,9 +13,9 @@ import { parseArgs } from "node:util";
 import { decodeHTML } from "entities";
 import GithubSlugger from "github-slugger";
 import { marked } from "marked";
-import semver from "semver";
 
 import { checkTypescript } from "./typescript.mjs";
+import { checkVersionClaims, plain, sameRange } from "./versions.mjs";
 
 const markdown = /\.(md|mdc)$/i;
 const fields = new Set([
@@ -22,17 +28,23 @@ const fields = new Set([
 /** HTML comments are declarations, never rendered anchors or navigation. */
 const HTML_COMMENT = /<!--[\s\S]*?-->/g;
 
+/** YAML frontmatter, which is metadata rather than rendered Markdown. */
+const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/;
+
+/** Fence languages typechecked as TypeScript, and the virtual module extension each one gets. */
+const TYPESCRIPT_FENCES = new Map([
+  ["ts", "ts"],
+  ["typescript", "ts"],
+  ["tsx", "tsx"],
+  ["mts", "mts"],
+  ["cts", "cts"],
+]);
+
+/** The info-string word that opts a TypeScript fence out of typechecking. */
+const FRAGMENT = "fragment";
+
 /** URLs are never fetched, and `/paths` belong to Nuxt/MDC, not the filesystem. */
 const UNCHECKED_LINK = /^(?:[a-z][a-z\d+.-]*:|\/)/i;
-
-function plain(tokens) {
-  return tokens
-    .map((token) => {
-      if (token.type === "html") return "";
-      return token.tokens ? plain(token.tokens) : decodeHTML(token.text ?? "");
-    })
-    .join("");
-}
 
 function attributes(html, attribute) {
   const pattern = new RegExp(
@@ -44,18 +56,69 @@ function attributes(html, attribute) {
   );
 }
 
+/**
+ * Splits a fence info string into its language and flags. MDC filename labels
+ * (`ts [src/x.ts]`) and attribute or highlight groups (`ts {1,3}`) are not flags.
+ */
+function fenceInfo(info) {
+  const language = (info.match(/^[^\s[{]*/)?.[0] ?? "").toLowerCase();
+  const flags = info
+    .slice(language.length)
+    .replace(/\[[^\]]*\]|\{[^}]*\}/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  return { language, flags };
+}
+
+/**
+ * Finds the 1-based line of each code block's opening fence, scanning forward so
+ * fences quoted inside an outer fence or repeated verbatim stay in order.
+ */
+function fenceLocator(text, firstLine) {
+  const lines = text.split(/\r?\n/);
+  const strip = (line) => line.replace(/^[\s>]*/, "");
+  let cursor = 0;
+  return (token) => {
+    const raw = token.raw.replace(/\s+$/, "").split(/\r?\n/);
+    for (let index = cursor; index < lines.length; index += 1) {
+      if (strip(lines[index]) === strip(raw[0])) {
+        cursor = index + raw.length;
+        return firstLine + index;
+      }
+    }
+    return firstLine;
+  };
+}
+
+/** Records a TypeScript fence as an example unless it is marked `fragment`. */
+function collectExample(doc, token, fenceLine) {
+  const { language, flags } = fenceInfo(token.lang ?? "");
+  const extension = TYPESCRIPT_FENCES.get(language);
+  if (flags.includes("docs-check") && !extension) {
+    throw new Error(`${doc.path}: docs-check requires a TypeScript fence`);
+  }
+  if (extension && !flags.includes(FRAGMENT)) {
+    doc.examples.push({ text: token.text, extension, line: fenceLine + 1 });
+  }
+}
+
 function document(path) {
-  const text = readFileSync(path, "utf8").replace(
-    /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/,
-    "",
-  );
+  const source = readFileSync(path, "utf8");
+  const frontmatter = source.match(FRONTMATTER)?.[0] ?? "";
+  const text = source.slice(frontmatter.length);
+  const firstLine = frontmatter.split("\n").length;
   const tokens = marked.lexer(text);
+  const locate = fenceLocator(text, firstLine);
   const doc = {
     path,
+    frontmatter,
+    text,
+    firstLine,
     tokens,
     links: [],
     anchors: new Set(),
     examples: [],
+    code: [],
     api: [],
     exports: new Set(),
     compatibility: [],
@@ -74,16 +137,12 @@ function document(path) {
       }
     }
     if (token.type === "code") {
-      const [language, ...flags] = (token.lang ?? "").split(/\s+/);
-      if (flags.includes("docs-check")) {
-        if (!["ts", "typescript", "tsx"].includes(language)) {
-          throw new Error(`${path}: docs-check requires a ts or tsx fence`);
-        }
-        doc.examples.push({
-          text: token.text,
-          extension: language === "tsx" ? "tsx" : "ts",
-        });
-      }
+      const line = locate(token);
+      collectExample(doc, token, line);
+      doc.code.push([
+        line,
+        line + token.raw.trimEnd().split(/\r?\n/).length - 1,
+      ]);
     }
     if (token.type !== "html") return;
     const html = token.text.replace(HTML_COMMENT, "");
@@ -118,35 +177,6 @@ function document(path) {
   return doc;
 }
 
-/**
- * npm excludes prereleases unless a comparator explicitly admits that tuple;
- * subset() otherwise treats <2.0.0 as wider than the caret bound <2.0.0-0.
- */
-function comparableRange(spec) {
-  if (!semver.validRange(spec)) return null;
-  return new semver.Range(spec).set
-    .map((comparators) =>
-      comparators
-        .map((comparator) => {
-          const version = comparator.semver;
-          const admitsPrerelease = comparators.some(
-            (other) =>
-              other.semver.prerelease?.length &&
-              other.semver.major === version.major &&
-              other.semver.minor === version.minor &&
-              other.semver.patch === version.patch,
-          );
-          return comparator.operator === "<" &&
-            !version.prerelease.length &&
-            !admitsPrerelease
-            ? `<${version.version}-0`
-            : comparator.value;
-        })
-        .join(" "),
-    )
-    .join(" || ");
-}
-
 function checkCompatibility(doc, localPath, fail) {
   for (const { declaration, table } of doc.compatibility) {
     const [file, field, extra] = declaration.split("#");
@@ -173,23 +203,50 @@ function checkCompatibility(doc, localPath, fail) {
     for (const row of table.rows) {
       const name = plain(row[packageColumn].tokens).trim();
       const documented = plain(row[rangeColumn].tokens).trim();
-      const declared = manifest[field]?.[name];
-      const documentedRange = comparableRange(documented);
-      const declaredRange = comparableRange(declared);
-      const equivalent =
-        declared !== undefined &&
-        (documented === declared ||
-          (documentedRange !== null &&
-            declaredRange !== null &&
-            semver.subset(documentedRange, declaredRange) &&
-            semver.subset(declaredRange, documentedRange)));
-      if (!documented || !equivalent) {
+      if (!sameRange(documented, manifest[field]?.[name])) {
         fail(
           `${doc.path}: compatibility drift for ${name} in ${file}#${field}`,
         );
       }
     }
   }
+}
+
+function checkLinks(doc, { load, localPath, fail }) {
+  let links = 0;
+  for (const href of doc.links) {
+    if (!href || UNCHECKED_LINK.test(href)) continue;
+    links += 1;
+    try {
+      const hash = href.indexOf("#");
+      const urlPath = (hash < 0 ? href : href.slice(0, hash)).split("?")[0];
+      const fragment = hash < 0 ? "" : decodeURIComponent(href.slice(hash + 1));
+      const target = urlPath
+        ? resolve(dirname(doc.path), decodeURIComponent(urlPath))
+        : doc.path;
+      localPath(target);
+      if (
+        fragment &&
+        markdown.test(target) &&
+        !load(target).anchors.has(fragment)
+      ) {
+        fail(`${doc.path}: missing anchor #${fragment} in ${target}`);
+      }
+    } catch (error) {
+      fail(`${doc.path}: broken local link ${href}: ${error.message}`);
+    }
+  }
+  return links;
+}
+
+/**
+ * The tsconfig for TypeScript fences and docs-api pages: the input when set,
+ * else the checkout's root tsconfig.json. Undefined when neither exists.
+ */
+function typescriptProject(root, project, localPath) {
+  if (project) return localPath(resolve(root, project));
+  const fallback = resolve(root, "tsconfig.json");
+  return existsSync(fallback) ? localPath(fallback) : undefined;
 }
 
 export function checkDocs({ root = process.cwd(), files, project = "" }) {
@@ -231,46 +288,24 @@ export function checkDocs({ root = process.cwd(), files, project = "" }) {
     return cache.get(path);
   };
   const documents = [...selected].map(load);
+  const context = { root, load, localPath, fail };
   let links = 0;
+  let blocks = 0;
   for (const doc of documents) {
-    for (const href of doc.links) {
-      if (!href || UNCHECKED_LINK.test(href)) continue;
-      links += 1;
-      try {
-        const hash = href.indexOf("#");
-        const urlPath = (hash < 0 ? href : href.slice(0, hash)).split("?")[0];
-        const fragment =
-          hash < 0 ? "" : decodeURIComponent(href.slice(hash + 1));
-        const target = urlPath
-          ? resolve(dirname(doc.path), decodeURIComponent(urlPath))
-          : doc.path;
-        localPath(target);
-        if (
-          fragment &&
-          markdown.test(target) &&
-          !load(target).anchors.has(fragment)
-        ) {
-          fail(`${doc.path}: missing anchor #${fragment} in ${target}`);
-        }
-      } catch (error) {
-        fail(`${doc.path}: broken local link ${href}: ${error.message}`);
-      }
-    }
+    links += checkLinks(doc, context);
     checkCompatibility(doc, localPath, fail);
+    blocks += checkVersionClaims(doc, context);
     for (const entry of doc.api) localPath(resolve(dirname(doc.path), entry));
   }
-  const annotated = documents.some(
-    (doc) => doc.api.length || doc.examples.length,
-  );
+  const typed = documents.some((doc) => doc.api.length || doc.examples.length);
+  const tsconfig = typescriptProject(root, project, localPath);
   let examples = 0;
-  if (annotated && !project) {
-    fail("docs-check/docs-api declarations require --typescript-project");
-  } else if (project) {
-    examples = checkTypescript(
-      localPath(resolve(root, project)),
-      documents,
-      fail,
+  if (typed && !tsconfig) {
+    fail(
+      "TypeScript fences and docs-api pages need a tsconfig: set the typescript-project input (docs-typescript-project in ci-node.yml), add a root tsconfig.json, or mark illustrative fences `fragment`",
     );
+  } else if (typed || project) {
+    examples = checkTypescript({ root, project: tsconfig, documents, fail });
   }
   return {
     failures,
@@ -280,7 +315,7 @@ export function checkDocs({ root = process.cwd(), files, project = "" }) {
     apis: documents.filter((doc) => doc.api.length).length,
     compatibility: documents.reduce(
       (total, doc) => total + doc.compatibility.length,
-      0,
+      blocks,
     ),
   };
 }

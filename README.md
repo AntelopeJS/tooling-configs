@@ -45,7 +45,7 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 - Without `--json` it prints failures only. The exit code is non-zero only when a check could not run.
 - `--apply-pauses` sets the repository variable `NEXT_AUTOMERGE` to `shadow` on repositories where it is `on`, when `checks` is red on `next`, the ratchet file is back on a Clean repository, or governance drifted. It never sets `on` and writes nothing else.
 
-`antelopejs-sync` (full profile) writes the weekly mutation caller `.github/workflows/mutation.yml`, and both profiles keep the shared CI caller on the job id `ci`, so the check is reported as `ci / checks`. The `ci` job is read-only (`contents: read`) and passes `renovate-sync: false`; the `contents: write` and `actions: write` grants that let the Renovate sync push its commit and dispatch the caller live on a separate `renovate-sync` job calling `ci-renovate-sync.yml`, which sync adds when it is missing and never re-pins.
+`antelopejs-sync` (full profile) writes the weekly mutation caller `.github/workflows/mutation.yml`, and both profiles keep the shared CI caller on the job id `ci`, so the check is reported as `ci / checks`. The `ci` job is read-only (`contents: read`) and passes `renovate-sync: false`; the `contents: write` and `actions: write` grants that let the Renovate sync push its commit and dispatch the caller live on a separate `renovate-sync` job calling `ci-renovate-sync.yml`, which sync adds when it is missing and never re-pins. Under the full profile it also sets the `docs-files` input of every ci-node caller to the existing `README.md` and `docs` of the root and of each workspace package that is not private, then keeps the caller's other listed paths that still exist.
 
 ## Shared verification skills
 
@@ -103,9 +103,9 @@ export default defineConfig({
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | oxc            | the `correctness` category, with the `eslint`, `typescript`, `node`, `oxc`, `import` and `promise` plugins; `no-unused-vars` (`_` prefix allowed), `eqeqeq` (`== null` allowed), `radix`, `prefer-regex-literals`, `typescript/ban-ts-comment` for `@ts-ignore` only | error   |
 | Imports        | `import/no-cycle`, `import/no-self-import`, `import/no-duplicates`                                                                                                                                                                                                   | error   |
-| Type-aware     | `typescript/no-floating-promises` and eight more type-aware rules                                                                                                                                                                                                    | error   |
+| Type-aware     | `typescript/no-floating-promises` and thirteen more type-aware rules, including `no-unnecessary-type-parameters`, `no-unsafe-argument`, `no-unsafe-assignment`, `no-unsafe-return` and `use-unknown-in-catch-callback-variable`                                      | error   |
 | Complexity     | `max-params` 5, `max-lines-per-function` 120, `max-lines` 500, `max-depth` 4, `complexity` 20                                                                                                                                                                        | error   |
-| Anti-slop      | all 15 vendored rules; `no-runtime-typeof` with `allowInTypeGuards`, so a `typeof` inside a type predicate or assertion function passes                                                                                                                              | error   |
+| Anti-slop      | all 15 vendored rules; `no-runtime-typeof` with `allowInTypeGuards`, so a `typeof` (or `.constructor === String`) inside a type predicate or assertion function passes                                                                                               | error   |
 | Guardrails     | `antelopejs/no-comments`; in test files `antelopejs/no-fs-read-in-tests`, `antelopejs/no-self-import-in-tests`, `antelopejs/no-constant-value-assertion`, `antelopejs/no-typeof-function-only-test` and `antelopejs/require-assertion`                               | error   |
 | Import sorting | `perfectionist/sort-imports`, autofixed by `oxlint --fix`                                                                                                                                                                                                            | off     |
 
@@ -128,7 +128,7 @@ Import sorting is off because it moves value imports across side-effect imports,
 
 ### Options
 
-```ts
+```ts fragment
 antelopePreset({
   antiSlop: false, // true (default)
   guardrails: false, // true (default)
@@ -175,9 +175,11 @@ pnpm install
 | `.nvmrc`                                                | `24`                                                                                                                                                                                                                                         |
 | `.agents/setup`                                         | Orb setup: switches to the `.nvmrc` Node, activates `packageManager` through corepack, installs with the frozen lockfile                                                                                                                     |
 | `AGENTS.md`                                             | Writes the managed block between `<!-- antelopejs-guardrails:start -->` and `:end -->`; text outside the markers stays                                                                                                                       |
+| `README.md` of each `@antelopejs` package               | Writes the generated compatibility block (see [Generated compatibility block](./docs/documentation-checks.md#generated-compatibility-block)); prose outside its markers stays                                                                |
 | `CLAUDE.md`                                             | `@AGENTS.md`                                                                                                                                                                                                                                 |
 | `guardrails.ratchet.json`                               | Records non-empty debt on first adoption, before `sync:check` exists                                                                                                                                                                         |
-| `guardrails.suppressions.json`                          | Records the current suppression counts when the file is missing; restores the committed file instead when HEAD has one; never rewrites an existing file                                                                                      |
+| `guardrails.suppressions.json`                          | Records the current suppression counts when the file is missing; restores the committed file instead when HEAD has one; otherwise only adds `config` at today's counts when the file predates it                                             |
+| `<layer>/build/backend-boundary.ts`                     | Where a DMS frontend layer tracks one, restores the pack's backend boundary plugin for the package that holds the layer. A formatter's rewrite is not drift; any other edit is                                                               |
 
 `--profile template` writes only the three preset configs and a user-facing `AGENTS.md` block, for template repositories. `antelopejs-sync --check` writes nothing and exits 1 on any drift; `pnpm run checks` runs it.
 
@@ -196,7 +198,7 @@ pnpm install
 
 - A rule listed under `rules` is off for `oxlint`, so editors, hooks and `lint` stay green. `antelopejs-ratchet` counts it with every rule on, and fails when a count rises. It prints the findings in the files the change touched.
 - A file listed under `oversizeFiles` may exceed 20,000 bytes and `max-lines`, up to its recorded size. Any other file over either limit fails. When git sees a listed file renamed (`git mv`, or a staged delete and add), the allowance moves to the new path and never exceeds the old one; a copy or a new file inherits nothing. `antelopejs-ratchet --base <ref>` detects renames against that revision instead of `HEAD`, for a rename that was committed before the file was updated.
-- The pre-commit hook runs `antelopejs-ratchet --staged`: for each rule under `rules` it compares the findings in the staged files with those files at HEAD (rename sources and deleted files included, linted under the staged configuration) and fails a rule whose net count rises. Code moved between staged files, or a legacy line that is reformatted or edited, nets out; a new finding does not, even next to a moved block.
+- The pre-commit hook runs `antelopejs-ratchet --staged`: for each rule under `rules` it counts the findings in the staged files and in those files at HEAD and at the merge-base of HEAD with the pull request base (`origin/$GITHUB_BASE_REF`, else `origin/HEAD`), rename sources and deleted files included, linted under the staged configuration. A merge-base finding counts only for a staged finding of the same rule on the same line, unchanged since the merge-base, and only while the files the branch changed hold no more findings of that rule than at the merge-base. It fails a rule whose staged count is above both, and lists the findings on lines that differ from HEAD and from the merge-base. Code moved between staged files, a legacy line that is reformatted or edited, a line restored byte for byte to its base form, a `SAFETY:` comment the branch added and the commit removes, or an edit of a file a legacy finding moved into earlier on the branch, nets out; a new finding does not, even next to a moved block. Locally the base is always `origin/HEAD`, so a branch stacked on another branch is compared with HEAD and the default branch, not with its parent branch. Without `origin/HEAD` (`git remote set-head origin --auto` sets it) or a merge-base, it compares with HEAD only and says so when it fails.
 - `antelopejs-ratchet --update` lowers each number to the current count and removes what reached zero. It never raises a number or adds an entry. Commit the lowered file.
 
 When every rule count is zero and `oversizeFiles` is empty, the ratchet is retired. `antelopejs-ratchet --update` deletes the file and asks you to run `antelopejs-sync`. Sync then removes `ratchet`, `ratchet:update`, the ratchet hook and the Debt instructions. Commit those changes together. An empty baseline on first adoption creates no file. Later syncs never recreate it because the `sync:check` script marks adoption.
@@ -212,11 +214,13 @@ When every rule count is zero and `oversizeFiles` is empty, the ratchet is retir
   "rules": { "anti-slop/no-chained-type-assertions": 19, "*": 0 },
   "tsExpectError": 8,
   "tsIgnore": 0,
-  "safety": 2
+  "safety": 2,
+  "config": { "typescript/unbound-method for src/test/**": 1 }
 }
 ```
 
 - `rules` holds lint directives (`oxlint-disable`, `eslint-disable`, their `-line` and `-next-line` forms, in line or block comments, after code too) per rule they name; a directive naming several rules counts once per rule, and one naming none counts under `*`. A rule missing from `rules` has ceiling 0. The other fields count `@ts-expect-error`, `@ts-ignore` and `SAFETY:` comments. The counter is the one behind the proof tables: it reads comments from the parser, so strings and template literals are never counted, and it skips generated output as the size guard does.
+- `config` holds the rules a lint config switches off, to `allow` or to a warning, keyed `<rule> for <glob>`: in `oxlint.config.*`, `.oxlintrc.json`, `.oxlintrc.jsonc` and `eslint.config.*` at any depth, every `rules` and `categories` map (a category as `category:<name>`) and an ESLint composer's `overrideRules` argument, one key per glob of the block's `files` (`*` when it has none). A nested config's globs are anchored at its directory and its blocks without `files` are `<dir>/**`, so a rule-off moved between config files is a new key. Rule maps, severities and globs held in same-file variables or spread from them count where they are used; the pack's presets are not in the file, so they never count. A glob is a key of its own, so adding, widening or renaming a glob, deleting `files`, or moving an override's rules to the top level creates a key at ceiling 0 and fails. Narrowing or splitting a scope is burn-down: a key may use the room a same-rule key whose glob contains its glob gives up (`*`, `**` and `**/*` contain every glob; a single-segment `*` never contains `**`; other glob syntax counts only when equal), in the full, staged and base checks, and `--update` moves that ceiling to the narrower key. A scope split into several narrower globs gives each the old ceiling, so the `config` total can rise while the files it covers do not; read totals per key, not as a measure of scope. `.` and `..` segments count only when equal. A failure names the fix: delete the entry and fix the code its rule reports, or put the exception on the line that needs it as a directive with a reason. A config entry switching off a rule no directive may name fails as an added directive does. Sync adds `config` at today's counts to a budget that predates it; until then config rule-offs are not capped.
 - `antelopejs-suppressions` fails when a count is above its ceiling, printing each `file:line` in the files the change touched and the fix: fix the code, or remove another suppression of the same kind; a rule that keeps needing suppressions should be changed in the preset. It prints nothing on success.
 - `antelopejs-suppressions --update` lowers each ceiling to the current count and keeps rules at zero. No command raises a ceiling.
 - `SAFETY:` comments and directives disabling `anti-slop/require-safety-comment-for-type-assertion` share their room: a `SAFETY:` comment may use what those directives leave below their ceiling, in the full, base and staged checks, and `--update` moves that room to `safety`. Replacing such a directive with a `SAFETY:` comment needs no raise; their sum never rises.
@@ -279,7 +283,7 @@ The house style sets every field, so `.editorconfig` files cannot override it: `
 
 The preset leaves import order to the linter and ignores `CHANGELOG.md`, which changelogen writes unformatted on every release. Other options of oxfmt pass through. Two are specific:
 
-```ts
+```ts fragment
 // oxfmt.config.ts
 export default antelopeFmtPreset({
   ignorePatterns: ["frontend-vue/**"], // added to the shared ignores, not replacing them
@@ -349,10 +353,14 @@ An implementer must never be handed a breaking minor it does not implement. `wor
 ## Documentation guardrail
 
 The [documentation action](./docs/documentation-checks.md) checks local Markdown
-links and explicitly labeled compatibility tables. Consumers can also opt in
-complete TypeScript examples and reference-page export coverage. Pin
+links, explicitly labeled compatibility tables, and reference-page export
+coverage, and typechecks every TypeScript fence against the repository's own
+source; a fence opts out only with a `fragment` marker. Versions of
+`@antelopejs/*` packages belong only in the block `antelopejs-sync` generates:
+the action fails on version ranges and "requires … or later" claims in prose and
+checks the block against the package.json beside it. Pin
 `AntelopeJS/tooling-configs/actions/docs` to a full commit SHA; no npm release is
-required. The guide includes CI and local commands, annotation syntax, and the
+required. The guide includes CI and local commands, marker syntax, and the
 checks that remain the author's responsibility.
 
 ## Contributing

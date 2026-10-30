@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -6,42 +6,13 @@ import { readCeilings } from "./ceilings.ts";
 import { lintDiagnostics, type Diagnostic } from "./oxlint.ts";
 import { withPreviousTree } from "./previous-tree.ts";
 import { renamedPaths } from "./renames.ts";
-
-/** The line ranges each staged file adds against HEAD, following renames. */
-export function stagedAdditions(
-  root: string,
-  targets: string[],
-): Map<string, { start: number; end: number }[]> {
-  const renames = renamedPaths(root, true);
-  const additions = new Map<string, { start: number; end: number }[]>();
-  for (const file of targets) {
-    const diff = execFileSync(
-      "git",
-      [
-        "diff",
-        "--cached",
-        "--no-ext-diff",
-        "--no-color",
-        "--unified=0",
-        "--find-renames",
-        "--",
-        ...[renames.get(file), file].filter((path) => path !== undefined),
-      ],
-      { cwd: root, encoding: "utf8" },
-    );
-    additions.set(
-      file,
-      Array.from(
-        diff.matchAll(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm),
-        ([, line, count]) => ({
-          start: Number(line),
-          end: Number(line) + Number(count ?? 1) - 1,
-        }),
-      ),
-    );
-  }
-  return additions;
-}
+import {
+  previousLine,
+  stagedAdditions,
+  stagedChanges,
+  type StagedChanges,
+} from "./staged-additions.ts";
+import { suppressionBase } from "./suppression-base.ts";
 
 function stagedNames(root: string, filter: string): string[] {
   return execFileSync(
@@ -63,36 +34,145 @@ function countByRule(diagnostics: Diagnostic[]): Map<string, number> {
 const LINT_CONFIG =
   /(?:^|\/)(?:oxlint\.config\.[cm]?[jt]s|\.oxlintrc\.jsonc?)$/u;
 
-function headCounts(root: string, targets: string[]): Map<string, number> {
-  const renames = renamedPaths(root, true);
+type Comparison =
+  | { revision: string; label: string }
+  | { revision: undefined; note: string };
+
+function comparisonBase(root: string): Comparison {
+  const base = suppressionBase(root);
+  const name = process.env.GITHUB_BASE_REF
+    ? `origin/${process.env.GITHUB_BASE_REF}`
+    : "origin/HEAD";
+  if (base === undefined)
+    return {
+      revision: undefined,
+      note: "No pull request base resolved (GITHUB_BASE_REF or origin/HEAD), so this compared with HEAD only. Run `git remote set-head origin --auto` to also compare with the merge-base, as CI does.",
+    };
+  const result = spawnSync("git", ["merge-base", base, "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  if (result.status !== 0)
+    return {
+      revision: undefined,
+      note: `HEAD has no merge-base with ${name}, so this compared with HEAD only. Run \`git fetch --unshallow origin\` (or \`git fetch origin <default-branch>\` when HEAD is not shallow) to also compare with the merge-base, as CI does.`,
+    };
+  const revision = result.stdout.trim();
+  return {
+    revision,
+    label: `merge-base ${revision.slice(0, 12)} with ${name}`,
+  };
+}
+
+function previousDiagnostics(
+  root: string,
+  targets: string[],
+  revision: string | undefined,
+): Diagnostic[] {
+  const renames = renamedPaths(
+    root,
+    true,
+    revision === undefined ? [] : [revision],
+  );
+  const deletedFrom =
+    revision === undefined
+      ? new Map<string, string>()
+      : renamedPaths(root, false, [revision, "HEAD"]);
   const previous = [
     ...new Set([
       ...targets.map((file) => renames.get(file) ?? file),
-      ...stagedNames(root, "D"),
+      ...stagedNames(root, "D").map((file) => deletedFrom.get(file) ?? file),
     ]),
   ];
-  return countByRule(
-    withPreviousTree(
-      root,
-      previous.filter((file) => !LINT_CONFIG.test(file)),
-      (tree) => {
-        const existing = previous.filter((file) =>
-          existsSync(join(tree, file)),
-        );
-        return existing.length
-          ? lintDiagnostics(tree, undefined, existing)
-          : [];
-      },
-    ),
+  return withPreviousTree(
+    root,
+    revision ?? "HEAD",
+    previous.filter((file) => !LINT_CONFIG.test(file)),
+    (tree) => {
+      const existing = previous.filter((file) => existsSync(join(tree, file)));
+      return existing.length ? lintDiagnostics(tree, undefined, existing) : [];
+    },
   );
 }
 
 /**
- * Fails each ceilinged rule whose findings in the staged files outnumber those
- * the same files, rename sources and deleted files had at HEAD. The count is
- * net across the staged files, so a block moved between them, or a legacy line
- * that is reformatted, passes; any net rise fails, and lists the findings on
- * the lines the commit adds.
+ * How many of `staged` sit on a line unchanged since the base and match a
+ * finding `previous` reports on that line of the base, each base finding
+ * matched once.
+ */
+function keptFindings(
+  staged: Diagnostic[],
+  previous: Diagnostic[],
+  changes: Map<string, StagedChanges>,
+): number {
+  const pool = new Map<string, number>();
+  for (const { file, line } of previous) {
+    const key = `${file}:${line}`;
+    pool.set(key, (pool.get(key) ?? 0) + 1);
+  }
+  let kept = 0;
+  for (const { file, line } of staged) {
+    const change = changes.get(file);
+    if (line === undefined || change === undefined) continue;
+    const from = previousLine(change.hunks, line);
+    const key = `${change.previous}:${from}`;
+    const left = pool.get(key) ?? 0;
+    if (from === undefined || left === 0) continue;
+    pool.set(key, left - 1);
+    kept += 1;
+  }
+  return kept;
+}
+
+/**
+ * Per rule, the findings in the files the branch changed since `revision`, at
+ * `revision` and in the index, so a merge-base credit is only paid while the
+ * branch as a whole does not raise the rule.
+ */
+function branchCounts(root: string, revision: string) {
+  const paths = execFileSync(
+    "git",
+    ["diff", "--cached", "--name-only", "--no-renames", "-z", revision],
+    { cwd: root, encoding: "utf8" },
+  )
+    .split("\0")
+    .filter((file) => file && !LINT_CONFIG.test(file));
+  const lint = (tree: string) => {
+    const existing = paths.filter((file) => existsSync(join(tree, file)));
+    return countByRule(
+      existing.length ? lintDiagnostics(tree, undefined, existing) : [],
+    );
+  };
+  return {
+    before: withPreviousTree(root, revision, paths, lint),
+    after: withPreviousTree(root, revision, [], lint),
+  };
+}
+
+function inRanges(
+  ranges: Map<string, { start: number; end: number }[]>,
+  file: string,
+  line: number,
+): boolean {
+  return (
+    ranges.get(file)?.some(({ start, end }) => line >= start && line <= end) ??
+    false
+  );
+}
+
+/**
+ * Fails each ceilinged rule whose findings in the staged files outnumber both
+ * what the same files, rename sources and deleted files had at HEAD and the
+ * staged findings that sit, on a line unchanged since the merge-base of HEAD
+ * with the pull request base (`GITHUB_BASE_REF`, else `origin/HEAD`), where
+ * the merge-base has a finding of the same rule, while the files the branch
+ * changed hold no more findings of that rule than at the merge-base; without a
+ * merge-base, HEAD alone.
+ * The count is net across the staged files, so a block moved between them, a
+ * legacy line that is reformatted, a line restored to its base form, or an
+ * edit of a file a legacy finding moved into earlier on the branch passes; a
+ * rise above both fails, and lists the findings on the lines that differ from
+ * HEAD and from the base.
  */
 export function stagedRatchet(root: string, files?: string[]): string[] {
   const targets = files ?? stagedNames(root, "ACMR");
@@ -102,27 +182,72 @@ export function stagedRatchet(root: string, files?: string[]): string[] {
     Object.hasOwn(ceilings.rules, rule),
   );
   if (!after.length) return [];
-  const before = headCounts(root, targets);
-  const additions = stagedAdditions(root, targets);
+  const base = comparisonBase(root);
+  const atHead = countByRule(previousDiagnostics(root, targets, undefined));
+  const headAdditions = stagedAdditions(root, targets);
+  const atBase =
+    base.revision === undefined
+      ? undefined
+      : previousDiagnostics(root, targets, base.revision);
+  const baseChanges =
+    base.revision === undefined
+      ? undefined
+      : stagedChanges(root, targets, base.revision);
+  let branch: ReturnType<typeof branchCounts> | undefined;
+  const measure = (
+    rule: string,
+    matches: Diagnostic[],
+    head: number,
+    total: number,
+  ) => {
+    const kept =
+      atBase === undefined || baseChanges === undefined
+        ? undefined
+        : keptFindings(
+            matches,
+            atBase.filter((diagnostic) => diagnostic.rule === rule),
+            baseChanges,
+          );
+    const rise = total - Math.max(head, kept ?? 0);
+    if (kept === undefined || kept <= head || base.revision === undefined)
+      return { kept, rise, raised: undefined };
+    branch ??= branchCounts(root, base.revision);
+    const from = branch.before.get(rule) ?? 0;
+    const to = branch.after.get(rule) ?? 0;
+    if (to <= from) return { kept, rise, raised: undefined };
+    return {
+      kept,
+      rise: Math.min(total - head, Math.max(to - from, rise)),
+      raised: `the files this branch changed hold ${to} at the index against ${from} at that merge-base, so the merge-base credit covers no added finding`,
+    };
+  };
   const failures: string[] = [];
   for (const [rule, total] of countByRule(after)) {
-    const rise = total - (before.get(rule) ?? 0);
-    if (rise <= 0) continue;
+    const head = atHead.get(rule) ?? 0;
+    if (total <= head) continue;
     const matches = after.filter((diagnostic) => diagnostic.rule === rule);
+    const { kept, rise, raised } = measure(rule, matches, head, total);
+    if (rise <= 0) continue;
     const added = matches.filter(
       ({ file, line }) =>
         line !== undefined &&
-        additions
-          .get(file)
-          ?.some(({ start, end }) => line >= start && line <= end),
+        inRanges(headAdditions, file, line) &&
+        (baseChanges === undefined ||
+          previousLine(baseChanges.get(file)?.hunks ?? [], line) === undefined),
     );
+    const counts =
+      kept === undefined || base.revision === undefined
+        ? `${head} at HEAD`
+        : `${head} at HEAD, ${kept} unchanged since ${base.label}`;
     failures.push(
-      `${rule}: this commit adds ${rise} to the staged files (${before.get(rule) ?? 0} at HEAD, ${total} staged); the ceiling covers only legacy findings.`,
+      `${rule}: this commit adds ${rise} to the staged files (${counts}, ${total} staged)${raised === undefined ? "" : `; ${raised}`}; the ceiling covers only legacy findings.`,
       ...(added.length ? added : matches).map(
         (diagnostic) =>
-          `  ${diagnostic.location}: ${diagnostic.message}\n    Fix: ${diagnostic.help ?? "Resolve this finding; moving or reformatting a legacy finding is allowed, adding one is not."}`,
+          `  ${diagnostic.location}: ${diagnostic.message}\n    Fix: ${diagnostic.help ?? "Resolve this finding; moving, reformatting or restoring a legacy finding to its base form is allowed, adding one is not."}`,
       ),
     );
   }
-  return failures;
+  return failures.length && base.revision === undefined
+    ? [...failures, base.note]
+    : failures;
 }

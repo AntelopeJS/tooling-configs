@@ -4,6 +4,7 @@ import { noRuntimeTypeofRule } from "./no-runtime-typeof.ts";
 
 const tester = new RuleTester({ languageOptions: { parserOptions: { lang: "ts" } } });
 const error = { messageId: "runtimeTypeof" };
+const constructorError = { messageId: "constructorCheck" };
 const allowInTypeGuards = [{ allowInTypeGuards: true }];
 
 tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
@@ -25,6 +26,12 @@ tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 			code: 'function assertString(value: unknown): asserts value is string { if (typeof value !== "string") throw new Error(); }',
 			options: allowInTypeGuards,
 		},
+		"if (error.constructor === ValidationError) report(error);",
+		"const plain = value.constructor === Object;",
+		{
+			code: 'const isText = (value: unknown): value is string => value?.constructor === String && value !== "";',
+			options: allowInTypeGuards,
+		},
 	],
 	invalid: [
 		{ code: 'if (typeof input === "string") use(input);', errors: [error] },
@@ -43,5 +50,19 @@ tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 			options: allowInTypeGuards,
 			errors: [error],
 		},
+		{
+			name: "cloud #379 check-locales.mjs isText",
+			code: 'function isText(value) { return value?.constructor === String && value !== ""; }',
+			options: allowInTypeGuards,
+			errors: [constructorError],
+		},
+		{
+			name: "cloud #379 check-locales.mjs statedTextKeys",
+			code: "const keys = entries.flatMap((entry) => entry.value?.constructor === String && entry.value.startsWith(MARKER) ? [entry.value] : []);",
+			options: allowInTypeGuards,
+			errors: [constructorError],
+		},
+		{ code: "if (Number !== count.constructor) throw new Error();", errors: [constructorError] },
+		{ code: "const flag = value.constructor == Boolean;", errors: [constructorError] },
 	],
 });

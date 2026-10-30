@@ -33,6 +33,7 @@ import {
   isTestSource,
   packagesAt,
   unpublishedAt,
+  isExportPath,
   type ExportTarget,
   type ProofManifest,
 } from "./typescript.ts";
@@ -72,8 +73,7 @@ function exportTargets(
   entry = "exports/root",
   subpath = ".",
 ): PublishedTarget[] {
-  // eslint-disable-next-line anti-slop/no-runtime-typeof -- package exports is a standard recursive JSON union.
-  if (typeof target === "string") return [{ entry, target, subpath }];
+  if (isExportPath(target)) return [{ entry, target, subpath }];
   if (target == null) return [];
   if (Array.isArray(target))
     return target.flatMap((value, index) =>
