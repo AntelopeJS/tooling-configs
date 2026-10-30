@@ -26,7 +26,7 @@ interface AutoImport {
 }
 
 /** The name unimport gives a default export: the file name, or its directory's for an index file, in camel case when it has a separator. */
-export function defaultExportName(file: string): string {
+function defaultExportName(file: string): string {
   const own = parse(file).name;
   const name = own === "index" ? parse(dirname(file)).name : own;
   if (!NAME_SEPARATOR.test(name)) return name;
