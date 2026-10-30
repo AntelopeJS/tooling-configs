@@ -290,6 +290,31 @@ class ControllerProto {
       errors: [lookup],
     },
     {
+      name: "an array holding a non-literal element is not a list of known keys",
+      code: "const T: Record<string, number> = { a: 1 }; function f(extra: string) { return ['a', extra].map((key) => T[key]); }",
+      errors: [lookup],
+    },
+    {
+      name: "for...in over another table does not cover this table",
+      code: "const T: Record<string, number> = { a: 1 }; function f(other: Record<string, number>) { for (const key in other) use(T[key]); }",
+      errors: [lookup],
+    },
+    {
+      name: "keys of another table through a filter chain do not cover this table",
+      code: "const T: Record<string, number> = { a: 1 }; function f(other: Record<string, number>) { return Object.keys(other).filter(keep).map((key) => T[key]); }",
+      errors: [lookup],
+    },
+    {
+      name: "a key list in a reassignable variable is not followed",
+      code: "const T: Record<string, number> = { a: 1 }; function f(input: string[]) { let names = ['a']; names = input; for (const key of names) use(T[key]); }",
+      errors: [lookup],
+    },
+    {
+      name: "a key read from the entries values, not the key slot",
+      code: "const T: Record<string, number> = { a: 1 }; function f(other: Record<string, string>) { return Object.entries(other).map(([, name]) => T[name]); }",
+      errors: [lookup],
+    },
+    {
       name: "an imported constant key is not resolved (cloud minute-volumes.ts imports WORKLOAD_LABELS)",
       code: "import { WORKLOAD_LABELS } from './metering'; function claim(identity: Record<string, string> | undefined) { return identity?.[WORKLOAD_LABELS.tenantId]; }",
       errors: [lookup],

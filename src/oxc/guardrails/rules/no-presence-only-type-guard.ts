@@ -9,6 +9,7 @@ import {
   unwrapExpression,
   type LocalTypes,
 } from "../local-types.ts";
+import { isHasOwnPropertyCall } from "../key-provenance.ts";
 import { callName, memberName } from "../shared.ts";
 
 type FunctionNode = ESTree.ArrowFunctionExpression | ESTree.Function;
@@ -198,7 +199,8 @@ function unwrapAlias(node: ESTree.Expression): ESTree.Expression {
   let current = unwrapExpression(node);
   while (
     current.type === "TSAsExpression" ||
-    current.type === "TSSatisfiesExpression"
+    current.type === "TSSatisfiesExpression" ||
+    current.type === "TSTypeAssertion"
   )
     current = unwrapExpression(current.expression);
   return current;
@@ -206,7 +208,6 @@ function unwrapAlias(node: ESTree.Expression): ESTree.Expression {
 
 const PRESENCE_CALLS = new Set([
   "Object.hasOwn",
-  "Object.prototype.hasOwnProperty.call",
   "hasOwnProperty.call",
   "Reflect.has",
 ]);
@@ -217,7 +218,8 @@ function presenceCall(
 ): { object: string; key: string } | null {
   const [first, second] = node.arguments;
   if (
-    !PRESENCE_CALLS.has(callName(node.callee) ?? "") ||
+    (!PRESENCE_CALLS.has(callName(node.callee) ?? "") &&
+      !isHasOwnPropertyCall(node.callee)) ||
     first === undefined ||
     first.type === "SpreadElement" ||
     second?.type !== "Literal"

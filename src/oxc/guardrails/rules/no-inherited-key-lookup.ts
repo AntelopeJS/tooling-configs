@@ -12,6 +12,11 @@ import {
   unwrapExpression,
   type LocalTypes,
 } from "../local-types.ts";
+import {
+  isHasOwnPropertyCall,
+  isKnownKey,
+  isStaticKey,
+} from "../key-provenance.ts";
 import { callName } from "../shared.ts";
 
 /** `dictionary`: typed to take any string key; `literal`: an untyped object literal. */
@@ -37,12 +42,7 @@ interface OwnKeyCheck {
 }
 
 const WRAPPER_TYPES = new Set(["Readonly", "Partial", "Required"]);
-const OWN_KEY_LISTS = new Set(["Object.keys", "Object.getOwnPropertyNames"]);
-const HAS_OWN_CALLS = new Set([
-  "Object.hasOwn",
-  "Object.prototype.hasOwnProperty.call",
-  "hasOwnProperty.call",
-]);
+const HAS_OWN_CALLS = new Set(["Object.hasOwn", "hasOwnProperty.call"]);
 const MAX_ALIAS_DEPTH = 8;
 
 function isStringKey(type: ESTree.TSType): boolean {
@@ -256,26 +256,6 @@ function tableKind(
   return variable === null ? null : variableKind(variable, environment, depth);
 }
 
-function isStaticKey(key: ESTree.Node): boolean {
-  if (key.type === "Literal") return true;
-  if (key.type === "UnaryExpression") return key.operator === "typeof";
-  return key.type === "TemplateLiteral" && key.expressions.length === 0;
-}
-
-/** `const LIVE_KEY = "MOLLIE_API_KEY"` names one known key, as a literal would. */
-function isConstantKey(key: ESTree.Node, source: SourceCode): boolean {
-  if (key.type !== "Identifier") return false;
-  const [definition] = resolveVariable(source, key)?.defs ?? [];
-  return (
-    definition?.type === "Variable" &&
-    definition.parent?.type === "VariableDeclaration" &&
-    definition.parent.kind === "const" &&
-    definition.node.type === "VariableDeclarator" &&
-    definition.node.init !== null &&
-    isStaticKey(definition.node.init)
-  );
-}
-
 function isWrite(node: ESTree.MemberExpression): boolean {
   const parent = node.parent;
   if (parent.type === "AssignmentExpression")
@@ -287,62 +267,16 @@ function isWrite(node: ESTree.MemberExpression): boolean {
   );
 }
 
-function ownKeySource(
-  definition: Variable["defs"][number],
-): ESTree.Node | null {
-  if (definition.type === "Parameter") {
-    const call = definition.node.parent;
-    if (
-      call?.type === "CallExpression" &&
-      call.arguments[0] === definition.node &&
-      call.callee.type === "MemberExpression"
-    )
-      return call.callee.object;
-    return null;
-  }
-  const loop = definition.parent?.parent;
-  if (loop?.type === "ForInStatement") return loop;
-  return loop?.type === "ForOfStatement" ? loop.right : null;
-}
-
-/** Follows `const names = Object.keys(table)` to its initializer. */
-function keyListOrigin(node: ESTree.Node, source: SourceCode): ESTree.Node {
-  if (node.type !== "Identifier") return node;
-  const [definition] = resolveVariable(source, node)?.defs ?? [];
-  return definition?.type === "Variable" &&
-    definition.node.type === "VariableDeclarator" &&
-    definition.node.init !== null
-    ? definition.node.init
-    : node;
-}
-
-function isOwnKeyBinding(
-  key: ESTree.Node,
-  table: string,
-  source: SourceCode,
-): boolean {
-  if (key.type !== "Identifier") return false;
-  const [definition] = resolveVariable(source, key)?.defs ?? [];
-  const found = definition === undefined ? null : ownKeySource(definition);
-  if (found === null) return false;
-  if (found.type === "ForInStatement")
-    return source.getText(found.right) === table;
-  const origin = keyListOrigin(found, source);
-  return (
-    origin.type === "CallExpression" &&
-    OWN_KEY_LISTS.has(callName(origin.callee) ?? "") &&
-    origin.arguments[0] !== undefined &&
-    source.getText(origin.arguments[0]) === table
-  );
-}
-
 function ownKeyCheck(
   node: ESTree.CallExpression,
   source: SourceCode,
 ): Omit<OwnKeyCheck, "scope"> | null {
   const [first, second] = node.arguments;
   if (first === undefined) return null;
-  if (HAS_OWN_CALLS.has(callName(node.callee) ?? ""))
+  if (
+    HAS_OWN_CALLS.has(callName(node.callee) ?? "") ||
+    isHasOwnPropertyCall(node.callee)
+  )
     return second === undefined
       ? null
       : { table: source.getText(first), key: source.getText(second) };
@@ -401,14 +335,7 @@ export const noInheritedKeyLookupRule = defineRule({
         checks = [];
       },
       MemberExpression(node) {
-        if (
-          environment === null ||
-          !node.computed ||
-          isStaticKey(node.property) ||
-          isConstantKey(node.property, context.sourceCode) ||
-          isWrite(node)
-        )
-          return;
+        if (environment === null || !node.computed || isWrite(node)) return;
         const kind = tableKind(node.object, environment);
         if (
           kind === null ||
@@ -416,7 +343,7 @@ export const noInheritedKeyLookupRule = defineRule({
         )
           return;
         const table = context.sourceCode.getText(node.object);
-        if (isOwnKeyBinding(node.property, table, context.sourceCode)) return;
+        if (isKnownKey(node.property, table, context.sourceCode)) return;
         candidates.push({
           node,
           messageId: "lookup",
