@@ -78,7 +78,18 @@ function suppressionProblems(root: string, block: BodyBlock, rerun: string) {
   );
 }
 
-function revisionProblems(root: string, block: BodyBlock, rerun: string) {
+function sharesBase(root: string, stampBase: string, base: string): boolean {
+  const mine = git(root, ["merge-base", stampBase, "HEAD"]);
+  const theirs = git(root, ["merge-base", base, "HEAD"]);
+  return mine.ok && theirs.ok && mine.out === theirs.out;
+}
+
+function revisionProblems(
+  root: string,
+  block: BodyBlock,
+  rerun: string,
+  base: string | undefined,
+) {
   const stamp = block.stamp;
   if (stamp === undefined) return [];
   for (const sha of [stamp.base, stamp.head])
@@ -98,10 +109,22 @@ function revisionProblems(root: string, block: BodyBlock, rerun: string) {
     return [
       `line ${block.start}: proof block stamped at ${stamp.head.slice(0, 12)}, but HEAD is ${head.slice(0, 12)}. ${rerun}`,
     ];
+  if (
+    base !== undefined &&
+    stamp.command.startsWith("antelopejs-api-diff") &&
+    !sharesBase(root, stamp.base, base)
+  )
+    return [
+      `line ${block.start}: proof block compared against ${stamp.base.slice(0, 12)}, whose base is not the pull request base ${base.slice(0, 12)}. Re-run \`antelopejs-api-diff <pull request base>\` at HEAD and copy its whole output, its closing antelopejs-proof stamp included.`,
+    ];
   return suppressionProblems(root, block, rerun);
 }
 
-function proofProblems(root: string, block: BodyBlock): string[] {
+function proofProblems(
+  root: string,
+  block: BodyBlock,
+  base: string | undefined,
+): string[] {
   const stamp = block.stamp;
   if (stamp === undefined) return [];
   const rerun = `Re-run \`${stamp.command}\` at HEAD and copy its whole output, its closing antelopejs-proof stamp included.`;
@@ -110,16 +133,21 @@ function proofProblems(root: string, block: BodyBlock): string[] {
     return [
       `line ${block.start}: proof block edited after \`${stamp.command}\` printed it. ${rerun}`,
     ];
-  return revisionProblems(root, block, rerun);
+  return revisionProblems(root, block, rerun, base);
 }
 
-/** Checks a pull request body against the repository at HEAD: stamped proof blocks are unedited and current, bin output appears only inside them, and findings blocks list live diagnostics. Returns one message per problem. */
-export function checkBody(root: string, body: string): string[] {
+/** Checks a pull request body against the repository at HEAD: stamped proof blocks are unedited and current, bin output appears only inside them, and findings blocks list live diagnostics. With `base`, an api-diff stamp must compare against that pull request base or an ancestor of it on the branch's merge-base. Returns one message per problem. */
+export function checkBody(
+  root: string,
+  body: string,
+  { base }: { base?: string } = {},
+): string[] {
   const { blocks, outside } = scanBody(body);
   let diagnostics: Diagnostic[] | undefined;
   const problems = outsideProblems(outside);
   for (const block of blocks) {
-    if (block.kind === "proof") problems.push(...proofProblems(root, block));
+    if (block.kind === "proof")
+      problems.push(...proofProblems(root, block, base));
     else {
       diagnostics ??= lintDiagnostics(root);
       problems.push(...findingsProblems(block, diagnostics));
