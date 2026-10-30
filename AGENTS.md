@@ -25,7 +25,7 @@ Hold every test you write or keep to this checklist:
 
 ### Cleanup proof
 
-A behaviour-preserving cleanup PR shows `antelopejs-api-diff <base-ref>` passing. Published declarations and built runtime exports stay unchanged; pass `--allow-added <glob>` (repeatable, e.g. `'**/internal/**'`) to let added entries under that glob pass when their module is `@internal`, and copy its "Added (allowed)" list. A comment-only PR shows `antelopejs-comment-proof <base-ref>` passing instead of a verifier. Both compare committed HEAD.
+A behaviour-preserving cleanup PR shows `antelopejs-api-diff <base-ref>` passing. Published declarations, built runtime exports and the names and signatures a DMS frontend module auto-imports stay unchanged; pass `--allow-added <glob>` (repeatable, e.g. `'**/internal/**'`) to let added entries under that glob pass when their module is `@internal`, and copy its "Added (allowed)" list. Every export under a directory that `dms.frontend.build.ts` auto-imports is published, `@internal` or not; a helper that must stay private goes under `app/build/`. A comment-only PR shows `antelopejs-comment-proof <base-ref>` passing instead of a verifier. Both compare committed HEAD.
 
 Copy counts from the proof's base and HEAD table. Never type counts by hand. Keep the command and the committed head beside the copied output. The table counts a lint directive once per rule it names, inline directives included.
 
@@ -39,7 +39,7 @@ Verify a boundary against the imports a developer or agent would plausibly write
 
 ### Suppression budget
 
-`guardrails.suppressions.json` caps the suppressions in authored code: lint directives per rule they name (`*` for none), `@ts-expect-error`, `@ts-ignore` and `SAFETY:` comments. A suppression over its ceiling fails: fix the code, or remove another suppression of the same kind. A rule that keeps needing suppressions should be changed in the preset. Never raise or remove a number in that file: the check fails a ceiling higher than on the pull request base, and only the operator approves a raise. A directive disabling `anti-slop/require-safety-comment-for-type-assertion` is burn-down debt: remove the assertion, or, where it holds, replace the directive with `SAFETY: <why it holds>`, which takes over its room without a raise. After you remove suppressions, run `pnpm run suppressions:update` and commit the lowered file.
+`guardrails.suppressions.json` caps the suppressions in authored code: lint directives per rule they name (`*` for none), `@ts-expect-error`, `@ts-ignore` and `SAFETY:` comments, and under `config` each rule a lint config (`oxlint.config.*`, `.oxlintrc.json`, `eslint.config.*`) switches off or to a warning, keyed by rule and `files` glob anchored at the config's directory, so widening or moving a scope is a new ceiling of 0, while narrowing one takes over the room it gives up. Switching a rule off in a config is a suppression too: fix the code its rule reports instead. A suppression over its ceiling fails: fix the code, or remove another suppression of the same kind. A rule that keeps needing suppressions should be changed in the preset. Never raise or remove a number in that file: the check fails a ceiling higher than on the pull request base, and only the operator approves a raise. A directive disabling `anti-slop/require-safety-comment-for-type-assertion` is burn-down debt: remove the assertion, or, where it holds, replace the directive with `SAFETY: <why it holds>`, which takes over its room without a raise. After you remove suppressions, run `pnpm run suppressions:update` and commit the lowered file.
 
 ### What enforces what
 
@@ -54,7 +54,7 @@ Verify a boundary against the imports a developer or agent would plausibly write
 | No assertion that restates a constant                                          | `antelopejs/no-constant-value-assertion`            |
 | No test whose only check is "is a function"                                    | `antelopejs/no-typeof-function-only-test`           |
 | Params ≤ 5, function ≤ 120 lines, file ≤ 500 lines, depth ≤ 4, complexity ≤ 20 | `eslint/max-*`, `eslint/complexity`                 |
-| Cleanup preserves declarations and built runtime export metadata               | `antelopejs-api-diff <base-ref>`                    |
+| Cleanup preserves declarations, runtime exports and DMS auto-imports           | `antelopejs-api-diff <base-ref>`                    |
 | Comment-only changes preserve JavaScript emit                                  | `antelopejs-comment-proof <base-ref>`               |
 | PR-body counts come from tracked code files                                    | api-diff and comment-proof tables                   |
 | Receiver, positional and unpublished-module behaviour                          | `antelopejs-api-diff <base-ref> --probe <file.cjs>` |
@@ -62,15 +62,20 @@ Verify a boundary against the imports a developer or agent would plausibly write
 | Evasion-only and patched-internal findings go under Attention                  | review; no tool                                     |
 | No-upward rules reject same-tier peers                                         | review and import probes                            |
 | No `@ts-ignore`                                                                | `typescript/ban-ts-comment`                         |
+| No once-used type parameter standing in for `unknown`                          | `typescript/no-unnecessary-type-parameters`         |
+| No `any` passed, assigned or returned where a type is declared                 | `typescript/no-unsafe-{argument,assignment,return}` |
 | Files ≤ 20,000 bytes, tests included                                           | `antelopejs-check-size` (pre-commit)                |
 | Suppressions stay within `guardrails.suppressions.json`                        | `antelopejs-suppressions` (pre-commit, checks)      |
+| No lint config switches off a rule to stay under the budget                    | `antelopejs-suppressions` (pre-commit, checks)      |
 | No added directive disables the `SAFETY:`, comment or test rules               | `antelopejs-suppressions` (pre-commit, checks)      |
 | An added suppression gives a specific reason                                   | `antelopejs-suppressions` (pre-commit, checks)      |
 | A block disable is closed in its file                                          | `antelopejs-suppressions` (pre-commit, checks)      |
 | Types check                                                                    | `tsc` (pre-push)                                    |
 | No dead files, exports, or dependencies                                        | knip                                                |
 | Managed files match the pack                                                   | `antelopejs-sync --check`                           |
+| A CI gate reads `needs.<id>` only of jobs in its `needs`                       | `antelopejs-sync --check`                           |
 | Entry-only rules exempt no tracked outsider                                    | `antelopejs-sync --check`                           |
+| A DMS layer's `build/backend-boundary.ts` is the pack's plugin                 | `antelopejs-sync --check`                           |
 | A test names the wrong implementation it catches                               | review; no tool                                     |
 
 <!-- antelopejs-guardrails:end -->

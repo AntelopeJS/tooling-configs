@@ -18,6 +18,7 @@ import {
   type AddedPolicy,
   type PublishedEntry,
 } from "./added-entries.ts";
+import { autoImportDiff } from "./auto-imports.ts";
 import { bundleDeclarations } from "./declaration-bundle.ts";
 import { normalizeBundle } from "./declaration-order.ts";
 import {
@@ -32,6 +33,7 @@ import {
   isTestSource,
   packagesAt,
   unpublishedAt,
+  isExportPath,
   type ExportTarget,
   type ProofManifest,
 } from "./typescript.ts";
@@ -71,8 +73,7 @@ function exportTargets(
   entry = "exports/root",
   subpath = ".",
 ): PublishedTarget[] {
-  // eslint-disable-next-line anti-slop/no-runtime-typeof -- package exports is a standard recursive JSON union.
-  if (typeof target === "string") return [{ entry, target, subpath }];
+  if (isExportPath(target)) return [{ entry, target, subpath }];
   if (target == null) return [];
   if (Array.isArray(target))
     return target.flatMap((value, index) =>
@@ -370,7 +371,7 @@ function declarationDiff(
   };
 }
 
-/** Compares declarations and built runtime exports, with an optional behavioral probe captured before either build. Added entries whose subpath matches an `allowAdded` glob pass when their module is `@internal`. */
+/** Compares declarations, built runtime exports and the auto-import surface of DMS frontend modules, with an optional behavioral probe captured before either build. Added entries whose subpath matches an `allowAdded` glob pass when their module is `@internal`. */
 export function apiDiff(
   root: string,
   baseRef: string,
@@ -387,9 +388,11 @@ export function apiDiff(
   for (const compare of [
     () => declarationDiff(root, baseRef, policy),
     () => runtimeDiff(root, baseRef, probe, policy),
+    () => autoImportDiff(root, baseRef),
   ]) {
     try {
-      results.push(compare());
+      const result = compare();
+      if (result !== undefined) results.push(result);
     } catch (error) {
       errors.push(
         `Execution error: ${error instanceof Error ? error.message : String(error)}\n`,

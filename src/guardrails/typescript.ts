@@ -16,6 +16,13 @@ export type ExportTarget =
   | ExportTarget[]
   | { [condition: string]: ExportTarget };
 
+/** A package `exports` leaf: a path rather than a fallback list or a condition map. */
+export function isExportPath(
+  target: ExportTarget | undefined,
+): target is string {
+  return typeof target === "string";
+}
+
 export interface ProofManifest {
   name?: string;
   private?: boolean;
@@ -107,7 +114,7 @@ function resolveTypeScript(directory: string) {
 }
 
 /** Loads the compiler a package builds with, including a package-local installation in a workspace. A package that declares `typescript` (itself or through its workspace root) but cannot resolve it is an error; only a package that declares none falls back to the one `dts-bundle-generator` brings, with a `notice`. A TypeScript without the programmatic API (7 and later) is an error rather than a crash. */
-function loadTypeScript(directory: string): PackageCompiler {
+export function loadTypeScript(directory: string): PackageCompiler {
   const { file, fallback } = resolveTypeScript(directory);
   /* SAFETY: a resolved typescript package implements the compiler API unless the check below rejects it. */
   const compiler = createRequire(file)("typescript") as typeof ts;

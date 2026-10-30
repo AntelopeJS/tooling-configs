@@ -65,6 +65,7 @@ test("full sync measures once, preserves handwritten text even behind a CLAUDE s
   assert.deepEqual(readCeilings(root).rules, {
     "typescript/no-explicit-any": 1,
   });
+  assert.equal(readCeilings(root).pack, "0.2.17");
   assert.equal(
     read(root, "AGENTS.md"),
     `Handwritten introduction.\n\n${agentsBlock({ profile: "full", ratchet: true, verificationSkill: ".agents/skills/verify-runtime/SKILL.md", glossary: "docs/GLOSSARY.md" }).trimEnd()}\n\nHandwritten footer.\n`,
@@ -236,6 +237,7 @@ test("template profile manages only presets and AGENTS, and appends without repl
   assert.deepEqual(result.paths.sort(), [
     ".agents/skills/verify-template/SKILL.md",
     ".agents/skills/verify-template/package.json",
+    ".agents/skills/verify-template/tsconfig.json",
     ".claude/skills/verify-template",
     "AGENTS.md",
     "knip.config.ts",
@@ -361,7 +363,7 @@ test("sync leaves retired files for ratchet:update, then removes ratchet wiring 
   assert.equal(existsSync(join(root, "guardrails.ratchet.json")), false);
 });
 
-test("first adoption without debt writes no ratchet file, scripts or hook, but keeps an all-zero suppression budget", (t) => {
+test("first adoption without debt writes no ratchet file, scripts or hook, but keeps a suppression budget at today's counts", (t) => {
   const root = testRepo(t);
   linkOxlint(root);
   put(
@@ -382,7 +384,23 @@ test("first adoption without debt writes no ratchet file, scripts or hook, but k
     tsExpectError: 0,
     tsIgnore: 0,
     safety: 0,
+    config: { "category:correctness for *": 1 },
   });
   assert.match(read(root, "lefthook.yml"), /antelopejs-suppressions --staged/);
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
+});
+
+test("sync replaces the previous oxlint.config.ts template, whose preset ignores oxlint never read, with one that sets them at the root (interface-auth#30)", (t) => {
+  const root = testRepo(t);
+  put(
+    root,
+    "oxlint.config.ts",
+    'import { defineConfig } from "oxlint";\nimport { antelopePreset } from "@antelopejs/tooling-configs/oxc/lint";\n\nexport default defineConfig({\n  extends: [antelopePreset()],\n  options: { typeAware: true },\n});\n',
+  );
+  const result = syncRepository(root, { profile: "template" });
+  assert.deepEqual(result.errors, []);
+  assert.equal(
+    read(root, "oxlint.config.ts"),
+    'import { defineConfig } from "oxlint";\nimport {\n  ANTELOPE_IGNORE_PATTERNS,\n  antelopePreset,\n} from "@antelopejs/tooling-configs/oxc/lint";\n\nexport default defineConfig({\n  extends: [antelopePreset()],\n  ignorePatterns: ANTELOPE_IGNORE_PATTERNS,\n  options: { typeAware: true },\n});\n',
+  );
 });

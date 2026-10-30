@@ -35,6 +35,16 @@ tester.run("anti-slop/no-unsafe-dictionary-type", noUnsafeDictionaryTypeRule, {
 		"function run<T extends Record<string, unknown>>(input: T): T { return input; }",
 		"declare class Store<T extends Record<string, unknown>> { read(): T }",
 		"type Deep<T extends Readonly<Record<string, unknown>>> = T;",
+		{
+			name: "interface-database-decorators@fc2cead src/model.ts:66 predicate target",
+			code: 'function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null; }',
+		},
+		"const isRecord = (value: unknown): value is Record<string, unknown> => value !== null;",
+		"type IsRecord = (value: unknown) => value is Record<string, unknown>;",
+		{
+			name: "cloud@f784b41 src/secrets/transit.ts:228 inside a type-guard body",
+			code: 'function isEnvelopeFields(value: unknown): value is TransitEnvelopeFields { if (!value || typeof value !== "object") return false; const fields = value as Record<string, unknown>; return typeof fields.iv === "string"; }',
+		},
 	],
 	invalid: [
 		{ code: "type A = Record<string, unknown>;", errors: [error] },
@@ -110,6 +120,31 @@ tester.run("anti-slop/no-unsafe-dictionary-type", noUnsafeDictionaryTypeRule, {
 		{
 			code: "function local() { type Record<K, V> = { key: K; value: V }; type A = Record<string, unknown>; } function global() { type A = Record<string, unknown>; }",
 			errors: 1,
+		},
+		{
+			name: "Record<string, unknown> outside a type guard still flags",
+			code: "function read(value: object): string { const fields = value as Record<string, unknown>; return String(fields.id); }",
+			errors: [error],
+		},
+		{
+			name: "a type guard's parameter is not its body",
+			code: "function isEntry(value: Record<string, unknown>): value is Entry { return true; }",
+			errors: [error],
+		},
+		{
+			name: "a function nested in a type guard is not the guard",
+			code: "function isEntry(value: unknown): value is Entry { const read = (raw: object) => raw as Record<string, unknown>; return read(value) !== null; }",
+			errors: [error],
+		},
+		{
+			name: "another unsafe dictionary as a predicate target still flags",
+			code: "function isBag(value: unknown): value is Record<string, any> { return true; }",
+			errors: [error],
+		},
+		{
+			name: "a predicate target nested in a wider type still flags",
+			code: "function isBags(value: unknown): value is Array<Record<string, unknown>> { return true; }",
+			errors: [error],
 		},
 	],
 });

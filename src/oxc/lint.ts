@@ -3,7 +3,7 @@ import { defineConfig } from "oxlint";
 import { findGitRoot, MEASURE_ENV } from "../guardrails/ceilings.ts";
 import { readCarriedCeilings } from "../guardrails/renames.ts";
 import { TEST_FILE_GLOBS } from "./guardrails/shared.ts";
-import { AGENT_IGNORE_PATTERNS, IGNORE_PATTERNS } from "./shared.ts";
+import { IGNORE_PATTERNS, SYNCED_AGENT_PATTERNS } from "./shared.ts";
 
 export {
   ASSERTION_FUNCTION_NAMES,
@@ -11,12 +11,12 @@ export {
 } from "./guardrails/shared.ts";
 
 /**
- * oxlint replaces rather than merges ignorePatterns across extends.
- * Spread these patterns when adding repository-specific ignores.
+ * Generated output and the agent files `antelopejs-sync` writes. oxlint reads ignorePatterns only from the root config,
+ * never from extends: set them there, and spread them when adding repository-specific ignores.
  */
 export const ANTELOPE_IGNORE_PATTERNS = [
   ...IGNORE_PATTERNS,
-  ...AGENT_IGNORE_PATTERNS,
+  ...SYNCED_AGENT_PATTERNS,
 ];
 
 type Severity = "off" | "error";
@@ -87,7 +87,6 @@ export const ANTI_SLOP_RULES = [
 function basePreset(importCycles: boolean) {
   return defineConfig({
     categories: { correctness: "error" },
-    ignorePatterns: ANTELOPE_IGNORE_PATTERNS,
     plugins: ["eslint", "typescript", "node", "oxc", "import", "promise"],
     rules: {
       "eslint/no-unused-vars": [
@@ -224,9 +223,21 @@ function complexityPreset(thresholds: ComplexityThresholds) {
   });
 }
 
+/**
+ * Besides the base set, five rules reject an `any` or a type parameter that
+ * stands in for `unknown`, which the anti-slop `unknown` and assertion rules
+ * never see: a once-used type parameter, `any` passed as a typed argument,
+ * assigned to a typed binding or returned as a typed result, and an untyped
+ * `.catch` callback variable.
+ */
 function typeAwarePreset() {
   return defineConfig({
     rules: {
+      "typescript/no-unnecessary-type-parameters": "error",
+      "typescript/no-unsafe-argument": "error",
+      "typescript/no-unsafe-assignment": "error",
+      "typescript/no-unsafe-return": "error",
+      "typescript/use-unknown-in-catch-callback-variable": "error",
       "typescript/no-floating-promises": "error",
       "typescript/await-thenable": "error",
       "typescript/unbound-method": "error",
