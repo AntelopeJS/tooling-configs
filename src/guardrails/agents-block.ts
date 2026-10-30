@@ -11,6 +11,14 @@ export interface AgentsBlockContext {
 export const AGENTS_BLOCK_START = "<!-- antelopejs-guardrails:start -->";
 export const AGENTS_BLOCK_END = "<!-- antelopejs-guardrails:end -->";
 
+const ITERATION = `### While you work
+
+\`pnpm run checks\` runs every step, so run it once, at the end. While you iterate, run only the check that covers what you changed:
+
+- \`pnpm run typecheck\` after you change types or signatures.
+- \`pnpm exec oxlint <files>\` and \`pnpm exec oxfmt <files>\` on the files you changed.
+- Run one test file instead of the whole suite. In a module that tests with \`ajs module test\`, run \`pnpm run build\`, then \`pnpm exec ajs module test . -f dist/<path>.test.js\`. Repeat \`-f\` for more files.`;
+
 const COMMENTS = `### Comments
 
 Say it in code. A constraint belongs in a type, a lint rule, or a test. A public item's contract belongs in TSDoc (\`/** */\`) on that item. The only other comments are lint directives that name their rules, \`@ts-expect-error <reason>\`, \`SAFETY: <reason>\` above a type assertion, \`/*!\` license headers, and bundler or formatter directives.
@@ -199,6 +207,8 @@ function fullBody(context: AgentsBlockContext): string[] {
     "## Guardrails",
     "",
     `Finish every change with \`pnpm run checks\`. It runs typecheck, lint, format, knip, tests, size, ${context.ratchet ? "ratchet, " : ""}suppressions, and sync, and prints only what failed. The change is done when it prints no failure.`,
+    "",
+    ITERATION,
     "",
     ...pointers(context).flatMap((line) => [line, ""]),
     "The tools enforce most rules, listed in the table at the end. The sections below hold the rules no tool checks.",
