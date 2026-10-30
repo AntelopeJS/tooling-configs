@@ -21,6 +21,7 @@ import {
 import { autoImportDiff } from "./auto-imports.ts";
 import { bundleDeclarations } from "./declaration-bundle.ts";
 import { normalizeBundle } from "./declaration-order.ts";
+import { stampProof } from "./proof-stamp.ts";
 import {
   compareRevisions,
   DIRECTORY_LINK,
@@ -399,18 +400,27 @@ export function apiDiff(
       );
     }
   }
+  const command = [
+    `antelopejs-api-diff ${baseRef}`,
+    ...(probeFile === undefined ? [] : [`--probe ${probeFile}`]),
+    ...allowAdded.map((glob) => `--allow-added '${glob}'`),
+  ].join(" ");
   return {
     different:
       errors.length > 0 ||
       results.some((result) => result.different) ||
       (policy?.problems.size ?? 0) > 0,
-    output:
+    output: stampProof(
+      root,
+      command,
+      baseRef,
       results.map((result) => result.output).join("") +
-      (policy === undefined ? "" : describeAllowance(policy)) +
-      errors.join("") +
-      (probe === undefined
-        ? "No behavioural probe ran.\n"
-        : "Behavioural probe supplied.\n") +
-      revisionCounts(root, baseRef),
+        (policy === undefined ? "" : describeAllowance(policy)) +
+        errors.join("") +
+        (probe === undefined
+          ? "No behavioural probe ran.\n"
+          : "Behavioural probe supplied.\n") +
+        revisionCounts(root, baseRef),
+    ),
   };
 }

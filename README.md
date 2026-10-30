@@ -33,6 +33,7 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 | bin                | `antelopejs-check-size`                                                   | Fails on authored files over 20,000 bytes and on blanket disable directives                                |
 | bin                | `antelopejs-api-diff <base-ref>`                                          | Compares published declaration bundles against committed HEAD                                              |
 | bin                | `antelopejs-comment-proof <base-ref>`                                     | Compares comment-free JavaScript emit against committed HEAD                                               |
+| bin                | `antelopejs-body-check <body.md \| -> [--head <sha>] [--base <sha>]`      | Checks a PR body's proof and findings blocks against HEAD; `--findings` prints the findings block          |
 | bin                | `antelopejs-check-interface-ranges`                                       | Fails on interface ranges that break module startup                                                        |
 | bin                | `antelopejs-garden [--json] [--apply-pauses]`                             | The Gardener's scans of the organization through the GitHub API and npm                                    |
 | bin                | `antelopejs-verify <command>`                                             | The harness of the shared `verify-interface`, `verify-module` and `verify-template` skills                 |
@@ -266,6 +267,28 @@ Both commands compare **committed HEAD**, not staged or working-tree edits. They
 pnpm exec antelopejs-api-diff origin/main
 pnpm exec antelopejs-comment-proof origin/main
 ```
+
+### PR body check
+
+Both proof commands end their output with a `<!-- antelopejs-proof ... -->` line that stamps the base, the committed head, the command, the number of lines printed and a digest of them. Paste the whole output down to that line, which renders invisibly; indenting it, wrapping it in a code fence or re-padding the tables keeps it valid. The check reads the stamped number of non-blank lines above the stamp as the copy.
+
+`antelopejs-body-check --findings` prints every lint finding of the working tree as a block between `<!-- antelopejs-findings begin -->` and `<!-- antelopejs-findings end -->`, one ``- `path:line` `rule`: <why>`` line per finding under a `` `rule` (count): `` line. Paste it under the findings-left heading, replace each `<why>` with the reason the finding stays, and delete the rules the pull request does not report on. Lines may be regrouped under prose bullets.
+
+`antelopejs-body-check <body.md>` (`-` reads standard input) checks the body against the repository at HEAD and prints one line per problem:
+
+- a proof block whose lines no longer match its digest, whose head is not in the branch, or, for api-diff, whose head tree is not HEAD's; a suppression table that no longer matches the counts at HEAD against the stamped base. A comment-proof block may be stamped at an earlier commit of the branch, so a comment-only commit can be proven under a later code commit;
+- a suppression table or a proof summary line (`API:`, `Runtime API:`, `Comment proof:`) outside a stamped block;
+- in a findings block: a line that is not a live diagnostic of that rule at that line, a listed rule with a live finding the block leaves out, a finding with no reason, a `path:line` written outside the item form, and a count such as ``(9 `no-unknown-parameters`)`` that differs from the items of that rule under it;
+- a code file named (`path.ts`, with or without `:line`, or a range) in a findings-left section outside a findings block. A section opens at a heading, or at a plain or bold title line, that says what is left, kept or remaining under the ratchet or in findings (`## Findings left under the ratchet`, `Findings left under the ratchet:`, `**Left under the ratchet**`, `## Kept under the ratchet`, `## Not fixed`), and ends at the next heading of its level or above (the next heading of any level for a plain or bold line);
+- with `--base <sha>`, an api-diff block compared against a revision whose merge-base with HEAD is not the pull request base's.
+
+Counts in prose are not checked. Run it on a checkout of the pull request head, with history back to the stamped base:
+
+```bash
+gh pr view <number> --json body --jq .body | pnpm exec antelopejs-body-check -
+```
+
+In CI, run it in a `pull_request` job (types `opened`, `edited`, `synchronize`) that checks out `github.event.pull_request.head.sha` with `fetch-depth: 0`, installs dependencies, and passes the body through the environment rather than inline in the script: `printf '%s' "$PR_BODY" | pnpm exec antelopejs-body-check - --head "$HEAD_SHA"`. `--head` fails when the checkout is not that commit. Add `--base "$BASE_SHA"` (`github.event.pull_request.base.sha`) so an api-diff block cannot be taken against HEAD itself.
 
 ## oxfmt
 

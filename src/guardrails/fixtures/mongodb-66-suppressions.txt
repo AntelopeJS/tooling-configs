@@ -1,0 +1,15 @@
+## Suppressions
+
+From the table printed by `antelopejs-api-diff origin/main` and `antelopejs-comment-proof` (identical at every commit, `0871c38` included).
+
+| Suppressions | base | HEAD |
+| --- | ---: | ---: |
+| Lint suppressions, all rules | 3 | 3 |
+| Lint suppressions, `import/no-cycle` | 2 | 2 |
+| Lint suppressions, `unicorn/no-thenable` | 1 | 1 |
+| `@ts-expect-error` | 0 | 0 |
+| `@ts-ignore` | 0 | 0 |
+| `SAFETY:` comments | 4 | 4 |
+
+No suppression was added. `guardrails.suppressions.json` is the file sync adopted at today's counts.
+
