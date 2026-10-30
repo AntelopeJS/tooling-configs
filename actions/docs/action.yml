@@ -1,5 +1,5 @@
 name: Check documentation
-description: Check local Markdown links, explicit compatibility and API contracts, and typecheck every TypeScript fence
+description: Check local Markdown links, explicit compatibility and API contracts, @antelopejs version claims outside the generated compatibility block, and typecheck every TypeScript fence
 inputs:
   files:
     description: Newline-separated Markdown files or directories, relative to the consumer checkout (no globs)
