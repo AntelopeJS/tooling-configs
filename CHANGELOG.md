@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.2.17
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.16...v0.2.17)
+
+### 🚀 Enhancements
+
+- **lint:** Reject any and once-used type parameters standing in for unknown ([#69](https://github.com/AntelopeJS/tooling-configs/pull/69))
+- **sync:** Restore the DMS backend boundary plugin from the pack ([#72](https://github.com/AntelopeJS/tooling-configs/pull/72))
+- **docs:** Typecheck every TypeScript fence against the repo's own source ([#67](https://github.com/AntelopeJS/tooling-configs/pull/67))
+- **docs:** Fail @antelopejs version prose outside the generated compatibility block ([#71](https://github.com/AntelopeJS/tooling-configs/pull/71))
+- **sync:** Generate the docs-compat block and the caller's docs-files ([#68](https://github.com/AntelopeJS/tooling-configs/pull/68))
+- **anti-slop:** Exempt boundary parameters, rejection reasons and type-guard records ([#81](https://github.com/AntelopeJS/tooling-configs/pull/81))
+- **guardrails:** Ratchet --update adopts only the rules a pack release newly enabled ([#78](https://github.com/AntelopeJS/tooling-configs/pull/78))
+- **api-diff:** Compare the names and signatures DMS frontend modules auto-import ([#73](https://github.com/AntelopeJS/tooling-configs/pull/73))
+- **lint:** Flag inherited-key lookups and presence-only type guards ([#70](https://github.com/AntelopeJS/tooling-configs/pull/70))
+- **guardrails:** Check PR-body proof tables and findings lists against HEAD ([#82](https://github.com/AntelopeJS/tooling-configs/pull/82))
+
+### 🩹 Fixes
+
+- **suppressions:** Count lint config rule-offs against the budget ([#66](https://github.com/AntelopeJS/tooling-configs/pull/66))
+- **guardrails:** Compare the staged ratchet with the merge-base of the pull request base ([#65](https://github.com/AntelopeJS/tooling-configs/pull/65))
+- **sync:** Fail a CI caller whose gate reads needs of a job it does not need ([#79](https://github.com/AntelopeJS/tooling-configs/pull/79))
+- **oxc:** Ignore only the agent files sync writes, and type the skill's own files ([#80](https://github.com/AntelopeJS/tooling-configs/pull/80))
+- **suppressions:** Fail dead and reasonless directives in files a change touches ([#83](https://github.com/AntelopeJS/tooling-configs/pull/83))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.2.16
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.15...v0.2.16)
