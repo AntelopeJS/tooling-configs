@@ -3,7 +3,11 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { readCeilings } from "./ceilings.ts";
-import { lintDiagnostics, type Diagnostic } from "./oxlint.ts";
+import {
+  lintDiagnostics,
+  type Diagnostic,
+  type LintOptions,
+} from "./oxlint.ts";
 import { withPreviousTree } from "./previous-tree.ts";
 import { LINT_CONFIG } from "./files.ts";
 import { renamedPaths } from "./renames.ts";
@@ -14,6 +18,9 @@ import {
   type StagedChanges,
 } from "./staged-additions.ts";
 import { suppressionBase } from "./suppression-base.ts";
+
+/** The staged hook measures the real tree and a scratch checkout, so a project that fails to load in either must stop it. */
+const STAGED_LINT: LintOptions = { rejectBrokenProject: true };
 
 function stagedNames(root: string, filter: string): string[] {
   return execFileSync(
@@ -88,7 +95,9 @@ function previousDiagnostics(
     previous.filter((file) => !LINT_CONFIG.test(file)),
     (tree) => {
       const existing = previous.filter((file) => existsSync(join(tree, file)));
-      return existing.length ? lintDiagnostics(tree, undefined, existing) : [];
+      return existing.length
+        ? lintDiagnostics(tree, undefined, existing, STAGED_LINT)
+        : [];
     },
   );
 }
@@ -138,7 +147,9 @@ function branchCounts(root: string, revision: string) {
   const lint = (tree: string) => {
     const existing = paths.filter((file) => existsSync(join(tree, file)));
     return countByRule(
-      existing.length ? lintDiagnostics(tree, undefined, existing) : [],
+      existing.length
+        ? lintDiagnostics(tree, undefined, existing, STAGED_LINT)
+        : [],
     );
   };
   return {
@@ -176,8 +187,8 @@ export function stagedRatchet(root: string, files?: string[]): string[] {
   const targets = files ?? stagedNames(root, "ACMR");
   if (!targets.length) return [];
   const ceilings = readCeilings(root);
-  const after = lintDiagnostics(root, undefined, targets).filter(({ rule }) =>
-    Object.hasOwn(ceilings.rules, rule),
+  const after = lintDiagnostics(root, undefined, targets, STAGED_LINT).filter(
+    ({ rule }) => Object.hasOwn(ceilings.rules, rule),
   );
   if (!after.length) return [];
   const base = comparisonBase(root);
