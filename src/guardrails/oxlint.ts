@@ -43,7 +43,7 @@ interface OxlintSpan {
 }
 
 interface OxlintDiagnostic {
-  code: string;
+  code?: string;
   filename: string;
   message: string;
   help?: string;
@@ -54,37 +54,40 @@ interface OxlintReport {
   diagnostics: OxlintDiagnostic[];
 }
 
-function parseDiagnostics(text: string, root: string): Diagnostic[] {
-  /* SAFETY: this is oxlint's own -f json report; ruleId rejects any diagnostic without a plugin(rule) code. */
+function parseReport(text: string): OxlintDiagnostic[] {
+  /* SAFETY: this is oxlint's own -f json report; lintDiagnostics rejects any diagnostic without a plugin(rule) code. */
   const report = JSON.parse(text) as OxlintReport | null;
   if (!Array.isArray(report?.diagnostics))
     throw new Error("oxlint did not return a JSON diagnostics array.");
-  return report.diagnostics.map((item) => {
-    const file = repositoryPath(root, item.filename);
-    const span = item.labels?.[0]?.span;
-    return {
-      rule: ruleId(item.code),
-      file,
-      location: span ? `${file}:${span.line}:${span.column}` : file,
-      message: item.message,
-      line: span?.line,
-      help: item.help,
-    };
-  });
+  return report.diagnostics;
 }
 
-export function lintDiagnostics(
+function toDiagnostic(item: OxlintDiagnostic, root: string): Diagnostic {
+  const file = repositoryPath(root, item.filename);
+  const span = item.labels?.[0]?.span;
+  return {
+    rule: ruleId(item.code ?? ""),
+    file,
+    location: span ? `${file}:${span.line}:${span.column}` : file,
+    message: item.message,
+    line: span?.line,
+    help: item.help,
+  };
+}
+
+function runOxlint(
   root: string,
-  config?: string,
-  files?: string[],
-): Diagnostic[] {
+  config: string | undefined,
+  files: string[] | undefined,
+  flags: string[],
+): OxlintDiagnostic[] {
   const binary = resolveOxlint(root);
   const temporary =
     config === undefined
       ? undefined
       : mkdtempSync(join(root, ".antelopejs-measure.generated."));
   try {
-    const args = [binary, "-f", "json"];
+    const args = [binary, "-f", "json", ...flags];
     if (temporary) {
       const path = join(temporary, "oxlint.config.ts");
       writeFileSync(path, config ?? "");
@@ -107,7 +110,7 @@ export function lintDiagnostics(
       throw new Error(
         `oxlint failed (${result.status ?? result.signal}): ${result.stderr || result.stdout}`,
       );
-    const diagnostics = parseDiagnostics(result.stdout, root);
+    const diagnostics = parseReport(result.stdout);
     if (result.status !== 0 && diagnostics.length === 0)
       throw new Error(
         `oxlint failed without diagnostics: ${result.stderr || result.stdout}`,
@@ -116,4 +119,50 @@ export function lintDiagnostics(
   } finally {
     if (temporary) rmSync(temporary, { recursive: true, force: true });
   }
+}
+
+export function lintDiagnostics(
+  root: string,
+  config?: string,
+  files?: string[],
+): Diagnostic[] {
+  return runOxlint(root, config, files, []).map((item) =>
+    toDiagnostic(item, root),
+  );
+}
+
+/** A lint directive oxlint reports as suppressing nothing: the rules it names as dead, or none named when the whole directive is dead. */
+export interface UnusedDirective {
+  file: string;
+  line: number;
+  message: string;
+  rules: string[] | undefined;
+}
+
+const UNUSED_RULES = /\(no problems were reported from (.+)\)/u;
+
+/**
+ * The disable directives in `files` that suppress nothing, with every ratchet
+ * rule enabled as in a measurement. `files` must not be empty, which would
+ * lint the whole repository.
+ */
+export function unusedDirectives(
+  root: string,
+  files: string[],
+): UnusedDirective[] {
+  return runOxlint(root, undefined, files, [
+    "--report-unused-disable-directives",
+  ])
+    .filter(
+      ({ code, message }) =>
+        code === undefined &&
+        message.startsWith("Unused ") &&
+        message.includes("-disable directive"),
+    )
+    .map((item) => ({
+      file: repositoryPath(root, item.filename),
+      line: item.labels?.[0]?.span.line ?? 0,
+      message: item.message,
+      rules: UNUSED_RULES.exec(item.message)?.[1].split(/,\s*/u),
+    }));
 }

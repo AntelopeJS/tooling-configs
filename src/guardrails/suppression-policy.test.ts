@@ -3,7 +3,15 @@ import { execFileSync } from "node:child_process";
 import test from "node:test";
 
 import { formatBudget } from "./suppression-budget.ts";
-import { bin, commit, put, read, testRepo } from "./helpers/test-repo.ts";
+import {
+  bin,
+  commit,
+  linkOxlint,
+  put,
+  read,
+  testRepo,
+  usePreset,
+} from "./helpers/test-repo.ts";
 
 const SESSION = [
   "export function statusOf(error: Error) {",
@@ -53,6 +61,8 @@ function budgetRepo(
   safety = 1,
 ): string {
   const root = testRepo(t);
+  linkOxlint(root);
+  usePreset(root);
   for (const [path, content] of Object.entries(files)) put(root, path, content);
   put(
     root,

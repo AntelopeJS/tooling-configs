@@ -11,9 +11,9 @@ import {
   bin,
   commit,
   linkOxlint,
-  PACKAGE_ROOT,
   put,
   testRepo,
+  usePreset,
 } from "./helpers/test-repo.ts";
 
 const CDN_REQUEST = (timeout: string) =>
@@ -21,7 +21,7 @@ const CDN_REQUEST = (timeout: string) =>
     "export async function request(url: string): Promise<string> {",
     "  // eslint-disable-next-line @typescript-eslint/no-implied-eval",
     '  const dynamicImport = new Function("specifier", "return import(specifier)");',
-    "  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment",
+    "  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access",
     '  const fetch = (await dynamicImport("node-fetch")).default;',
     `  const timeoutMs = ${timeout};`,
     "  return String(await fetch(url, { timeoutMs }));",
@@ -97,24 +97,7 @@ function presetRepo(
 ): string {
   const root = testRepo(t);
   linkTypeAware(root);
-  const source = (path: string) =>
-    JSON.stringify(join(PACKAGE_ROOT, "src/oxc", path));
-  put(
-    root,
-    "oxlint.config.ts",
-    [
-      `import { antelopePreset } from ${source("lint.ts")};`,
-      "const preset = antelopePreset();",
-      "for (const layer of preset.extends)",
-      "  if (layer.jsPlugins)",
-      "    layer.jsPlugins = layer.jsPlugins.map((plugin) => ({",
-      "      ...plugin,",
-      `      specifier: plugin.name === "anti-slop" ? ${source("anti-slop/index.ts")} : ${source("guardrails/index.ts")},`,
-      "    }));",
-      "export default { extends: [preset], options: { typeAware: true } };",
-      "",
-    ].join("\n"),
-  );
+  usePreset(root, true);
   put(
     root,
     "tsconfig.json",
@@ -169,10 +152,10 @@ function bothModes(root: string, change: () => void) {
 
 const CDN_BUDGET = {
   "@typescript-eslint/no-implied-eval": 1,
-  "@typescript-eslint/no-unsafe-assignment": 1,
+  "@typescript-eslint/no-unsafe-member-access": 1,
 };
 
-test("cdn#19: touching src/index.ts fails its dead no-unsafe-assignment directive and its reasonless no-implied-eval one, in both modes", (t) => {
+test("cdn#19: touching src/index.ts fails its dead no-unsafe-member-access directive and its reasonless no-implied-eval one, in both modes", (t) => {
   const root = presetRepo(
     t,
     { "src/index.ts": CDN_REQUEST("timeout ?? 1000") },
@@ -185,7 +168,7 @@ test("cdn#19: touching src/index.ts fails its dead no-unsafe-assignment directiv
     assert.equal(result.status, 1, result.stderr);
     assert.match(
       result.stderr,
-      /src\/index\.ts:4: `eslint-disable-next-line @typescript-eslint\/no-unsafe-assignment` suppresses nothing.*Fix: delete the directive/u,
+      /src\/index\.ts:4: `eslint-disable-next-line @typescript-eslint\/no-unsafe-member-access` suppresses nothing.*Fix: delete the directive/u,
     );
     assert.match(
       result.stderr,
