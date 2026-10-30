@@ -109,6 +109,8 @@ export default defineConfig({
 | Guardrails     | `antelopejs/no-comments`; in test files `antelopejs/no-fs-read-in-tests`, `antelopejs/no-self-import-in-tests`, `antelopejs/no-constant-value-assertion`, `antelopejs/no-typeof-function-only-test` and `antelopejs/require-assertion`                               | error   |
 | Import sorting | `perfectionist/sort-imports`, autofixed by `oxlint --fix`                                                                                                                                                                                                            | off     |
 
+Three anti-slop rules skip a value at its boundary. `no-runtime-typeof` also counts a `.js`/`.mjs` function documented `@returns {x is T}` as a type guard. `no-unsafe-dictionary-type` allows `Record<string, unknown>` as a `value is T` target or inside a type-guard body. `no-unknown-parameters` skips a `this` parameter, a parameter decorated `@JSONBody`, `@JsonBody` or `@Parameter`, the reason of a callback passed directly to `.catch(...)` or as `.then(_, onRejected)`, and the parameter of a `(reason: unknown) => void` type declared as `reject` or on a `new Promise` executor.
+
 No rule warns. oxlint reports `correctness` as warnings by default, and warnings never fail the command, so the preset raises it to error. A repository with existing findings records them in `guardrails.ratchet.json` instead of lowering a severity (see [Guardrail pack](#guardrail-pack)).
 
 The guardrail rules:

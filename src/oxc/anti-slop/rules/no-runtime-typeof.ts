@@ -2,26 +2,7 @@ import { defineRule } from "@oxlint/plugins";
 
 import type { ESTree } from "@oxlint/plugins";
 
-type RuntimeFunction = ESTree.ArrowFunctionExpression | ESTree.Function;
-
-function isRuntimeFunction(node: ESTree.Node): node is RuntimeFunction {
-	return (
-		node.type === "ArrowFunctionExpression" ||
-		node.type === "FunctionDeclaration" ||
-		node.type === "FunctionExpression"
-	);
-}
-
-function isInsideTypeGuard(node: ESTree.Node): boolean {
-	let current: ESTree.Node | null = node.parent;
-	while (current !== null && current.type !== "Program") {
-		if (isRuntimeFunction(current)) {
-			return current.returnType?.typeAnnotation.type === "TSTypePredicate";
-		}
-		current = current.parent;
-	}
-	return false;
-}
+import { enclosingTypeGuard } from "../shared/type-guards.ts";
 
 /** Return whether typeof safely probes for the existence of a possibly absent binding. */
 function isExistenceProbe(node: ESTree.UnaryExpression): boolean {
@@ -90,7 +71,7 @@ export const noRuntimeTypeofRule = defineRule({
 				option !== null &&
 				!Array.isArray(option) &&
 				option.allowInTypeGuards === true &&
-				isInsideTypeGuard(node)
+				enclosingTypeGuard(node, context.sourceCode, context.filename) !== null
 			);
 		}
 		return {
