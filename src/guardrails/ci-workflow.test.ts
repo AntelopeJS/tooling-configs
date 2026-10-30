@@ -105,7 +105,7 @@ jobs:
   checks:
     uses: ${CI_NODE_REF}
   ubuntu:
-    needs: [checks, other]
+    needs: [checks, other, checks-extra]
     if: always() && needs.checks.result == 'skipped'
     runs-on: ubuntu-latest
     env:
@@ -116,6 +116,9 @@ jobs:
         run: echo "needs.checks stays in plain text"
       - run: echo \${{ needs.checks.result }}
   other:
+    runs-on: ubuntu-latest
+    steps: []
+  checks-extra:
     runs-on: ubuntu-latest
     steps: []
 `;
@@ -220,9 +223,14 @@ test("a rewritten caller passes the pack's own formatter check, whether old-shap
   const root = testRepo(t, false);
   const long =
     "[checks, backend, frontend-test, frontend-verify, docs-playground, verify-map, formal]";
+  const dependencies = long
+    .slice("[checks, ".length, -1)
+    .split(", ")
+    .map((id) => `  ${id}:\n    runs-on: ubuntu-latest\n    steps: []\n`)
+    .join("");
   const cases = {
     old: WRITE_GRANTED_CALLER,
-    renamed: `name: ci\non: { push: { branches: [main] }, pull_request: {} }\njobs:\n  checks:\n    name: Checks\n    uses: ${CI_NODE_REF}\n    with: { docs-files: README.md }\n  deploy:\n    needs: [checks]\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo done\n  notify:\n    needs: ${long}\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo done\n`,
+    renamed: `name: ci\non: { push: { branches: [main] }, pull_request: {} }\njobs:\n  checks:\n    name: Checks\n    uses: ${CI_NODE_REF}\n    with: { docs-files: README.md }\n  deploy:\n    needs: [checks]\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo done\n  notify:\n    needs: ${long}\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo done\n${dependencies}`,
   };
   for (const [name, text] of Object.entries(cases)) {
     const rewritten = rewrite(text);
