@@ -186,7 +186,7 @@ pnpm install
 | `guardrails.suppressions.json`                          | Records the current suppression counts when the file is missing; restores the committed file instead when HEAD has one; otherwise only adds `config` and `agentFiles` at today's counts when the file predates them                          |
 | `<layer>/build/backend-boundary.ts`                     | Where a DMS frontend layer tracks one, restores the pack's backend boundary plugin for the package that holds the layer. A formatter's rewrite is not drift; any other edit is                                                               |
 
-`--profile template` writes only the three preset configs and a user-facing `AGENTS.md` block, for template repositories. `antelopejs-sync --check` writes nothing and exits 1 on any drift; `pnpm run checks` runs it.
+`--profile template` writes only the three preset configs, a user-facing `AGENTS.md` block and the `suppressions` package scripts (plus `ratchet` once `guardrails.ratchet.json` exists) that `antelopejs-checks` requires, for template repositories. `antelopejs-sync --check` writes nothing and exits 1 on any drift; `pnpm run checks` runs it.
 
 `pnpm run checks` runs `typecheck`, `lint`, `format:check`, `knip`, `test`, `size`, `suppressions` and `sync:check`, plus `ratchet` when `guardrails.ratchet.json` exists. It prints only the output of the steps that failed. Sync adds the ratchet scripts and pre-commit hook only while that file exists.
 

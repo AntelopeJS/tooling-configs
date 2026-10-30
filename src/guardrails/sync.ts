@@ -29,6 +29,7 @@ import {
   packageManager,
   parseManifest,
   repositoryTools,
+  templatePackage,
   toolingVersions,
   type PackageManager,
 } from "./package.ts";
@@ -177,9 +178,12 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
   },
   {
     path: "package.json",
-    profiles: ["full"],
+    profiles: ["full", "template"],
     desired: (current, context) => ({
-      content: managedPackage(current, context.versions, context),
+      content:
+        context.profile === "full"
+          ? managedPackage(current, context.versions, context)
+          : templatePackage(current, context),
       notes: [],
     }),
   },

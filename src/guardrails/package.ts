@@ -158,6 +158,39 @@ export function managedPackage(
   manifest.devDependencies = Object.fromEntries(
     Object.entries(dependencies).sort(([a], [b]) => a.localeCompare(b)),
   );
+  return serializeManifest(manifest, current);
+}
+
+/**
+ * The template profile owns only the scripts `antelopejs-checks` requires and
+ * the profile's `sync` scripts do not provide. An already complete manifest is
+ * returned unchanged, so a template is never reformatted for nothing.
+ */
+export function templatePackage(
+  current: string | undefined,
+  options: { ratchet: boolean },
+): string {
+  if (current === undefined) throw new Error("package.json is missing.");
+  const manifest = parseManifest(current);
+  const commands = repositoryTools(manifest).commands;
+  const wanted = {
+    suppressions: commands.suppressions,
+    "suppressions:update": `${commands.suppressions} --update`,
+    ...(options.ratchet && {
+      ratchet: commands.ratchet,
+      "ratchet:update": `${commands.ratchet} --update`,
+    }),
+  };
+  const scripts = (manifest.scripts ??= {});
+  if (
+    Object.entries(wanted).every(([name, command]) => scripts[name] === command)
+  )
+    return current;
+  Object.assign(scripts, wanted);
+  return serializeManifest(manifest, current);
+}
+
+function serializeManifest(manifest: Manifest, current: string): string {
   const indent = /^([\t ]+)"/m.exec(current)?.[1] ?? "  ";
   const newline = current.includes("\r\n") ? "\r\n" : "\n";
   return `${JSON.stringify(manifest, null, indent).replaceAll("\n", newline)}${newline}`;
