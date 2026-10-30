@@ -236,6 +236,7 @@ test("template profile manages only presets and AGENTS, and appends without repl
   assert.deepEqual(result.paths.sort(), [
     ".agents/skills/verify-template/SKILL.md",
     ".agents/skills/verify-template/package.json",
+    ".agents/skills/verify-template/tsconfig.json",
     ".claude/skills/verify-template",
     "AGENTS.md",
     "knip.config.ts",
