@@ -149,3 +149,54 @@ test("adoption raises a ceiling by the agent files' count and no more: a hand ra
     /raises lint rule `eslint\/max-params` from 0 on the base to 2, above the 1 that recording the agent files allows\./,
   );
 });
+
+test("verifier S3: an adopting branch that also adds agent directives fails, because only the base's agent directives are adoptable", (t) => {
+  const root = agentRepo(t, LEGACY_BUDGET);
+  const legacy = git(root, ["rev-parse", "HEAD"]);
+  put(
+    root,
+    ".agents/new.cjs",
+    "// oxlint-disable-next-line eslint/no-debugger -- paused for a headed run\ndebugger;\n",
+  );
+  put(root, ".agents/new2.cjs", DMS_PROBE.replace("start", "restart"));
+  assert.deepEqual(syncRepository(root).errors, []);
+  linkOxlint(root);
+  usePreset(root);
+  commit(root);
+  const adopted = bin(root, "suppressions", ["--base", legacy]);
+  assert.equal(adopted.status, 1, adopted.stderr);
+  assert.match(
+    adopted.stderr,
+    /raises lint rule `eslint\/max-params` from 0 on the base to 2, above the 1 that recording the agent files allows\./,
+  );
+  assert.match(
+    adopted.stderr,
+    /raises lint rule `eslint\/no-debugger` from 0 on the base to 2, above the 1 that recording the agent files allows\./,
+  );
+});
+
+test("verifier S4: a later commit that adds an agent directive and hand-raises the ceiling fails against the pre-adoption base", (t) => {
+  const root = agentRepo(t, LEGACY_BUDGET);
+  const legacy = git(root, ["rev-parse", "HEAD"]);
+  assert.deepEqual(syncRepository(root).errors, []);
+  linkOxlint(root);
+  usePreset(root);
+  commit(root);
+  assert.equal(bin(root, "suppressions", ["--base", legacy]).status, 0);
+  put(root, ".agents/new.cjs", DMS_PROBE.replace("start", "restart"));
+  put(
+    root,
+    "guardrails.suppressions.json",
+    read(root, "guardrails.suppressions.json").replace(
+      '"eslint/max-params": 1',
+      '"eslint/max-params": 2',
+    ),
+  );
+  commit(root);
+  const raised = bin(root, "suppressions", ["--base", legacy]);
+  assert.equal(raised.status, 1, raised.stderr);
+  assert.match(
+    raised.stderr,
+    /raises lint rule `eslint\/max-params` from 0 on the base to 2, above the 1 that recording the agent files allows\./,
+  );
+});

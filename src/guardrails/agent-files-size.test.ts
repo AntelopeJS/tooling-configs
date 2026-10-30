@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import test from "node:test";
 
 import { formatCeilings, MAX_FILE_BYTES, readCeilings } from "./ceilings.ts";
@@ -92,4 +93,50 @@ test("ratchet --update records the oversize agent files once, for a repository r
   put(root, ".agents/probes/second.cjs", probe());
   assert.equal(bin(root, "ratchet", ["--update"]).status, 1);
   assert.match(read(root, "guardrails.ratchet.json"), /"pack": "0\.2\.18"/);
+});
+
+test("verifier R1: an adopting branch records the oversize agent files that existed at the base and no new or grown one", (t) => {
+  const root = testRepo(t);
+  put(root, ".agents/probes/a.cjs", probe());
+  linkOxlint(root);
+  put(
+    root,
+    ".oxlintrc.json",
+    JSON.stringify({
+      plugins: ["eslint"],
+      categories: { correctness: "off" },
+      rules: { "eslint/max-params": "error" },
+    }),
+  );
+  put(root, "guardrails.ratchet.json", formatCeilings(RATCHET_BASE));
+  commit(root);
+  const legacy = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+  put(root, ".agents/probes/new-big.cjs", "x".repeat(50_000));
+  put(root, ".claude/hooks/another.mjs", "x".repeat(70_000));
+  put(root, ".agents/probes/a.cjs", probe(5));
+  const update = bin(root, "ratchet", ["--update"]);
+  assert.equal(update.status, 0, update.stderr);
+  assert.deepEqual(Object.keys(readCeilings(root).oversizeFiles).sort(), [
+    ".agents/probes/a.cjs",
+    ".agents/probes/new-big.cjs",
+    ".claude/hooks/another.mjs",
+  ]);
+  commit(root);
+  const adopted = bin(root, "ratchet", ["--base", legacy]);
+  assert.equal(adopted.status, 1, adopted.stderr);
+  assert.match(
+    adopted.stderr,
+    /adds an oversize allowance for \.agents\/probes\/new-big\.cjs\./,
+  );
+  assert.match(
+    adopted.stderr,
+    /adds an oversize allowance for \.claude\/hooks\/another\.mjs\./,
+  );
+  assert.match(
+    adopted.stderr,
+    /raises the oversize allowance of \.agents\/probes\/a\.cjs from 20001 bytes on the base to 20006\./,
+  );
 });
