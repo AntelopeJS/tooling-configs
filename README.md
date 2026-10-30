@@ -45,7 +45,7 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 - Without `--json` it prints failures only. The exit code is non-zero only when a check could not run.
 - `--apply-pauses` sets the repository variable `NEXT_AUTOMERGE` to `shadow` on repositories where it is `on`, when `checks` is red on `next`, the ratchet file is back on a Clean repository, or governance drifted. It never sets `on` and writes nothing else.
 
-`antelopejs-sync` (full profile) writes the weekly mutation caller `.github/workflows/mutation.yml`, and both profiles keep the shared CI caller on the job id `ci`, so the check is reported as `ci / checks`. The `ci` job is read-only (`contents: read`) and passes `renovate-sync: false`; the `contents: write` and `actions: write` grants that let the Renovate sync push its commit and dispatch the caller live on a separate `renovate-sync` job calling `ci-renovate-sync.yml`, which sync adds when it is missing and never re-pins.
+`antelopejs-sync` (full profile) writes the weekly mutation caller `.github/workflows/mutation.yml`, and both profiles keep the shared CI caller on the job id `ci`, so the check is reported as `ci / checks`. The `ci` job is read-only (`contents: read`) and passes `renovate-sync: false`; the `contents: write` and `actions: write` grants that let the Renovate sync push its commit and dispatch the caller live on a separate `renovate-sync` job calling `ci-renovate-sync.yml`, which sync adds when it is missing and never re-pins. Under the full profile it also sets the `docs-files` input of every ci-node caller to the existing `README.md` and `docs` of the root and of each workspace package that is not private, then keeps the caller's other listed paths that still exist.
 
 ## Shared verification skills
 
@@ -128,7 +128,7 @@ Import sorting is off because it moves value imports across side-effect imports,
 
 ### Options
 
-```ts
+```ts fragment
 antelopePreset({
   antiSlop: false, // true (default)
   guardrails: false, // true (default)
@@ -175,6 +175,7 @@ pnpm install
 | `.nvmrc`                                                | `24`                                                                                                                                                                                                                                         |
 | `.agents/setup`                                         | Orb setup: switches to the `.nvmrc` Node, activates `packageManager` through corepack, installs with the frozen lockfile                                                                                                                     |
 | `AGENTS.md`                                             | Writes the managed block between `<!-- antelopejs-guardrails:start -->` and `:end -->`; text outside the markers stays                                                                                                                       |
+| `README.md` of each `@antelopejs` package               | Writes the generated compatibility block (see [Generated compatibility block](./docs/documentation-checks.md#generated-compatibility-block)); prose outside its markers stays                                                                |
 | `CLAUDE.md`                                             | `@AGENTS.md`                                                                                                                                                                                                                                 |
 | `guardrails.ratchet.json`                               | Records non-empty debt on first adoption, before `sync:check` exists                                                                                                                                                                         |
 | `guardrails.suppressions.json`                          | Records the current suppression counts when the file is missing; restores the committed file instead when HEAD has one; otherwise only adds `config` at today's counts when the file predates it                                             |
@@ -280,7 +281,7 @@ The house style sets every field, so `.editorconfig` files cannot override it: `
 
 The preset leaves import order to the linter and ignores `CHANGELOG.md`, which changelogen writes unformatted on every release. Other options of oxfmt pass through. Two are specific:
 
-```ts
+```ts fragment
 // oxfmt.config.ts
 export default antelopeFmtPreset({
   ignorePatterns: ["frontend-vue/**"], // added to the shared ignores, not replacing them
@@ -350,10 +351,14 @@ An implementer must never be handed a breaking minor it does not implement. `wor
 ## Documentation guardrail
 
 The [documentation action](./docs/documentation-checks.md) checks local Markdown
-links and explicitly labeled compatibility tables. Consumers can also opt in
-complete TypeScript examples and reference-page export coverage. Pin
+links, explicitly labeled compatibility tables, and reference-page export
+coverage, and typechecks every TypeScript fence against the repository's own
+source; a fence opts out only with a `fragment` marker. Versions of
+`@antelopejs/*` packages belong only in the block `antelopejs-sync` generates:
+the action fails on version ranges and "requires … or later" claims in prose and
+checks the block against the package.json beside it. Pin
 `AntelopeJS/tooling-configs/actions/docs` to a full commit SHA; no npm release is
-required. The guide includes CI and local commands, annotation syntax, and the
+required. The guide includes CI and local commands, marker syntax, and the
 checks that remain the author's responsibility.
 
 ## Contributing
