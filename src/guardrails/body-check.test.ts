@@ -194,6 +194,67 @@ test("mongodb#66: a findings-left section written as prose outside an antelopejs
   assert.match(failures, /antelopejs-body-check --findings/);
 });
 
+function referencesIn(failures: string[]): string[] {
+  return failures.flatMap((failure) => {
+    const found = /`([^`]+)` sits in a findings-left section/u.exec(failure);
+    return found ? [found[1]] : [];
+  });
+}
+
+test("api#81: a table under the plain line `Findings left under the ratchet:` fails, and moving a line number does not hide it", () => {
+  const body = read(PACKAGE_ROOT, `${FIXTURES}/api-81-findings-left.txt`);
+  assert.deepEqual(referencesIn(checkBody(PACKAGE_ROOT, body)), [
+    "src/test/listen.test.ts:35",
+    "src/implementations/api/index.ts:240",
+    "playground/src/index.ts:25",
+  ]);
+  const moved = body.replace("listen.test.ts:35", "listen.test.ts:99");
+  assert.match(
+    checkBody(PACKAGE_ROOT, moved).join("\n"),
+    /listen\.test\.ts:99/,
+  );
+});
+
+test("dms-database#71: findings written as a file and a line range under a proper heading fail", () => {
+  const body = read(
+    PACKAGE_ROOT,
+    `${FIXTURES}/dms-database-71-findings-left.txt`,
+  );
+  assert.deepEqual(referencesIn(checkBody(PACKAGE_ROOT, body)), [
+    "src/routes/data.ts",
+    "src/routes/query.ts",
+    "src/service/browse.ts",
+    "src/service/fieldDescriptor.ts",
+  ]);
+});
+
+test("a bold line, `## Kept under the ratchet` and `## Not fixed` each open a findings section", () => {
+  for (const title of [
+    "**Left under the ratchet**",
+    "**Findings left under the ratchet:**",
+    "## Kept under the ratchet",
+    "## Not fixed",
+  ])
+    assert.deepEqual(
+      referencesIn(
+        checkBody(PACKAGE_ROOT, `${title}\n\n- \`src/routes/data.ts\` 57-64\n`),
+      ),
+      ["src/routes/data.ts"],
+      title,
+    );
+});
+
+test("a code file named outside a findings-left section, or as a bare .d.ts, passes", () => {
+  const bodies = [
+    "## What changed\n\n- `src/test/listen.test.ts:35` now calls `configureFromJson`; `src/routes/data.ts` 57-64 is split.\n",
+    "Findings left under the ratchet:\n\n- the `.d.ts` of the controllers\n\n## Attention\n\n- `src/routes/data.ts:57` is unchanged.\n",
+    "The findings left under the ratchet are in `src/routes/data.ts`.\n",
+    "## Left over\n\n- `src/routes/data.ts` keeps its name.\n",
+  ];
+  for (const body of bodies)
+    assert.deepEqual(checkBody(PACKAGE_ROOT, body), [], body);
+});
+
 test("mongodb#66: a typed count of 9 `no-unknown-parameters` over the 8 findings listed under it fails", (t) => {
   const root = lintRepo(t);
   mongodbRejectionReasons(root);

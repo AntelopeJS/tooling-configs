@@ -1,0 +1,11 @@
+Findings left under the ratchet:
+
+| file:line | rule | class | why |
+| --- | --- | --- | --- |
+| src/test/listen.test.ts:35 | require-safety-comment-for-type-assertion | legit | `configure as (config: { ...; servers: JsonServerConfig[] }) => void`: the runtime coerces or rejects string ports coming from JSON config, which the exported `Config.port: number` cannot express. |
+| src/implementations/api/index.ts:240 | require-safety-comment-for-type-assertion | contract | `controllerClass as ControllerClass` adds `location: string`, which the published `GetControllerInstance(cl: Class<T>)` does not guarantee but `ControllerMeta`'s published constructor (`{ location: string }`) requires through `GetMetadata`. Needs an `@antelopejs/interface-api` change. |
+| playground/src/index.ts:25 | no-unknown-parameters (E1) | legit | `@JSONBody()` injects the parsed request body unvalidated; the playground only logs and echoes it. |
+
+## Attention
+- `src/implementations/api/index.ts:311` still annotates `handler.proto.constructor` (`any`) as `ControllerClass`. It is not ratcheted and this PR leaves it unchanged.
+
