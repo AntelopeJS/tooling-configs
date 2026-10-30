@@ -264,7 +264,7 @@ function budgetAt(root: string, revision: string) {
     : undefined;
 }
 
-function stagedNames(root: string, filter: string): string[] {
+export function stagedNames(root: string, filter: string): string[] {
   return execFileSync(
     "git",
     [

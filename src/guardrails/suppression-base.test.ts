@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { formatBudget } from "./suppression-budget.ts";
-import { bin, commit, put, testRepo } from "./helpers/test-repo.ts";
+import { bin, commit, linkOxlint, put, testRepo } from "./helpers/test-repo.ts";
 
 const DIRECTIVE = "// oxlint-disable-next-line eslint/max-params\n";
 
@@ -25,6 +25,7 @@ function git(root: string, args: string[]): void {
 
 test("a ceiling raised or removed by hand fails against the base even within the budget, and a lowered one passes", (t) => {
   const root = testRepo(t);
+  linkOxlint(root);
   put(root, "src/a.ts", DIRECTIVE.repeat(2));
   put(root, "guardrails.suppressions.json", budget(2));
   commit(root);
@@ -54,6 +55,7 @@ test("a ceiling raised or removed by hand fails against the base even within the
 
 test("a base without a budget, a first adoption, passes", (t) => {
   const root = testRepo(t);
+  linkOxlint(root);
   put(root, "src/a.ts", DIRECTIVE);
   commit(root);
   put(root, "guardrails.suppressions.json", budget(1));
@@ -67,6 +69,7 @@ test("CI compares with GITHUB_BASE_REF, fetching it into a shallow checkout, and
   t.after(() => rmSync(remote, { recursive: true, force: true }));
   git(remote, ["init", "-q", "--bare"]);
   const root = testRepo(t);
+  linkOxlint(root);
   put(root, "guardrails.suppressions.json", budget(0));
   commit(root);
   git(root, ["remote", "add", "origin", remote]);
@@ -89,6 +92,7 @@ test("CI compares with GITHUB_BASE_REF, fetching it into a shallow checkout, and
 
 test("CI names the missing base ref when the fetch fails, and uses a local origin ref without fetching", (t) => {
   const root = testRepo(t);
+  linkOxlint(root);
   put(root, "guardrails.suppressions.json", budget(0));
   commit(root);
   git(root, ["remote", "add", "origin", join(tmpdir(), "antelope-missing")]);

@@ -144,6 +144,10 @@ const FULL_RULES = [
     "`antelopejs-suppressions` (pre-commit, checks)",
   ],
   [
+    "A directive in a file a change touches suppresses something and gives a reason",
+    "`antelopejs-suppressions` (pre-commit, checks)",
+  ],
+  [
     "A block disable is closed in its file",
     "`antelopejs-suppressions` (pre-commit, checks)",
   ],

@@ -73,6 +73,7 @@ Verify a boundary against the imports a developer or agent would plausibly write
 | No lint config switches off a rule to stay under the budget                    | `antelopejs-suppressions` (pre-commit, checks)      |
 | No added directive disables the `SAFETY:`, comment or test rules               | `antelopejs-suppressions` (pre-commit, checks)      |
 | An added suppression gives a specific reason                                   | `antelopejs-suppressions` (pre-commit, checks)      |
+| A directive in a file a change touches suppresses something and gives a reason | `antelopejs-suppressions` (pre-commit, checks)      |
 | A block disable is closed in its file                                          | `antelopejs-suppressions` (pre-commit, checks)      |
 | Types check                                                                    | `tsc` (pre-push)                                    |
 | No dead files, exports, or dependencies                                        | knip                                                |

@@ -6,15 +6,23 @@ import test from "node:test";
 
 import { formatBudget } from "./suppression-budget.ts";
 import { syncRepository } from "./sync.ts";
-import { bin, commit, put, read, testRepo } from "./helpers/test-repo.ts";
+import {
+  bin,
+  commit,
+  linkOxlint,
+  put,
+  read,
+  testRepo,
+  usePreset,
+} from "./helpers/test-repo.ts";
 
 const FIX =
   /Fix: fix the code, or remove another suppression of the same kind; a rule that keeps needing suppressions should be changed in the preset\./;
 
 const ROUTES = [
-  "// oxlint-disable-next-line eslint/max-params",
+  "// oxlint-disable-next-line eslint/max-params -- six handles keep the route signature",
   "export function route(a, b, c, d, e, f) {}",
-  "// oxlint-disable-next-line eslint/max-params",
+  "// oxlint-disable-next-line eslint/max-params -- six handles keep the route signature",
   "export function realtime(a, b, c, d, e, f) {}",
   "// @ts-expect-error a progress needs its total",
   "export const progress: number = 'total';",
@@ -23,6 +31,8 @@ const ROUTES = [
 
 function budgetRepo(t: Parameters<typeof testRepo>[0]): string {
   const root = testRepo(t);
+  linkOxlint(root);
+  usePreset(root);
   put(root, "src/routes.ts", ROUTES);
   put(
     root,
@@ -93,21 +103,21 @@ test("the staged check fails a commit adding an inline directive, nets a suppres
   put(
     root,
     "src/routes.ts",
-    `${ROUTES}export const debug = () => console.log("route"); // oxlint-disable-line no-console -- prints each matched route while debugging\n`,
+    `${ROUTES}export const debug = () => { debugger; }; // oxlint-disable-line eslint/no-debugger -- pauses at each matched route while debugging\n`,
   );
   git(root, ["add", "src/routes.ts"]);
   const inline = bin(root, "suppressions", ["--staged"]);
   assert.equal(inline.status, 1);
   assert.match(
     inline.stderr,
-    /lint rule `no-console`: this commit adds 1 to the staged files\.\n {2}src\/routes\.ts:7\n/,
+    /lint rule `eslint\/no-debugger`: this commit adds 1 to the staged files\.\n {2}src\/routes\.ts:7\n/,
   );
   assert.match(inline.stderr, FIX);
   put(
     root,
     "guardrails.suppressions.json",
     formatBudget({
-      rules: { "eslint/max-params": 2, "no-console": 1 },
+      rules: { "eslint/max-params": 2, "eslint/no-debugger": 1 },
       tsExpectError: 1,
       tsIgnore: 0,
       safety: 0,
@@ -129,6 +139,7 @@ test("the staged check fails a commit adding an inline directive, nets a suppres
 
 test("sync writes the current counts once, then only adds config ceilings a budget lacks, restores a deleted one from HEAD, and the template profile writes none", (t) => {
   const root = testRepo(t);
+  linkOxlint(root);
   put(root, "src/routes.ts", ROUTES);
   put(
     root,

@@ -69,6 +69,28 @@ export function linkOxlint(root: string): void {
   );
 }
 
+/** An `oxlint.config.ts` on the shared preset, with its plugin specifiers redirected to the unbuilt source, so a directive in the repository is live exactly when the preset reports its rule. */
+export function usePreset(root: string, typeAware = false): void {
+  const source = (path: string) =>
+    JSON.stringify(join(PACKAGE_ROOT, "src/oxc", path));
+  put(
+    root,
+    "oxlint.config.ts",
+    [
+      `import { antelopePreset } from ${source("lint.ts")};`,
+      "const preset = antelopePreset();",
+      "for (const layer of preset.extends)",
+      "  if (layer.jsPlugins)",
+      "    layer.jsPlugins = layer.jsPlugins.map((plugin) => ({",
+      "      ...plugin,",
+      `      specifier: plugin.name === "anti-slop" ? ${source("anti-slop/index.ts")} : ${source("guardrails/index.ts")},`,
+      "    }));",
+      `export default { extends: [preset], options: { typeAware: ${typeAware} } };`,
+      "",
+    ].join("\n"),
+  );
+}
+
 /** Runs a bin from source as CI would, without the CI run's own pull request base, plus `env`. */
 export function bin(
   root: string,
