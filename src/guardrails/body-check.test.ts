@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { symlinkSync } from "node:fs";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -353,6 +354,62 @@ test("an api-diff block stamped before a later commit fails, and one stamped at 
     checkBody(root, `Printed ${output}`).join("\n"),
     /outside a stamped proof block/,
   );
+});
+
+test("an api-diff stamp whose base is HEAD itself fails against the pull request base, and one stamped against that base passes", (t) => {
+  const root = testRepo(t);
+  const prBase = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+  put(root, "src/change.ts", "export const change = 1;\n");
+  commit(root);
+  const output =
+    "API: 1 packages, 1 entries unchanged against HEAD (committed HEAD).\n";
+  const selfBase = stampProof(root, "antelopejs-api-diff HEAD", "HEAD", output);
+  assert.deepEqual(checkBody(root, selfBase), []);
+  assert.match(
+    checkBody(root, selfBase, { base: prBase }).join("\n"),
+    /base is not the pull request base.*antelopejs-api-diff <pull request base>/,
+  );
+  const honest = stampProof(
+    root,
+    `antelopejs-api-diff ${prBase}`,
+    prBase,
+    output,
+  );
+  assert.deepEqual(checkBody(root, honest, { base: prBase }), []);
+  const proof = stampProof(
+    root,
+    "antelopejs-comment-proof HEAD",
+    "HEAD",
+    output,
+  );
+  assert.deepEqual(checkBody(root, proof, { base: prBase }), []);
+});
+
+test("body-check --base reaches the check", (t) => {
+  const root = testRepo(t);
+  const prBase = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+  put(root, "src/change.ts", "export const change = 1;\n");
+  commit(root);
+  put(
+    root,
+    "body.md",
+    stampProof(
+      root,
+      "antelopejs-api-diff HEAD",
+      "HEAD",
+      "API: 1 packages, 1 entries unchanged against HEAD (committed HEAD).\n",
+    ),
+  );
+  assert.equal(bin(root, "body-check", ["body.md"]).status, 0);
+  const pinned = bin(root, "body-check", ["body.md", "--base", prBase]);
+  assert.equal(pinned.status, 1);
+  assert.match(pinned.stderr, /base is not the pull request base/);
 });
 
 test("body-check --findings prints a block that passes once each reason is given, and --head refuses another checkout", (t) => {
