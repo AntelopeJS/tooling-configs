@@ -123,19 +123,23 @@ function runOxlint(
   }
 }
 
-/**
- * The findings of a lint run, rejecting a run whose TypeScript project failed
- * to load: its type-aware rules would read as zero findings.
- */
+export interface LintOptions {
+  /** Throws when a TypeScript project fails to load, whose type-aware rules would otherwise read as zero findings. */
+  rejectBrokenProject?: boolean;
+}
+
 export function lintDiagnostics(
   root: string,
   config?: string,
   files?: string[],
+  { rejectBrokenProject = false }: LintOptions = {},
 ): Diagnostic[] {
   const diagnostics = runOxlint(root, config, files, []).map((item) =>
     toDiagnostic(item, root),
   );
-  const broken = diagnostics.find(({ rule }) => rule === TSCONFIG_ERROR);
+  const broken = rejectBrokenProject
+    ? diagnostics.find(({ rule }) => rule === TSCONFIG_ERROR)
+    : undefined;
   if (broken)
     throw new Error(
       `${broken.location}: ${broken.message}${broken.help ? ` ${broken.help}` : ""}. The type-aware rules cannot be measured until the TypeScript project loads.`,
