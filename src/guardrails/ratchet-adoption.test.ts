@@ -338,3 +338,58 @@ test("against the pull request base, a hand-added or raised ceiling fails and a 
     /guardrails\.ratchet\.json: drops the recorded pack release 0\.2\.16 the base has\./,
   );
 });
+
+function head(root: string): string {
+  return execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+}
+
+const ADDED_ASSIGNMENT =
+  "export function added(text: string): string[] {\n  const rows: string[] = JSON.parse(text);\n  return rows;\n}\n";
+
+test("#85: a branch that adds a finding of a pack-new rule cannot adopt it, because the ceiling is bounded by the base's count", (t) => {
+  const root = upgradedRepo(t, {
+    pack: "0.2.16",
+    rules: {},
+    oversizeFiles: {},
+  });
+  const base = head(root);
+  put(root, "src/added.ts", ADDED_ASSIGNMENT);
+  commit(root);
+  const update = ratchet(root, "--update", "--base", base);
+  assert.deepEqual(readCeilings(root).rules[UNSAFE_ASSIGNMENT], 3);
+  assert.equal(update.status, 1, update.stdout);
+  assert.match(
+    update.stderr,
+    /guardrails\.ratchet\.json: adds typescript\/no-unsafe-assignment at 3, above its 2 findings on the base\./,
+  );
+  commit(root);
+  const check = ratchet(root, "--base", base);
+  assert.equal(check.status, 1, check.stdout);
+  assert.match(
+    check.stderr,
+    /guardrails\.ratchet\.json: adds typescript\/no-unsafe-assignment at 3, above its 2 findings on the base\./,
+  );
+});
+
+test("#85: a branch that fixes a finding of a pack-new rule adopts the lower count", (t) => {
+  const root = upgradedRepo(t, {
+    pack: "0.2.16",
+    rules: {},
+    oversizeFiles: {},
+  });
+  const base = head(root);
+  put(
+    root,
+    "src/mollie.ts",
+    "export function parseBody(text: string): Record<string, string> {\n  return JSON.parse(text);\n}\n",
+  );
+  commit(root);
+  const update = ratchet(root, "--update", "--base", base);
+  assert.equal(update.status, 0, update.stderr);
+  assert.equal(readCeilings(root).rules[UNSAFE_ASSIGNMENT], undefined);
+  commit(root);
+  assert.equal(ratchet(root, "--base", base).status, 0);
+});
