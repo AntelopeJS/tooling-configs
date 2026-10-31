@@ -111,6 +111,13 @@ import { defaults } from "./schemas";
 const codec = define(...defaults, [...defaults]);
 function parseUser(value: unknown): User { return codec.parse(value); }`,
 		},
+		{
+			name: "an imported factory handed a choice between imported schemas, a call and a member of an import",
+			code: `import { define } from "./define";
+import { first, second, schemas } from "./schemas";
+const codec = define(flag ? first : second, first ?? second, schemas.user, makeSchema());
+function parseUser(value: unknown): User { return codec.parse(value); }`,
+		},
 	],
 	invalid: [
 		{
@@ -303,6 +310,16 @@ const codec = Object.freeze({ parseA, parseB });`,
 		{
 			name: "an object built by a callback handed to a global under a type assertion",
 			code: `${LOOSE}const [codec] = (Array as ArrayConstructor).of(1).map(() => ({ parseUser: loose }));\n${CALL}codec!.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an imported factory handed a local class",
+			code: `import { define } from "./define";\ninterface P { readonly id: string }\nclass Own { static parseUser(v: any): P { return v; } }\nconst codec = define(Own);\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an imported factory handed a class expression",
+			code: `import { define } from "./define";\ninterface P { readonly id: string }\nconst codec = define(class { static parseUser(v: any): P { return v; } });\n${CALL}codec.parseUser(value); }`,
 			errors: [error],
 		},
 	],

@@ -88,10 +88,15 @@ tester.run("anti-slop/no-unknown-parameters at a parse boundary, what `this` is 
 			errors: [error],
 		},
 		{
-			name: "a class merged from another namespace block, handed over",
-			code: `import { define } from "./shared";
-${LOOSE}export namespace Users { export function readUser(value: unknown): P { return define(Later).parse(value); } }
+			name: "a class merged from another namespace block, handed to a factory the caller supplies",
+			code: `${LOOSE}export namespace Users { export function readUser(value: unknown, define: Define): P { return define(Later).parse(value); } }
 export namespace Users { export class Later {} }`,
+			errors: [error],
+		},
+		{
+			name: "a function merged from another namespace block, held by an object handed to a factory the caller supplies",
+			code: `${LOOSE}export namespace Users { export function readUser(value: unknown, define: Define): P { return define({ parse: later }).parse(value); } }
+export namespace Users { export function later(v: any): P { return v; } }`,
 			errors: [error],
 		},
 		{
