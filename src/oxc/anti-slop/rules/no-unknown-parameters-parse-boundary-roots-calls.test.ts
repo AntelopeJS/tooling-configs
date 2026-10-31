@@ -51,6 +51,39 @@ declare const shared: Codec;
 const codec = define(shared);
 function parseUser(value: unknown): User { return codec.parse(value); }`,
 		},
+		{
+			name: "a union of imported schemas in an array",
+			code: `import { z } from "zod";
+import { first, second } from "./schemas";
+const userSchema = z.union([first, second]);
+function parseUser(value: unknown): User { return userSchema.parse(value); }`,
+		},
+		{
+			name: "an imported factory handed an object that holds an array of imported schemas",
+			code: `import { define } from "./define";
+import { first, second } from "./schemas";
+const codec = define({ options: [first, second], name: "user" });
+function parseUser(value: unknown): User { return codec.parse(value); }`,
+		},
+		{
+			name: "a frozen object that holds an imported schema",
+			code: `import { settings } from "./settings";
+const codec = Object.freeze({ schema: settings, version: 1 });
+function parseUser(value: unknown): User { return codec.schema.parse(value); }`,
+		},
+		{
+			name: "an array built from an imported schema",
+			code: `import { settings } from "./settings";
+const [codec] = Array.of(settings);
+function parseUser(value: unknown): User { return codec!.parse(value); }`,
+		},
+		{
+			name: "a global called with literals only",
+			code: `import { settings } from "./settings";
+const codec = Object.fromEntries([["schema", settings]]);
+const size = Array.of(1, "a", \`b\`).length;
+function parseUser(value: unknown): User { return settings.parse(value); }`,
+		},
 	],
 	invalid: [
 		{
@@ -158,6 +191,81 @@ const codec = Object.freeze({ parseA, parseB });`,
 		{
 			name: "a frozen fallback to a local object",
 			code: `${LOOSE}const base = { parseUser: loose };\nconst codec = Object.freeze(maybe ?? base);\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a frozen object whose function is chosen by a conditional",
+			code: `${LOOSE}const fallback = loose;\nconst codec = Object.freeze({ parseUser: flag ? loose : fallback });\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a frozen object whose function is chosen by a logical expression",
+			code: `${LOOSE}const codec = Object.freeze({ parseUser: maybe ?? loose });\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a frozen this",
+			code: `${LOOSE}class Registry { parseUser(v: any): P { return v; } read(value: unknown): P { return Object.freeze(this).parseUser(value); } }`,
+			errors: [error],
+		},
+		{
+			name: "an imported factory handed this",
+			code: `import { define } from "./define";\n${LOOSE}class Registry { parseUser(v: any): P { return v; } read(value: unknown): P { return define(this).parseUser(value); } }`,
+			errors: [error],
+		},
+		{
+			name: "an object built by a callback handed to a global",
+			code: `${LOOSE}const [codec] = Array.of(1).map(() => ({ parseUser: loose }));\n${CALL}codec!.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an object built by a function expression handed to a global",
+			code: `${LOOSE}const [codec] = Array.of(1).map(function () { return { parseUser: loose }; });\n${CALL}codec!.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an array of objects of local functions handed to Array.from",
+			code: `${LOOSE}const [codec] = Array.from([{ parseUser: loose }]);\n${CALL}codec!.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "entries of local functions handed to Object.fromEntries",
+			code: `${LOOSE}const codec = Object.fromEntries([["parseUser", loose]]);\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a Map built from an object of local functions",
+			code: `${LOOSE}const codec = new Map([["k", { parseUser: loose }]]).get("k")!;\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a function with a local function written to it, handed to Object.freeze",
+			code: `${LOOSE}function holder(): void {}\nholder.parseUser = loose;\nconst codec = Object.freeze(holder);\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an argument spread into a global",
+			code: `${LOOSE}const [codec] = Array.of(...[{ parseUser: loose }]);\n${CALL}codec!.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an argument spread into an imported factory",
+			code: `import { define } from "./define";\n${LOOSE}const codec = define(...[{ parseUser: loose }]);\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an imported factory handed an array that holds an object of local functions",
+			code: `import { define } from "./define";\n${LOOSE}const codec = define([{ parseUser: loose }]);\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an imported factory handed an object whose function sits in a sequence expression",
+			code: `import { define } from "./define";\n${LOOSE}const codec = define({ parseUser: (0, loose) });\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an imported factory handed an object whose function is the result of an assignment",
+			code: `import { define } from "./define";\n${LOOSE}let chosen = loose;\nconst codec = define({ parseUser: (chosen = loose) });\n${CALL}codec.parseUser(value); }`,
 			errors: [error],
 		},
 	],
