@@ -9,6 +9,40 @@ const allowInTypeGuards = [{ allowInTypeGuards: true }];
 
 tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 	valid: [
+		{
+			name: "postgres@887faab src/implementations/database/selection.ts:114 an assert message",
+			code: 'assert(id === undefined || id === null || IsString(id), `An instance id must be a string or CROSS_INSTANCE, received ${typeof id}`);',
+		},
+		{
+			name: "postgres@887faab src/implementations/database/stages-selection.ts:89 an assert message",
+			code: "assert(IsString(name), `The '${stage.stage}' stage names its index with a string, received ${typeof name}`);",
+		},
+		{
+			name: "postgres@887faab src/implementations/database/stages-selection.ts:130 a branch of a nested message",
+			code: "assert(Array.isArray(key) && key.length === columns.length, `The '${selection.indexId}' index takes a key of ${columns.length} values, received ${Array.isArray(key) ? `${key.length} values` : `a ${typeof key}`}`);",
+		},
+		{
+			name: "postgres@887faab src/implementations/database/utils.ts:79 a thrown message",
+			code: "if (!IsString(id)) { throw new Error(`${operation} expects a string instance id, received ${typeof id}`); }",
+		},
+		{
+			name: "postgres@887faab src/implementations/database/value.ts:83 a thrown message",
+			code: "throw new Error(`Unsupported value of type '${typeof value}' in query`);",
+		},
+		{
+			name: "postgres@887faab src/implementations/database/writes-insert.ts:95 an assert message",
+			code: "assert(IsString(supplied), `An inserted document's '${ID_COLUMN}' must be a string, received ${typeof supplied}`);",
+		},
+		{
+			name: "postgres@887faab src/implementations/database/writes-shared.ts:159 text returned for the refusal",
+			code: 'export function DescribeKind(value: unknown): string { return Array.isArray(value) ? "an array" : `a ${typeof value}`; }',
+		},
+		{
+			name: "mongodb@cf32203 src/implementations/database/utils.ts:63 a thrown message",
+			code: "if (!isString(id)) { throw new Error(`Invalid instance id: expected string, got ${typeof id}`); }",
+		},
+		"const describeKind = (value: unknown): string => `a ${typeof value}`;",
+		"throw `received ${typeof value}`;",
 		'const isServer = typeof document === "undefined";',
 		'const hasStorage = typeof localStorage !== "undefined";',
 		'if (typeof globalThis.crypto === "undefined") throw new Error("no crypto");',
@@ -56,6 +90,66 @@ tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 		},
 	],
 	invalid: [
+		{
+			name: "a message compared to a value is a check",
+			code: 'if (`a ${typeof input}` === "a string") use(input);',
+			errors: [error],
+		},
+		{
+			name: "a message bound to a name can be compared later",
+			code: "const kind = `a ${typeof input}`;",
+			errors: [error],
+		},
+		{
+			name: "a message assigned to a name can be compared later",
+			code: "kind = `a ${typeof input}`;",
+			errors: [error],
+		},
+		{
+			name: "a message switched on is a check",
+			code: "switch (`a ${typeof input}`) { default: break; }",
+			errors: [error],
+		},
+		{
+			name: "a message used as a condition is a check",
+			code: "const label = `a ${typeof input}` ? one : two;",
+			errors: [error],
+		},
+		{
+			name: "a message used as a lookup key is a check",
+			code: "const handler = handlers[`a ${typeof input}`];",
+			errors: [error],
+		},
+		{
+			name: "a tagged template can branch on its values",
+			code: "tag`a ${typeof input}`;",
+			errors: [error],
+		},
+		{
+			name: "a template with no text is the typeof result itself",
+			code: "use(`${typeof input}`);",
+			errors: [error],
+		},
+		{
+			name: "a typeof passed to a call is not message text",
+			code: "use(typeof input);",
+			errors: [error],
+		},
+		{
+			name: "a comparison inside a template is a check",
+			code: 'throw new Error(`a ${typeof input === "string" ? "text" : "other"}`);',
+			errors: [error],
+		},
+		{
+			name: "a typeof bound to a name can be compared later",
+			code: "const kind = typeof input;",
+			errors: [error],
+		},
+		{
+			name: "a returned typeof is not message text",
+			code: "function kindOf(input: unknown): string { return typeof input; }",
+			errors: [error],
+		},
 		{ code: 'if (typeof input === "string") use(input);', errors: [error] },
 		{ code: "if (typeof input === undefined) use(input);", errors: [error] },
 		{
