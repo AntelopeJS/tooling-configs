@@ -112,7 +112,7 @@ tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 		},
 		{
 			name: "a message used as a condition is a check",
-			code: "const label = `a ${typeof input}` ? one : two;",
+			code: "use(`a ${typeof input}` ? one : two);",
 			errors: [error],
 		},
 		{

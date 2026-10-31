@@ -13,6 +13,37 @@ function isExistenceProbe(node: ESTree.UnaryExpression): boolean {
 	return other.type === "Literal" && other.value === "undefined";
 }
 
+/** Return whether a value handed to this parent leaves the expression: nothing around it can branch on the value. */
+function endsMessage(value: ESTree.Node, parent: ESTree.Node): boolean {
+	switch (parent.type) {
+		case "CallExpression":
+		case "NewExpression":
+		case "ReturnStatement":
+		case "ThrowStatement":
+			return true;
+		case "ArrowFunctionExpression":
+			return parent.body === value;
+		default:
+			return false;
+	}
+}
+
+/**
+ * Return whether a `typeof` only fills in the text of a message that a call, a `throw` or a `return` takes.
+ * Such a template holds other text, so no comparison with a `typeof` result matches it, and TypeScript narrows nothing from it.
+ */
+function isMessageText(node: ESTree.UnaryExpression): boolean {
+	let current: ESTree.Node = node.parent;
+	if (current.type !== "TemplateLiteral" || current.quasis.every((quasi) => quasi.value.raw === "")) return false;
+	while (
+		current.parent.type === "TemplateLiteral" ||
+		(current.parent.type === "ConditionalExpression" && current.parent.test !== current)
+	) {
+		current = current.parent;
+	}
+	return endsMessage(current, current.parent);
+}
+
 /** Built-ins whose `.constructor` comparison re-implements a `typeof` result. */
 const TYPEOF_CONSTRUCTORS = new Set(["String", "Number", "Boolean", "BigInt", "Symbol", "Function"]);
 
@@ -44,7 +75,7 @@ export const noRuntimeTypeofRule = defineRule({
 		type: "problem",
 		docs: {
 			description:
-				"Disallow runtime typeof checks; external values must be decoded into meaningful types at their I/O boundary.",
+				"Disallow runtime typeof checks; external values must be decoded into meaningful types at their I/O boundary. A `typeof` that only fills in the text of a message checks nothing.",
 		},
 		messages: {
 			runtimeTypeof:
@@ -76,7 +107,7 @@ export const noRuntimeTypeofRule = defineRule({
 		}
 		return {
 			UnaryExpression(node) {
-				if (node.operator === "typeof" && !isExistenceProbe(node) && !allowedInTypeGuard(node)) {
+				if (node.operator === "typeof" && !isExistenceProbe(node) && !isMessageText(node) && !allowedInTypeGuard(node)) {
 					context.report({ node, messageId: "runtimeTypeof" });
 				}
 			},
