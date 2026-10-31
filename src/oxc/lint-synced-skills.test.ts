@@ -60,7 +60,16 @@ const PROBE = `export function probe(): void {
 }
 `;
 
-/** A consumer as `antelopejs-sync` leaves it: its root `oxlint.config.ts`, the verify-interface synced layer and `.claude/skills` link, and the pack resolved by name. */
+/** tooling-configs#93: Node API calls in a skill folder, as in redis `.agents/skills/verify-module` and template-blank-typescript `verify.config.ts`. */
+const NODE_CALLS = `import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+export function readManifest(): string {
+  return readFileSync(join(process.cwd(), "package.json"), "utf8");
+}
+`;
+
+/** A consumer as `antelopejs-sync` leaves it: its root `oxlint.config.ts`, a root `tsconfig.json` that sets no `types` (as every AntelopeJS repository's does) beside `@types/node` installed, the verify-interface synced layer and `.claude/skills` link, and the pack resolved by name. */
 function syncedConsumer() {
   const root = mkdtempSync(join(tmpdir(), "antelope-synced-skills-"));
   const write = (path: string, content: string) => {
@@ -85,6 +94,8 @@ function syncedConsumer() {
   symlinkSync(oxlintPackage, join(root, "node_modules/oxlint"));
   write("oxlint.config.ts", PRESET_CONFIGS[0].content);
   write(".gitignore", "node_modules\n");
+  mkdirSync(join(root, "node_modules/@types"), { recursive: true });
+  symlinkSync(join(nodeTypes, "node"), join(root, "node_modules/@types/node"));
   spawnSync("git", ["init", "-q"], { cwd: root });
   write(
     "package.json",
@@ -100,8 +111,6 @@ function syncedConsumer() {
         target: "esnext",
         module: "commonjs",
         strict: true,
-        typeRoots: [nodeTypes],
-        types: ["node"],
         rootDir: "src",
         outDir: "dist",
       },
@@ -160,4 +169,17 @@ test("the synced oxlint.config.ts skips the pack's .claude/skills link and lints
     ".agents/probes/probe.ts:2 eslint(no-debugger)",
     ".agents/skills/verify-interface/verify.config.ts:10 typescript(no-unsafe-assignment)",
   ]);
+});
+
+test("a skill folder calling Node APIs lints clean: the synced skill tsconfig resolves Node types without the root tsconfig setting them (tooling-configs#93)", (t) => {
+  const root = syncedConsumer();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(
+    join(root, ".agents/skills/verify-interface/node-calls.ts"),
+    NODE_CALLS,
+  );
+  assert.deepEqual(
+    lint(root).filter((finding) => finding.includes("node-calls.ts")),
+    [],
+  );
 });

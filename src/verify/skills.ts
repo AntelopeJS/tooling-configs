@@ -151,12 +151,15 @@ const SKILL_PACKAGE = `${JSON.stringify({ private: true, type: "module" }, null,
 /**
  * The skill folder's tsconfig.json: it gives the repository's files there the root compiler options with ES module resolution,
  * so type-aware lint sees real types. The root tsconfig cannot include them: its `rootDir` is usually `src`.
+ * `types` names Node: type-aware lint does not discover `@types/node` from this folder, so without it every Node API call
+ * in a skill file is error-typed and reported by `typescript/no-unsafe-*` (tooling-configs#93).
  */
 const SKILL_TSCONFIG = `${JSON.stringify(
   {
     extends: "../../../tsconfig.json",
     compilerOptions: {
       rootDir: "../../..",
+      types: ["node"],
       module: "nodenext",
       moduleResolution: "nodenext",
       allowImportingTsExtensions: true,
