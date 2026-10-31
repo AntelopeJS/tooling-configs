@@ -25,27 +25,45 @@ export function isModuleImport(definition: Definition): boolean {
 	return node.type !== "TSImportEqualsDeclaration" || node.moduleReference.type === "TSExternalModuleReference";
 }
 
+/** Return whether a node sits inside another, or is it. */
+function isWithin(node: ESTree.Node, ancestor: ESTree.Node): boolean {
+	for (let at: ESTree.Node | null = node; at !== null; at = at.parent) if (at === ancestor) return true;
+	return false;
+}
+
 /**
- * Return whether a name no scope binds is a global that nothing in this file merges or writes. TypeScript merges the blocks of
- * one namespace, and the scope manager does not, so a name read inside a namespace may be a member of another block. A write
- * to the name anywhere in the file, including to one a `declare global` introduces, gives it a value written here.
+ * Return whether a name read inside a namespace block may be a member that another block of the same namespace declares.
+ * TypeScript merges the blocks of one namespace, and the scope manager does not, so a name that no scope binds, or that is
+ * bound outside the block, may resolve to such a member and not to the binding the scope manager found.
+ */
+export function mayBeMergedMember(identifier: Name, variable: Variable | null): boolean {
+	for (let node: ESTree.Node | null = identifier.parent; node !== null; node = node.parent) {
+		if (node.type !== "TSModuleBlock") continue;
+		const block = node;
+		return variable === null || !variable.defs.every((definition) => isWithin(definition.node, block));
+	}
+	return false;
+}
+
+/**
+ * Return whether a name no scope binds is a global that nothing in this file writes, including a global that a `declare global`
+ * introduces.
  */
 function isUnwrittenGlobal(identifier: Name, sourceCode: SourceCode): boolean {
-	for (let node: ESTree.Node | null = identifier.parent; node !== null; node = node.parent) {
-		if (node.type === "TSModuleBlock") return false;
-	}
 	const scope = sourceCode.scopeManager.globalScope;
 	return scope !== null && !scope.through.some((reference) => reference.identifier.name === identifier.name && reference.isWrite());
 }
 
 /**
  * Return whether a name takes its value from outside this file, which only a binding or reference the code can place proves:
- * a module import, or a parameter, that nothing here defaults, assigns or redeclares, or a global that nothing here merges or
- * writes. The kind of the first definition does not say it: a default, an assignment and a later `var` give a parameter a value
- * written here, and an `import x = Namespace.member` is no module import. Any other name is not outside.
+ * a module import, or a parameter, that nothing here defaults, assigns or redeclares, or a global that nothing here writes,
+ * and that no block of a namespace may shadow with a merged member. The kind of the first definition does not say it: a
+ * default, an assignment and a later `var` give a parameter a value written here, and an `import x = Namespace.member` is no
+ * module import. Any other name is not outside.
  */
 export function isSuppliedFromOutside(identifier: Name, sourceCode: SourceCode): boolean {
 	const variable = variableOf(identifier, sourceCode);
+	if (mayBeMergedMember(identifier, variable)) return false;
 	if (variable === null) return isUnwrittenGlobal(identifier, sourceCode);
 	return (
 		variable.defs.every((definition) => definition.type === "Parameter" || isModuleImport(definition)) &&

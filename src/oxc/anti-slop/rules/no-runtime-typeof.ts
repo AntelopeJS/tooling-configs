@@ -31,6 +31,12 @@ function rootOf(node: ESTree.Node): Extract<ESTree.Node, { type: "Identifier" }>
 	}
 }
 
+/** Return whether a callee is read from a name that takes its value from outside this file, through members and type wrappers. */
+function isReadFromOutside(callee: ESTree.Node, sourceCode: SourceCode): boolean {
+	const root = rootOf(callee);
+	return root !== null && isSuppliedFromOutside(root, sourceCode);
+}
+
 /**
  * Return whether a callee only raises or records the message it is given: a bare `assert(...)`, or the `log` method of any object,
  * when its root is a module import, a global or a parameter. A root written in this file (a function, a class, a `const`, `this`, a
@@ -38,8 +44,7 @@ function rootOf(node: ESTree.Node): Extract<ESTree.Node, { type: "Identifier" }>
  * (`assert.equal`, `Set#add`, `emit`).
  */
 function isMessageSink(callee: ESTree.CallExpression["callee"], sourceCode: SourceCode): boolean {
-	const root = rootOf(callee);
-	if (root === null || !isSuppliedFromOutside(root, sourceCode)) return false;
+	if (!isReadFromOutside(callee, sourceCode)) return false;
 	if (callee.type === "Identifier") return callee.name === "assert";
 	return (
 		callee.type === "MemberExpression" &&
@@ -51,7 +56,7 @@ function isMessageSink(callee: ESTree.CallExpression["callee"], sourceCode: Sour
 
 /**
  * Return whether a message ends at this parent: it is thrown, handed to the `assert` or `log` call that stands as a statement,
- * or handed to the `new` a `throw` throws. Any other call, and a text a function returns, can be tested or used as a key by
+ * or handed to the `new` a `throw` throws when its class is read from outside this file, as `Error` is. Any other call, and a text a function returns, can be tested or used as a key by
  * whatever receives it, so they are not message sinks.
  */
 function endsMessage(parent: ESTree.Node, sourceCode: SourceCode): boolean {
@@ -61,7 +66,7 @@ function endsMessage(parent: ESTree.Node, sourceCode: SourceCode): boolean {
 		case "CallExpression":
 			return parent.parent.type === "ExpressionStatement" && isMessageSink(parent.callee, sourceCode);
 		case "NewExpression":
-			return parent.parent.type === "ThrowStatement";
+			return parent.parent.type === "ThrowStatement" && isReadFromOutside(parent.callee, sourceCode);
 		default:
 			return false;
 	}
