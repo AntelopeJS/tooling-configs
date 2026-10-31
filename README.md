@@ -52,6 +52,8 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 
 `antelopejs-sync` writes one shared verification skill into a repository: `verify-interface` for an interface, `verify-module` for an implementation module (inferred from `antelopeJs.implements`) and `verify-template` under `--profile template`. Pass `--verify interface|module|template` to choose, or `--verify custom` for a repository that keeps its own `.agents/skills/verify-<repo>/`. Sync writes `SKILL.md`, `package.json` and `tsconfig.json` in `.agents/skills/verify-<kind>/` with a `.claude/skills/verify-<kind>` link, and `--check` reports them as drift. The `tsconfig.json` extends the root one with ES module resolution and loads the Node types, so type-aware lint sees the real types of the repository's files there, Node APIs included. It never touches the repository's own layer beside them: `verify.config.ts`, `features/`, `seeded-breaks/` and `seeded-doors/`.
 
+`antelopejs-sync` also installs the `technical-writing` and `unslop` skills in every repository, under both profiles. Each is `.agents/skills/<name>/SKILL.md` with a `.claude/skills/<name>` link. The text is vendored unchanged from Upd4ting/agent-config `claude/skills/<name>/SKILL.md` at commit 4e0a848, and `--check` reports an edited file as drift. Write documentation with them: `technical-writing` picks the page's mode and sets the sentence rules, and `unslop` lists the patterns to cut.
+
 Every deterministic step of a verification is an `antelopejs-verify` command: `map`, `plan`, `new`, `doctor`, `journey`, `formal`, `doors`, `seeded`, `seeded-doors`, `clean`, `verdict` and `publish`. The synced `SKILL.md` documents each one for the agent that verifies.
 
 ## Install

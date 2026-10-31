@@ -1,3 +1,5 @@
+import { docsSkillPaths } from "../guardrails/docs-skills.ts";
+
 /** The repository kinds whose verification skill is synced from this pack. */
 export const VERIFY_KINDS = ["interface", "module", "template"] as const;
 
@@ -39,8 +41,11 @@ export type SyncedSkillFile = (typeof SYNCED_SKILL_FILES)[number];
  * each kind's synced files and its `.claude/skills` link, which shows the whole folder, repository files included, a second time.
  */
 export function syncedAgentPaths(): string[] {
-  return VERIFY_KINDS.flatMap((kind) => [
-    ...SYNCED_SKILL_FILES.map((file) => `${skillFolder(kind)}/${file}`),
-    claudeLink(kind),
-  ]);
+  return [
+    ...VERIFY_KINDS.flatMap((kind) => [
+      ...SYNCED_SKILL_FILES.map((file) => `${skillFolder(kind)}/${file}`),
+      claudeLink(kind),
+    ]),
+    ...docsSkillPaths(),
+  ];
 }

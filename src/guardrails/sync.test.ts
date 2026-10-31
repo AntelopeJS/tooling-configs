@@ -235,9 +235,13 @@ test("template profile manages presets, AGENTS and the checks scripts, and appen
   const customFormatter = read(root, "oxfmt.config.ts");
   const result = syncRepository(root, { profile: "template" });
   assert.deepEqual(result.paths.sort(), [
+    ".agents/skills/technical-writing/SKILL.md",
+    ".agents/skills/unslop/SKILL.md",
     ".agents/skills/verify-template/SKILL.md",
     ".agents/skills/verify-template/package.json",
     ".agents/skills/verify-template/tsconfig.json",
+    ".claude/skills/technical-writing",
+    ".claude/skills/unslop",
     ".claude/skills/verify-template",
     "AGENTS.md",
     "knip.config.ts",

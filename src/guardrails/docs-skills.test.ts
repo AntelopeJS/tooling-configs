@@ -3,7 +3,7 @@ import { lstatSync, readlinkSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
-import { bin, put, read, testRepo } from "./helpers/test-repo.ts";
+import { bin, linkOxlint, put, read, testRepo } from "./helpers/test-repo.ts";
 
 const SKILLS = ["technical-writing", "unslop"] as const;
 const PROFILES = [[], ["--profile", "template"]] as const;
@@ -21,6 +21,14 @@ for (const profile of PROFILES) {
 
   test(`sync installs the vendored writing skills and a Claude link for each, ${label} profile`, (t) => {
     const root = testRepo(t);
+    if (!profile.length) {
+      linkOxlint(root);
+      put(
+        root,
+        "oxlint.config.ts",
+        'import type {} from "@antelopejs/tooling-configs/oxc/lint";\nexport default {};\n',
+      );
+    }
     const result = bin(root, "sync", [...profile]);
     assert.equal(result.status, 0, result.stderr);
     for (const name of SKILLS) {
