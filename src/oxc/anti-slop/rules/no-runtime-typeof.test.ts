@@ -34,14 +34,13 @@ tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 			code: "assert(IsString(supplied), `An inserted document's '${ID_COLUMN}' must be a string, received ${typeof supplied}`);",
 		},
 		{
-			name: "postgres@887faab src/implementations/database/writes-shared.ts:159 text returned for the refusal",
-			code: 'export function DescribeKind(value: unknown): string { return Array.isArray(value) ? "an array" : `a ${typeof value}`; }',
+			name: "dms-automation@29b56c5 src/runtime/builtins/nodes/foreach.ts:15 a log message",
+			code: 'async function execute() { if (!Array.isArray(raw)) { ctx.log("warn", `foreach "items" input is not an array (got ${typeof raw}); iterating zero times`); } }',
 		},
 		{
 			name: "mongodb@cf32203 src/implementations/database/utils.ts:63 a thrown message",
 			code: "if (!isString(id)) { throw new Error(`Invalid instance id: expected string, got ${typeof id}`); }",
 		},
-		"const describeKind = (value: unknown): string => `a ${typeof value}`;",
 		"throw `received ${typeof value}`;",
 		'const isServer = typeof document === "undefined";',
 		'const hasStorage = typeof localStorage !== "undefined";',
@@ -90,6 +89,81 @@ tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 		},
 	],
 	invalid: [
+		{
+			name: "postgres@887faab src/implementations/database/writes-shared.ts:159 text returned to a caller that can compare it",
+			code: 'export function DescribeKind(value: unknown): string { return Array.isArray(value) ? "an array" : `a ${typeof value}`; }',
+			errors: [error],
+		},
+		{
+			name: "a message returned by an arrow can be compared by its caller",
+			code: "const describeKind = (value: unknown): string => `a ${typeof value}`;",
+			errors: [error],
+		},
+		{
+			name: "a message returned inside an object can be compared by its caller",
+			code: "function describe(value: unknown) { return { kind: `a ${typeof value}` }; }",
+			errors: [error],
+		},
+		{
+			name: "a message tested by Set#has steers an if",
+			code: 'const KINDS = new Set(["kind:string"]);\nfunction f(value: unknown): number { if (KINDS.has(`kind:${typeof value}`)) return 1; return 2; }',
+			errors: [error],
+		},
+		{
+			name: "a message tested by Object.hasOwn is a lookup",
+			code: "function f(value: unknown): boolean { return Object.hasOwn(KINDS, `kind:${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "a message tested by includes steers an if",
+			code: "function f(value: unknown): number { if (NAMES.includes(`kind:${typeof value}`)) return 1; return 2; }",
+			errors: [error],
+		},
+		{
+			name: "a message tested by RegExp#test steers an if",
+			code: "function f(value: unknown): number { return /^kind:string$/.test(`kind:${typeof value}`) ? 1 : 2; }",
+			errors: [error],
+		},
+		{
+			name: "a message handed to a call whose result is tested",
+			code: "function f(value: unknown): number { return isKnown(`kind:${typeof value}`) ? 1 : 2; }",
+			errors: [error],
+		},
+		{
+			name: "a message inside the argument of a call that is itself an argument",
+			code: "function f(value: unknown) { use(known(flag ? `kind:${typeof value}` : other)); }",
+			errors: [error],
+		},
+		{
+			name: "a message handed to a call whose result is bound",
+			code: "function f(value: unknown) { const known = KINDS.has(`kind:${typeof value}`); return known; }",
+			errors: [error],
+		},
+		{
+			name: "a message handed to an awaited call",
+			code: "async function f(value: unknown) { await dispatch(`kind:${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "a message handed to a call chained on",
+			code: "function f(value: unknown) { assertKnown(`kind:${typeof value}`).then(done); }",
+			errors: [error],
+		},
+		{
+			name: "an error built from a message and kept, not thrown",
+			code: "function f(value: unknown) { const failure = new Error(`received ${typeof value}`); return failure; }",
+			errors: [error],
+		},
+		{
+			name: "an error built from a message and rejected through a call",
+			code: "function f(value: unknown) { return Promise.reject(new Error(`received ${typeof value}`)); }",
+			errors: [error],
+		},
+		{
+			name: "an object built from a message as a statement",
+			code: "function f(value: unknown) { new Lookup(`kind:${typeof value}`); }",
+			errors: [error],
+		},
 		{
 			name: "a message compared to a value is a check",
 			code: 'if (`a ${typeof input}` === "a string") use(input);',
