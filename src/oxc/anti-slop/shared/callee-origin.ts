@@ -1,6 +1,6 @@
 import type { DefinitionType, ESTree, SourceCode, Variable } from "@oxlint/plugins";
 
-import { isModuleImport, isSuppliedFromOutside, mayBeMergedMember, variableOf } from "./binding-origin.ts";
+import { isSuppliedFromOutside, mayBeMergedMember, variableOf } from "./binding-origin.ts";
 
 /**
  * What a name stands for. `unplaced` is a name no scope binds that the file may still declare or write, as a merged namespace
@@ -223,17 +223,14 @@ function declaresParameterProperty(method: ESTree.MethodDefinition, name: string
 }
 
 /**
- * Return whether a value is a function or class written here, an object or array of such members, or a member or call that
- * reaches back to this file. A node this walk does not list is reported unless it is a primitive, so a new syntax cannot clear.
+ * Return whether a value is local code: a function or class written here, an object or array of such members, or a member or call
+ * that reaches back to this file. Only a primitive, an import, a parameter and an object of such values are not, so a node this
+ * walk does not list, a function, a class and any syntax added later included, is reported.
  */
 function isFunctionHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen): boolean {
 	const inner = passThrough(node);
 	if (inner !== null) return isFunctionHere(inner, sourceCode, seen);
 	switch (node.type) {
-		case "FunctionExpression":
-		case "ArrowFunctionExpression":
-		case "ClassExpression":
-			return true;
 		case "ObjectExpression":
 		case "ArrayExpression":
 			return holdsFunctionHere(node, sourceCode, seen);
@@ -265,8 +262,6 @@ function holdsFunctionHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen
 	const inner = passThrough(node);
 	if (inner !== null) return holdsFunctionHere(inner, sourceCode, seen);
 	switch (node.type) {
-		case "ClassExpression":
-			return true;
 		case "FunctionExpression":
 		case "ArrowFunctionExpression":
 			return false;
@@ -309,16 +304,15 @@ function followSources(
 }
 
 /**
- * Return whether a call goes to code written in this file. A bare callee counts when any declaration in the file
- * binds it, a parameter and an `import x = Namespace.member` included, and only a module import is outside. A member callee counts when the value it is read from reaches back to this
- * file, so a member of a parameter, which the caller supplies, does not.
+ * Return whether a call goes to code written in this file. A bare callee counts when it is not outside the file, as
+ * `isSuppliedFromOutside` decides, or when it is a parameter. A member callee counts when the value it is read from reaches back
+ * to this file, so a member of a parameter, which the caller supplies, does not.
  */
 export function calleeIsWrittenHere(call: ESTree.CallExpression, sourceCode: SourceCode): boolean {
 	const { callee } = call;
 	if (callee.type === "Identifier") {
-		if (!isSuppliedFromOutside(callee, sourceCode)) return true;
 		const variable = variableOf(callee, sourceCode);
-		return variable !== null && variable.defs.some((definition) => !isModuleImport(definition));
+		return !isSuppliedFromOutside(callee, sourceCode) || (variable !== null && variable.defs.some((definition) => definition.type === "Parameter"));
 	}
 	return callee.type === "MemberExpression" && isWrittenHere(callee.object, sourceCode, NO_VARIABLES);
 }

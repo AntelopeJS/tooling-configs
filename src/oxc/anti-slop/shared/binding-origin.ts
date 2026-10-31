@@ -19,7 +19,7 @@ export function variableOf(identifier: Name, sourceCode: SourceCode): Variable |
  * Return whether a definition takes its value from another module: an `import` declaration, or `import x = require()`.
  * An `import x = Namespace.member` only renames a name, so its value comes from where that name is declared.
  */
-export function isModuleImport(definition: Definition): boolean {
+function isModuleImport(definition: Definition): boolean {
 	if (definition.type !== "ImportBinding") return false;
 	const { node } = definition;
 	return node.type !== "TSImportEqualsDeclaration" || node.moduleReference.type === "TSExternalModuleReference";
