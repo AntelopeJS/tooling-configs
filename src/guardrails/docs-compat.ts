@@ -11,7 +11,11 @@ import {
 export const DOCS_COMPAT_START = "<!-- antelopejs-docs-compat:start -->";
 export const DOCS_COMPAT_END = "<!-- antelopejs-docs-compat:end -->";
 
+const DOCS_NODE_START = "<!-- antelopejs-docs-node:start -->";
+const DOCS_NODE_END = "<!-- antelopejs-docs-node:end -->";
+
 const LOCKFILE = "pnpm-lock.yaml";
+const REQUIREMENTS_HEADING = /^##\s+Requirements\s*$/i;
 const SCOPE = "@antelopejs/";
 const UNRESOLVED = "—";
 const LEGACY_MARKER = /^<!--\s*docs-compat:\s*\.\/package\.json#\w+\s*-->\s*$/;
@@ -123,6 +127,38 @@ export function placeCompatBlock(
   }
   const before = text.trimEnd();
   return `${before}${before ? "\n\n" : ""}## Compatibility\n\n${block}`;
+}
+
+/** The generated Node prerequisite block for an `engines.node` range. */
+function nodeBlock(range: string): string {
+  return `${DOCS_NODE_START}\nThis package requires Node.js \`${range}\`.\n${DOCS_NODE_END}\n`;
+}
+
+/** The README with the Node block in place: between its markers, under `## Requirements`, or in a new `## Requirements` section at the end. */
+function placeNodeBlock(current: string, block: string): string {
+  const start = current.indexOf(DOCS_NODE_START);
+  const end = current.indexOf(DOCS_NODE_END);
+  if ((start === -1) !== (end === -1) || end < start)
+    throw new Error(
+      "incomplete antelopejs-docs-node markers. Repair or delete them, then rerun antelopejs-sync.",
+    );
+  if (start !== -1)
+    return `${current.slice(0, start)}${block}${current.slice(end + DOCS_NODE_END.length).replace(/^\r?\n/, "")}`;
+  const lines = current.split("\n");
+  const heading = lines.findIndex((line) => REQUIREMENTS_HEADING.test(line));
+  if (heading !== -1) {
+    let rest = heading + 1;
+    while (rest < lines.length && !lines[rest].trim()) rest++;
+    return finalNewline(
+      [
+        ...lines.slice(0, heading + 1),
+        "",
+        ...block.trimEnd().split("\n"),
+        ...(rest < lines.length ? ["", ...lines.slice(rest)] : []),
+      ].join("\n"),
+    );
+  }
+  return `${current.trimEnd()}\n\n## Requirements\n\n${block}`;
 }
 
 /** What sync writes for the documentation: each qualifying package's README and the caller's `docs-files` lines. */
@@ -306,6 +342,57 @@ function readLock(root: string): Document | undefined {
     : undefined;
 }
 
+interface PlannedPackage {
+  directory: string;
+  published: boolean;
+  node: string | undefined;
+  ranges: ReadonlyMap<string, string>;
+}
+
+/** Adds one package's `docs-files` lines and, when it needs one, its README with the generated blocks. */
+function planPackage(
+  root: string,
+  plan: DocsPlan,
+  lock: Document | undefined,
+  standard: boolean,
+  { directory, ranges, published, node }: PlannedPackage,
+): void {
+  const readme = relative(directory, "README.md");
+  const docs = relative(directory, "docs");
+  if (!published) return;
+  if (ranges.size > 0 || existsSync(join(root, readme)))
+    plan.docsFiles.push(readme);
+  if (isDirectory(root, docs)) plan.docsFiles.push(docs);
+  const current = existsSync(join(root, readme))
+    ? readFileSync(join(root, readme), "utf8")
+    : undefined;
+  const nodeRange = standard && current !== undefined ? node : undefined;
+  if (ranges.size === 0 && nodeRange === undefined) return;
+  const rows = [...ranges].map(([name, supported]) => ({
+    name,
+    supported,
+    tested: lock && resolvedVersion(root, lock, directory, name),
+  }));
+  try {
+    const withRequirements =
+      nodeRange !== undefined && current !== undefined
+        ? placeNodeBlock(current, nodeBlock(nodeRange))
+        : current;
+    plan.readmes.push({
+      path: readme,
+      current,
+      content:
+        rows.length > 0
+          ? placeCompatBlock(withRequirements, compatBlock(rows))
+          : (withRequirements ?? ""),
+    });
+  } catch (error) {
+    plan.errors.push(
+      `${readme}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 /**
  * Plans the docs-compat block of the root and of every workspace package that is not private and declares an
  * `@antelopejs/*` peer, runtime or optional dependency, and the `docs-files` lines covering the root and every workspace
@@ -319,6 +406,7 @@ export function planDocs(root: string, manager: PackageManager): DocsPlan {
     return {
       directory,
       published: !directory || !manifest.private,
+      node: manifest.engines?.node,
       ranges: manifest.private
         ? new Map<string, string>()
         : declaredRanges(manifest),
@@ -338,34 +426,7 @@ export function planDocs(root: string, manager: PackageManager): DocsPlan {
     );
     return plan;
   }
-  for (const { directory, ranges, published } of packages) {
-    const readme = relative(directory, "README.md");
-    const docs = relative(directory, "docs");
-    const generated = ranges.size > 0;
-    if (!published) continue;
-    if (generated || existsSync(join(root, readme)))
-      plan.docsFiles.push(readme);
-    if (isDirectory(root, docs)) plan.docsFiles.push(docs);
-    if (!generated) continue;
-    const rows = [...ranges].map(([name, supported]) => ({
-      name,
-      supported,
-      tested: lock && resolvedVersion(root, lock, directory, name),
-    }));
-    const current = existsSync(join(root, readme))
-      ? readFileSync(join(root, readme), "utf8")
-      : undefined;
-    try {
-      plan.readmes.push({
-        path: readme,
-        current,
-        content: placeCompatBlock(current, compatBlock(rows)),
-      });
-    } catch (error) {
-      plan.errors.push(
-        `${readme}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
+  const standard = rootManifest.antelopeJs?.docs?.standard === true;
+  for (const item of packages) planPackage(root, plan, lock, standard, item);
   return plan;
 }

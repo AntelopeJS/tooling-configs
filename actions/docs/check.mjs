@@ -14,6 +14,7 @@ import { decodeHTML } from "entities";
 import GithubSlugger from "github-slugger";
 import { marked } from "marked";
 
+import { checkStandard, readStandard } from "./standard.mjs";
 import { checkTypescript } from "./typescript.mjs";
 import { checkVersionClaims, plain, sameRange } from "./versions.mjs";
 
@@ -249,7 +250,13 @@ function typescriptProject(root, project, localPath) {
   return existsSync(fallback) ? localPath(fallback) : undefined;
 }
 
-export function checkDocs({ root = process.cwd(), files, project = "" }) {
+export function checkDocs({
+  root = process.cwd(),
+  files,
+  project = "",
+  standard,
+  valeBin,
+}) {
   root = realpathSync(root);
   const failures = [];
   const fail = (message) => failures.push(message);
@@ -297,6 +304,14 @@ export function checkDocs({ root = process.cwd(), files, project = "" }) {
     blocks += checkVersionClaims(doc, context);
     for (const entry of doc.api) localPath(resolve(dirname(doc.path), entry));
   }
+  if (standard ?? readStandard(root)) {
+    checkStandard({
+      root,
+      documents,
+      fail,
+      valeBin: valeBin ?? process.env.VALE_BIN ?? "vale",
+    });
+  }
   const typed = documents.some((doc) => doc.api.length || doc.examples.length);
   const tsconfig = typescriptProject(root, project, localPath);
   let examples = 0;
@@ -325,9 +340,14 @@ function main() {
     options: {
       files: { type: "string" },
       "typescript-project": { type: "string", default: "" },
+      "print-standard": { type: "boolean" },
     },
     allowPositionals: true,
   });
+  if (values["print-standard"]) {
+    console.log(readStandard(process.cwd()));
+    return 0;
+  }
   const files = [
     ...positionals,
     ...(values.files ?? "")

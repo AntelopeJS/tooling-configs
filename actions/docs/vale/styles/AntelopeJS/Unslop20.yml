@@ -1,0 +1,9 @@
+extends: existence
+message: "Remove the chatbot phrase '%s' (unslop rule 20)."
+level: warning
+ignorecase: true
+tokens:
+  - "I hope this helps"
+  - "Let me know if"
+  - "Of course!"
+  - "Certainly!"

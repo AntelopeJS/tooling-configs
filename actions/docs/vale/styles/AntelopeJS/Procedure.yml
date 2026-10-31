@@ -1,0 +1,10 @@
+extends: existence
+message: "Cut '%s'. It has no place in a procedure."
+level: warning
+ignorecase: true
+tokens:
+  - "simply"
+  - "easy"
+  - "easily"
+  - "quickly"
+  - "please"

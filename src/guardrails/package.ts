@@ -13,7 +13,12 @@ export interface Manifest {
   peerDependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   workspaces?: unknown;
-  antelopeJs?: { kind?: string; implements?: string[] };
+  engines?: { node?: string };
+  antelopeJs?: {
+    kind?: string;
+    implements?: string[];
+    docs?: { standard?: boolean };
+  };
 }
 
 export type PackageManager = "pnpm" | "npm" | "yarn" | "bun";

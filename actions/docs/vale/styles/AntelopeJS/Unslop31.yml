@@ -1,0 +1,14 @@
+extends: substitution
+message: "Use '%s' instead of '%s' (unslop rule 31)."
+level: warning
+ignorecase: true
+swap:
+  "utilize": "use"
+  "utilizes": "uses"
+  "utilizing": "using"
+  "leverage": "use"
+  "leverages": "uses"
+  "leveraging": "using"
+  "facilitate": "help"
+  "numerous": "many"
+  "in the event that": "if"

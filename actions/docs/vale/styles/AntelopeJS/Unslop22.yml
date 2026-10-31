@@ -1,0 +1,7 @@
+extends: existence
+message: "Answer directly instead of '%s' (unslop rule 22)."
+level: warning
+ignorecase: true
+tokens:
+  - "Great question"
+  - "You're absolutely right"
