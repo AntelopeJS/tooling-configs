@@ -72,6 +72,19 @@ function parseUser(value: unknown): User { return alias.parse(value); }`,
 			name: "an inner parameter that shadows a local object",
 			code: `${OWN}function parseWith(value: unknown, own: Codec): P { return own.parse(value); }`,
 		},
+		{
+			name: "an imported name assigned another import",
+			code: `import { codec, shared } from "./codec";
+codec = shared;
+function parseUser(value: unknown): User { return codec.parse(value); }`,
+		},
+		{
+			name: "an import-equals require assigned an import",
+			code: `import codec = require("./codec");
+import { shared } from "./shared";
+codec = shared;
+function parseUser(value: unknown): User { return codec.parse(value); }`,
+		},
 	],
 	invalid: [
 		{
@@ -266,6 +279,36 @@ namespace N { export const codec = { parse: (v: any): P => v }; }
 import A = N.codec;
 const B = A;
 export function parseUser(value: unknown): P { return B.parse(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an imported name assigned a local object",
+			code: `${OWN}import { codec } from "./codec";
+codec = own;
+function parseUser(value: unknown): P { return codec.parse(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an import-equals require assigned a local object",
+			code: `${OWN}import codec = require("./codec");
+codec = own;
+function parseUser(value: unknown): P { return codec.parse(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a parameter redeclared by a var with no initializer",
+			code: `${OWN}function parseWith(value: unknown, codec: Codec): P { var codec; return codec.parse(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a loop variable over a parameter list",
+			code: `${OWN}function parseWith(value: unknown, codecs: Codec[]): P { for (const codec of codecs) { return codec.parse(value); } throw new Error("none"); }`,
+			errors: [error],
+		},
+		{
+			name: "an ambient const",
+			code: `${OWN}declare const codec: Codec;
+function parseUser(value: unknown): P { return codec.parse(value); }`,
 			errors: [error],
 		},
 	],

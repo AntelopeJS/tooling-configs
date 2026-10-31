@@ -24,16 +24,3 @@ export function isModuleImport(definition: Definition): boolean {
 	const { node } = definition;
 	return node.type !== "TSImportEqualsDeclaration" || node.moduleReference.type === "TSExternalModuleReference";
 }
-
-/**
- * Return whether the value of a name is never given by this file: a global, or a parameter or module import that nothing
- * here defaults, assigns or redeclares. The kind of the first definition does not say it: a default, an assignment and a
- * later `var` give a parameter a value written here, and an `import x = Namespace.member` is no module import.
- */
-export function isSuppliedFromOutside(variable: Variable | null): boolean {
-	return (
-		variable === null ||
-		(variable.defs.every((definition) => definition.type === "Parameter" || isModuleImport(definition)) &&
-			variable.references.every((reference) => !reference.isWrite()))
-	);
-}

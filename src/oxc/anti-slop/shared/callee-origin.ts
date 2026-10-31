@@ -1,11 +1,11 @@
 import type { DefinitionType, ESTree, SourceCode, Variable } from "@oxlint/plugins";
 
-import { isModuleImport, isSuppliedFromOutside, variableOf } from "./binding-origin.ts";
+import { isModuleImport, variableOf } from "./binding-origin.ts";
 
 /**
  * What a name stands for. Its value comes from the expressions the file writes to it (its initializer, a default, an
- * assignment, the target of an `import x = Namespace.member`), plus a caller or module when it is a parameter or import.
- * `constant` is false when some write has no expression to follow, or the declaration is not a `const` with an initializer.
+ * assignment) and the name an `import x = Namespace.member` reads, plus a caller or module when it is a parameter or import.
+ * `constant` is false when some write has no expression to follow, or a definition is not a `const` with an initializer.
  */
 type Binding =
 	| { readonly kind: "outside" }
@@ -29,37 +29,33 @@ function entityRoot(name: ESTree.TSTypeName): ESTree.Node {
 	return name.type === "TSQualifiedName" ? entityRoot(name.left) : name;
 }
 
-/** Return the expression a definition gives its name, or null when it gives none: a parameter, a module import, a loop variable. */
-function definitionSource(definition: Variable["defs"][number]): ESTree.Node | null {
+/** Return the name an `import x = Namespace.member` reads, or null for a module import, which another file gives a value. */
+function aliasRoot(definition: Variable["defs"][number]): ESTree.Node | null {
 	const { node } = definition;
-	if (definition.type === "ImportBinding") {
-		if (node.type !== "TSImportEqualsDeclaration") return null;
-		return node.moduleReference.type === "TSExternalModuleReference" ? null : entityRoot(node.moduleReference);
-	}
-	return definition.type === "Variable" && node.type === "VariableDeclarator" ? node.init : null;
+	if (node.type !== "TSImportEqualsDeclaration") return null;
+	return node.moduleReference.type === "TSExternalModuleReference" ? null : entityRoot(node.moduleReference);
 }
 
 /** Return whether a definition is a `const` with an initializer, a parameter or an import, so that nothing but a write reference changes its value. */
 function isFixedDefinition(definition: Variable["defs"][number]): boolean {
 	const { node } = definition;
-	if (definition.type !== "Variable") return true;
-	return node.type === "VariableDeclarator" && node.init !== null && node.parent.type === "VariableDeclaration" && node.parent.kind === "const";
+	return definition.type !== "Variable" || (node.type === "VariableDeclarator" && node.init !== null && node.parent.type === "VariableDeclaration" && node.parent.kind === "const");
 }
 
 /**
- * Classify a name by every definition and write it has, not by its first definition. It is outside this file when
- * nothing here gives it a value. A function, class, namespace or catch binding is a declaration written here. Any other name is
- * a variable read through the expressions written to it.
+ * Classify a name by every definition and write it has, not by its first definition. A global is outside this file.
+ * A function, class, namespace or catch binding is a declaration written here. Any other name is a variable read through the
+ * expressions written to it, so a parameter or module import nothing here defaults or assigns is read through none.
  */
 function bindingOf(identifier: Name, sourceCode: SourceCode): Binding {
 	const variable = variableOf(identifier, sourceCode);
-	if (variable === null || isSuppliedFromOutside(variable)) return { kind: "outside" };
+	if (variable === null) return { kind: "outside" };
 	const declared = variable.defs.find((definition) => !["Variable", "Parameter", "ImportBinding"].includes(definition.type));
 	if (declared !== undefined) return { kind: "declaration", type: declared.type };
 	const writes = variable.references.filter((reference) => reference.isWrite());
-	const sources = [...variable.defs.map(definitionSource), ...writes.map((write) => write.writeExpr)].filter((source) => source !== null);
-	const constant = variable.defs.every(isFixedDefinition) && writes.every((write) => write.writeExpr !== null) && sources.length > 0;
-	return { kind: "variable", variable, sources: [...new Set(sources)], constant };
+	const sources = [...variable.defs.map(aliasRoot), ...writes.map((write) => write.writeExpr)].filter((source) => source !== null);
+	const constant = variable.defs.every(isFixedDefinition) && writes.every((write) => write.writeExpr !== null);
+	return { kind: "variable", variable, sources, constant };
 }
 
 /** Return the expression a type wrapper, an `await` or an optional chain only passes through, or null when the node is none of these. */

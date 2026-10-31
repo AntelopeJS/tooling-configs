@@ -163,5 +163,11 @@ class Users { constructor(private readonly schema = own) {} parse(value: unknown
 			code: "class Users { a = this.b; b = this.a; parse(value: unknown): User { return this.a.parse(value); } }",
 			errors: [error],
 		},
+		{
+			name: "a static accessor reads the static field",
+			code: `import { schemas } from "./schemas";
+class Users { codec = schemas.user; static codec = { parse: (v: any): User => v }; static accessor parse = (value: unknown): User => this.codec.parse(value); }`,
+			errors: [error],
+		},
 	],
 });
