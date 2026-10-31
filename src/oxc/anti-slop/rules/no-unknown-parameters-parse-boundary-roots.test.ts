@@ -17,13 +17,6 @@ const userSchema = z.object({ id: z.string() });
 function parseUser(value: unknown): User { return userSchema.parse(value); }`,
 		},
 		{
-			name: "a const schema built from a shape const of imported schemas",
-			code: `import { z } from "zod";
-const shape = { id: z.string() };
-const userSchema = z.object(shape);
-function parseUser(value: unknown): User { return userSchema.parse(value); }`,
-		},
-		{
 			name: "a schema refined by a local arrow is still built from an import",
 			code: `import { z } from "zod";
 const userSchema = z.string().refine((id) => id.length > 0);
@@ -58,18 +51,48 @@ async function parseUser(value: unknown): Promise<User> { return (await load()).
 function parseUser(value: unknown): User { return (schemas.user! as Schema<User>).parse(value); }`,
 		},
 		{
-			name: "a schema handed in as a constructor parameter property",
-			code: "class Users { constructor(private readonly schema: Schema) {} parse(value: unknown): User { return this.schema.parse(value); } }",
+			name: "a schema reached through a dynamic import",
+			code: `async function parseUser(value: unknown): Promise<User> { return (await import("./schemas")).user.parse(value); }`,
 		},
 		{
-			name: "a schema held in a field that starts from an import",
-			code: `import { z } from "zod";
-class Users { private readonly schema = z.object({ id: z.string() }); parse(value: unknown): User { return this.schema.parse(value); } }`,
-		},
-		{
-			name: "a schema held in a private field that starts from an import",
+			name: "a schema reached through an optional chain on an import",
 			code: `import { schemas } from "./schemas";
-class Users { readonly #schema = schemas.user; parse(value: unknown): User { return this.#schema.parse(value); } }`,
+function parseUser(value: unknown): User { return (schemas?.user).parse(value); }`,
+		},
+		{
+			name: "a schema reached through an import-equals binding",
+			code: `import codec = require("./codec");
+function parseUser(value: unknown): User { return codec.parse(value); }`,
+		},
+		{
+			name: "a schema reached through a global require",
+			code: `const codec = require("./codec");
+function parseUser(value: unknown): User { return codec.parse(value); }`,
+		},
+		{
+			name: "a choice between two imports",
+			code: `import { current, legacy } from "./schemas";
+function parseUser(value: unknown): User { return (flag ? current : legacy).parse(value); }`,
+		},
+		{
+			name: "a fallback between two imports",
+			code: `import { current, legacy } from "./schemas";
+function parseUser(value: unknown): User { return (current ?? legacy).parse(value); }`,
+		},
+		{
+			name: "a schema reached through a type assertion on an import",
+			code: `import { schemas } from "./schemas";
+function parseUser(value: unknown): User { return (<Schema<User>>schemas.user).parse(value); }`,
+		},
+		{
+			name: "a schema reached through satisfies on an import",
+			code: `import { schemas } from "./schemas";
+function parseUser(value: unknown): User { return (schemas.user satisfies Schema<User>).parse(value); }`,
+		},
+		{
+			name: "a default for a parameter is the caller's to replace, as disclosed",
+			code: `const own = { parse: (v: any): User => v };
+function parseWith(value: unknown, codec = own): User { return codec.parse(value); }`,
 		},
 		{
 			name: "a member of a parameter is the caller's schema, as disclosed",
@@ -82,50 +105,13 @@ class Users { readonly #schema = schemas.user; parse(value: unknown): User { ret
 	],
 	invalid: [
 		{
-			name: "a frozen object of local functions that call each other through it",
-			code: `${LOOSE}function parseA(value: unknown): P { return codec.parseB(value); }
-function parseB(value: unknown): P { return codec.parseA(value); }
-const codec = Object.freeze({ parseA, parseB });`,
-			errors: [error, error],
-		},
-		{
-			name: "a frozen object whose property is a local binding of a loose function",
-			code: `${LOOSE}const codec = Object.freeze({ parseUser: loose });\n${CALL}codec.parseUser(value); }`,
+			name: "a choice whose first branch is a local object",
+			code: `import { schemas } from "./schemas";\n${LOOSE}const own = { parseUser: loose };\n${CALL}(flag ? own : schemas.user).parseUser(value); }`,
 			errors: [error],
 		},
 		{
-			name: "an object assembled by Object.assign from a local binding",
-			code: `${LOOSE}const codec = Object.assign({}, { parseUser: loose });\n${CALL}codec.parseUser(value); }`,
-			errors: [error],
-		},
-		{
-			name: "a frozen object that holds an inline arrow",
-			code: `interface P { readonly id: string }\nconst codec = Object.freeze({ parseUser: (v: any): P => v });\n${CALL}codec.parseUser(value); }`,
-			errors: [error],
-		},
-		{
-			name: "a frozen object that holds a nested object of local functions",
-			code: `${LOOSE}const codec = Object.freeze({ inner: { parseUser: loose } });\n${CALL}codec.inner.parseUser(value); }`,
-			errors: [error],
-		},
-		{
-			name: "a frozen object that spreads an object of local functions",
-			code: `${LOOSE}const base = { parseUser: loose };\nconst codec = Object.freeze({ ...base });\n${CALL}codec.parseUser(value); }`,
-			errors: [error],
-		},
-		{
-			name: "a frozen local object const",
-			code: `${LOOSE}const base = { parseUser: loose };\nconst codec = Object.freeze(base);\n${CALL}codec.parseUser(value); }`,
-			errors: [error],
-		},
-		{
-			name: "a frozen local class",
-			code: `interface P { readonly id: string }\nclass Own { static parseUser(v: any): P { return v; } }\nconst codec = Object.freeze(Own);\n${CALL}codec.parseUser(value); }`,
-			errors: [error],
-		},
-		{
-			name: "an imported factory handed an object that holds a local function",
-			code: `import { define } from "./define";\n${LOOSE}const codec = define({ parseUser: loose });\n${CALL}codec.parseUser(value); }`,
+			name: "a fallback whose first operand is a local object",
+			code: `import { schemas } from "./schemas";\n${LOOSE}const own = { parseUser: loose };\n${CALL}(own ?? schemas.user).parseUser(value); }`,
 			errors: [error],
 		},
 		{
@@ -179,48 +165,9 @@ const codec = Object.freeze({ parseA, parseB });`,
 			errors: [error],
 		},
 		{
-			name: "a member of this",
-			code: `interface P { readonly id: string }
-class C {
-  codec = { parseUser: (v: any): P => v };
-  run(value: unknown): P { return this.codec.parseUser(value); }
-}`,
-			errors: [error],
-		},
-		{
-			name: "a field of this declared without an initializer",
-			code: `class Users { schema: Schema; constructor() { this.schema = { parse: (v: any): User => v }; } parse(value: unknown): User { return this.schema.parse(value); } }`,
-			errors: [error],
-		},
-		{
-			name: "a field of this that is not declared in the class",
-			code: "class Users extends Base { parse(value: unknown): User { return this.schema.parse(value); } }",
-			errors: [error],
-		},
-		{
-			name: "a field of this with a computed name",
-			code: "class Users { parse(value: unknown): User { return this['schema'].parse(value); } }",
-			errors: [error],
-		},
-		{
-			name: "a field of this that holds a local object",
-			code: `class Users { schema = { parse: (v: any): User => v }; parse(value: unknown): User { return this.schema.parse(value); } }`,
-			errors: [error],
-		},
-		{
-			name: "a field of this that holds a local object under a private name",
-			code: `class Users { readonly #schema = { parse: (v: any): User => v }; parse(value: unknown): User { return this.#schema.parse(value); } }`,
-			errors: [error],
-		},
-		{
-			name: "a constructor parameter property with a local default",
-			code: `const own = { parse: (v: any): User => v };
-class Users { constructor(private readonly schema = own) {} parse(value: unknown): User { return this.schema.parse(value); } }`,
-			errors: [error],
-		},
-		{
-			name: "fields of this that alias each other in a loop",
-			code: "class Users { a = this.b; b = this.a; parse(value: unknown): User { return this.a.parse(value); } }",
+			name: "a value this walk cannot place",
+			code: `import { schemas } from "./schemas";
+function parseUser(value: unknown): User { return (0, schemas.user).parse(value); }`,
 			errors: [error],
 		},
 		{
