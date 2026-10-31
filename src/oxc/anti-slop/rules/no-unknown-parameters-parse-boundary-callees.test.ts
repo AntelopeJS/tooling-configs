@@ -106,6 +106,14 @@ class Child extends Base { parseA(value: unknown): Parsed { return super.parseB(
 			name: "methods of a frozen object literal declared in the same file",
 			code: `const parsers = Object.freeze({
   parseA(value: unknown): Parsed { return parsers.parseB(value); },
+  parseB(value: unknown): Parsed { return parsers.parseA(value); },
+});`,
+			errors: [error, error],
+		},
+		{
+			name: "arrow properties of a frozen object literal declared in the same file",
+			code: `const parsers = Object.freeze({
+  parseA: (value: unknown): Parsed => parsers.parseB(value),
   parseB: (value: unknown): Parsed => parsers.parseA(value),
 });`,
 			errors: [error, error],

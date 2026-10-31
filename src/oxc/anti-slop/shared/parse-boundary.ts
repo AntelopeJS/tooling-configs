@@ -54,7 +54,7 @@ function hasFunctionProperty(object: ESTree.ObjectExpression): boolean {
 	return object.properties.some(
 		(property) =>
 			property.type === "Property" &&
-			(property.method || property.value.type === "FunctionExpression" || property.value.type === "ArrowFunctionExpression"),
+			(property.value.type === "FunctionExpression" || property.value.type === "ArrowFunctionExpression"),
 	);
 }
 
