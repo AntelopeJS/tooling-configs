@@ -7,7 +7,8 @@ import {
   functionParameterBindingName,
   functionParameterTypeAnnotation,
 } from "../shared/function-parameters.ts";
-import { isRuntimeFunction } from "../shared/type-guards.ts";
+import { decodesParameterIntoResult } from "../shared/parse-boundary.ts";
+import { isRuntimeFunction, type RuntimeFunction } from "../shared/type-guards.ts";
 
 type ParameterOwner =
   | ESTree.ArrowFunctionExpression
@@ -111,15 +112,16 @@ export const noUnknownParametersRule = defineRule({
     type: "problem",
     docs: {
       description:
-        "Disallow explicitly unknown function parameters except `cause`, type-predicate subjects, `this`, request values injected by `@JSONBody`, `@JsonBody` or `@Parameter`, and promise rejection reasons; decode unknown input at its I/O boundary instead.",
+        "Disallow explicitly unknown function parameters except `cause`, type-predicate subjects, `this`, request values injected by `@JSONBody`, `@JsonBody` or `@Parameter`, promise rejection reasons, and a parameter a function only decodes through a schema or decoder into the value it returns; decode unknown input at its I/O boundary instead.",
     },
     messages: {
       unknownParameter:
-        "Parameter `{{parameter}}` leaves input unparsed. Accept a named domain type; run the expected schema or parser at the I/O boundary before calling this function.",
+        "Parameter `{{parameter}}` leaves input unparsed. Accept a named domain type and run the expected schema or parser at the I/O boundary before calling this function, or make this function that parser: pass the parameter only to the schema and return its result under a declared type.",
     },
   },
   createOnce(context) {
-    const checkParameters = (node: ParameterOwner) => {
+    const returnsByFunction: ESTree.ReturnStatement[][] = [];
+    const checkParameters = (node: ParameterOwner, returns: readonly ESTree.ReturnStatement[] = []) => {
       for (const parameter of node.params) {
         const annotation = functionParameterTypeAnnotation(parameter);
         if (annotation === null || annotation === undefined) continue;
@@ -127,6 +129,12 @@ export const noUnknownParametersRule = defineRule({
         if (isExemptPosition(node, parameter)) continue;
         const name = functionParameterBindingName(parameter, context.sourceCode);
         if (name === "cause" || isTypePredicateSubject(node, name)) continue;
+        if (
+          isRuntimeFunction(node) &&
+          decodesParameterIntoResult(node, name, annotation.typeAnnotation, returns, context.sourceCode)
+        ) {
+          continue;
+        }
         context.report({
           node: annotation.typeAnnotation,
           messageId: "unknownParameter",
@@ -135,10 +143,23 @@ export const noUnknownParametersRule = defineRule({
       }
     };
 
+    const enterFunction = () => {
+      returnsByFunction.push([]);
+    };
+    const leaveFunction = (node: RuntimeFunction) => {
+      checkParameters(node, returnsByFunction.pop());
+    };
+
     return {
-      ArrowFunctionExpression: checkParameters,
-      FunctionDeclaration: checkParameters,
-      FunctionExpression: checkParameters,
+      ArrowFunctionExpression: enterFunction,
+      FunctionDeclaration: enterFunction,
+      FunctionExpression: enterFunction,
+      "ArrowFunctionExpression:exit": leaveFunction,
+      "FunctionDeclaration:exit": leaveFunction,
+      "FunctionExpression:exit": leaveFunction,
+      ReturnStatement(node) {
+        returnsByFunction.at(-1)?.push(node);
+      },
       TSCallSignatureDeclaration: checkParameters,
       TSConstructSignatureDeclaration: checkParameters,
       TSConstructorType: checkParameters,
