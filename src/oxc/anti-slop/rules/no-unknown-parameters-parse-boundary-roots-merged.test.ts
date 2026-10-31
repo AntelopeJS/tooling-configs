@@ -1,14 +1,18 @@
 import { RuleTester } from "oxlint/plugins-dev";
 
+import { BUILTIN_GLOBALS } from "./builtin-globals.ts";
 import { noUnknownParametersRule } from "./no-unknown-parameters.ts";
 
-const tester = new RuleTester({ languageOptions: { parserOptions: { lang: "ts" } } });
+const testers = [
+	["", new RuleTester({ languageOptions: { parserOptions: { lang: "ts" } } })],
+	[", with the built-in globals declared as oxlint declares them", new RuleTester({ languageOptions: { parserOptions: { lang: "ts" }, globals: BUILTIN_GLOBALS } })],
+] as const;
 const error = { messageId: "unknownParameter" };
 
 const LOOSE = "interface P { readonly id: string }\nfunction loose(value: any): P { return value; }\n";
 const OWN_PARSER = "{ parse: loose }";
 
-tester.run("anti-slop/no-unknown-parameters at a parse boundary, an outer binding that a merged namespace member may shadow", noUnknownParametersRule, {
+const cases = {
 	valid: [
 		{
 			name: "an import read outside the namespace blocks that declare a member of that name",
@@ -54,5 +58,17 @@ tester.run("anti-slop/no-unknown-parameters at a parse boundary, an outer bindin
 			code: `import { settings } from "./settings";\n${LOOSE}namespace Users { export function readUser(value: unknown): P { return settings.parse(value); } }`,
 			errors: [error],
 		},
+		{
+			name: "a built-in global read inside a namespace block that another block declares a member of that name",
+			code: `${LOOSE}namespace Users { export const Array = { of: (): { parse: typeof loose } => ({ parse: loose }) }; }\nnamespace Users { export function readUser(value: unknown): P { const [codec] = Array.of(1); return codec!.parse(value); } }`,
+			errors: [error],
+		},
+		{
+			name: "a built-in global read inside one namespace block, which a block written later may declare a member of",
+			code: `${LOOSE}namespace Users { export function readUser(value: unknown): P { return Object.freeze(settings).parse(value); } }`,
+			errors: [error],
+		},
 	],
-});
+};
+
+for (const [environment, tester] of testers) tester.run(`anti-slop/no-unknown-parameters at a parse boundary, an outer binding that a merged namespace member may shadow${environment}`, noUnknownParametersRule, cases);

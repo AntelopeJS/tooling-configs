@@ -1,14 +1,18 @@
 import { RuleTester } from "oxlint/plugins-dev";
 
+import { BUILTIN_GLOBALS } from "./builtin-globals.ts";
 import { noUnknownParametersRule } from "./no-unknown-parameters.ts";
 
-const tester = new RuleTester({ languageOptions: { parserOptions: { lang: "ts" } } });
+const testers = [
+	["", new RuleTester({ languageOptions: { parserOptions: { lang: "ts" } } })],
+	[", with the built-in globals declared as oxlint declares them", new RuleTester({ languageOptions: { parserOptions: { lang: "ts" }, globals: BUILTIN_GLOBALS } })],
+] as const;
 const error = { messageId: "unknownParameter" };
 
 const LOOSE = "interface P { readonly id: string }\nfunction loose(value: any): P { return value; }\n";
 const CALL = "export function parseUser(value: unknown): P { return ";
 
-tester.run("anti-slop/no-unknown-parameters at a parse boundary, callee roots built by a call", noUnknownParametersRule, {
+const cases = {
 	valid: [
 		{
 			name: "a const schema built from a shape const of imported schemas",
@@ -323,4 +327,6 @@ const codec = Object.freeze({ parseA, parseB });`,
 			errors: [error],
 		},
 	],
-});
+};
+
+for (const [environment, tester] of testers) tester.run(`anti-slop/no-unknown-parameters at a parse boundary, callee roots built by a call${environment}`, noUnknownParametersRule, cases);
