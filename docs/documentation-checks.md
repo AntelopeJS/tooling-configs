@@ -313,6 +313,22 @@ documents, source, or diagnostics to an external checking service. It works with
 public or private checkouts and needs no extra token. Use ordinary `pull_request`
 CI, not privileged `pull_request_target` execution of untrusted checkout code.
 
+## Standard mode
+
+Standard mode is the AntelopeJS documentation standard. A repository opts in with `"antelopeJs": { "docs": { "standard": true } }` in its root `package.json`. The action reads the opt-in from the checkout, so a caller passes no new input and a released default branch keeps running the old checks. Without the opt-in, nothing below runs.
+
+With the opt-in, every selected Markdown file is checked for these:
+
+- **Frontmatter.** A page needs `title`, `description` and `mode`, and `mode` is `tutorial`, `how-to`, `reference` or `explanation`. A `README.md` is exempt, because GitHub shows its frontmatter as a table.
+- **No body H1.** The title comes from frontmatter. A `README.md` keeps its H1.
+- **Page length.** A page has at most 3,000 words. Fenced code and frontmatter do not count.
+- **Node versions.** Prose names no Node version range, such as "Node.js 22" or "Node >= 22.18". State the range once in `engines`. `antelopejs-sync` writes it between `<!-- antelopejs-docs-node:start -->` and `<!-- antelopejs-docs-node:end -->` in each published package's README, under `## Requirements` when the markers are absent, and the check allows a version there. Code spans and fences are exempt.
+- **Images.** An image is either an `output` of a scene in `docs/captures.ts`, or marked `illustration`: the Markdown title `![Alt](path "illustration")`, or `data-illustration` on an `<img>` tag. The check reads `docs/captures.ts` as text and finds `output: "..."` string literals; it never runs the file.
+- **English.** A paragraph of prose is not English when other-language function words outnumber English ones, or when most of its letters are not Latin. Fences, inline code, comments, HTML tags and URLs are skipped, and so is a paragraph shorter than five words. It checks whole paragraphs and does not detect a foreign sentence inside an English paragraph.
+- **Vale.** The generated style in `actions/docs/vale/` reports no warning. The action installs the pinned Vale with `install-vale.sh` when the repository opts in. Locally, set `VALE_BIN` to a Vale binary or put `vale` on `PATH`.
+
+Each failure names the file and, where it has one, the line.
+
 ## The writing rules table
 
 `src/docs/unslop-rules.ts` holds the numbered rules of the `unslop` skill as data: the id other skills cite, the section, the skill's own wording, and, for the rules a machine can check, the check. Two outputs come from it.

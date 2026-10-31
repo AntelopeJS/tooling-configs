@@ -136,6 +136,10 @@ it("fails a Node version range in prose and allows it in code and in the generat
 it("passes an image that is a capture output or marked illustration, and fails any other", (t) => {
   const { failures } = run(t, {
     "README.md": README,
+    "docs/images/home.webp": "webp",
+    "docs/images/flow.svg": "<svg/>",
+    "docs/images/logo.svg": "<svg/>",
+    "docs/images/hand.png": "png",
     "docs/captures.ts":
       'export default [{ id: "home", output: "docs/images/home.webp" }];\n',
     "docs/page.md": PAGE(

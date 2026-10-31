@@ -69,6 +69,15 @@ it("keeps an English paragraph that quotes a foreign phrase", () => {
   );
 });
 
+it("does not count one repeated word as a language", () => {
+  assert.deepEqual(
+    foreignProse(
+      "It needs no other module: no Redis, no database, no API module.\n",
+    ),
+    [],
+  );
+});
+
 it("skips a block of fewer than five words", () => {
   assert.deepEqual(foreignProse("## Démarrage rapide\n"), []);
 });

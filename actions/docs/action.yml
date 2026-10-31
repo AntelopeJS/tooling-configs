@@ -1,5 +1,5 @@
 name: Check documentation
-description: Check local Markdown links, explicit compatibility and API contracts, @antelopejs version claims outside the generated compatibility block, and typecheck every TypeScript fence
+description: Check local Markdown links, explicit compatibility and API contracts, @antelopejs version claims outside the generated compatibility block, typecheck every TypeScript fence, and run the Docs standard when the repository opts in with antelopeJs.docs.standard in package.json
 inputs:
   files:
     description: Newline-separated Markdown files or directories, relative to the consumer checkout (no globs)
@@ -15,6 +15,16 @@ runs:
     - name: Install the guardrail's locked dependencies
       shell: bash
       run: npm ci --prefix "$GITHUB_ACTION_PATH" --omit=dev --ignore-scripts --no-audit --no-fund
+    - name: Detect the Docs standard
+      id: standard
+      shell: bash
+      run: |
+        cd "$GITHUB_WORKSPACE"
+        echo "enabled=$(node "$GITHUB_ACTION_PATH/check.mjs" --print-standard)" >> "$GITHUB_OUTPUT"
+    - name: Install Vale
+      if: steps.standard.outputs.enabled == 'true'
+      shell: bash
+      run: echo "VALE_BIN=$("$GITHUB_ACTION_PATH/install-vale.sh" "$RUNNER_TEMP/vale")" >> "$GITHUB_ENV"
     - name: Check documentation
       shell: bash
       env:

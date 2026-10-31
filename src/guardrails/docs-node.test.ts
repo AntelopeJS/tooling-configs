@@ -7,10 +7,20 @@ const START = "<!-- antelopejs-docs-node:start -->";
 const END = "<!-- antelopejs-docs-node:end -->";
 const BLOCK = `${START}\nThis package requires Node.js \`>=22.18.0\`.\n${END}`;
 
+interface FixtureManifest {
+  name: string;
+  type: string;
+  packageManager: string;
+  engines?: { node: string };
+  antelopeJs?: { docs: { standard: boolean } };
+}
+
 function repo(
   t: test.TestContext,
-  { standard = true, engines = ">=22.18.0" as string | undefined } = {},
+  options: { standard?: boolean; engines?: string | null } = {},
 ): string {
+  const standard = options.standard ?? true;
+  const engines = options.engines === undefined ? ">=22.18.0" : options.engines;
   const root = testRepo(t);
   linkOxlint(root);
   put(
@@ -18,17 +28,14 @@ function repo(
     "oxlint.config.ts",
     'import type {} from "@antelopejs/tooling-configs/oxc/lint";\nexport default {};\n',
   );
-  put(
-    root,
-    "package.json",
-    JSON.stringify({
-      name: "fixture",
-      type: "module",
-      packageManager: "npm@11.0.0",
-      ...(engines ? { engines: { node: engines } } : {}),
-      ...(standard ? { antelopeJs: { docs: { standard: true } } } : {}),
-    }),
-  );
+  const manifest: FixtureManifest = {
+    name: "fixture",
+    type: "module",
+    packageManager: "npm@11.0.0",
+  };
+  if (engines !== null) manifest.engines = { node: engines };
+  if (standard) manifest.antelopeJs = { docs: { standard: true } };
+  put(root, "package.json", JSON.stringify(manifest));
   return root;
 }
 
@@ -80,7 +87,7 @@ test("sync leaves the README alone without the opt-in, without engines, and with
   put(plain, "README.md", "# Fixture\n");
   assert.equal(bin(plain, "sync").status, 0);
   assert.equal(read(plain, "README.md"), "# Fixture\n");
-  const noEngines = repo(t, { engines: undefined });
+  const noEngines = repo(t, { engines: null });
   put(noEngines, "README.md", "# Fixture\n");
   assert.equal(bin(noEngines, "sync").status, 0);
   assert.equal(read(noEngines, "README.md"), "# Fixture\n");
