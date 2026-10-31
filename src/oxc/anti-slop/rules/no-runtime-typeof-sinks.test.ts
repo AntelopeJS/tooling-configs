@@ -87,6 +87,10 @@ tester.run("anti-slop/no-runtime-typeof, message sinks by where their root is de
 			name: "assert a global read outside the namespace that declares a member of that name",
 			code: "namespace Checks { export function assert(message: string): void { void message; } }\nexport function f(value: unknown): void { assert(`got ${typeof value}`); }",
 		},
+		{
+			name: "log on a global while the file assigns a global of another name",
+			code: "other = 1;\nexport function f(value: unknown): void { logger.log(`got ${typeof value}`); }",
+		},
 	],
 	invalid: [
 		{

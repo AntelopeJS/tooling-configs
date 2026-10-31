@@ -2,7 +2,7 @@ import { defineRule } from "@oxlint/plugins";
 
 import type { ESTree, SourceCode } from "@oxlint/plugins";
 
-import { isModuleImport, variableOf } from "../shared/binding-origin.ts";
+import { isSuppliedFromOutside } from "../shared/binding-origin.ts";
 import { enclosingTypeGuard } from "../shared/type-guards.ts";
 
 /** Return whether typeof safely probes for the existence of a possibly absent binding. */
@@ -29,20 +29,6 @@ function rootOf(node: ESTree.Node): Extract<ESTree.Node, { type: "Identifier" }>
 		default:
 			return null;
 	}
-}
-
-/**
- * Return whether a name takes its value from outside this file: a global, or a parameter or module import that nothing here
- * defaults, assigns or redeclares. The kind of the first definition does not say it: a default, an assignment and a later `var`
- * give a parameter a value written here, and an `import x = Namespace.member` is no module import.
- */
-function isSuppliedFromOutside(root: Extract<ESTree.Node, { type: "Identifier" }>, sourceCode: SourceCode): boolean {
-	const variable = variableOf(root, sourceCode);
-	return (
-		variable === null ||
-		(variable.defs.every((definition) => definition.type === "Parameter" || isModuleImport(definition)) &&
-			variable.references.every((reference) => !reference.isWrite()))
-	);
 }
 
 /**
