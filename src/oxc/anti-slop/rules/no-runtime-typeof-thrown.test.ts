@@ -1,13 +1,17 @@
 import { RuleTester } from "oxlint/plugins-dev";
 
+import { BUILTIN_GLOBALS } from "./builtin-globals.ts";
 import { noRuntimeTypeofRule } from "./no-runtime-typeof.ts";
 
-const tester = new RuleTester({ languageOptions: { parserOptions: { lang: "ts" } } });
+const testers = [
+	["", new RuleTester({ languageOptions: { parserOptions: { lang: "ts" } } })],
+	[", with the built-in globals declared as oxlint declares them", new RuleTester({ languageOptions: { parserOptions: { lang: "ts" }, globals: BUILTIN_GLOBALS } })],
+] as const;
 const error = { messageId: "runtimeTypeof" };
 
 const RECORDER = "const recorded = { last: \"\" };\nclass Check {\n  constructor(message: string) { recorded.last = message; }\n}\n";
 
-tester.run("anti-slop/no-runtime-typeof, the class a thrown new is read from", noRuntimeTypeofRule, {
+const cases = {
 	valid: [
 		{
 			name: "a thrown global Error",
@@ -66,5 +70,12 @@ tester.run("anti-slop/no-runtime-typeof, the class a thrown new is read from", n
 			code: "namespace Checks { export function f(value: unknown): never { throw new Error(`got ${typeof value}`); } }",
 			errors: [error],
 		},
+		{
+			name: "a thrown Error whose name a class merged from another namespace block takes",
+			code: `${RECORDER.slice(0, RECORDER.indexOf("class"))}namespace K { export class Error { constructor(message: string) { recorded.last = message; } } }\nnamespace K { export function f(value: string | number): boolean { try { throw new Error(\`kind:\${typeof value}\`); } catch { return recorded.last === "kind:string"; } } }`,
+			errors: [error],
+		},
 	],
-});
+};
+
+for (const [environment, tester] of testers) tester.run(`anti-slop/no-runtime-typeof, the class a thrown new is read from${environment}`, noRuntimeTypeofRule, cases);

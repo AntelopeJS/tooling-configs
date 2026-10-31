@@ -1,13 +1,17 @@
 import { RuleTester } from "oxlint/plugins-dev";
 
+import { BUILTIN_GLOBALS } from "./builtin-globals.ts";
 import { noRuntimeTypeofRule } from "./no-runtime-typeof.ts";
 
-const tester = new RuleTester({ languageOptions: { parserOptions: { lang: "ts" } } });
+const testers = [
+	["", new RuleTester({ languageOptions: { parserOptions: { lang: "ts" } } })],
+	[", with the built-in globals declared as oxlint declares them", new RuleTester({ languageOptions: { parserOptions: { lang: "ts" }, globals: BUILTIN_GLOBALS } })],
+] as const;
 const error = { messageId: "runtimeTypeof" };
 
 const RECORD = "const local = (message: string): void => { if (message !== \"kind:string\") throw new Error(\"not a string\"); };\n";
 
-tester.run("anti-slop/no-runtime-typeof, an outer binding that a merged namespace member may shadow", noRuntimeTypeofRule, {
+const cases = {
 	valid: [
 		{
 			name: "an imported assert read outside the namespace blocks that declare a member of that name",
@@ -45,4 +49,6 @@ tester.run("anti-slop/no-runtime-typeof, an outer binding that a merged namespac
 			errors: [error],
 		},
 	],
-});
+};
+
+for (const [environment, tester] of testers) tester.run(`anti-slop/no-runtime-typeof, an outer binding that a merged namespace member may shadow${environment}`, noRuntimeTypeofRule, cases);
