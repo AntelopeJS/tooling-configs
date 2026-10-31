@@ -40,6 +40,7 @@ interface Environment {
 }
 
 const MAX_ALIAS_DEPTH = 8;
+const OBJECT_PROTOTYPE_KEYS = Object.getOwnPropertyNames(Object.prototype);
 const OPEN_TYPES = new Set(["TSUnknownKeyword", "TSAnyKeyword"]);
 const WIDE_TYPES = new Set([...OPEN_TYPES, "TSObjectKeyword"]);
 
@@ -125,6 +126,16 @@ function parameterType(
       return binding.typeAnnotation?.typeAnnotation ?? undefined;
   }
   return undefined;
+}
+
+/** A key typed `prefix${string}` cannot name an inherited member when no `Object.prototype` member starts with that prefix. */
+function excludesPrototypeKeys(type: ESTree.TSType | undefined): boolean {
+  if (type?.type !== "TSTemplateLiteralType") return false;
+  const prefix = type.quasis[0]?.value.raw;
+  return (
+    prefix !== undefined &&
+    !OBJECT_PROTOTYPE_KEYS.some((key) => key.startsWith(prefix))
+  );
 }
 
 function isOpenRecord(type: ESTree.TSTypeReference): boolean {
@@ -378,11 +389,12 @@ export const noPresenceOnlyTypeGuardRule = defineRule({
         const frame = active().at(-1);
         if (node.operator !== "in" || frame === undefined) return;
         if (node.left.type === "Identifier" && node.left.name === frame.name) {
-          context.report({
-            node,
-            messageId: "inheritedKey",
-            data: { key: frame.name },
-          });
+          if (!excludesPrototypeKeys(frame.parameter))
+            context.report({
+              node,
+              messageId: "inheritedKey",
+              data: { key: frame.name },
+            });
           return;
         }
         if (node.left.type === "Literal" && node.right.type === "Identifier")
