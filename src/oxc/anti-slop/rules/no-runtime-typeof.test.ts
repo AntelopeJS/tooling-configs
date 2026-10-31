@@ -242,6 +242,31 @@ tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 			errors: [error],
 		},
 		{
+			name: "an assert message that is the typeof result alone",
+			code: "export function f(value: unknown, ok: boolean): void { assert(ok, `${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "a thrown template that is the typeof result alone",
+			code: "export function f(value: unknown): void { throw `${typeof value}`; }",
+			errors: [error],
+		},
+		{
+			name: "a thrown message used as a condition",
+			code: "export function f(value: unknown): void { throw `a ${typeof value}` ? one : two; }",
+			errors: [error],
+		},
+		{
+			name: "a log method reached by a computed identifier",
+			code: "export function f(value: unknown): void { ctx[log](`got ${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "a call whose callee is itself a call",
+			code: "export function f(value: unknown): void { factory()(`k:${typeof value}`); }",
+			errors: [error],
+		},
+		{
 			name: "a super call takes the message",
 			code: "export class A extends B { constructor(value: unknown) { super(`k:${typeof value}`); } }",
 			errors: [error],
