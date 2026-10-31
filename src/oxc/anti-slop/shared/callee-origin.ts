@@ -241,7 +241,7 @@ function isFunctionHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen): 
 		case "Identifier": {
 			const binding = bindingOf(node, sourceCode);
 			if (binding.kind === "unplaced") return true;
-			if (binding.kind === "declaration") return binding.type === "FunctionName" || binding.type === "ClassName";
+			if (binding.kind === "declaration") return true;
 			return binding.kind === "variable" && followSources(binding, sourceCode, seen, isFunctionHere);
 		}
 		case "MemberExpression":
@@ -270,7 +270,7 @@ function holdsFunctionHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen
 		case "ObjectExpression":
 			return node.properties.some((property) =>
 				property.type === "SpreadElement"
-					? holdsFunctionHere(property.argument, sourceCode, seen)
+					? isFunctionHere(property.argument, sourceCode, seen)
 					: isFunctionHere(property.value, sourceCode, seen),
 			);
 		case "ArrayExpression":
@@ -278,7 +278,7 @@ function holdsFunctionHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen
 		case "Identifier": {
 			const binding = bindingOf(node, sourceCode);
 			if (binding.kind === "unplaced") return true;
-			if (binding.kind === "declaration") return binding.type === "ClassName";
+			if (binding.kind === "declaration") return binding.type !== "FunctionName";
 			return binding.kind === "variable" && followSources(binding, sourceCode, seen, holdsFunctionHere);
 		}
 		case "MemberExpression":
