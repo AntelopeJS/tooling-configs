@@ -1,7 +1,8 @@
 import { defineRule } from "@oxlint/plugins";
 
-import type { ESTree } from "@oxlint/plugins";
+import type { ESTree, SourceCode } from "@oxlint/plugins";
 
+import { isModuleImport, variableOf } from "../shared/binding-origin.ts";
 import { enclosingTypeGuard } from "../shared/type-guards.ts";
 
 /** Return whether typeof safely probes for the existence of a possibly absent binding. */
@@ -13,11 +14,46 @@ function isExistenceProbe(node: ESTree.UnaryExpression): boolean {
 	return other.type === "Literal" && other.value === "undefined";
 }
 
+/** Return the name a callee is read from, through members and type wrappers, or null when it is read from `this`, a call or anything else. */
+function rootOf(node: ESTree.Node): Extract<ESTree.Node, { type: "Identifier" }> | null {
+	switch (node.type) {
+		case "Identifier":
+			return node;
+		case "MemberExpression":
+			return rootOf(node.object);
+		case "TSNonNullExpression":
+		case "TSAsExpression":
+		case "TSSatisfiesExpression":
+		case "TSTypeAssertion":
+			return rootOf(node.expression);
+		default:
+			return null;
+	}
+}
+
 /**
- * Return whether a callee only raises or records the message it is given: a bare `assert(...)`, or the `log` method of any object.
- * A call to any other name can compare, store or route on its arguments (`assert.equal`, `Set#add`, `emit`), so it is no sink.
+ * Return whether a name takes its value from outside this file: a global, or a parameter or module import that nothing here
+ * defaults, assigns or redeclares. The kind of the first definition does not say it: a default, an assignment and a later `var`
+ * give a parameter a value written here, and an `import x = Namespace.member` is no module import.
  */
-function isMessageSink(callee: ESTree.CallExpression["callee"]): boolean {
+function isSuppliedFromOutside(root: Extract<ESTree.Node, { type: "Identifier" }>, sourceCode: SourceCode): boolean {
+	const variable = variableOf(root, sourceCode);
+	return (
+		variable === null ||
+		(variable.defs.every((definition) => definition.type === "Parameter" || isModuleImport(definition)) &&
+			variable.references.every((reference) => !reference.isWrite()))
+	);
+}
+
+/**
+ * Return whether a callee only raises or records the message it is given: a bare `assert(...)`, or the `log` method of any object,
+ * when its root is a module import, a global or a parameter. A root written in this file (a function, a class, a `const`, `this`, a
+ * parameter this file defaults or assigns) can compare or store the message, so it is no sink. A call to any other name can too
+ * (`assert.equal`, `Set#add`, `emit`).
+ */
+function isMessageSink(callee: ESTree.CallExpression["callee"], sourceCode: SourceCode): boolean {
+	const root = rootOf(callee);
+	if (root === null || !isSuppliedFromOutside(root, sourceCode)) return false;
 	if (callee.type === "Identifier") return callee.name === "assert";
 	return (
 		callee.type === "MemberExpression" &&
@@ -32,12 +68,12 @@ function isMessageSink(callee: ESTree.CallExpression["callee"]): boolean {
  * or handed to the `new` a `throw` throws. Any other call, and a text a function returns, can be tested or used as a key by
  * whatever receives it, so they are not message sinks.
  */
-function endsMessage(parent: ESTree.Node): boolean {
+function endsMessage(parent: ESTree.Node, sourceCode: SourceCode): boolean {
 	switch (parent.type) {
 		case "ThrowStatement":
 			return true;
 		case "CallExpression":
-			return parent.parent.type === "ExpressionStatement" && isMessageSink(parent.callee);
+			return parent.parent.type === "ExpressionStatement" && isMessageSink(parent.callee, sourceCode);
 		case "NewExpression":
 			return parent.parent.type === "ThrowStatement";
 		default:
@@ -49,7 +85,7 @@ function endsMessage(parent: ESTree.Node): boolean {
  * Return whether a `typeof` only fills in the text of a message that a `throw`, an `assert` or a `log` call, or the `new` under a `throw` takes.
  * Such a template holds other text, so no comparison with a `typeof` result matches it, and TypeScript narrows nothing from it.
  */
-function isMessageText(node: ESTree.UnaryExpression): boolean {
+function isMessageText(node: ESTree.UnaryExpression, sourceCode: SourceCode): boolean {
 	let current: ESTree.Node = node.parent;
 	if (current.type !== "TemplateLiteral" || current.quasis.every((quasi) => quasi.value.raw === "")) return false;
 	while (
@@ -58,7 +94,7 @@ function isMessageText(node: ESTree.UnaryExpression): boolean {
 	) {
 		current = current.parent;
 	}
-	return endsMessage(current.parent);
+	return endsMessage(current.parent, sourceCode);
 }
 
 /** Built-ins whose `.constructor` comparison re-implements a `typeof` result. */
@@ -124,7 +160,7 @@ export const noRuntimeTypeofRule = defineRule({
 		}
 		return {
 			UnaryExpression(node) {
-				if (node.operator === "typeof" && !isExistenceProbe(node) && !isMessageText(node) && !allowedInTypeGuard(node)) {
+				if (node.operator === "typeof" && !isExistenceProbe(node) && !isMessageText(node, context.sourceCode) && !allowedInTypeGuard(node)) {
 					context.report({ node, messageId: "runtimeTypeof" });
 				}
 			},

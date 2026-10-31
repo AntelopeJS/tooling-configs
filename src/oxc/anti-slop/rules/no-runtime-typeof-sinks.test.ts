@@ -71,6 +71,14 @@ tester.run("anti-slop/no-runtime-typeof, message sinks by where their root is de
 			name: "log on a parameter in an inner function that shadows a local object",
 			code: "const ctx = { log(message: string): void { void message; } };\nexport function f(ctx: Context, value: unknown): void { ctx.log(`got ${typeof value}`); }",
 		},
+		{
+			name: "log on a parameter under satisfies",
+			code: "export function f(ctx: unknown, value: unknown): void { (ctx satisfies Context).log(`got ${typeof value}`); }",
+		},
+		{
+			name: "log on a parameter under an angle-bracket assertion",
+			code: "export function f(ctx: unknown, value: unknown): void { (<Context>ctx).log(`got ${typeof value}`); }",
+		},
 	],
 	invalid: [
 		{
@@ -206,6 +214,36 @@ tester.run("anti-slop/no-runtime-typeof, message sinks by where their root is de
 		{
 			name: "a log method of a call result on a parameter",
 			code: "export function f(ctx: Context, value: unknown): void { ctx.child().log(`got ${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "a log method of a local under satisfies",
+			code: "const rec = { log(m: string): void { void m; } };\nexport function f(value: unknown): void { (rec satisfies Logger).log(`got ${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "a log method of a local under an angle-bracket assertion",
+			code: "const rec = { log(m: string): void { void m; } };\nexport function f(value: unknown): void { (<Logger>rec).log(`got ${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "a log method of a parameter assigned with a logical assignment",
+			code: "const rec = { log(m: string): void { void m; } };\nexport function f(value: unknown, ctx?: Context): void { ctx ??= rec; ctx.log(`got ${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "a log method of a parameter redeclared by var with no initializer",
+			code: "export function f(ctx: Context, value: unknown): void { var ctx; ctx.log(`got ${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "a log method of a module import assigned a local object",
+			code: "import { logger } from \"./logger\";\nconst rec = { log(m: string): void { void m; } };\nlogger = rec;\nexport function f(value: unknown): void { logger.log(`got ${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "a wrapped parameter called as a function is not an assert call",
+			code: "export function f(assert: unknown, value: unknown): void { (assert as Assert)(true, `got ${typeof value}`); }",
 			errors: [error],
 		},
 	],
