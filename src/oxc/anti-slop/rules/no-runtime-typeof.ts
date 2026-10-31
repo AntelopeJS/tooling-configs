@@ -13,6 +13,54 @@ function isExistenceProbe(node: ESTree.UnaryExpression): boolean {
 	return other.type === "Literal" && other.value === "undefined";
 }
 
+/**
+ * Return whether a callee only raises or records the message it is given: a bare `assert(...)`, or the `log` method of any object.
+ * A call to any other name can compare, store or route on its arguments (`assert.equal`, `Set#add`, `emit`), so it is no sink.
+ */
+function isMessageSink(callee: ESTree.CallExpression["callee"]): boolean {
+	if (callee.type === "Identifier") return callee.name === "assert";
+	return (
+		callee.type === "MemberExpression" &&
+		!callee.computed &&
+		callee.property.type === "Identifier" &&
+		callee.property.name === "log"
+	);
+}
+
+/**
+ * Return whether a message ends at this parent: it is thrown, handed to the `assert` or `log` call that stands as a statement,
+ * or handed to the `new` a `throw` throws. Any other call, and a text a function returns, can be tested or used as a key by
+ * whatever receives it, so they are not message sinks.
+ */
+function endsMessage(parent: ESTree.Node): boolean {
+	switch (parent.type) {
+		case "ThrowStatement":
+			return true;
+		case "CallExpression":
+			return parent.parent.type === "ExpressionStatement" && isMessageSink(parent.callee);
+		case "NewExpression":
+			return parent.parent.type === "ThrowStatement";
+		default:
+			return false;
+	}
+}
+
+/**
+ * Return whether a `typeof` only fills in the text of a message that a `throw`, an `assert` or a `log` call, or the `new` under a `throw` takes.
+ * Such a template holds other text, so no comparison with a `typeof` result matches it, and TypeScript narrows nothing from it.
+ */
+function isMessageText(node: ESTree.UnaryExpression): boolean {
+	let current: ESTree.Node = node.parent;
+	if (current.type !== "TemplateLiteral" || current.quasis.every((quasi) => quasi.value.raw === "")) return false;
+	while (
+		current.parent.type === "TemplateLiteral" ||
+		(current.parent.type === "ConditionalExpression" && current.parent.test !== current)
+	) {
+		current = current.parent;
+	}
+	return endsMessage(current.parent);
+}
+
 /** Built-ins whose `.constructor` comparison re-implements a `typeof` result. */
 const TYPEOF_CONSTRUCTORS = new Set(["String", "Number", "Boolean", "BigInt", "Symbol", "Function"]);
 
@@ -44,7 +92,7 @@ export const noRuntimeTypeofRule = defineRule({
 		type: "problem",
 		docs: {
 			description:
-				"Disallow runtime typeof checks; external values must be decoded into meaningful types at their I/O boundary.",
+				"Disallow runtime typeof checks; external values must be decoded into meaningful types at their I/O boundary. A `typeof` that only fills in the text of a message checks nothing.",
 		},
 		messages: {
 			runtimeTypeof:
@@ -76,7 +124,7 @@ export const noRuntimeTypeofRule = defineRule({
 		}
 		return {
 			UnaryExpression(node) {
-				if (node.operator === "typeof" && !isExistenceProbe(node) && !allowedInTypeGuard(node)) {
+				if (node.operator === "typeof" && !isExistenceProbe(node) && !isMessageText(node) && !allowedInTypeGuard(node)) {
 					context.report({ node, messageId: "runtimeTypeof" });
 				}
 			},
