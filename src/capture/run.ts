@@ -20,21 +20,10 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 import { chromium, type Browser } from "playwright-core";
 import sharp from "sharp";
 
-import {
-  child,
-  object,
-  parseJson,
-  strings,
-  type JsonObject,
-} from "../garden/json.ts";
-import { decode, encodeWebp, openContext, renderScene } from "./browser.ts";
-import { changedRatio, withinTolerance } from "./compare.ts";
-import {
-  type CaptureArgs,
-  demoEnvironment,
-  packageOverrides,
-  workspaceWithOverrides,
-} from "./demo.ts";
+import { child, object, parseJson, type JsonObject } from "../garden/json.ts";
+import { openContext, renderScene } from "./browser.ts";
+import { type CaptureArgs, checkoutSettings, demoEnvironment } from "./demo.ts";
+import { settle } from "./settle.ts";
 import { type CaptureScene, parseScenes, selectScenes } from "./scenes.ts";
 
 const DEMO_URL = "https://github.com/AntelopeJS/template-dms-demo.git";
@@ -78,22 +67,15 @@ function checkoutDemo(root: string, ref: string, into: string): string {
     parseJson(readFileSync(manifestPath, "utf8")),
     "package.json",
   );
-  const pnpm = child(manifest, "pnpm");
-  const overrides = { ...child(pnpm, "overrides"), ...packageOverrides(root) };
-  const patched: JsonObject = { ...manifest, pnpm: { ...pnpm, overrides } };
-  writeFileSync(manifestPath, `${JSON.stringify(patched, null, 2)}\n`);
   const workspacePath = join(demo, "pnpm-workspace.yaml");
-  const workspace = existsSync(workspacePath)
-    ? readFileSync(workspacePath, "utf8")
-    : "";
-  writeFileSync(
-    workspacePath,
-    workspaceWithOverrides(
-      workspace,
-      packageOverrides(root),
-      strings(pnpm, "onlyBuiltDependencies"),
-    ),
+  const settings = checkoutSettings(
+    child(manifest, "pnpm"),
+    existsSync(workspacePath) ? readFileSync(workspacePath, "utf8") : "",
+    root,
   );
+  const patched: JsonObject = { ...manifest, pnpm: settings.pnpm };
+  writeFileSync(manifestPath, `${JSON.stringify(patched, null, 2)}\n`);
+  writeFileSync(workspacePath, settings.workspace);
   run("pnpm", ["install", "--no-frozen-lockfile"], demo);
   return demo;
 }
@@ -145,35 +127,6 @@ function stopDemo(started: ChildProcess): void {
   }
 }
 
-interface Captured {
-  scene: string;
-  output: string;
-  png: Buffer;
-}
-
-/** Writes the capture, or with `check` answers how it differs from the committed file. */
-async function settle(
-  root: string,
-  check: boolean,
-  captured: Captured,
-): Promise<string | undefined> {
-  const target = join(root, captured.output);
-  const webp = await encodeWebp(sharp, captured.png);
-  if (!check) {
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, webp);
-    return undefined;
-  }
-  if (!existsSync(target))
-    return `scene ${captured.scene}: ${captured.output} does not exist; run antelopejs-capture`;
-  const ratio = changedRatio(
-    await decode(sharp, readFileSync(target)),
-    await decode(sharp, webp),
-  );
-  if (withinTolerance(ratio)) return undefined;
-  return `scene ${captured.scene}: ${(ratio * 100).toFixed(2)}% of the pixels differ from ${captured.output}`;
-}
-
 interface Session {
   root: string;
   browser: Browser;
@@ -195,7 +148,7 @@ async function captureAll(
     try {
       const png = await renderScene(context, session.url, scene);
       if (png === undefined || scene.output === undefined) continue;
-      const failure = await settle(session.root, session.check, {
+      const failure = await settle(sharp, session.root, session.check, {
         scene: scene.id,
         output: scene.output,
         png,

@@ -5,10 +5,12 @@ import { parseArgs } from "node:util";
 import { parse, stringify } from "yaml";
 
 import {
+  child,
   flag,
   object,
   optStr,
   parseJson,
+  strings,
   type JsonObject,
 } from "../garden/json.ts";
 
@@ -101,27 +103,23 @@ export function packageOverrides(root: string): JsonObject {
   return overrides;
 }
 
-interface WorkspaceSettings {
-  overrides?: JsonObject;
-  onlyBuiltDependencies?: string[];
-}
-
 /**
  * The demo's `pnpm-workspace.yaml` with the overrides and the build allowances added. pnpm 11 reads
- * these settings only there, while the demo's pinned pnpm 10 still reads them from `package.json`,
- * so the checkout gets both.
+ * these settings only there, and pnpm 10.6 and later prefer it over `package.json`, so a setting the
+ * demo keeps in `package.json` must be in the workspace file too.
  */
 export function workspaceWithOverrides(
   text: string,
   overrides: JsonObject,
   builds: string[],
 ): string {
-  const existing: WorkspaceSettings = text.trim() === "" ? {} : parse(text);
-  const settings: WorkspaceSettings = {
+  const existing =
+    text.trim() === "" ? {} : object(parse(text), "pnpm-workspace.yaml");
+  const settings: JsonObject = {
     ...existing,
-    overrides: { ...existing.overrides, ...overrides },
+    overrides: { ...child(existing, "overrides"), ...overrides },
   };
-  const allowed = [...(existing.onlyBuiltDependencies ?? []), ...builds];
+  const allowed = [...strings(existing, "onlyBuiltDependencies"), ...builds];
   if (allowed.length) settings.onlyBuiltDependencies = [...new Set(allowed)];
   return stringify(settings);
 }
@@ -131,10 +129,23 @@ export interface CheckoutSettings {
   workspace: string;
 }
 
+/**
+ * What a checkout of the demo is patched with: the demo's own `pnpm` field and workspace file, plus the
+ * overrides for the packages of `root`, which win over a demo override of the same name. Both places get
+ * the same settings, because the pnpm that runs the install decides which one it reads.
+ */
 export function checkoutSettings(
-  _pnpm: JsonObject,
-  _workspace: string,
-  _root: string,
+  pnpm: JsonObject,
+  workspace: string,
+  root: string,
 ): CheckoutSettings {
-  throw new Error("not implemented");
+  const overrides = { ...child(pnpm, "overrides"), ...packageOverrides(root) };
+  return {
+    pnpm: { ...pnpm, overrides },
+    workspace: workspaceWithOverrides(
+      workspace,
+      overrides,
+      strings(pnpm, "onlyBuiltDependencies"),
+    ),
+  };
 }
