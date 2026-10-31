@@ -128,12 +128,16 @@ function parameterType(
   return undefined;
 }
 
-/** A key typed `prefix${string}` cannot name an inherited member when no `Object.prototype` member starts with that prefix. */
+/**
+ * A key typed `prefix${string}` cannot name an inherited member when no `Object.prototype` member starts with that prefix.
+ * The prefix is the cooked text TypeScript reads, so `\x63onstructor` is `constructor`. A prefix with no cooked text is open.
+ */
 function excludesPrototypeKeys(type: ESTree.TSType | undefined): boolean {
   if (type?.type !== "TSTemplateLiteralType") return false;
-  const prefix = type.quasis[0]?.value.raw;
+  const prefix = type.quasis[0]?.value.cooked;
   return (
     prefix !== undefined &&
+    prefix !== null &&
     !OBJECT_PROTOTYPE_KEYS.some((key) => key.startsWith(prefix))
   );
 }
