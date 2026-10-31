@@ -1,6 +1,6 @@
 import type { DefinitionType, ESTree, SourceCode, Variable } from "@oxlint/plugins";
 
-import { isModuleImport, isSuppliedFromOutside, variableOf } from "./binding-origin.ts";
+import { isModuleImport, isSuppliedFromOutside, mayBeMergedMember, variableOf } from "./binding-origin.ts";
 
 /**
  * What a name stands for. `unplaced` is a name no scope binds that the file may still declare or write, as a merged namespace
@@ -46,13 +46,14 @@ function isFixedDefinition(definition: Variable["defs"][number]): boolean {
 
 /**
  * Classify a name by every definition and write it has, not by its first definition. It is outside this file only when
- * `isSuppliedFromOutside` places it there. A function, class, namespace or catch binding is a declaration written here.
- * Any other name is a variable read through the expressions written to it.
+ * `isSuppliedFromOutside` places it there. A name no scope binds, or that a merged namespace member may shadow, is unplaced.
+ * A function, class, namespace or catch binding is a declaration written here. Any other name is a variable read through the
+ * expressions written to it.
  */
 function bindingOf(identifier: Name, sourceCode: SourceCode): Binding {
 	if (isSuppliedFromOutside(identifier, sourceCode)) return { kind: "outside" };
 	const variable = variableOf(identifier, sourceCode);
-	if (variable === null) return { kind: "unplaced" };
+	if (variable === null || mayBeMergedMember(identifier, variable)) return { kind: "unplaced" };
 	const declared = variable.defs.find((definition) => !["Variable", "Parameter", "ImportBinding"].includes(definition.type));
 	if (declared !== undefined) return { kind: "declaration", type: declared.type };
 	const writes = variable.references.filter((reference) => reference.isWrite());
@@ -82,7 +83,8 @@ function passThrough(node: ESTree.Node): ESTree.Node | null {
  * wrappers and `const` aliases to the name or literal at the root. An import, a parameter and a global are
  * outside the file. A function, class, namespace, `let`, `var`, `this`, `super`, object literal or anything this
  * walk cannot place is inside it. A call also counts when it is handed an object that holds a function written
- * here, which it can hand back as a method.
+ * here, which it can hand back as a method. A call rooted at a global (`Object.freeze`, `Array.from`, `Promise.resolve`) is
+ * no factory that wraps a schema, so a function handed to it counts too, as a callback it can call.
  */
 function isWrittenHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen): boolean {
 	const inner = passThrough(node);
@@ -101,14 +103,47 @@ function isWrittenHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen): b
 				? thisFieldIsWrittenHere(node, sourceCode, seen)
 				: isWrittenHere(node.object, sourceCode, seen);
 		case "CallExpression":
-		case "NewExpression":
-			return isWrittenHere(node.callee, sourceCode, seen) || node.arguments.some((argument) => holdsFunctionHere(argument, sourceCode, seen));
+		case "NewExpression": {
+			const handsOver = isRootedAtGlobal(node.callee, sourceCode) ? isFunctionHere : holdsFunctionHere;
+			return isWrittenHere(node.callee, sourceCode, seen) || node.arguments.some((argument) => handsOver(argument, sourceCode, seen));
+		}
 		case "ConditionalExpression":
 			return isWrittenHere(node.consequent, sourceCode, seen) || isWrittenHere(node.alternate, sourceCode, seen);
 		case "LogicalExpression":
 			return isWrittenHere(node.left, sourceCode, seen) || isWrittenHere(node.right, sourceCode, seen);
 		default:
 			return true;
+	}
+}
+
+/** Return whether a callee is read from a global no scope binds, through members, calls and type wrappers. */
+function isRootedAtGlobal(node: ESTree.Node, sourceCode: SourceCode): boolean {
+	const inner = passThrough(node);
+	if (inner !== null) return isRootedAtGlobal(inner, sourceCode);
+	switch (node.type) {
+		case "Identifier":
+			return variableOf(node, sourceCode) === null;
+		case "MemberExpression":
+			return isRootedAtGlobal(node.object, sourceCode);
+		case "CallExpression":
+		case "NewExpression":
+			return isRootedAtGlobal(node.callee, sourceCode);
+		default:
+			return false;
+	}
+}
+
+/** Return whether a node is a primitive value, which holds no function: a literal, a template, or the result of a unary, binary or update operator. */
+function isPrimitive(node: ESTree.Node): boolean {
+	switch (node.type) {
+		case "Literal":
+		case "TemplateLiteral":
+		case "UnaryExpression":
+		case "BinaryExpression":
+		case "UpdateExpression":
+			return true;
+		default:
+			return false;
 	}
 }
 
@@ -187,7 +222,10 @@ function declaresParameterProperty(method: ESTree.MethodDefinition, name: string
 	);
 }
 
-/** Return whether a value is a function or class written here, an object of such members, or a member or call that reaches back to this file. */
+/**
+ * Return whether a value is a function or class written here, an object or array of such members, or a member or call that
+ * reaches back to this file. A node this walk does not list is reported unless it is a primitive, so a new syntax cannot clear.
+ */
 function isFunctionHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen): boolean {
 	const inner = passThrough(node);
 	if (inner !== null) return isFunctionHere(inner, sourceCode, seen);
@@ -197,7 +235,12 @@ function isFunctionHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen): 
 		case "ClassExpression":
 			return true;
 		case "ObjectExpression":
+		case "ArrayExpression":
 			return holdsFunctionHere(node, sourceCode, seen);
+		case "ConditionalExpression":
+			return isFunctionHere(node.consequent, sourceCode, seen) || isFunctionHere(node.alternate, sourceCode, seen);
+		case "LogicalExpression":
+			return isFunctionHere(node.left, sourceCode, seen) || isFunctionHere(node.right, sourceCode, seen);
 		case "Identifier": {
 			const binding = bindingOf(node, sourceCode);
 			if (binding.kind === "unplaced") return true;
@@ -209,23 +252,34 @@ function isFunctionHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen): 
 		case "NewExpression":
 			return isWrittenHere(node, sourceCode, seen);
 		default:
-			return false;
+			return !isPrimitive(node);
 	}
 }
 
-/** Return whether an argument is an object, or a class, whose members include a function written here. A function handed over on its own is not: a schema may take a local refinement. */
+/**
+ * Return whether an argument is an object, an array or a class whose members include a function written here, or a `this`.
+ * A function handed over on its own is not: a schema may take a local refinement. A node this walk does not list is reported
+ * unless it is a primitive.
+ */
 function holdsFunctionHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen): boolean {
 	const inner = passThrough(node);
 	if (inner !== null) return holdsFunctionHere(inner, sourceCode, seen);
 	switch (node.type) {
 		case "ClassExpression":
 			return true;
+		case "FunctionExpression":
+		case "ArrowFunctionExpression":
+			return false;
+		case "SpreadElement":
+			return holdsFunctionHere(node.argument, sourceCode, seen);
 		case "ObjectExpression":
 			return node.properties.some((property) =>
 				property.type === "SpreadElement"
 					? holdsFunctionHere(property.argument, sourceCode, seen)
 					: isFunctionHere(property.value, sourceCode, seen),
 			);
+		case "ArrayExpression":
+			return node.elements.some((element) => element !== null && (element.type === "SpreadElement" ? holdsFunctionHere(element.argument, sourceCode, seen) : isFunctionHere(element, sourceCode, seen)));
 		case "Identifier": {
 			const binding = bindingOf(node, sourceCode);
 			if (binding.kind === "unplaced") return true;
@@ -239,7 +293,7 @@ function holdsFunctionHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen
 		case "LogicalExpression":
 			return isWrittenHere(node, sourceCode, seen);
 		default:
-			return false;
+			return !isPrimitive(node);
 	}
 }
 
@@ -262,8 +316,9 @@ function followSources(
 export function calleeIsWrittenHere(call: ESTree.CallExpression, sourceCode: SourceCode): boolean {
 	const { callee } = call;
 	if (callee.type === "Identifier") {
+		if (!isSuppliedFromOutside(callee, sourceCode)) return true;
 		const variable = variableOf(callee, sourceCode);
-		return variable === null ? !isSuppliedFromOutside(callee, sourceCode) : variable.defs.some((definition) => !isModuleImport(definition));
+		return variable !== null && variable.defs.some((definition) => !isModuleImport(definition));
 	}
 	return callee.type === "MemberExpression" && isWrittenHere(callee.object, sourceCode, NO_VARIABLES);
 }
