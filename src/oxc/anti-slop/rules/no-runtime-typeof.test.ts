@@ -155,6 +155,11 @@ tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 			errors: [error],
 		},
 		{
+			name: "an error built from a message and returned, which its caller can read",
+			code: "function failureFor(value: unknown) { return new Error(`received ${typeof value}`); }",
+			errors: [error],
+		},
+		{
 			name: "an error built from a message and rejected through a call",
 			code: "function f(value: unknown) { return Promise.reject(new Error(`received ${typeof value}`)); }",
 			errors: [error],

@@ -13,23 +13,26 @@ function isExistenceProbe(node: ESTree.UnaryExpression): boolean {
 	return other.type === "Literal" && other.value === "undefined";
 }
 
-/** Return whether a value handed to this parent leaves the expression: nothing around it can branch on the value. */
-function endsMessage(value: ESTree.Node, parent: ESTree.Node): boolean {
+/**
+ * Return whether a message ends at this parent: it is thrown, handed to a call that stands as a statement,
+ * or handed to the `new` a `throw` throws. A call whose result is used, and a text a function returns, can be
+ * tested or used as a key by whatever receives it, so they are not message sinks.
+ */
+function endsMessage(parent: ESTree.Node): boolean {
 	switch (parent.type) {
-		case "CallExpression":
-		case "NewExpression":
-		case "ReturnStatement":
 		case "ThrowStatement":
 			return true;
-		case "ArrowFunctionExpression":
-			return parent.body === value;
+		case "CallExpression":
+			return parent.parent.type === "ExpressionStatement";
+		case "NewExpression":
+			return parent.parent.type === "ThrowStatement";
 		default:
 			return false;
 	}
 }
 
 /**
- * Return whether a `typeof` only fills in the text of a message that a call, a `throw` or a `return` takes.
+ * Return whether a `typeof` only fills in the text of a message that a `throw`, or a call or `new` that cannot steer control flow, takes.
  * Such a template holds other text, so no comparison with a `typeof` result matches it, and TypeScript narrows nothing from it.
  */
 function isMessageText(node: ESTree.UnaryExpression): boolean {
@@ -41,7 +44,7 @@ function isMessageText(node: ESTree.UnaryExpression): boolean {
 	) {
 		current = current.parent;
 	}
-	return endsMessage(current, current.parent);
+	return endsMessage(current.parent);
 }
 
 /** Built-ins whose `.constructor` comparison re-implements a `typeof` result. */
