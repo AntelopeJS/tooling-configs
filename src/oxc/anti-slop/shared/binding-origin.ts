@@ -25,6 +25,15 @@ function isModuleImport(definition: Definition): boolean {
 	return node.type !== "TSImportEqualsDeclaration" || node.moduleReference.type === "TSExternalModuleReference";
 }
 
+/**
+ * Return whether a name has no definition in this file: a name no scope binds, or a global the environment declares (`Array`,
+ * `Error`), which oxlint binds to a variable with no definition.
+ */
+export function isGlobalName(identifier: Name, sourceCode: SourceCode): boolean {
+	const variable = variableOf(identifier, sourceCode);
+	return variable === null || variable.defs.length === 0;
+}
+
 /** Return whether a node sits inside another, or is it. */
 function isWithin(node: ESTree.Node, ancestor: ESTree.Node): boolean {
 	for (let at: ESTree.Node | null = node; at !== null; at = at.parent) if (at === ancestor) return true;
@@ -33,14 +42,15 @@ function isWithin(node: ESTree.Node, ancestor: ESTree.Node): boolean {
 
 /**
  * Return whether a name read inside a namespace block may be a member that another block of the same namespace declares.
- * TypeScript merges the blocks of one namespace, and the scope manager does not, so a name that no scope binds, or that is
- * bound outside the block, may resolve to such a member and not to the binding the scope manager found.
+ * TypeScript merges the blocks of one namespace, and the scope manager does not, so a name that has no definition in the file
+ * (see `isGlobalName`), or whose definitions sit outside the block, may resolve to such a member and not to the binding the
+ * scope manager found.
  */
 export function mayBeMergedMember(identifier: Name, variable: Variable | null): boolean {
 	for (let node: ESTree.Node | null = identifier.parent; node !== null; node = node.parent) {
 		if (node.type !== "TSModuleBlock") continue;
 		const block = node;
-		return variable === null || !variable.defs.every((definition) => isWithin(definition.node, block));
+		return variable === null || variable.defs.length === 0 || !variable.defs.every((definition) => isWithin(definition.node, block));
 	}
 	return false;
 }
