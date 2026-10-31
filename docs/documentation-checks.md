@@ -373,10 +373,10 @@ A screenshot scene sets an `id` in kebab-case, a `route`, an `output` path endin
 
 A run does this:
 
-1. Clones AntelopeJS/template-dms-demo at `--demo-ref` (default `main`) into a temporary directory, and sets `pnpm.overrides` there so every published package of the current repository resolves to the working tree. The override is never committed.
+1. Clones AntelopeJS/template-dms-demo at `--demo-ref` (default `main`) into a temporary directory, and sets the pnpm overrides there so every published package of the current repository resolves to the working tree. The demo's own overrides are kept next to them, in `package.json` and in `pnpm-workspace.yaml`, because the pnpm that installs decides which one it reads. Nothing is committed.
 2. Starts an empty MongoDB with `mongodb-memory-server` and the demo's `pnpm run capture:start`, with `HELIO_NOW=2026-06-15T09:00:00Z`, `HELIO_SIMULATORS=off` and `TZ=UTC`.
 3. Opens Chromium dark, at 2x, with the browser clock frozen on `HELIO_NOW`, runs the setup scenes, then captures each scene as lossless WebP.
-4. Writes the files. With `--check` it compares each scene with its committed file and fails above 0.1% changed pixels (pixelmatch), and writes nothing.
+4. Writes the files. A scene whose committed file differs by no more than 0.1% of the pixels (pixelmatch) keeps its committed bytes, so render noise changes no file. With `--check` it compares each scene the same way, fails above 0.1% changed pixels, and writes nothing.
 
 A scene starts when the page fires `load` and its fonts are ready; add a `wait` step for anything the page loads later. A scene that fails to render fails the run, and its id leads the failure line. Set `ANTELOPEJS_CAPTURE_DEMO_URL` to clone the demo from another URL or a local path.
 
