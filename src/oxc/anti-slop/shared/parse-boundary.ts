@@ -1,12 +1,13 @@
 import type { ESTree, Reference, SourceCode, Variable } from "@oxlint/plugins";
 
+import { calleeIsWrittenHere, variableOf } from "./callee-origin.ts";
 import { containsUnknownType } from "./function-parameters.ts";
 import type { RuntimeFunction } from "./type-guards.ts";
 
 /**
  * Callee names that read as a schema or decoder: `parse`, `safeParse` and their `Async` forms, `decode`,
  * `parseX` and `decodeX` helpers in either case, and interface-api-util's `assertValidation`. A name proves
- * nothing alone. A callee declared in the same file never counts (see `isDeclaredHere`), so a chain of wrappers
+ * nothing alone. A callee declared in the same file never counts (see `calleeIsWrittenHere`), so a chain of wrappers
  * cannot close on itself, and an imported callee that takes `unknown` is checked where it is declared.
  */
 const DECODER_NAME = /^(?:assertValidation|safeParse(?:Async)?|[Pp]arse(?:[A-Z]\w*)?|[Dd]ecode(?:[A-Z]\w*)?)$/;
@@ -21,23 +22,6 @@ function calleeName(call: ESTree.CallExpression): string | null {
 		: null;
 }
 
-/** Return the variable an identifier refers to, searching outward from its scope, or null for an unresolved global. */
-function variableOf(identifier: ESTree.IdentifierReference, sourceCode: SourceCode): Variable | null {
-	let scope: ReturnType<SourceCode["getScope"]> | null = sourceCode.getScope(identifier);
-	while (scope !== null) {
-		const variable = scope.set.get(identifier.name);
-		if (variable !== undefined) return variable;
-		scope = scope.upper;
-	}
-	return null;
-}
-
-/** Return whether an identifier is bound by a declaration in this file, an import excepted. */
-function isDeclaredHere(identifier: ESTree.IdentifierReference, sourceCode: SourceCode): boolean {
-	const definition = variableOf(identifier, sourceCode)?.defs[0];
-	return definition !== undefined && definition.type !== "ImportBinding";
-}
-
 /** Return the initializer of the single-name `const` a variable declares. */
 function constInitializerOf(variable: Variable | null): ESTree.Expression | null {
 	const declarator = variable?.defs[0]?.node;
@@ -49,57 +33,13 @@ function constInitializerOf(variable: Variable | null): ESTree.Expression | null
 		: null;
 }
 
-/** Return whether an object literal holds a method or a function-valued property. */
-function hasFunctionProperty(object: ESTree.ObjectExpression): boolean {
-	return object.properties.some(
-		(property) =>
-			property.type === "Property" &&
-			(property.value.type === "FunctionExpression" || property.value.type === "ArrowFunctionExpression"),
-	);
-}
-
-/** Return whether an expression is an object, class or instance whose methods are written in this file. */
-function ownsMethodsHere(object: ESTree.Expression | ESTree.Super, sourceCode: SourceCode): boolean {
-	switch (object.type) {
-		case "ThisExpression":
-		case "Super":
-		case "ObjectExpression":
-		case "ClassExpression":
-			return true;
-		case "NewExpression":
-			return object.callee.type === "Identifier" && isDeclaredHere(object.callee, sourceCode);
-		case "Identifier": {
-			const variable = variableOf(object, sourceCode);
-			if (variable?.defs[0]?.type === "ClassName") return true;
-			const initializer = constInitializerOf(variable);
-			if (initializer?.type === "CallExpression") {
-				return initializer.arguments.some((argument) => argument.type === "ObjectExpression" && hasFunctionProperty(argument));
-			}
-			return (
-				initializer !== null &&
-				(initializer.type === "ObjectExpression" || initializer.type === "ClassExpression" || initializer.type === "NewExpression") &&
-				ownsMethodsHere(initializer, sourceCode)
-			);
-		}
-		default:
-			return false;
-	}
-}
-
-/** Return whether a call goes to a function written in this file: a local binding, or a method of a local object, class or `this`. */
-function callsFunctionDeclaredHere(call: ESTree.CallExpression, sourceCode: SourceCode): boolean {
-	const { callee } = call;
-	if (callee.type === "Identifier") return isDeclaredHere(callee, sourceCode);
-	return callee.type === "MemberExpression" && ownsMethodsHere(callee.object, sourceCode);
-}
-
 /**
  * Return the decoder call whose direct argument a reference is. An `unknown` value is not callable, so it is
  * never the callee. A callee written in this file carries its own row and is no decoder.
  */
 function decoderCallOf(identifier: Reference["identifier"], sourceCode: SourceCode): ESTree.CallExpression | null {
 	const call = identifier.parent;
-	return call.type === "CallExpression" && DECODER_NAME.test(calleeName(call) ?? "") && !callsFunctionDeclaredHere(call, sourceCode)
+	return call.type === "CallExpression" && DECODER_NAME.test(calleeName(call) ?? "") && !calleeIsWrittenHere(call, sourceCode)
 		? call
 		: null;
 }
