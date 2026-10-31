@@ -37,21 +37,19 @@ function bindingOf(identifier: Name, sourceCode: SourceCode): Binding {
 		return { kind: "outside" };
 	}
 	const declarator = definition.node;
-	if (definition.type !== "Variable" || declarator.type !== "VariableDeclarator" || declarator.parent.type !== "VariableDeclaration") {
+	if (declarator.type !== "VariableDeclarator" || declarator.parent.type !== "VariableDeclaration") {
 		return { kind: "declaration", type: definition.type };
 	}
 	return { kind: "variable", variable, initializer: declarator.init, constant: declarator.parent.kind === "const" };
 }
 
-/** Return the expression a type wrapper, a pair of parentheses, an `await` or an optional chain only passes through, or null when the node is none of these. */
+/** Return the expression a type wrapper, an `await` or an optional chain only passes through, or null when the node is none of these. */
 function passThrough(node: ESTree.Node): ESTree.Node | null {
 	switch (node.type) {
 		case "TSAsExpression":
 		case "TSSatisfiesExpression":
 		case "TSNonNullExpression":
 		case "TSTypeAssertion":
-		case "TSInstantiationExpression":
-		case "ParenthesizedExpression":
 		case "ChainExpression":
 			return node.expression;
 		case "AwaitExpression":
@@ -122,7 +120,7 @@ function thisFieldIsWrittenHere(member: ESTree.MemberExpression, sourceCode: Sou
 		if (element.type === "PropertyDefinition" && staticName(element.key, element.computed) === name) {
 			return element.value === null || seen.has(element) || isWrittenHere(element.value, sourceCode, new Set([...seen, element]));
 		}
-		if (element.type === "MethodDefinition" && element.kind === "constructor") {
+		if (element.type === "MethodDefinition") {
 			const handedIn = element.value.params.some(
 				(parameter) =>
 					parameter.type === "TSParameterProperty" &&
@@ -167,8 +165,6 @@ function holdsFunctionHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen
 	switch (node.type) {
 		case "ClassExpression":
 			return true;
-		case "SpreadElement":
-			return holdsFunctionHere(node.argument, sourceCode, seen);
 		case "ObjectExpression":
 			return node.properties.some((property) =>
 				property.type === "SpreadElement"
