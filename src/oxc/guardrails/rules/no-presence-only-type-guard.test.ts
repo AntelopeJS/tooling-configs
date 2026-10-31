@@ -113,6 +113,10 @@ export function hasKey<Table extends object>(
 }`,
       },
       {
+        name: "an escaped prefix that no Object.prototype member starts with",
+        code: "function isHandler(table: object, key: `\\x73tage_${string}`): key is Handler { return key in table; }",
+      },
+      {
         name: "a prefix longer than the Object.prototype member it starts with",
         code: "function isHandler(table: object, key: `toStringX${string}`): key is Handler { return key in table; }",
       },
@@ -166,6 +170,46 @@ export function hasKey<Table extends object>(
       {
         name: "a prefix equal to an Object.prototype member",
         code: "function isHandler(table: object, key: `constructor${string}`): key is Handler { return key in table; }",
+        errors: [inheritedKey],
+      },
+      {
+        name: "a prefix equal to an Object.prototype member, written with a hex escape",
+        code: "function isHandler(table: object, key: `\\x63onstructor${string}`): key is Handler { return key in table; }",
+        errors: [inheritedKey],
+      },
+      {
+        name: "a prefix equal to an Object.prototype member, written with a code point escape",
+        code: "function isHandler(table: object, key: `\\u{63}onstructor${string}`): key is Handler { return key in table; }",
+        errors: [inheritedKey],
+      },
+      {
+        name: "a prefix equal to an Object.prototype member, written with a unicode escape",
+        code: "function isHandler(table: object, key: `\\u0063onstructor${string}`): key is Handler { return key in table; }",
+        errors: [inheritedKey],
+      },
+      {
+        name: "a prefix equal to __proto__, written with an escape",
+        code: "function isHandler(table: object, key: `\\x5f_proto__${string}`): key is Handler { return key in table; }",
+        errors: [inheritedKey],
+      },
+      {
+        name: "a prefix that toString starts with, written with an escape",
+        code: "function isHandler(table: object, key: `\\x74o${string}`): key is Handler { return key in table; }",
+        errors: [inheritedKey],
+      },
+      {
+        name: "a prefix equal to an Object.prototype member, split by a line continuation",
+        code: "function isHandler(table: object, key: `constr\\\nuctor${string}`): key is Handler { return key in table; }",
+        errors: [inheritedKey],
+      },
+      {
+        name: "a prefix that constructor starts with",
+        code: "function isHandler(table: object, key: `c${string}`): key is Handler { return key in table; }",
+        errors: [inheritedKey],
+      },
+      {
+        name: "a prefix equal to __proto__",
+        code: "function isHandler(table: object, key: `__proto__${string}`): key is Handler { return key in table; }",
         errors: [inheritedKey],
       },
       {
