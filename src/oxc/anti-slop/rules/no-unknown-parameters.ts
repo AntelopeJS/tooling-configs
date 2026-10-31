@@ -106,9 +106,10 @@ function isExemptPosition(owner: ParameterOwner, parameter: FunctionParameter): 
   return isRejectFunctionType(owner);
 }
 
-/** Disallow unknown inputs except explicitly named error-cause enrichment. */
+/** The facts of a function the rule did not walk: a signature with no body. */
 const NO_FACTS: FunctionFacts = { returns: [], readsImplicitly: false };
 
+/** Disallow unknown inputs except explicitly named error-cause enrichment. */
 export const noUnknownParametersRule = defineRule({
   meta: {
     type: "problem",
