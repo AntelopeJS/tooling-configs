@@ -1,6 +1,6 @@
 import type { DefinitionType, ESTree, SourceCode, Variable } from "@oxlint/plugins";
 
-import { isSuppliedFromOutside, mayBeMergedMember, variableOf } from "./binding-origin.ts";
+import { isGlobalName, isSuppliedFromOutside, mayBeMergedMember, variableOf } from "./binding-origin.ts";
 
 /**
  * What a name stands for. `unplaced` is a name no scope binds that the file may still declare or write, as a merged namespace
@@ -116,13 +116,13 @@ function isWrittenHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen): b
 	}
 }
 
-/** Return whether a callee is read from a global no scope binds, through members, calls and type wrappers. */
+/** Return whether a callee is read from a global that has no definition in the file, through members, calls and type wrappers. */
 function isRootedAtGlobal(node: ESTree.Node, sourceCode: SourceCode): boolean {
 	const inner = passThrough(node);
 	if (inner !== null) return isRootedAtGlobal(inner, sourceCode);
 	switch (node.type) {
 		case "Identifier":
-			return variableOf(node, sourceCode) === null;
+			return isGlobalName(node, sourceCode);
 		case "MemberExpression":
 			return isRootedAtGlobal(node.object, sourceCode);
 		case "CallExpression":
