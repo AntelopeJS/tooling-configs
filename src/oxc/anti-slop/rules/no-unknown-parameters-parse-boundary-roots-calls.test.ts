@@ -84,6 +84,33 @@ const codec = Object.fromEntries([["schema", settings]]);
 const size = Array.of(1, "a", \`b\`).length;
 function parseUser(value: unknown): User { return settings.parse(value); }`,
 		},
+		{
+			name: "an imported factory handed an object whose values are a conditional and a logical expression of imports",
+			code: `import { define } from "./define";
+import { first, second } from "./schemas";
+const codec = define({ schema: flag ? first : second, fallback: first ?? second });
+function parseUser(value: unknown): User { return codec.schema.parse(value); }`,
+		},
+		{
+			name: "an imported factory handed a negation, an arithmetic result, an update and a template",
+			code: `import { define } from "./define";
+let counter = 0;
+const codec = define({ negative: -1, joined: "a" + "b", next: counter++, label: \`user\` });
+function parseUser(value: unknown): User { return codec.parse(value); }`,
+		},
+		{
+			name: "a schema refined by a function expression",
+			code: `import { z } from "zod";
+const idSchema = z.string().refine(function (id) { return id.length > 0; });
+function parseId(value: unknown): string { return idSchema.parse(value); }`,
+		},
+		{
+			name: "an imported factory handed an imported array spread as arguments and as elements",
+			code: `import { define } from "./define";
+import { defaults } from "./schemas";
+const codec = define(...defaults, [...defaults]);
+function parseUser(value: unknown): User { return codec.parse(value); }`,
+		},
 	],
 	invalid: [
 		{
@@ -266,6 +293,16 @@ const codec = Object.freeze({ parseA, parseB });`,
 		{
 			name: "an imported factory handed an object whose function is the result of an assignment",
 			code: `import { define } from "./define";\n${LOOSE}let chosen = loose;\nconst codec = define({ parseUser: (chosen = loose) });\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an imported factory handed an array that holds a local function",
+			code: `import { define } from "./define";\n${LOOSE}const codec = define([loose]);\n${CALL}codec[0].parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an object built by a callback handed to a global under a type assertion",
+			code: `${LOOSE}const [codec] = (Array as ArrayConstructor).of(1).map(() => ({ parseUser: loose }));\n${CALL}codec!.parseUser(value); }`,
 			errors: [error],
 		},
 	],
