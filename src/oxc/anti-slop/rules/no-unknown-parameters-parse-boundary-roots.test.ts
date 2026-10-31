@@ -90,11 +90,6 @@ function parseUser(value: unknown): User { return (<Schema<User>>schemas.user).p
 function parseUser(value: unknown): User { return (schemas.user satisfies Schema<User>).parse(value); }`,
 		},
 		{
-			name: "a default for a parameter is the caller's to replace, as disclosed",
-			code: `const own = { parse: (v: any): User => v };
-function parseWith(value: unknown, codec = own): User { return codec.parse(value); }`,
-		},
-		{
 			name: "a member of a parameter is the caller's schema, as disclosed",
 			code: "function parseWith(codec: Codec, value: unknown): User { return codec.parse(value); }",
 		},

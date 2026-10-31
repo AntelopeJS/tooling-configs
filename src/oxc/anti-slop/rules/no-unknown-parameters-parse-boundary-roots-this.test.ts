@@ -38,8 +38,59 @@ class Users { readonly #schema = schemas.user; parse(value: unknown): User { ret
 			name: "a schema handed in beside another parameter property",
 			code: "class Users { constructor(private readonly name: string, private readonly schema: Schema) {} parse(value: unknown): User { return this.schema.parse(value); } }",
 		},
+		{
+			name: "an instance method reads the instance field, not the static one of the same name",
+			code: `import { schemas } from "./schemas";
+class Users { static codec = { parse: (v: any): User => v }; codec = schemas.user; parse(value: unknown): User { return this.codec.parse(value); } }`,
+		},
+		{
+			name: "a static method reads the static field, not the instance one of the same name",
+			code: `import { schemas } from "./schemas";
+class Users { codec = { parse: (v: any): User => v }; static codec = schemas.user; static parse(value: unknown): User { return this.codec.parse(value); } }`,
+		},
+		{
+			name: "a static block reads the static field",
+			code: `import { schemas } from "./schemas";
+class Users { codec = { parse: (v: any): User => v }; static codec = schemas.user; static { const read = (value: unknown): User => this.codec.parse(value); read(1); } }`,
+		},
 	],
 	invalid: [
+		{
+			name: "an instance method whose field of that name is local, beside a static import",
+			code: `import { schemas } from "./schemas";
+class Users { static codec = schemas.user; codec = { parse: (v: any): User => v }; parse(value: unknown): User { return this.codec.parse(value); } }`,
+			errors: [error],
+		},
+		{
+			name: "a static method whose static field of that name is local, beside an instance import",
+			code: `import { schemas } from "./schemas";
+class Users { codec = schemas.user; static codec = { parse: (v: any): User => v }; static parse(value: unknown): User { return this.codec.parse(value); } }`,
+			errors: [error],
+		},
+		{
+			name: "a static arrow field reads the static field",
+			code: `import { schemas } from "./schemas";
+class Users { codec = schemas.user; static codec = { parse: (v: any): User => v }; static parse = (value: unknown): User => this.codec.parse(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a static block whose static field of that name is local, beside an instance import",
+			code: `import { schemas } from "./schemas";
+class Users { codec = schemas.user; static codec = { parse: (v: any): User => v }; static { const read = (value: unknown): User => this.codec.parse(value); read(1); } }`,
+			errors: [error],
+		},
+		{
+			name: "an instance method finds only a static field of that name",
+			code: `import { schemas } from "./schemas";
+class Users { static codec = schemas.user; parse(value: unknown): User { return this.codec.parse(value); } }`,
+			errors: [error],
+		},
+		{
+			name: "a static method finds only an instance field of that name",
+			code: `import { schemas } from "./schemas";
+class Users { codec = schemas.user; static parse(value: unknown): User { return this.codec.parse(value); } }`,
+			errors: [error],
+		},
 		{
 			name: "this read in a method of an object literal",
 			code: "const holder = { schema, run(value: unknown): User { return this.schema.parse(value); } };",
