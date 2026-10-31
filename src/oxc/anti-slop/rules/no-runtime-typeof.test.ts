@@ -41,6 +41,18 @@ tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 			name: "mongodb@cf32203 src/implementations/database/utils.ts:63 a thrown message",
 			code: "if (!isString(id)) { throw new Error(`Invalid instance id: expected string, got ${typeof id}`); }",
 		},
+		{
+			name: "a logger's log call records the message",
+			code: "function f(value: unknown) { console.log(`got ${typeof value}`); }",
+		},
+		{
+			name: "a log method of this records the message",
+			code: "class Node { run(value: unknown) { this.log(`got ${typeof value}`); } }",
+		},
+		{
+			name: "an assert call with the message in a branch of a conditional",
+			code: "function f(value: unknown) { assert(ok(value), flag ? `got ${typeof value}` : 'bad'); }",
+		},
 		"throw `received ${typeof value}`;",
 		'const isServer = typeof document === "undefined";',
 		'const hasStorage = typeof localStorage !== "undefined";',
@@ -167,6 +179,81 @@ tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 		{
 			name: "an object built from a message as a statement",
 			code: "function f(value: unknown) { new Lookup(`kind:${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "assert.equal compares the message with a literal",
+			code: 'import assert from "node:assert";\nexport function requireString(value: string | number): void { assert.equal(`kind:${typeof value}`, "kind:string"); }',
+			errors: [error],
+		},
+		{
+			name: "assert.strictEqual compares the message with a literal",
+			code: 'import assert from "node:assert";\nexport function requireStrict(value: string | number): void { assert.strictEqual(`kind:${typeof value}`, "kind:string", "expected a string"); }',
+			errors: [error],
+		},
+		{
+			name: "assert.ok is a member of assert, not assert itself",
+			code: 'import assert from "node:assert";\nexport function f(value: unknown): void { assert.ok(`kind:${typeof value}`); }',
+			errors: [error],
+		},
+		{
+			name: "a Set that records the message and is asked about it later",
+			code: 'const seen = new Set<string>();\nexport function isStringLike(value: string | number): boolean { seen.clear(); seen.add(`kind:${typeof value}`); return seen.has("kind:string"); }',
+			errors: [error],
+		},
+		{
+			name: "an array that records the message and is asked about it later",
+			code: 'export function f(value: unknown): boolean { const kinds: string[] = []; kinds.push(`kind:${typeof value}`); return kinds.includes("kind:string"); }',
+			errors: [error],
+		},
+		{
+			name: "an emitter that routes on the message",
+			code: "export function f(value: unknown): void { bus.emit(`on:${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "a local dispatcher that routes on the message",
+			code: 'function route(kind: string): void { if (kind === "kind:string") go(); }\nexport function f(value: unknown): void { route(`kind:${typeof value}`); }',
+			errors: [error],
+		},
+		{
+			name: "a bare call to any name other than assert is not a message sink",
+			code: "export function f(value: unknown): void { check(`kind:${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "console.warn is not on the list of message sinks",
+			code: "export function f(value: unknown): void { console.warn(`got ${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "a bare log call is not a log method",
+			code: "export function f(value: unknown): void { log(`got ${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "a log method reached by a computed name",
+			code: 'export function f(value: unknown): void { ctx["log"](`got ${typeof value}`); }',
+			errors: [error],
+		},
+		{
+			name: "a log method reached through an optional chain",
+			code: "export function f(value: unknown): void { ctx?.log(`got ${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "a super call takes the message",
+			code: "export class A extends B { constructor(value: unknown) { super(`k:${typeof value}`); } }",
+			errors: [error],
+		},
+		{
+			name: "a tagged template stands as a statement",
+			code: "export function f(value: unknown): void { handle`k:${typeof value}`; }",
+			errors: [error],
+		},
+		{
+			name: "a call under a logical and stands in an expression, not as a statement",
+			code: "export function f(value: unknown): void { handler && handler(`k:${typeof value}`); }",
 			errors: [error],
 		},
 		{
