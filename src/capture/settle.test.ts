@@ -1,11 +1,5 @@
 import assert from "node:assert/strict";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  statSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -13,6 +7,7 @@ import test from "node:test";
 import sharp from "sharp";
 
 import { encodeWebp } from "./browser.ts";
+import { bytesOf, modifiedAt } from "./helpers/files.ts";
 import { settle } from "./settle.ts";
 
 const WIDTH = 1000;
@@ -65,7 +60,7 @@ test("write mode writes a capture that does not exist yet, creating its folder",
   const png = await blank();
   assert.equal(await settle(sharp, directory, false, captured(png)), undefined);
   assert.deepEqual(
-    readFileSync(join(directory, OUTPUT)),
+    bytesOf(join(directory, OUTPUT)),
     await encodeWebp(sharp, png),
   );
 });
@@ -73,14 +68,14 @@ test("write mode writes a capture that does not exist yet, creating its folder",
 test("write mode leaves a capture untouched when the new one differs by no more than 0.1% of the pixels", async (t) => {
   const directory = root(t);
   await settle(sharp, directory, false, captured(await blank()));
-  const before = readFileSync(join(directory, OUTPUT));
-  const modified = statSync(join(directory, OUTPUT)).mtimeMs;
+  const before = bytesOf(join(directory, OUTPUT));
+  const modified = modifiedAt(join(directory, OUTPUT));
   assert.equal(
     await settle(sharp, directory, false, captured(await marked(25, 20))),
     undefined,
   );
-  assert.deepEqual(readFileSync(join(directory, OUTPUT)), before);
-  assert.equal(statSync(join(directory, OUTPUT)).mtimeMs, modified);
+  assert.deepEqual(bytesOf(join(directory, OUTPUT)), before);
+  assert.equal(modifiedAt(join(directory, OUTPUT)), modified);
 });
 
 test("write mode rewrites a capture that differs by more than 0.1% of the pixels", async (t) => {
@@ -92,7 +87,7 @@ test("write mode rewrites a capture that differs by more than 0.1% of the pixels
     undefined,
   );
   assert.deepEqual(
-    readFileSync(join(directory, OUTPUT)),
+    bytesOf(join(directory, OUTPUT)),
     await encodeWebp(sharp, changed),
   );
 });
@@ -103,7 +98,7 @@ test("write mode rewrites a capture whose size changed", async (t) => {
   const taller = await blank(WIDTH, HEIGHT + 1);
   await settle(sharp, directory, false, captured(taller));
   assert.deepEqual(
-    readFileSync(join(directory, OUTPUT)),
+    bytesOf(join(directory, OUTPUT)),
     await encodeWebp(sharp, taller),
   );
 });
@@ -111,23 +106,23 @@ test("write mode rewrites a capture whose size changed", async (t) => {
 test("check mode accepts a difference within the tolerance and writes nothing", async (t) => {
   const directory = root(t);
   await settle(sharp, directory, false, captured(await blank()));
-  const before = readFileSync(join(directory, OUTPUT));
+  const before = bytesOf(join(directory, OUTPUT));
   assert.equal(
     await settle(sharp, directory, true, captured(await marked(25, 20))),
     undefined,
   );
-  assert.deepEqual(readFileSync(join(directory, OUTPUT)), before);
+  assert.deepEqual(bytesOf(join(directory, OUTPUT)), before);
 });
 
 test("check mode names the scene and the share of pixels that differ beyond the tolerance", async (t) => {
   const directory = root(t);
   await settle(sharp, directory, false, captured(await blank()));
-  const before = readFileSync(join(directory, OUTPUT));
+  const before = bytesOf(join(directory, OUTPUT));
   assert.equal(
     await settle(sharp, directory, true, captured(await marked(100, 100))),
     `scene sales: 1.00% of the pixels differ from ${OUTPUT}`,
   );
-  assert.deepEqual(readFileSync(join(directory, OUTPUT)), before);
+  assert.deepEqual(bytesOf(join(directory, OUTPUT)), before);
 });
 
 test("check mode asks for a run when the capture does not exist", async (t) => {
