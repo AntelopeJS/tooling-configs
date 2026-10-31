@@ -336,6 +336,17 @@ const parseB = (value: unknown): Parsed => parseA(value);`,
 			errors: [error, error],
 		},
 		{
+			name: "a method reached through super",
+			code: `class Base { parseB(value: unknown): Parsed { return value as Parsed; } }
+class Child extends Base { parseA(value: unknown): Parsed { return super.parseB(value); } }`,
+			errors: [error, error],
+		},
+		{
+			name: "static methods of a class expression bound to a const",
+			code: `const Parsers = class { static parseA(value: unknown): Parsed { return Parsers.parseB(value); } static parseB(value: unknown): Parsed { return Parsers.parseA(value); } };`,
+			errors: [error, error],
+		},
+		{
 			name: "a method of an instance of a class declared in the same file",
 			code: `class Parsers { parseB(value: unknown): Parsed { return parsers.parseA(value); } parseA(value: unknown): Parsed { return parsers.parseB(value); } }
 const parsers = new Parsers();`,

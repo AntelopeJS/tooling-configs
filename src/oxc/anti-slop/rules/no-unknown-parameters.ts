@@ -7,7 +7,7 @@ import {
   functionParameterBindingName,
   functionParameterTypeAnnotation,
 } from "../shared/function-parameters.ts";
-import { decodesParameterIntoResult } from "../shared/parse-boundary.ts";
+import { decodesParameterIntoResult, type FunctionFacts, IMPLICIT_READERS } from "../shared/parse-boundary.ts";
 import { isRuntimeFunction, type RuntimeFunction } from "../shared/type-guards.ts";
 
 type ParameterOwner =
@@ -107,6 +107,8 @@ function isExemptPosition(owner: ParameterOwner, parameter: FunctionParameter): 
 }
 
 /** Disallow unknown inputs except explicitly named error-cause enrichment. */
+const NO_FACTS: FunctionFacts = { returns: [], readsImplicitly: false };
+
 export const noUnknownParametersRule = defineRule({
   meta: {
     type: "problem",
@@ -120,8 +122,8 @@ export const noUnknownParametersRule = defineRule({
     },
   },
   createOnce(context) {
-    const returnsByFunction: ESTree.ReturnStatement[][] = [];
-    const checkParameters = (node: ParameterOwner, returns: readonly ESTree.ReturnStatement[] = []) => {
+    const open: { returns: ESTree.ReturnStatement[]; readsImplicitly: boolean }[] = [];
+    const checkParameters = (node: ParameterOwner, facts: FunctionFacts = NO_FACTS) => {
       for (const parameter of node.params) {
         const annotation = functionParameterTypeAnnotation(parameter);
         if (annotation === null || annotation === undefined) continue;
@@ -131,7 +133,7 @@ export const noUnknownParametersRule = defineRule({
         if (name === "cause" || isTypePredicateSubject(node, name)) continue;
         if (
           isRuntimeFunction(node) &&
-          decodesParameterIntoResult(node, name, annotation.typeAnnotation, returns, context.sourceCode)
+          decodesParameterIntoResult(node, name, annotation.typeAnnotation, facts, context.sourceCode)
         ) {
           continue;
         }
@@ -144,10 +146,10 @@ export const noUnknownParametersRule = defineRule({
     };
 
     const enterFunction = () => {
-      returnsByFunction.push([]);
+      open.push({ returns: [], readsImplicitly: false });
     };
     const leaveFunction = (node: RuntimeFunction) => {
-      checkParameters(node, returnsByFunction.pop());
+      checkParameters(node, open.pop());
     };
 
     return {
@@ -158,7 +160,11 @@ export const noUnknownParametersRule = defineRule({
       "FunctionDeclaration:exit": leaveFunction,
       "FunctionExpression:exit": leaveFunction,
       ReturnStatement(node) {
-        returnsByFunction.at(-1)?.push(node);
+        open.at(-1)?.returns.push(node);
+      },
+      Identifier(node) {
+        if (!IMPLICIT_READERS.has(node.name)) return;
+        for (const frame of open) frame.readsImplicitly = true;
       },
       TSCallSignatureDeclaration: checkParameters,
       TSConstructSignatureDeclaration: checkParameters,
