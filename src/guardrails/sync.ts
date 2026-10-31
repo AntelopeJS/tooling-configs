@@ -57,6 +57,7 @@ import {
 import { backendBoundaryArtifacts } from "./backend-boundary.ts";
 import { checkEntryOnlyConfiguration } from "./entry-only.ts";
 import { planDocs, type DocsPlan } from "./docs-compat.ts";
+import { planDocsSkills } from "./docs-skills.ts";
 import {
   applyVerifyActions,
   planVerify,
@@ -444,6 +445,8 @@ export function syncRepository(
     manifest,
     profile,
   });
+  const writing = planDocsSkills(root);
+  const actions = [...verify.actions, ...writing.actions];
   const context = repositoryContext(
     root,
     current,
@@ -456,7 +459,7 @@ export function syncRepository(
     .filter((artifact) => artifact.kind === "error")
     .map(({ message }) => message);
   const entryOnly = checkEntryOnlyConfiguration(root);
-  errors.push(...entryOnly.errors, ...verify.errors);
+  errors.push(...entryOnly.errors, ...verify.errors, ...writing.errors);
   const notes = plan.flatMap((artifact) =>
     artifact.kind === "migrated" ? artifact.notes : [],
   );
@@ -486,7 +489,7 @@ export function syncRepository(
   );
   if (!options.check && !errors.length) {
     writeArtifacts(root, writes);
-    applyVerifyActions(root, verify.actions);
+    applyVerifyActions(root, actions);
   }
   const requiredDependencies = ["lefthook", "knip"];
   if (context.typeAware) requiredDependencies.push("oxlint-tsgolint");
@@ -495,10 +498,8 @@ export function syncRepository(
     requiredDependencies.some((name) => !manifest.devDependencies?.[name]);
   return {
     artifacts: plan,
-    paths: errors.length
-      ? []
-      : [...writes, ...verify.actions].map(({ path }) => path),
-    removed: verify.actions
+    paths: errors.length ? [] : [...writes, ...actions].map(({ path }) => path),
+    removed: actions
       .filter((action) => action.kind === "remove")
       .map(({ path }) => path),
     errors,
