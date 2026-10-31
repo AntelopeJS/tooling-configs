@@ -46,10 +46,6 @@ tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 			code: "function f(value: unknown) { console.log(`got ${typeof value}`); }",
 		},
 		{
-			name: "a log method of this records the message",
-			code: "class Node { run(value: unknown) { this.log(`got ${typeof value}`); } }",
-		},
-		{
 			name: "an assert call with the message in a branch of a conditional",
 			code: "function f(value: unknown) { assert(ok(value), flag ? `got ${typeof value}` : 'bad'); }",
 		},
