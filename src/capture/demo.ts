@@ -125,3 +125,16 @@ export function workspaceWithOverrides(
   if (allowed.length) settings.onlyBuiltDependencies = [...new Set(allowed)];
   return stringify(settings);
 }
+
+export interface CheckoutSettings {
+  pnpm: JsonObject;
+  workspace: string;
+}
+
+export function checkoutSettings(
+  _pnpm: JsonObject,
+  _workspace: string,
+  _root: string,
+): CheckoutSettings {
+  throw new Error("not implemented");
+}

@@ -9,6 +9,7 @@ import { parse } from "yaml";
 import type { JsonObject } from "../garden/json.ts";
 
 import {
+  checkoutSettings,
   demoEnvironment,
   packageOverrides,
   parseCaptureArgs,
@@ -108,4 +109,66 @@ test("workspaceWithOverrides starts a workspace file when the demo has none", ()
   assert.deepEqual(parse(workspaceWithOverrides("", { a: "file:/a" }, [])), {
     overrides: { a: "file:/a" },
   });
+});
+
+test("checkoutSettings keeps the demo's own overrides in the workspace file, where pnpm 10.6 and later read them", (t) => {
+  const root = repo(t, { ".": { name: "@antelopejs/mollie" } });
+  const settings = checkoutSettings(
+    {
+      overrides: {
+        "@antelopejs/interface-data-api": "file:.campaign/tgz/a.tgz",
+      },
+      onlyBuiltDependencies: ["sharp"],
+    },
+    "packages:\n  - frontend-vue\n",
+    root,
+  );
+  const expected = {
+    "@antelopejs/interface-data-api": "file:.campaign/tgz/a.tgz",
+    "@antelopejs/mollie": `file:${root}`,
+  };
+  assert.deepEqual(parse(settings.workspace), {
+    packages: ["frontend-vue"],
+    overrides: expected,
+    onlyBuiltDependencies: ["sharp"],
+  });
+  assert.deepEqual(settings.pnpm, {
+    overrides: expected,
+    onlyBuiltDependencies: ["sharp"],
+  });
+});
+
+test("checkoutSettings lets the repository's own package win over a demo override of the same name", (t) => {
+  const root = repo(t, { ".": { name: "@antelopejs/mollie" } });
+  const settings = checkoutSettings(
+    { overrides: { "@antelopejs/mollie": "0.1.0" } },
+    "",
+    root,
+  );
+  assert.deepEqual(parse(settings.workspace), {
+    overrides: { "@antelopejs/mollie": `file:${root}` },
+  });
+  assert.deepEqual(settings.pnpm, {
+    overrides: { "@antelopejs/mollie": `file:${root}` },
+  });
+});
+
+test("checkoutSettings works for a demo without a pnpm field or a workspace file", (t) => {
+  const root = repo(t, { ".": { name: "@antelopejs/mollie" } });
+  const settings = checkoutSettings({}, "", root);
+  assert.deepEqual(parse(settings.workspace), {
+    overrides: { "@antelopejs/mollie": `file:${root}` },
+  });
+});
+
+test("workspaceWithOverrides refuses build allowances that are not a list", () => {
+  assert.throws(
+    () =>
+      workspaceWithOverrides(
+        "onlyBuiltDependencies: sharp\n",
+        { a: "file:/a" },
+        [],
+      ),
+    /onlyBuiltDependencies/,
+  );
 });
