@@ -90,6 +90,10 @@ const SHARED_RULES = [
     "review; no tool",
   ],
   [
+    "Every file type-aware lint reads is listed by a tsconfig",
+    "`antelopejs/require-tsconfig-include`",
+  ],
+  [
     "Params ≤ 5, function ≤ 120 lines, file ≤ 500 lines, depth ≤ 4, complexity ≤ 20",
     "`eslint/max-*`, `eslint/complexity`",
   ],

@@ -37,7 +37,8 @@ const typeAwareTsconfig = JSON.stringify({
 
 /**
  * A real temporary consumer, with only plugin specifiers redirected to the unbuilt source.
- * `typeAware` sets `options.typeAware` as a synced consumer does and writes a strict tsconfig.
+ * `typeAware` sets `options.typeAware` as a synced consumer does and writes a strict tsconfig;
+ * without it the preset gets `typeAware: false`, as a repository without oxlint-tsgolint passes.
  */
 export function lintProject(typeAware = false) {
   const root = mkdtempSync(join(tmpdir(), "antelope-lint-"));
@@ -50,7 +51,7 @@ export function lintProject(typeAware = false) {
     "oxlint.config.ts",
     `
 import { antelopePreset } from ${JSON.stringify(lintModule)};
-const preset = antelopePreset();
+const preset = antelopePreset(${typeAware ? "" : "{ typeAware: false }"});
 for (const layer of preset.extends) {
   if (layer.jsPlugins) layer.jsPlugins = layer.jsPlugins.map((plugin) => ({
     ...plugin,

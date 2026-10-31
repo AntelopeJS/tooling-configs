@@ -2,6 +2,7 @@ import { defineConfig } from "oxlint";
 
 import { findGitRoot, MEASURE_ENV } from "../guardrails/ceilings.ts";
 import { readCarriedCeilings } from "../guardrails/renames.ts";
+import { PRESET_CONFIGS } from "../guardrails/templates.ts";
 import { TEST_FILE_GLOBS } from "./guardrails/shared.ts";
 import { IGNORE_PATTERNS, SYNCED_AGENT_PATTERNS } from "./shared.ts";
 
@@ -191,13 +192,27 @@ export function guardrailsRules() {
   });
 }
 
-function guardrailsPreset() {
+/**
+ * With type-aware lint, a file no tsconfig lists is reported. The root configs
+ * `antelopejs-sync` writes are exempt: a tsconfig that builds `src` reaches them
+ * only through a referenced composite tsconfig, which every repository would need.
+ */
+function guardrailsPreset(typeAware: boolean) {
   return defineConfig({
     extends: [guardrailsRules()],
     jsPlugins: [
       {
         name: "antelopejs",
         specifier: "@antelopejs/tooling-configs/oxc/guardrails",
+      },
+    ],
+    rules: {
+      "antelopejs/require-tsconfig-include": typeAware ? "error" : "off",
+    },
+    overrides: [
+      {
+        files: PRESET_CONFIGS.map(({ path }) => path),
+        rules: { "antelopejs/require-tsconfig-include": "off" },
       },
     ],
   });
@@ -314,7 +329,9 @@ export function antelopePreset(options: AntelopePresetOptions = {}) {
       basePreset(options.importCycles !== false),
       options.typeAware === false ? null : typeAwarePreset(),
       options.antiSlop === false ? null : antiSlopPreset(),
-      options.guardrails === false ? null : guardrailsPreset(),
+      options.guardrails === false
+        ? null
+        : guardrailsPreset(options.typeAware !== false),
       options.complexity === false ? null : complexityPreset(thresholds),
       options.importSorting === true ? importSortingPreset() : null,
     ].filter((config) => config !== null),
