@@ -14,16 +14,30 @@ function isExistenceProbe(node: ESTree.UnaryExpression): boolean {
 }
 
 /**
- * Return whether a message ends at this parent: it is thrown, handed to a call that stands as a statement,
- * or handed to the `new` a `throw` throws. A call whose result is used, and a text a function returns, can be
- * tested or used as a key by whatever receives it, so they are not message sinks.
+ * Return whether a callee only raises or records the message it is given: a bare `assert(...)`, or the `log` method of any object.
+ * A call to any other name can compare, store or route on its arguments (`assert.equal`, `Set#add`, `emit`), so it is no sink.
+ */
+function isMessageSink(callee: ESTree.CallExpression["callee"]): boolean {
+	if (callee.type === "Identifier") return callee.name === "assert";
+	return (
+		callee.type === "MemberExpression" &&
+		!callee.computed &&
+		callee.property.type === "Identifier" &&
+		callee.property.name === "log"
+	);
+}
+
+/**
+ * Return whether a message ends at this parent: it is thrown, handed to the `assert` or `log` call that stands as a statement,
+ * or handed to the `new` a `throw` throws. Any other call, and a text a function returns, can be tested or used as a key by
+ * whatever receives it, so they are not message sinks.
  */
 function endsMessage(parent: ESTree.Node): boolean {
 	switch (parent.type) {
 		case "ThrowStatement":
 			return true;
 		case "CallExpression":
-			return parent.parent.type === "ExpressionStatement";
+			return parent.parent.type === "ExpressionStatement" && isMessageSink(parent.callee);
 		case "NewExpression":
 			return parent.parent.type === "ThrowStatement";
 		default:
@@ -32,7 +46,7 @@ function endsMessage(parent: ESTree.Node): boolean {
 }
 
 /**
- * Return whether a `typeof` only fills in the text of a message that a `throw`, or a call or `new` that cannot steer control flow, takes.
+ * Return whether a `typeof` only fills in the text of a message that a `throw`, an `assert` or a `log` call, or the `new` under a `throw` takes.
  * Such a template holds other text, so no comparison with a `typeof` result matches it, and TypeScript narrows nothing from it.
  */
 function isMessageText(node: ESTree.UnaryExpression): boolean {
