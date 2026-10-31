@@ -1,6 +1,7 @@
 import type { ESTree, Reference, SourceCode, Variable } from "@oxlint/plugins";
 
-import { calleeIsWrittenHere, variableOf } from "./callee-origin.ts";
+import { variableOf } from "./binding-origin.ts";
+import { calleeIsWrittenHere } from "./callee-origin.ts";
 import { containsUnknownType } from "./function-parameters.ts";
 import type { RuntimeFunction } from "./type-guards.ts";
 

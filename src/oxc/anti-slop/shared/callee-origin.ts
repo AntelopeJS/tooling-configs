@@ -1,13 +1,19 @@
 import type { DefinitionType, ESTree, SourceCode, Variable } from "@oxlint/plugins";
 
-/** What a name stands for, read from its first definition. */
+import { isModuleImport, isSuppliedFromOutside, variableOf } from "./binding-origin.ts";
+
+/**
+ * What a name stands for. Its value comes from the expressions the file writes to it (its initializer, a default, an
+ * assignment, the target of an `import x = Namespace.member`), plus a caller or module when it is a parameter or import.
+ * `constant` is false when some write has no expression to follow, or the declaration is not a `const` with an initializer.
+ */
 type Binding =
 	| { readonly kind: "outside" }
 	| { readonly kind: "declaration"; readonly type: DefinitionType }
 	| {
 			readonly kind: "variable";
 			readonly variable: Variable;
-			readonly initializer: ESTree.Expression | null;
+			readonly sources: readonly ESTree.Node[];
 			readonly constant: boolean;
 	  };
 
@@ -18,29 +24,42 @@ type Name = Extract<ESTree.Node, { type: "Identifier" }>;
 
 const NO_VARIABLES: Seen = new Set();
 
-/** Return the variable an identifier refers to, searching outward from its scope, or null for an unresolved global. */
-export function variableOf(identifier: Name, sourceCode: SourceCode): Variable | null {
-	let scope: ReturnType<SourceCode["getScope"]> | null = sourceCode.getScope(identifier);
-	while (scope !== null) {
-		const variable = scope.set.get(identifier.name);
-		if (variable !== undefined) return variable;
-		scope = scope.upper;
-	}
-	return null;
+/** Return the name an `import x = Outer.Inner.member` reads first, the one the file must declare. */
+function entityRoot(name: ESTree.TSTypeName): ESTree.Node {
+	return name.type === "TSQualifiedName" ? entityRoot(name.left) : name;
 }
 
-/** Classify a name: outside this file (an import, a parameter or a global), a declaration written here, or a variable with the initializer it was declared with. */
+/** Return the expression a definition gives its name, or null when it gives none: a parameter, a module import, a loop variable. */
+function definitionSource(definition: Variable["defs"][number]): ESTree.Node | null {
+	const { node } = definition;
+	if (definition.type === "ImportBinding") {
+		if (node.type !== "TSImportEqualsDeclaration") return null;
+		return node.moduleReference.type === "TSExternalModuleReference" ? null : entityRoot(node.moduleReference);
+	}
+	return definition.type === "Variable" && node.type === "VariableDeclarator" ? node.init : null;
+}
+
+/** Return whether a definition is a `const` with an initializer, a parameter or an import, so that nothing but a write reference changes its value. */
+function isFixedDefinition(definition: Variable["defs"][number]): boolean {
+	const { node } = definition;
+	if (definition.type !== "Variable") return true;
+	return node.type === "VariableDeclarator" && node.init !== null && node.parent.type === "VariableDeclaration" && node.parent.kind === "const";
+}
+
+/**
+ * Classify a name by every definition and write it has, not by its first definition. It is outside this file when
+ * nothing here gives it a value. A function, class, namespace or catch binding is a declaration written here. Any other name is
+ * a variable read through the expressions written to it.
+ */
 function bindingOf(identifier: Name, sourceCode: SourceCode): Binding {
 	const variable = variableOf(identifier, sourceCode);
-	const definition = variable?.defs[0];
-	if (variable === null || definition === undefined || definition.type === "ImportBinding" || definition.type === "Parameter") {
-		return { kind: "outside" };
-	}
-	const declarator = definition.node;
-	if (declarator.type !== "VariableDeclarator" || declarator.parent.type !== "VariableDeclaration") {
-		return { kind: "declaration", type: definition.type };
-	}
-	return { kind: "variable", variable, initializer: declarator.init, constant: declarator.parent.kind === "const" };
+	if (variable === null || isSuppliedFromOutside(variable)) return { kind: "outside" };
+	const declared = variable.defs.find((definition) => !["Variable", "Parameter", "ImportBinding"].includes(definition.type));
+	if (declared !== undefined) return { kind: "declaration", type: declared.type };
+	const writes = variable.references.filter((reference) => reference.isWrite());
+	const sources = [...variable.defs.map(definitionSource), ...writes.map((write) => write.writeExpr)].filter((source) => source !== null);
+	const constant = variable.defs.every(isFixedDefinition) && writes.every((write) => write.writeExpr !== null) && sources.length > 0;
+	return { kind: "variable", variable, sources: [...new Set(sources)], constant };
 }
 
 /** Return the expression a type wrapper, an `await` or an optional chain only passes through, or null when the node is none of these. */
@@ -74,8 +93,7 @@ function isWrittenHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen): b
 			const binding = bindingOf(node, sourceCode);
 			if (binding.kind === "outside") return false;
 			if (binding.kind === "declaration") return true;
-			const { initializer, constant, variable } = binding;
-			return !constant || initializer === null || seen.has(variable) || isWrittenHere(initializer, sourceCode, new Set([...seen, variable]));
+			return !binding.constant || seen.has(binding.variable) || followSources(binding, sourceCode, seen, isWrittenHere);
 		}
 		case "ImportExpression":
 			return false;
@@ -107,6 +125,17 @@ function enclosingClass(node: ESTree.Node): ESTree.Class | null {
 	return current;
 }
 
+/** Return whether `this` in a node is the class itself: the node is written in a static member or a static block. */
+function isStaticContext(node: ESTree.Node): boolean {
+	let current: ESTree.Node | null = node.parent;
+	while (current !== null) {
+		if (current.type === "StaticBlock") return true;
+		if (current.type === "MethodDefinition" || current.type === "PropertyDefinition" || current.type === "AccessorProperty") return current.static;
+		current = current.parent;
+	}
+	return false;
+}
+
 /**
  * Return whether `this.field` reaches back to code written here. A field with an initializer is read through
  * it. A constructor parameter property is handed in by the caller, as a parameter is. A field declared without
@@ -117,7 +146,7 @@ function thisFieldIsWrittenHere(member: ESTree.MemberExpression, sourceCode: Sou
 	const name = staticName(member.property, member.computed);
 	if (klass === null || name === null) return true;
 	for (const element of klass.body.body) {
-		if (element.type === "PropertyDefinition" && staticName(element.key, element.computed) === name) {
+		if (element.type === "PropertyDefinition" && element.static === isStaticContext(member) && staticName(element.key, element.computed) === name) {
 			return element.value === null || seen.has(element) || isWrittenHere(element.value, sourceCode, new Set([...seen, element]));
 		}
 		if (element.type === "MethodDefinition") {
@@ -147,7 +176,7 @@ function isFunctionHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen): 
 		case "Identifier": {
 			const binding = bindingOf(node, sourceCode);
 			if (binding.kind === "declaration") return binding.type === "FunctionName" || binding.type === "ClassName";
-			return binding.kind === "variable" && followInitializer(binding, sourceCode, seen, isFunctionHere);
+			return binding.kind === "variable" && followSources(binding, sourceCode, seen, isFunctionHere);
 		}
 		case "MemberExpression":
 		case "CallExpression":
@@ -174,7 +203,7 @@ function holdsFunctionHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen
 		case "Identifier": {
 			const binding = bindingOf(node, sourceCode);
 			if (binding.kind === "declaration") return binding.type === "ClassName";
-			return binding.kind === "variable" && followInitializer(binding, sourceCode, seen, holdsFunctionHere);
+			return binding.kind === "variable" && followSources(binding, sourceCode, seen, holdsFunctionHere);
 		}
 		case "MemberExpression":
 		case "CallExpression":
@@ -187,27 +216,26 @@ function holdsFunctionHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen
 	}
 }
 
-/** Apply a test to the initializer of a variable, once per variable on the path, and answer false for a variable with none. */
-function followInitializer(
+/** Apply a test to each expression written to a variable, once per variable on the path, and answer false for a variable written nothing. */
+function followSources(
 	binding: Extract<Binding, { kind: "variable" }>,
 	sourceCode: SourceCode,
 	seen: Seen,
 	test: (node: ESTree.Node, sourceCode: SourceCode, seen: Seen) => boolean,
 ): boolean {
-	const { initializer, variable } = binding;
-	return initializer !== null && !seen.has(variable) && test(initializer, sourceCode, new Set([...seen, variable]));
+	const { sources, variable } = binding;
+	return !seen.has(variable) && sources.some((source) => test(source, sourceCode, new Set([...seen, variable])));
 }
 
 /**
  * Return whether a call goes to code written in this file. A bare callee counts when any declaration in the file
- * binds it, a parameter included. A member callee counts when the value it is read from reaches back to this
+ * binds it, a parameter and an `import x = Namespace.member` included, and only a module import is outside. A member callee counts when the value it is read from reaches back to this
  * file, so a member of a parameter, which the caller supplies, does not.
  */
 export function calleeIsWrittenHere(call: ESTree.CallExpression, sourceCode: SourceCode): boolean {
 	const { callee } = call;
 	if (callee.type === "Identifier") {
-		const definition = variableOf(callee, sourceCode)?.defs[0];
-		return definition !== undefined && definition.type !== "ImportBinding";
+		return variableOf(callee, sourceCode)?.defs.some((definition) => !isModuleImport(definition)) ?? false;
 	}
 	return callee.type === "MemberExpression" && isWrittenHere(callee.object, sourceCode, NO_VARIABLES);
 }

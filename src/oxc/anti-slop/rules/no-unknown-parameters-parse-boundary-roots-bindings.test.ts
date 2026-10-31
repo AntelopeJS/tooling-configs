@@ -58,6 +58,20 @@ function parseUser(value: unknown): User { return user.parse(value); }`,
 import alias = schemas;
 function parseUser(value: unknown): User { return alias.user.parse(value); }`,
 		},
+		{
+			name: "a parameter assigned from another parameter",
+			code: `function parseWith(value: unknown, first: Codec, codec: Codec): User { codec = first; return codec.parse(value); }`,
+		},
+		{
+			name: "an import-equals alias of a require",
+			code: `import loaded = require("./loaded");
+import alias = loaded.codec;
+function parseUser(value: unknown): User { return alias.parse(value); }`,
+		},
+		{
+			name: "an inner parameter that shadows a local object",
+			code: `${OWN}function parseWith(value: unknown, own: Codec): P { return own.parse(value); }`,
+		},
 	],
 	invalid: [
 		{
@@ -182,7 +196,7 @@ namespace Second {
 }
 import FirstAlias = First;
 import SecondAlias = Second;`,
-			errors: [error],
+			errors: [error, error],
 		},
 		{
 			name: "an import-equals alias of a function in a local namespace, called bare",
@@ -214,6 +228,44 @@ namespace Outer {
 }
 import inner = Outer.Inner;
 export function parseUser(value: unknown): P { return inner.codec.parse(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a parameter assigned through destructuring assignment",
+			code: `${OWN}function parseWith(value: unknown, codec: Codec): P { [codec] = [own]; return codec.parse(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a parameter assigned in a branch",
+			code: `${OWN}function parseWith(value: unknown, codec: Codec, flag: boolean): P { if (flag) { codec = own; } return codec.parse(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a default that reads an earlier default",
+			code: `${OWN}function parseWith(value: unknown, first = own, codec = first): P { return codec.parse(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a catch binding destructured with a local default",
+			code: `${OWN}function parseWith(value: unknown): P { try { throw 1; } catch ({ codec = own }) { return codec.parse(value); } }`,
+			errors: [error],
+		},
+		{
+			name: "an import-equals alias of a class merged with a namespace",
+			code: `interface P { readonly id: string }
+class K { static parse(v: any): P { return v; } }
+namespace K { export const x = 1; }
+import Alias = K;
+export function parseUser(value: unknown): P { return Alias.parse(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a const alias of an import-equals alias of a local namespace",
+			code: `interface P { readonly id: string }
+namespace N { export const codec = { parse: (v: any): P => v }; }
+import A = N.codec;
+const B = A;
+export function parseUser(value: unknown): P { return B.parse(value); }`,
 			errors: [error],
 		},
 	],
