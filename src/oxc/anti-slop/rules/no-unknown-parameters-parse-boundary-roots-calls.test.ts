@@ -377,6 +377,11 @@ const codec = Object.freeze({ parseA, parseB });`,
 			errors: [error],
 		},
 		{
+			name: "an imported factory handed a const object that holds a local function",
+			code: `import { define } from "./define";\n${LOOSE}const holder = { parseUser: loose };\nconst codec = define(holder);\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
 			name: "an enum frozen on a global",
 			code: `interface P { readonly id: string }\nfunction loose(value: any): P { return value; }\nenum Kind { A }\nexport function parseUser(value: unknown): P { return Object.freeze(Kind).parseUser(value); }`,
 			errors: [error],
