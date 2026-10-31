@@ -79,8 +79,51 @@ tester.run("anti-slop/no-runtime-typeof, message sinks by where their root is de
 			name: "log on a parameter under an angle-bracket assertion",
 			code: "export function f(ctx: unknown, value: unknown): void { (<Context>ctx).log(`got ${typeof value}`); }",
 		},
+		{
+			name: "log on a global declared and never written",
+			code: "declare global { var logger: Logger; }\nexport function f(value: unknown): void { logger.log(`got ${typeof value}`); }",
+		},
+		{
+			name: "assert a global read outside the namespace that declares a member of that name",
+			code: "namespace Checks { export function assert(message: string): void { void message; } }\nexport function f(value: unknown): void { assert(`got ${typeof value}`); }",
+		},
 	],
 	invalid: [
+		{
+			name: "an assert merged from another namespace block",
+			code: "export namespace Kinds {\n  export function assert(message: string): void {\n    if (message !== \"kind:string\") throw new Error(\"not a string\");\n  }\n}\nexport namespace Kinds {\n  export function requireString(value: string | number): void {\n    assert(`kind:${typeof value}`);\n  }\n}",
+			errors: [error],
+		},
+		{
+			name: "an assert merged from another block of the legacy module spelling",
+			code: "module Kinds { export function assert(message: string): void { void message; } }\nmodule Kinds { export function requireString(value: string | number): void { assert(`kind:${typeof value}`); } }",
+			errors: [error],
+		},
+		{
+			name: "a log method of an object merged from another namespace block",
+			code: "namespace Sinks { export const recorder = { log(m: string): void { void m; } }; }\nnamespace Sinks { export function f(value: unknown): void { recorder.log(`got ${typeof value}`); } }",
+			errors: [error],
+		},
+		{
+			name: "a global log inside a namespace, which may be a member of another block",
+			code: "namespace Checks { export function f(value: unknown): void { console.log(`got ${typeof value}`); } }",
+			errors: [error],
+		},
+		{
+			name: "console assigned a local object",
+			code: "const recorded = { last: \"\" };\nconst original = console;\nconsole = { ...original, log(message: string): void { recorded.last = message; } };\nexport function isString(value: string | number): boolean {\n  console.log(`kind:${typeof value}`);\n  return recorded.last === \"kind:string\";\n}",
+			errors: [error],
+		},
+		{
+			name: "a global assert assigned in a function",
+			code: "function install(): void { assert = (message: string): void => { void message; }; }\nexport function f(value: unknown): void { assert(`got ${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "a declared global assert assigned in the file",
+			code: "declare global { var assert: (message: string) => void; }\nassert = (message: string): void => { void message; };\nexport function f(value: unknown): void { assert(`got ${typeof value}`); }",
+			errors: [error],
+		},
 		{
 			name: "a local function named assert that branches on the text",
 			code: "function assert(message: string): void {\n  if (message !== \"kind:string\") throw new Error(\"not a string\");\n}\nexport function requireString(value: string | number): void {\n  assert(`kind:${typeof value}`);\n}",
