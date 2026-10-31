@@ -153,10 +153,11 @@ function lint(root: string): string[] {
     .sort();
 }
 
-test("the synced oxlint.config.ts skips the pack's .claude/skills link and lints the repository's own verify.config.ts with resolved types (interface-auth#30, interface-payment#11)", (t) => {
+test("the synced oxlint.config.ts skips the pack's .claude/skills link, lints the repository's own verify.config.ts with resolved types (interface-auth#30, interface-payment#11), and reports the repository's files outside every tsconfig but not the root configs sync writes", (t) => {
   const root = syncedConsumer();
   t.after(() => rmSync(root, { recursive: true, force: true }));
   assert.deepEqual(lint(root), [
+    ".agents/probes/probe.ts:1 antelopejs(require-tsconfig-include)",
     ".agents/probes/probe.ts:2 eslint(no-debugger)",
     ".agents/skills/verify-interface/verify.config.ts:10 typescript(no-unsafe-assignment)",
   ]);
