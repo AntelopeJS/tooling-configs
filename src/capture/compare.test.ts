@@ -13,7 +13,8 @@ test("two equal images changed nothing", () => {
 
 test("the ratio is the share of pixels that differ", () => {
   const changed = image(100, 100, 40);
-  for (let pixel = 0; pixel < 10; pixel += 1) changed.data.fill(255, pixel * 4, pixel * 4 + 4);
+  for (let pixel = 0; pixel < 10; pixel += 1)
+    changed.data.fill(255, pixel * 4, pixel * 4 + 4);
   assert.equal(changedRatio(image(100, 100, 40), changed), 10 / 10_000);
 });
 

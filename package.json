@@ -23,6 +23,7 @@
   "bin": {
     "antelopejs-api-diff": "./dist/bin/api-diff.mjs",
     "antelopejs-body-check": "./dist/bin/body-check.mjs",
+    "antelopejs-capture": "./dist/bin/capture.mjs",
     "antelopejs-check-interface-ranges": "./dist/bin/check-interface-ranges.mjs",
     "antelopejs-check-size": "./dist/bin/check-size.mjs",
     "antelopejs-checks": "./dist/bin/checks.mjs",
@@ -45,7 +46,8 @@
     "./knip": "./dist/knip.mjs",
     "./eslint": "./dist/eslint.mjs",
     "./verify": "./dist/verify/index.mjs",
-    "./formal": "./dist/formal/index.mjs"
+    "./formal": "./dist/formal/index.mjs",
+    "./capture": "./dist/capture/index.mjs"
   },
   "publishConfig": {
     "access": "public",
@@ -83,11 +85,15 @@
     "eslint-plugin-perfectionist": "^5.11.0",
     "knip": "^6.34.0",
     "lefthook": "^2.2.2",
+    "mongodb-memory-server": "^11.3.0",
     "oxfmt": "^0.66.0",
     "oxlint": "1.81.0",
     "oxlint-tsgolint": "^7.0.2001",
+    "pixelmatch": "^8.0.0",
+    "playwright-core": "^1.56.1",
     "release-it": "^19.2.4",
     "release-it-changelogen": "^0.1.0",
+    "sharp": "^0.35.5",
     "tsdown": "^0.22.14",
     "vite": "^8.3.4"
   },
@@ -95,8 +101,12 @@
     "@nuxt/eslint-config": ">=1.2.0",
     "eslint-plugin-perfectionist": ">=5.0.0",
     "knip": ">=6.0.0",
+    "mongodb-memory-server": ">=10.0.0",
     "oxfmt": "^0.66.0",
-    "oxlint": "1.81.0"
+    "oxlint": "1.81.0",
+    "pixelmatch": ">=7.0.0",
+    "playwright-core": ">=1.56.0",
+    "sharp": ">=0.34.0"
   },
   "peerDependenciesMeta": {
     "knip": {
@@ -112,6 +122,18 @@
       "optional": true
     },
     "eslint-plugin-perfectionist": {
+      "optional": true
+    },
+    "mongodb-memory-server": {
+      "optional": true
+    },
+    "pixelmatch": {
+      "optional": true
+    },
+    "playwright-core": {
+      "optional": true
+    },
+    "sharp": {
       "optional": true
     }
   },

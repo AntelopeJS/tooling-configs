@@ -340,6 +340,48 @@ The style has one Vale rule per checked unslop rule (`Unslop07.yml` for rule 7),
 
 `actions/docs/vale.test.mjs` runs a Vale binary over a seeded sentence for each rule and over clean prose. `actions/docs/install-vale.sh <directory>` downloads the pinned Vale release, checks its SHA-256 and prints the binary path. The tests read it from `VALE_BIN`, or from `PATH`. They skip when Vale is missing, except in CI, where a missing Vale fails them.
 
+## Capture screenshots
+
+`antelopejs-capture [--check] [--scene <id>] [--demo-ref <ref>]` regenerates the screenshots a docs repository references, from the scenes in `docs/captures.ts`. It prints failures only.
+
+```ts
+import { defineScenes } from "@antelopejs/tooling-configs/capture";
+
+export default defineScenes([
+  {
+    id: "onboarding",
+    route: "/",
+    setup: true,
+    steps: [
+      {
+        action: "fill",
+        selector: "input[name=email]",
+        value: "admin@helio.example",
+      },
+    ],
+  },
+  {
+    id: "dashboard-overview",
+    route: "/home",
+    crop: "main",
+    output: "docs/images/dashboard-overview.webp",
+  },
+]);
+```
+
+A screenshot scene sets an `id` in kebab-case, a `route`, an `output` path ending in `.webp`, and optionally a `viewport` (default 1440 by 900), `steps` and a `crop` selector. A setup scene sets `setup: true`, takes no `output`, and runs once before any screenshot. The steps are `click`, `fill`, `press` and `wait`.
+
+A run does this:
+
+1. Clones AntelopeJS/template-dms-demo at `--demo-ref` (default `main`) into a temporary directory, and sets `pnpm.overrides` there so every published package of the current repository resolves to the working tree. The override is never committed.
+2. Starts an empty MongoDB with `mongodb-memory-server` and the demo's `pnpm run capture:start`, with `HELIO_NOW=2026-06-15T09:00:00Z`, `HELIO_SIMULATORS=off` and `TZ=UTC`.
+3. Opens Chromium dark, at 2x, with the browser clock frozen on `HELIO_NOW`, runs the setup scenes, then captures each scene as lossless WebP.
+4. Writes the files. With `--check` it compares each scene with its committed file and fails above 0.1% changed pixels (pixelmatch), and writes nothing.
+
+A scene starts when the page fires `load` and its fonts are ready; add a `wait` step for anything the page loads later. A scene that fails to render fails the run, and its id leads the failure line. Set `ANTELOPEJS_CAPTURE_DEMO_URL` to clone the demo from another URL or a local path.
+
+The repository installs `playwright-core`, `sharp`, `pixelmatch` and `mongodb-memory-server` as development dependencies, and Chromium with `pnpm exec playwright-core install chromium`. They are optional peers of this package, so a repository without captures installs none of them. Because the demo, its MongoDB and its ports are a shared machine resource, take `flock ~/.cache/campaign/capture.lock` around a run on a shared machine.
+
 ## Run locally at the same revision
 
 Run from the consumer checkout root, replacing the SHA with the one used in CI:

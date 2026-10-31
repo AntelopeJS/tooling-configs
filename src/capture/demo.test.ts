@@ -13,6 +13,7 @@ import {
   packageOverrides,
   parseCaptureArgs,
   DEMO_NOW,
+  workspaceWithOverrides,
 } from "./demo.ts";
 
 function repo(t: test.TestContext, manifests: JsonObject): string {
