@@ -326,6 +326,61 @@ const codec = Object.freeze({ parseA, parseB });`,
 			code: `import { define } from "./define";\ninterface P { readonly id: string }\nconst codec = define(class { static parseUser(v: any): P { return v; } });\n${CALL}codec.parseUser(value); }`,
 			errors: [error],
 		},
+		{
+			name: "a local namespace frozen on a global",
+			code: `interface P { readonly id: string }\nfunction loose(value: any): P { return value; }\nnamespace Ns { export function parseUser(v: any): P { return v; } }\nexport function parseUser(value: unknown): P { return Object.freeze(Ns).parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a const alias of a frozen local namespace",
+			code: `interface P { readonly id: string }\nfunction loose(value: any): P { return value; }\nnamespace Ns { export function parseUser(v: any): P { return v; } }\nconst codec = Object.freeze(Ns);\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a local namespace handed to Array.of",
+			code: `interface P { readonly id: string }\nfunction loose(value: any): P { return value; }\nnamespace Ns { export function parseUser(v: any): P { return v; } }\nconst [codec] = Array.of(Ns);\n${CALL}codec!.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an enum merged with a namespace, frozen on a global",
+			code: `interface P { readonly id: string }\nfunction loose(value: any): P { return value; }\nnamespace Ns { export function parseUser(v: any): P { return v; } }\nenum Kind { A }\nnamespace Kind { export function parseUser(v: any): P { return v; } }\n${CALL}Object.freeze(Kind).parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an import-equals alias of a local namespace, frozen on a global",
+			code: `interface P { readonly id: string }\nfunction loose(value: any): P { return value; }\nnamespace Ns { export function parseUser(v: any): P { return v; } }\nimport Alias = Ns;\n${CALL}Object.freeze(Alias).parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an imported factory handed a local namespace",
+			code: `import { define } from "./define";\ninterface P { readonly id: string }\nfunction loose(value: any): P { return value; }\nnamespace Ns { export function parseUser(v: any): P { return v; } }\nconst codec = define(Ns);\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an imported factory handed an object that holds a local namespace",
+			code: `import { define } from "./define";\ninterface P { readonly id: string }\nfunction loose(value: any): P { return value; }\nnamespace Ns { export function parseUser(v: any): P { return v; } }\nconst codec = define({ inner: Ns });\n${CALL}codec.inner.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an imported factory handed a spread of a local namespace",
+			code: `import { define } from "./define";\ninterface P { readonly id: string }\nfunction loose(value: any): P { return value; }\nnamespace Ns { export function parseUser(v: any): P { return v; } }\nconst codec = define({ ...Ns });\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a frozen spread of a local function that carries a member",
+			code: `interface P { readonly id: string }\nfunction loose(value: any): P { return value; }\nnamespace Ns { export function parseUser(v: any): P { return v; } }\nfunction holder(): void { return; }\nholder.parseUser = loose;\nconst codec = Object.freeze({ ...holder });\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an imported factory handed a spread of a local function that carries a member",
+			code: `import { define } from "./define";\ninterface P { readonly id: string }\nfunction loose(value: any): P { return value; }\nnamespace Ns { export function parseUser(v: any): P { return v; } }\nfunction holder(): void { return; }\nholder.parseUser = loose;\nconst codec = define({ ...holder });\n${CALL}codec.parseUser(value); }`,
+			errors: [error],
+		},
+		{
+			name: "an enum frozen on a global",
+			code: `interface P { readonly id: string }\nfunction loose(value: any): P { return value; }\nenum Kind { A }\nexport function parseUser(value: unknown): P { return Object.freeze(Kind).parseUser(value); }`,
+			errors: [error],
+		},
 	],
 };
 
