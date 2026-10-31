@@ -49,6 +49,15 @@ function constInitializerOf(variable: Variable | null): ESTree.Expression | null
 		: null;
 }
 
+/** Return whether an object literal holds a method or a function-valued property. */
+function hasFunctionProperty(object: ESTree.ObjectExpression): boolean {
+	return object.properties.some(
+		(property) =>
+			property.type === "Property" &&
+			(property.method || property.value.type === "FunctionExpression" || property.value.type === "ArrowFunctionExpression"),
+	);
+}
+
 /** Return whether an expression is an object, class or instance whose methods are written in this file. */
 function ownsMethodsHere(object: ESTree.Expression | ESTree.Super, sourceCode: SourceCode): boolean {
 	switch (object.type) {
@@ -63,6 +72,9 @@ function ownsMethodsHere(object: ESTree.Expression | ESTree.Super, sourceCode: S
 			const variable = variableOf(object, sourceCode);
 			if (variable?.defs[0]?.type === "ClassName") return true;
 			const initializer = constInitializerOf(variable);
+			if (initializer?.type === "CallExpression") {
+				return initializer.arguments.some((argument) => argument.type === "ObjectExpression" && hasFunctionProperty(argument));
+			}
 			return (
 				initializer !== null &&
 				(initializer.type === "ObjectExpression" || initializer.type === "ClassExpression" || initializer.type === "NewExpression") &&
