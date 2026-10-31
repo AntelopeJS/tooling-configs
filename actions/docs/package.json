@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test check.test.mjs prose.test.mjs typescript.test.mjs"
+    "test": "node --test check.test.mjs prose.test.mjs typescript.test.mjs vale.test.mjs"
   },
   "dependencies": {
     "entities": "8.1.0",

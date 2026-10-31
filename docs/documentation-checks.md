@@ -313,6 +313,17 @@ documents, source, or diagnostics to an external checking service. It works with
 public or private checkouts and needs no extra token. Use ordinary `pull_request`
 CI, not privileged `pull_request_target` execution of untrusted checkout code.
 
+## The writing rules table
+
+`src/docs/unslop-rules.ts` holds the numbered rules of the `unslop` skill as data: the id other skills cite, the section, the skill's own wording, and, for the rules a machine can check, the check. Two outputs come from it.
+
+- The rule section of the vendored `unslop` skill. `src/docs/vale-style.test.ts` fails unless the skill, with that section rendered from the table, equals the upstream copy in `src/docs/fixtures/unslop-upstream.md`.
+- The Vale style in `actions/docs/vale/`. Run `pnpm run docs:generate` after you change the table. The same test fails when the committed style differs from what the table generates.
+
+The style has one Vale rule per checked unslop rule (`Unslop07.yml` for rule 7), plus two rules that belong to the AntelopeJS standard and not to the skill: `Names.yml` requires `AntelopeJS` and `DMS` spelled that way, and `Procedure.yml` bans "simply", "easy", "easily", "quickly" and "please". Every rule is a warning, and `vale.ini` reports warnings and above. Vale skips code spans and fences.
+
+`actions/docs/vale.test.mjs` runs a Vale binary over a seeded sentence for each rule and over clean prose. `actions/docs/install-vale.sh <directory>` downloads the pinned Vale release, checks its SHA-256 and prints the binary path. The tests read it from `VALE_BIN`, or from `PATH`. They skip when Vale is missing, except in CI, where a missing Vale fails them.
+
 ## Run locally at the same revision
 
 Run from the consumer checkout root, replacing the SHA with the one used in CI:

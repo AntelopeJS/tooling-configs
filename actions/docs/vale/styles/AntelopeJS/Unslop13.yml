@@ -1,0 +1,7 @@
+extends: existence
+message: "Use a period or a comma instead of a dash (unslop rule 13)."
+level: warning
+nonword: true
+tokens:
+  - "—"
+  - "–"

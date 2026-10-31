@@ -1,0 +1,8 @@
+extends: existence
+message: "Cut the filler phrase '%s' (unslop rule 23)."
+level: warning
+ignorecase: true
+tokens:
+  - "in order to"
+  - "due to the fact that"
+  - "it is important to note that"

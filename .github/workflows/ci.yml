@@ -33,5 +33,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: npm ci --prefix actions/docs --ignore-scripts --no-audit --no-fund
+      - run: echo "VALE_BIN=$(actions/docs/install-vale.sh "$RUNNER_TEMP/vale")" >> "$GITHUB_ENV"
       - run: npm test --prefix actions/docs
       - uses: ./actions/docs

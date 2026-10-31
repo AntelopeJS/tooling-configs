@@ -1,0 +1,27 @@
+extends: existence
+message: "Replace the AI vocabulary word '%s' with a plain word (unslop rule 7)."
+level: warning
+ignorecase: true
+tokens:
+  - "additionally"
+  - "crucial"
+  - "delve"
+  - "delves"
+  - "enduring"
+  - "enhance"
+  - "enhances"
+  - "enhanced"
+  - "enhancing"
+  - "fostering"
+  - "garner"
+  - "garners"
+  - "interplay"
+  - "intricate"
+  - "pivotal"
+  - "showcase"
+  - "showcases"
+  - "showcasing"
+  - "testament"
+  - "underscore"
+  - "underscores"
+  - "vibrant"

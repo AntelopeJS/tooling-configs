@@ -20,7 +20,10 @@ test("the unslop skill, with its rule section rendered from the table, is the up
 
 test("the table holds each rule id once, in ascending order", () => {
   const ids = UNSLOP_RULES.map(({ id }) => id);
-  assert.deepEqual(ids, [...new Set(ids)].sort((a, b) => a - b));
+  assert.deepEqual(
+    ids,
+    [...new Set(ids)].sort((a, b) => a - b),
+  );
 });
 
 test("the Vale style in actions/docs/vale is what the table generates, file for file", () => {
