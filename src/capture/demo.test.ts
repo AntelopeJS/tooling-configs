@@ -1,0 +1,57 @@
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import { demoEnvironment, packageOverrides, parseCaptureArgs, DEMO_NOW } from "./demo.ts";
+
+function repo(t: test.TestContext, manifests: Record<string, object>): string {
+  const root = mkdtempSync(join(tmpdir(), "capture-demo-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const [dir, manifest] of Object.entries(manifests)) {
+    mkdirSync(join(root, dir), { recursive: true });
+    writeFileSync(join(root, dir, "package.json"), JSON.stringify(manifest));
+  }
+  return root;
+}
+
+test("the demo runs on the fixed instant, in UTC, without simulators", () => {
+  assert.equal(DEMO_NOW, "2026-06-15T09:00:00Z");
+  const env = demoEnvironment({ mongoUrl: "mongodb://127.0.0.1:27017", database: "docs", port: 3101 });
+  assert.equal(env.HELIO_NOW, DEMO_NOW);
+  assert.equal(env.HELIO_SIMULATORS, "off");
+  assert.equal(env.TZ, "UTC");
+  assert.equal(env.MONGODB_URL, "mongodb://127.0.0.1:27017");
+  assert.equal(env.MONGODB_DATABASE, "docs");
+  assert.equal(env.PORT, "3101");
+  assert.equal(env.DMS_CLIENT_BASE_URL, "http://localhost:3101");
+});
+
+test("packageOverrides points every published package of the repository at its folder", (t) => {
+  const root = repo(t, {
+    ".": { name: "root-workspace", private: true },
+    "packages/dms": { name: "@antelopejs/dms" },
+    "packages/interface-dms": { name: "@antelopejs/interface-dms" },
+    "packages/playground": { name: "@antelopejs/playground", private: true },
+  });
+  assert.deepEqual(packageOverrides(root), {
+    "@antelopejs/dms": `file:${join(root, "packages/dms")}`,
+    "@antelopejs/interface-dms": `file:${join(root, "packages/interface-dms")}`,
+  });
+});
+
+test("a single-package repository overrides its own package", (t) => {
+  const root = repo(t, { ".": { name: "@antelopejs/mollie" } });
+  assert.deepEqual(packageOverrides(root), { "@antelopejs/mollie": `file:${root}` });
+});
+
+test("parseCaptureArgs defaults to the main branch of the demo and every scene", () => {
+  assert.deepEqual(parseCaptureArgs([]), { check: false, scene: undefined, demoRef: "main" });
+  assert.deepEqual(parseCaptureArgs(["--check", "--scene", "sales", "--demo-ref", "campaign/integration"]), {
+    check: true,
+    scene: "sales",
+    demoRef: "campaign/integration",
+  });
+  assert.throws(() => parseCaptureArgs(["--scenes", "a"]), /Usage: antelopejs-capture/);
+});
