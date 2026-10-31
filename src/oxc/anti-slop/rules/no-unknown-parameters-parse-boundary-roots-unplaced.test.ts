@@ -51,8 +51,49 @@ tester.run("anti-slop/no-unknown-parameters at a parse boundary, what `this` is 
 			name: "a global read outside the namespace that happens to declare a member of that name",
 			code: `${LOOSE}namespace Users { export const codec = ${OWN_PARSER}; }\nexport function readUser(value: unknown): P { return codec.parse(value); }`,
 		},
+		{
+			name: "a global read while the file assigns a global of another name",
+			code: `${LOOSE}other = loose;\nexport function readUser(value: unknown): P { return codec.parse(value); }`,
+		},
 	],
 	invalid: [
+		{
+			name: "an auto-accessor field of an import is not placed",
+			code: `${IMPORTED}class Registry { accessor codec = settings; read(value: unknown): P { return this.codec.parse(value); } }`,
+			errors: [error],
+		},
+		{
+			name: "this in a function expression that is the computed key of a method",
+			code: `${IMPORTED}class Registry { codec = settings; [function (this: { codec: Codec }, value: unknown): P { return this.codec.parse(value); }]() {} }`,
+			errors: [error],
+		},
+		{
+			name: "this in the computed key of a field",
+			code: `${IMPORTED}class Registry { codec = settings; [((value: unknown): string => this.codec.parse(value))("k")] = 1; }`,
+			errors: [error],
+		},
+		{
+			name: "this in the computed key of a method",
+			code: `${IMPORTED}class Registry { codec = settings; [((value: unknown): string => this.codec.parse(value))("k")]() {} }`,
+			errors: [error],
+		},
+		{
+			name: "this in the heritage of a class expression that declares the field",
+			code: `${IMPORTED}class Outer { make() { return class Inner extends ((v: unknown): Base => this.codec.parse(v))(1) { codec = settings; }; } }`,
+			errors: [error],
+		},
+		{
+			name: "this in the heritage of a class declaration that declares the field",
+			code: `${IMPORTED}class Outer { make() { class Inner extends ((v: unknown): Base => this.codec.parse(v))(1) { codec = settings; } return Inner; } }`,
+			errors: [error],
+		},
+		{
+			name: "a class merged from another namespace block, handed over",
+			code: `import { define } from "./shared";
+${LOOSE}export namespace Users { export function readUser(value: unknown): P { return define(Later).parse(value); } }
+export namespace Users { export class Later {} }`,
+			errors: [error],
+		},
 		{
 			name: "this in a method of an object literal beside a class field of that name",
 			code: `${IMPORTED}class Registry { codec = settings; make() { return { codec: ${OWN_PARSER}, readUser(value: unknown): P { return this.codec.parse(value); } }; } }`,

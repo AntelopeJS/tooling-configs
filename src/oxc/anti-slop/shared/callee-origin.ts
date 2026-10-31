@@ -1,14 +1,16 @@
 import type { DefinitionType, ESTree, SourceCode, Variable } from "@oxlint/plugins";
 
-import { isModuleImport, variableOf } from "./binding-origin.ts";
+import { isModuleImport, isSuppliedFromOutside, variableOf } from "./binding-origin.ts";
 
 /**
- * What a name stands for. Its value comes from the expressions the file writes to it (its initializer, a default, an
+ * What a name stands for. `unplaced` is a name no scope binds that the file may still declare or write, as a merged namespace
+ * member or an assigned global, so it is never outside. Its value comes from the expressions the file writes to it (its initializer, a default, an
  * assignment) and the name an `import x = Namespace.member` reads, plus a caller or module when it is a parameter or import.
  * `constant` is false when some write has no expression to follow, or a definition is not a `const` with an initializer.
  */
 type Binding =
 	| { readonly kind: "outside" }
+	| { readonly kind: "unplaced" }
 	| { readonly kind: "declaration"; readonly type: DefinitionType }
 	| {
 			readonly kind: "variable";
@@ -43,13 +45,14 @@ function isFixedDefinition(definition: Variable["defs"][number]): boolean {
 }
 
 /**
- * Classify a name by every definition and write it has, not by its first definition. A global is outside this file.
- * A function, class, namespace or catch binding is a declaration written here. Any other name is a variable read through the
- * expressions written to it, so a parameter or module import nothing here defaults or assigns is read through none.
+ * Classify a name by every definition and write it has, not by its first definition. It is outside this file only when
+ * `isSuppliedFromOutside` places it there. A function, class, namespace or catch binding is a declaration written here.
+ * Any other name is a variable read through the expressions written to it.
  */
 function bindingOf(identifier: Name, sourceCode: SourceCode): Binding {
+	if (isSuppliedFromOutside(identifier, sourceCode)) return { kind: "outside" };
 	const variable = variableOf(identifier, sourceCode);
-	if (variable === null) return { kind: "outside" };
+	if (variable === null) return { kind: "unplaced" };
 	const declared = variable.defs.find((definition) => !["Variable", "Parameter", "ImportBinding"].includes(definition.type));
 	if (declared !== undefined) return { kind: "declaration", type: declared.type };
 	const writes = variable.references.filter((reference) => reference.isWrite());
@@ -88,7 +91,7 @@ function isWrittenHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen): b
 		case "Identifier": {
 			const binding = bindingOf(node, sourceCode);
 			if (binding.kind === "outside") return false;
-			if (binding.kind === "declaration") return true;
+			if (binding.kind !== "variable") return true;
 			return !binding.constant || seen.has(binding.variable) || followSources(binding, sourceCode, seen, isWrittenHere);
 		}
 		case "ImportExpression":
@@ -109,9 +112,11 @@ function isWrittenHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen): b
 	}
 }
 
-/** Return the name a class element or member is written with, or null for a computed one. */
-function staticName(key: ESTree.Node, computed: boolean): string | null {
-	return !computed && (key.type === "Identifier" || key.type === "PrivateIdentifier") ? key.name : null;
+/** Return the name a class element or member is read by, or null for a computed one. A private name carries its `#`, so it is no element of the public name. */
+function elementName(key: ESTree.Node, computed: boolean): string | null {
+	if (computed) return null;
+	if (key.type === "PrivateIdentifier") return `#${key.name}`;
+	return key.type === "Identifier" ? key.name : null;
 }
 
 /** Return the class a node is written in, or null at the top level. */
@@ -121,41 +126,65 @@ function enclosingClass(node: ESTree.Node): ESTree.Class | null {
 	return current;
 }
 
-/** Return whether `this` in a node is the class itself: the node is written in a static member or a static block. */
-function isStaticContext(node: ESTree.Node): boolean {
-	let current: ESTree.Node | null = node.parent;
-	while (current !== null) {
-		if (current.type === "StaticBlock") return true;
-		if (current.type === "MethodDefinition" || current.type === "PropertyDefinition" || current.type === "AccessorProperty") return current.static;
-		current = current.parent;
+/**
+ * Return what `this` is where a node is written: the instance or the class itself when the nearest non-arrow function is a
+ * class method, or when no function sits between the node and a field initializer or static block. Any other function (an
+ * object-literal method, a function expression, a declaration) gets its `this` from its caller, as does a node in a class
+ * heritage clause, a decorator or a computed key, which the walk meets as the class itself. Those give null.
+ */
+function receiverOf(node: ESTree.Node): "instance" | "static" | null {
+	let child: ESTree.Node = node;
+	for (let current: ESTree.Node | null = node.parent; current !== null; current = current.parent) {
+		switch (current.type) {
+			case "FunctionExpression":
+				return current.parent.type === "MethodDefinition" && current.parent.value === current ? (current.parent.static ? "static" : "instance") : null;
+			case "PropertyDefinition":
+			case "AccessorProperty":
+				return current.value === child ? (current.static ? "static" : "instance") : null;
+			case "StaticBlock":
+				return "static";
+			case "FunctionDeclaration":
+			case "ClassDeclaration":
+			case "ClassExpression":
+				return null;
+			default:
+				child = current;
+		}
 	}
-	return false;
+	return null;
 }
 
 /**
- * Return whether `this.field` reaches back to code written here. A field with an initializer is read through
- * it. A constructor parameter property is handed in by the caller, as a parameter is. A field declared without
- * an initializer, one inherited, a getter and a computed name are not placed, so they count as written here.
+ * Return whether `this.field` reaches back to code written here. The element is the one of that exact name, `#` included, and of
+ * the receiver's kind, static or instance. A field with an initializer is read through it. A constructor parameter property is
+ * an instance element handed in by the caller, as a parameter is. A name that no element or two elements declare, an
+ * accessor, a method, a field without an initializer, an inherited field and a computed name are not placed, so they count as
+ * written here.
  */
 function thisFieldIsWrittenHere(member: ESTree.MemberExpression, sourceCode: SourceCode, seen: Seen): boolean {
 	const klass = enclosingClass(member);
-	const name = staticName(member.property, member.computed);
-	if (klass === null || name === null) return true;
-	for (const element of klass.body.body) {
-		if (element.type === "PropertyDefinition" && element.static === isStaticContext(member) && staticName(element.key, element.computed) === name) {
-			return element.value === null || seen.has(element) || isWrittenHere(element.value, sourceCode, new Set([...seen, element]));
-		}
-		if (element.type === "MethodDefinition") {
-			const handedIn = element.value.params.some(
-				(parameter) =>
-					parameter.type === "TSParameterProperty" &&
-					parameter.parameter.type === "Identifier" &&
-					parameter.parameter.name === name,
-			);
-			if (handedIn) return false;
-		}
-	}
-	return true;
+	const name = elementName(member.property, member.computed);
+	const receiver = receiverOf(member);
+	if (klass === null || name === null || receiver === null) return true;
+	const elements = klass.body.body.filter(
+		(element) =>
+			(element.type === "PropertyDefinition" || element.type === "AccessorProperty" || element.type === "MethodDefinition") &&
+			element.static === (receiver === "static") &&
+			elementName(element.key, element.computed) === name,
+	);
+	const handedIn = receiver === "instance" && klass.body.body.some((element) => element.type === "MethodDefinition" && declaresParameterProperty(element, name));
+	if (elements.length + (handedIn ? 1 : 0) !== 1) return true;
+	const [element] = elements;
+	if (element === undefined) return false;
+	if (element.type !== "PropertyDefinition") return true;
+	return element.value === null || seen.has(element) || isWrittenHere(element.value, sourceCode, new Set([...seen, element]));
+}
+
+/** Return whether a method declares a parameter property of this name, which only a constructor can. */
+function declaresParameterProperty(method: ESTree.MethodDefinition, name: string): boolean {
+	return method.value.params.some(
+		(parameter) => parameter.type === "TSParameterProperty" && parameter.parameter.type === "Identifier" && parameter.parameter.name === name,
+	);
 }
 
 /** Return whether a value is a function or class written here, an object of such members, or a member or call that reaches back to this file. */
@@ -171,6 +200,7 @@ function isFunctionHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen): 
 			return holdsFunctionHere(node, sourceCode, seen);
 		case "Identifier": {
 			const binding = bindingOf(node, sourceCode);
+			if (binding.kind === "unplaced") return true;
 			if (binding.kind === "declaration") return binding.type === "FunctionName" || binding.type === "ClassName";
 			return binding.kind === "variable" && followSources(binding, sourceCode, seen, isFunctionHere);
 		}
@@ -198,6 +228,7 @@ function holdsFunctionHere(node: ESTree.Node, sourceCode: SourceCode, seen: Seen
 			);
 		case "Identifier": {
 			const binding = bindingOf(node, sourceCode);
+			if (binding.kind === "unplaced") return true;
 			if (binding.kind === "declaration") return binding.type === "ClassName";
 			return binding.kind === "variable" && followSources(binding, sourceCode, seen, holdsFunctionHere);
 		}
@@ -231,7 +262,8 @@ function followSources(
 export function calleeIsWrittenHere(call: ESTree.CallExpression, sourceCode: SourceCode): boolean {
 	const { callee } = call;
 	if (callee.type === "Identifier") {
-		return variableOf(callee, sourceCode)?.defs.some((definition) => !isModuleImport(definition)) ?? false;
+		const variable = variableOf(callee, sourceCode);
+		return variable === null ? !isSuppliedFromOutside(callee, sourceCode) : variable.defs.some((definition) => !isModuleImport(definition));
 	}
 	return callee.type === "MemberExpression" && isWrittenHere(callee.object, sourceCode, NO_VARIABLES);
 }
