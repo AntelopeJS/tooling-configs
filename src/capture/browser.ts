@@ -4,9 +4,11 @@ import type sharp from "sharp";
 import { DEMO_NOW } from "./demo.ts";
 import type { RawImage } from "./compare.ts";
 import type { CaptureScene } from "./scenes.ts";
+import { stableShot, type StableOptions } from "./stable.ts";
 
 const DEVICE_SCALE_FACTOR = 2;
 const STEP_TIMEOUT_MS = 30_000;
+const STABLE: StableOptions = { stableShots: 3, maxShots: 60, pauseMs: 250 };
 
 export type Sharp = typeof sharp;
 
@@ -56,9 +58,8 @@ export async function renderScene(
     for (const step of scene.steps) await perform(page, step);
     if (scene.setup) return undefined;
     await page.evaluate(() => document.fonts.ready);
-    return scene.crop
-      ? await page.locator(scene.crop).first().screenshot({ type: "png" })
-      : await page.screenshot({ type: "png" });
+    const target = scene.crop ? page.locator(scene.crop).first() : page;
+    return await stableShot(() => target.screenshot({ type: "png" }), STABLE);
   } finally {
     await page.close();
   }
