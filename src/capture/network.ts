@@ -1,5 +1,7 @@
 /** Requests that stay open for as long as the page does, so the network is quiet without them. */
 const STREAMS = new Set(["eventsource", "websocket"]);
+/** The media type of a server-sent event stream, which a `fetch` can hold open as long as an EventSource does. */
+const EVENT_STREAM = "text/event-stream";
 
 /** The requests a page has started and not yet ended, and when one last started or ended. */
 export class NetworkLog<Request> {
@@ -11,6 +13,12 @@ export class NetworkLog<Request> {
     if (STREAMS.has(resourceType)) return;
     this.pending.set(request, url);
     this.last = Date.now();
+  }
+
+  /** Records a response's headers: a request answered with an event stream stops counting, since it never ends. */
+  respond(request: Request, contentType: string | undefined): void {
+    const mediaType = contentType?.split(";")[0]?.trim().toLowerCase();
+    if (mediaType === EVENT_STREAM) this.end(request);
   }
 
   /** Records that a request finished or failed. */

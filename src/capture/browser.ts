@@ -68,6 +68,9 @@ function watchPage(page: Page): ReadyPage {
   page.on("request", (request) => {
     network.start(request, request.url(), request.resourceType());
   });
+  page.on("response", (response) => {
+    network.respond(response.request(), response.headers()["content-type"]);
+  });
   page.on("requestfinished", ended);
   page.on("requestfailed", ended);
   return {
