@@ -183,7 +183,12 @@ export interface JourneyContext {
     checks: Check[],
     options?: { critical?: boolean },
   ): boolean;
-  /** Ends the journey as not verified, for example when provider sandbox keys are missing. */
+  /**
+   * Ends the journey as not verified, for example when provider sandbox keys
+   * are missing or something the journey depends on outside the harness's
+   * services and apps stopped answering. An environment failure is never a
+   * failing check: `seeded` counts only failing checks as catches.
+   */
   notVerified(reason: string): never;
   service(name: string): ServiceEndpoint;
   /** Runs a command inside a service's container: the read-back through the native client. */

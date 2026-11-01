@@ -8,15 +8,24 @@ import { flaggedDoors, patchFiles } from "./doors.ts";
 import { readResults } from "./runner.ts";
 import { loadRun, type Workspace } from "./workspace.ts";
 
+/**
+ * How a seeded break fared: CAUGHT by a product check, MISSED while every
+ * journey reached the product, or NOT VERIFIED when no journey caught it and
+ * one could not reach the product in either run.
+ */
+type SeededOutcome = "CAUGHT" | "MISSED" | "NOT VERIFIED";
+
 /** The outcome of one feature's seeded break, judged against an unpatched control run. */
 export interface SeededResult {
   feature: string;
-  caught: boolean;
+  outcome: SeededOutcome;
   run: string;
   controlRun: string;
   caughtBy: string[];
   failingInControl: string[];
   harnessErrors: string[];
+  /** Journeys that ended NOT VERIFIED, each with its reason, in the control and with the patch. */
+  notVerified: { control: string[]; seeded: string[] };
   output: string;
 }
 
@@ -131,7 +140,18 @@ export function failsACheck(result: JourneyResult): boolean {
   return result.steps.some((step) => step.checks.some((check) => !check.pass));
 }
 
-/** A break is caught only by a journey that passes in the control and fails one of its checks with the patch. */
+function notVerifiedIn(results: JourneyResult[]): string[] {
+  return results
+    .filter((result) => result.status === "NOT VERIFIED")
+    .map((result) => `${result.journey} (${result.notVerified})`);
+}
+
+/**
+ * A break is caught only by a journey that passes in the control and fails
+ * one of its checks with the patch. A journey that ends NOT VERIFIED, because
+ * its environment went away, never counts as a catch, and leaves an uncaught
+ * break NOT VERIFIED rather than MISSED.
+ */
 export function judgeSeeded(
   feature: string,
   control: FeatureRun,
@@ -143,24 +163,32 @@ export function judgeSeeded(
       .map((result) => result.journey),
   );
   const failed = seeded.results.filter((result) => result.status === "FAIL");
+  const caughtBy = failed
+    .filter(
+      (result) => passedInControl.has(result.journey) && failsACheck(result),
+    )
+    .map((result) => result.journey);
+  const notVerified = {
+    control: notVerifiedIn(control.results),
+    seeded: notVerifiedIn(
+      seeded.results.filter((result) => passedInControl.has(result.journey)),
+    ),
+  };
+  const unreached = notVerified.control.length + notVerified.seeded.length > 0;
   return {
     feature,
-    caught: failed.some(
-      (result) => passedInControl.has(result.journey) && failsACheck(result),
-    ),
+    outcome:
+      caughtBy.length > 0 ? "CAUGHT" : unreached ? "NOT VERIFIED" : "MISSED",
     run: seeded.run,
     controlRun: control.run,
-    caughtBy: failed
-      .filter(
-        (result) => passedInControl.has(result.journey) && failsACheck(result),
-      )
-      .map((result) => result.journey),
+    caughtBy,
     failingInControl: control.results
-      .filter((result) => result.status !== "PASS")
+      .filter((result) => result.status === "FAIL")
       .map((result) => result.journey),
     harnessErrors: failed
       .filter((result) => !failsACheck(result))
       .map((result) => result.journey),
+    notVerified,
     output: seeded.output,
   };
 }

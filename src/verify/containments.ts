@@ -60,6 +60,11 @@ export function judgeContainment(
       outcome: "CONTAINED",
       detail: "it passes unpatched and fails a check with its door",
     };
+  if (withDoor.status === "NOT VERIFIED")
+    return {
+      outcome: "UNPROVEN",
+      detail: `with the door it could not reach the product (${withDoor.notVerified}), so it proves nothing`,
+    };
   return {
     outcome: "UNPROVEN",
     detail: `with the door it ended ${withDoor.status} without a failing check, a harness error rather than a caught door`,
