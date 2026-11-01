@@ -23,11 +23,13 @@ import { child, object, parseJson, type JsonObject } from "../garden/json.ts";
 import { openContext, renderScene } from "./browser.ts";
 import { type CaptureArgs, checkoutSettings, demoEnvironment } from "./demo.ts";
 import { settle } from "./settle.ts";
+import { stopProcessGroup } from "./stop.ts";
 import { type CaptureScene, parseScenes, selectScenes } from "./scenes.ts";
 
 const DEMO_URL = "https://github.com/AntelopeJS/template-dms-demo.git";
 const DEMO_PORT = 3101;
 const READY_TIMEOUT_MS = 15 * 60 * 1000;
+const STOP = { graceMs: 30_000, killWaitMs: 10_000 };
 const READ_SCENES =
   "import(process.argv[1]).then((module) => process.stdout.write(JSON.stringify(module.default ?? module.scenes)))";
 
@@ -117,15 +119,6 @@ function startDemo(
   });
 }
 
-function stopDemo(started: ChildProcess): void {
-  if (started.pid === undefined) return;
-  try {
-    process.kill(-started.pid, "SIGINT");
-  } catch {
-    started.kill("SIGINT");
-  }
-}
-
 interface Session {
   root: string;
   browser: Browser;
@@ -192,8 +185,11 @@ export async function capture(
       await browser.close();
     }
   } finally {
-    if (demo) stopDemo(demo);
-    await mongo.stop();
-    rmSync(scratch, { recursive: true, force: true });
+    try {
+      if (demo) await stopProcessGroup(demo, STOP);
+      rmSync(scratch, { recursive: true, force: true });
+    } finally {
+      await mongo.stop();
+    }
   }
 }
