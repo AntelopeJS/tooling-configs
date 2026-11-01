@@ -3,13 +3,12 @@ import type sharp from "sharp";
 
 import { DEMO_NOW } from "./demo.ts";
 import type { RawImage } from "./compare.ts";
+import { NetworkLog } from "./network.ts";
 import type { CaptureScene, CaptureStep } from "./scenes.ts";
 import { type ReadyOptions, type ReadyPage, waitForReady } from "./ready.ts";
 
 const DEVICE_SCALE_FACTOR = 2;
 const STEP_TIMEOUT_MS = 30_000;
-/** Requests that stay open for as long as the page does, so the network is quiet without them. */
-const STREAMS = new Set(["eventsource", "websocket"]);
 const READY: ReadyOptions = { timeoutMs: 60_000, quietMs: 500, pollMs: 50 };
 
 export type Sharp = typeof sharp;
@@ -62,23 +61,18 @@ async function loadUsedFonts(): Promise<void> {
 
 /** Follows the page's requests, event streams aside, from now on, so call it before the page navigates. */
 function watchPage(page: Page): ReadyPage {
-  const pending = new Set<Request>();
-  let last = Date.now();
-  const started = (request: Request): void => {
-    if (STREAMS.has(request.resourceType())) return;
-    pending.add(request);
-    last = Date.now();
-  };
+  const network = new NetworkLog<Request>();
   const ended = (request: Request): void => {
-    if (!pending.delete(request)) return;
-    last = Date.now();
+    network.end(request);
   };
-  page.on("request", started);
+  page.on("request", (request) => {
+    network.start(request, request.url(), request.resourceType());
+  });
   page.on("requestfinished", ended);
   page.on("requestfailed", ended);
   return {
-    pendingRequests: () => [...pending].map((request) => request.url()),
-    lastRequestAt: () => last,
+    pendingRequests: () => network.pendingRequests(),
+    lastRequestAt: () => network.lastRequestAt(),
     appReady: () =>
       page.evaluate(() =>
         document.documentElement.hasAttribute("data-dms-ready"),
