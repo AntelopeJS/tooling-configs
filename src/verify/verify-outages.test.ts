@@ -24,6 +24,7 @@ case "$1" in
   port) echo "6379/tcp -> 127.0.0.1:41234" ;;
   exec)
     if [ -e "$DOCKER_DEAD/$2" ]; then echo "container $2 is not running" >&2; exit 1; fi
+    if [ -e "$DOCKER_DEAD/miss-once" ]; then rm "$DOCKER_DEAD/miss-once"; echo "one transient miss" >&2; exit 1; fi
     echo pong ;;
   inspect) echo true ;;
 esac
@@ -43,6 +44,25 @@ if (mode === "port-taken") net.createServer(() => {}).listen(port, "127.0.0.1");
 http
   .createServer((request, response) => {
     if (request.url === "/crash") process.exit(1);
+    if (request.url === "/abort") process.kill(process.pid, "SIGABRT");
+    if (request.url === "/double-bind") {
+      const first = net.createServer(() => {}).listen(0, "127.0.0.1", () => {
+        const second = net.createServer(() => {});
+        second.on("error", (error) => {
+          console.error(String(error));
+          response.statusCode = 500;
+          response.end("double bind");
+        });
+        second.listen(first.address().port, "127.0.0.1");
+      });
+      return;
+    }
+    if (request.url === "/mention") {
+      console.error("the product mentions EADDRINUSE in a log line");
+      response.statusCode = 500;
+      response.end("mention");
+      return;
+    }
     response.end("ok");
   })
   .listen(port, "127.0.0.1");
@@ -84,6 +104,42 @@ const JOURNEYS = `
         const app = await context.dev("ajs project dev", context.work);
         const answer = await context.http("crash", "http://127.0.0.1:" + app.port + "/crash");
         context.expect(answer.folder, [{ name: "the product answers", pass: answer.status === 200, detail: String(answer.error) }]);
+      },
+    },
+    "aborts": {
+      title: "the project aborts itself on a request",
+      entryPoint: "ajs project dev",
+      async run(context) {
+        const app = await context.dev("ajs project dev", context.work);
+        const answer = await context.http("abort", "http://127.0.0.1:" + app.port + "/abort");
+        context.expect(answer.folder, [{ name: "the product answers", pass: answer.status === 200, detail: String(answer.error) }]);
+      },
+    },
+    "double-bind": {
+      title: "the product binds a port it already holds",
+      entryPoint: "ajs project dev",
+      async run(context) {
+        const app = await context.dev("ajs project dev", context.work);
+        const answer = await context.http("bind", "http://127.0.0.1:" + app.port + "/double-bind");
+        context.expect(answer.folder, [{ name: "the product answers", pass: answer.status === 200, detail: answer.body }]);
+      },
+    },
+    "mention": {
+      title: "the product logs the word EADDRINUSE and answers wrong",
+      entryPoint: "ajs project dev",
+      async run(context) {
+        const app = await context.dev("ajs project dev", context.work);
+        const answer = await context.http("mention", "http://127.0.0.1:" + app.port + "/mention");
+        context.expect(answer.folder, [{ name: "the product answers", pass: answer.status === 200, detail: answer.body }]);
+      },
+    },
+    "transient-miss": {
+      title: "one readiness probe misses after a real failing check",
+      entryPoint: "redis-cli",
+      async run(context) {
+        writeFileSync(join(DEAD, "miss-once"), "");
+        const read = await context.command("read", process.execPath, ["-e", "0"]);
+        context.expect(read.folder, [{ name: "the product is right", pass: false, detail: "wrong" }]);
       },
     },
     "port-taken": {
@@ -138,7 +194,16 @@ function outageRepo(
     ),
     [`${SKILL}/features/processes.md`]: feature(
       ["src/**"],
-      ["killed", "crashes", "port-taken", "crash-at-start"],
+      [
+        "killed",
+        "crashes",
+        "port-taken",
+        "crash-at-start",
+        "aborts",
+        "double-bind",
+        "mention",
+        "transient-miss",
+      ],
     ),
     ...files,
   });
@@ -202,10 +267,19 @@ test("a project killed from outside or holding a taken port is NOT VERIFIED, and
   );
   assert.match(
     statuses["port-taken"],
-    /^NOT VERIFIED: ajs project dev \(pid \d+\) could not bind a port another process holds: .*EADDRINUSE/,
+    /^NOT VERIFIED: ajs project dev \(pid \d+\) could not bind port \d+, which another process holds: .*EADDRINUSE/,
   );
   assert.equal(statuses.crashes, "FAIL");
   assert.equal(statuses["crash-at-start"], "FAIL");
+});
+
+test("a product crash by SIGABRT, a product double bind and a logged EADDRINUSE stay FAIL, and one transient readiness miss still counts the catch", (t) => {
+  const { root, tmp, env } = outageRepo(t);
+  const { statuses } = journeys(root, tmp, env, "processes");
+  assert.equal(statuses.aborts, "FAIL");
+  assert.equal(statuses["double-bind"], "FAIL");
+  assert.equal(statuses.mention, "FAIL");
+  assert.equal(statuses["transient-miss"], "FAIL");
 });
 
 const NOOP_PATCH = `--- /dev/null

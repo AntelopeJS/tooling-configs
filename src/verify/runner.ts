@@ -92,7 +92,7 @@ async function runOne(
   }
   await context.cleanup();
   if (statusOf(context, failure) === "FAIL") {
-    const fault = context.environmentFault();
+    const fault = await context.environmentFault();
     if (fault !== null) failure = { ...failure, notVerified: fault };
   }
   const result: JourneyResult = {
