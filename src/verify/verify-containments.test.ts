@@ -149,9 +149,14 @@ test("a containment is proven only by a control pass followed by a failing check
     judgeContainment(pass, result("FAIL", false)).outcome,
     "UNPROVEN",
   );
-  assert.equal(
-    judgeContainment(pass, result("NOT VERIFIED", false)).outcome,
-    "UNPROVEN",
+  const unreached = judgeContainment(pass, {
+    ...result("NOT VERIFIED", true),
+    notVerified: "the service went away",
+  });
+  assert.equal(unreached.outcome, "UNPROVEN");
+  assert.match(
+    unreached.detail,
+    /could not reach the product \(the service went away\)/,
   );
   assert.equal(judgeContainment(undefined, caught).outcome, "UNPROVEN");
 });

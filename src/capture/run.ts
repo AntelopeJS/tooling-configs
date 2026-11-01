@@ -29,7 +29,7 @@ import { type CaptureScene, parseScenes, selectScenes } from "./scenes.ts";
 const DEMO_URL = "https://github.com/AntelopeJS/template-dms-demo.git";
 const DEMO_PORT = 3101;
 const READY_TIMEOUT_MS = 15 * 60 * 1000;
-const STOP_GRACE_MS = 30_000;
+const STOP = { graceMs: 30_000, killWaitMs: 10_000 };
 const READ_SCENES =
   "import(process.argv[1]).then((module) => process.stdout.write(JSON.stringify(module.default ?? module.scenes)))";
 
@@ -185,8 +185,11 @@ export async function capture(
       await browser.close();
     }
   } finally {
-    if (demo) await stopProcessGroup(demo, STOP_GRACE_MS);
-    await mongo.stop();
-    rmSync(scratch, { recursive: true, force: true });
+    try {
+      if (demo) await stopProcessGroup(demo, STOP);
+      rmSync(scratch, { recursive: true, force: true });
+    } finally {
+      await mongo.stop();
+    }
   }
 }
