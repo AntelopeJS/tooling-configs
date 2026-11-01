@@ -3,13 +3,12 @@ import type sharp from "sharp";
 
 import { DEMO_NOW } from "./demo.ts";
 import type { RawImage } from "./compare.ts";
-import type { CaptureScene } from "./scenes.ts";
+import { NetworkLog } from "./network.ts";
+import type { CaptureScene, CaptureStep } from "./scenes.ts";
 import { type ReadyOptions, type ReadyPage, waitForReady } from "./ready.ts";
 
 const DEVICE_SCALE_FACTOR = 2;
 const STEP_TIMEOUT_MS = 30_000;
-/** Requests that stay open for as long as the page does, so the network is quiet without them. */
-const STREAMS = new Set(["eventsource", "websocket"]);
 const READY: ReadyOptions = { timeoutMs: 60_000, quietMs: 500, pollMs: 50 };
 
 export type Sharp = typeof sharp;
@@ -62,23 +61,21 @@ async function loadUsedFonts(): Promise<void> {
 
 /** Follows the page's requests, event streams aside, from now on, so call it before the page navigates. */
 function watchPage(page: Page): ReadyPage {
-  const pending = new Set<Request>();
-  let last = Date.now();
-  const started = (request: Request): void => {
-    if (STREAMS.has(request.resourceType())) return;
-    pending.add(request);
-    last = Date.now();
-  };
+  const network = new NetworkLog<Request>();
   const ended = (request: Request): void => {
-    if (!pending.delete(request)) return;
-    last = Date.now();
+    network.end(request);
   };
-  page.on("request", started);
+  page.on("request", (request) => {
+    network.start(request, request.url(), request.resourceType());
+  });
+  page.on("response", (response) => {
+    network.respond(response.request(), response.headers()["content-type"]);
+  });
   page.on("requestfinished", ended);
   page.on("requestfailed", ended);
   return {
-    pendingRequests: () => [...pending].map((request) => request.url()),
-    lastRequestAt: () => last,
+    pendingRequests: () => network.pendingRequests(),
+    lastRequestAt: () => network.lastRequestAt(),
     appReady: () =>
       page.evaluate(() =>
         document.documentElement.hasAttribute("data-dms-ready"),
@@ -87,7 +84,7 @@ function watchPage(page: Page): ReadyPage {
   };
 }
 
-async function perform(page: Page, step: CaptureScene["steps"][number]) {
+async function perform(page: Page, step: CaptureStep) {
   switch (step.action) {
     case "click":
       return page.click(step.selector);
@@ -100,24 +97,62 @@ async function perform(page: Page, step: CaptureScene["steps"][number]) {
   }
 }
 
-/** Opens the scene's route, runs its steps, waits for the page to be ready, and answers the PNG of the page, or of the `crop` element. */
+/** What a scene does to its page: `renderScene` backs it with a Playwright page. */
+export interface ScenePage {
+  /** Opens a route of the demo and answers at its `load` event. */
+  open(route: string): Promise<void>;
+  /** Performs one step of the scene. */
+  perform(step: CaptureStep): Promise<void>;
+  /** Answers once the page is ready to be shot, or fails naming what was still pending. */
+  ready(): Promise<void>;
+  /** Answers the PNG of the page, or of the element `crop` matches. */
+  shoot(crop: string | undefined): Promise<Buffer>;
+}
+
+/**
+ * Opens the scene's route, waits for the page to be ready, runs its steps, waits again, and answers its
+ * PNG; a setup scene answers nothing. The `load` event comes before the app mounts, so a step taken then
+ * acts on the server-rendered page: the mount drops what it filled, and a click submits its form natively.
+ */
+export async function playScene(
+  page: ScenePage,
+  scene: CaptureScene,
+): Promise<Buffer | undefined> {
+  await page.open(scene.route);
+  await page.ready();
+  for (const step of scene.steps) await page.perform(step);
+  if (scene.setup) return undefined;
+  await page.ready();
+  return page.shoot(scene.crop);
+}
+
+/** Plays the scene on a new page of `context`, at the scene's viewport, and closes the page. */
 export async function renderScene(
   context: BrowserContext,
   baseUrl: string,
   scene: CaptureScene,
 ): Promise<Buffer | undefined> {
   const page = await context.newPage();
-  const ready = watchPage(page);
+  const watched = watchPage(page);
   try {
     await page.setViewportSize(scene.viewport);
-    await page.goto(new URL(scene.route, baseUrl).href, {
-      waitUntil: "load",
-    });
-    for (const step of scene.steps) await perform(page, step);
-    if (scene.setup) return undefined;
-    await waitForReady(ready, READY);
-    const target = scene.crop ? page.locator(scene.crop).first() : page;
-    return await target.screenshot({ type: "png", animations: "disabled" });
+    return await playScene(
+      {
+        open: async (route) => {
+          await page.goto(new URL(route, baseUrl).href, { waitUntil: "load" });
+        },
+        perform: async (step) => {
+          await perform(page, step);
+        },
+        ready: () => waitForReady(watched, READY),
+        shoot: (crop) =>
+          (crop ? page.locator(crop).first() : page).screenshot({
+            type: "png",
+            animations: "disabled",
+          }),
+      },
+      scene,
+    );
   } finally {
     await page.close();
   }
