@@ -3,7 +3,7 @@ import type sharp from "sharp";
 
 import { DEMO_NOW } from "./demo.ts";
 import type { RawImage } from "./compare.ts";
-import type { CaptureScene } from "./scenes.ts";
+import type { CaptureScene, CaptureStep } from "./scenes.ts";
 import { type ReadyOptions, type ReadyPage, waitForReady } from "./ready.ts";
 
 const DEVICE_SCALE_FACTOR = 2;
@@ -87,7 +87,7 @@ function watchPage(page: Page): ReadyPage {
   };
 }
 
-async function perform(page: Page, step: CaptureScene["steps"][number]) {
+async function perform(page: Page, step: CaptureStep) {
   switch (step.action) {
     case "click":
       return page.click(step.selector);
@@ -100,24 +100,57 @@ async function perform(page: Page, step: CaptureScene["steps"][number]) {
   }
 }
 
-/** Opens the scene's route, runs its steps, waits for the page to be ready, and answers the PNG of the page, or of the `crop` element. */
+/** What a scene does to its page: `renderScene` backs it with a Playwright page. */
+export interface ScenePage {
+  /** Opens a route of the demo and answers at its `load` event. */
+  open(route: string): Promise<void>;
+  /** Performs one step of the scene. */
+  perform(step: CaptureStep): Promise<void>;
+  /** Answers once the page is ready to be shot, or fails naming what was still pending. */
+  ready(): Promise<void>;
+  /** Answers the PNG of the page, or of the element `crop` matches. */
+  shoot(crop: string | undefined): Promise<Buffer>;
+}
+
+/** Opens the scene's route, runs its steps, waits for the page to be ready, and answers its PNG; a setup scene answers nothing. */
+export async function playScene(
+  page: ScenePage,
+  scene: CaptureScene,
+): Promise<Buffer | undefined> {
+  await page.open(scene.route);
+  for (const step of scene.steps) await page.perform(step);
+  if (scene.setup) return undefined;
+  await page.ready();
+  return page.shoot(scene.crop);
+}
+
+/** Plays the scene on a new page of `context`, at the scene's viewport, and closes the page. */
 export async function renderScene(
   context: BrowserContext,
   baseUrl: string,
   scene: CaptureScene,
 ): Promise<Buffer | undefined> {
   const page = await context.newPage();
-  const ready = watchPage(page);
+  const watched = watchPage(page);
   try {
     await page.setViewportSize(scene.viewport);
-    await page.goto(new URL(scene.route, baseUrl).href, {
-      waitUntil: "load",
-    });
-    for (const step of scene.steps) await perform(page, step);
-    if (scene.setup) return undefined;
-    await waitForReady(ready, READY);
-    const target = scene.crop ? page.locator(scene.crop).first() : page;
-    return await target.screenshot({ type: "png", animations: "disabled" });
+    return await playScene(
+      {
+        open: async (route) => {
+          await page.goto(new URL(route, baseUrl).href, { waitUntil: "load" });
+        },
+        perform: async (step) => {
+          await perform(page, step);
+        },
+        ready: () => waitForReady(watched, READY),
+        shoot: (crop) =>
+          (crop ? page.locator(crop).first() : page).screenshot({
+            type: "png",
+            animations: "disabled",
+          }),
+      },
+      scene,
+    );
   } finally {
     await page.close();
   }
