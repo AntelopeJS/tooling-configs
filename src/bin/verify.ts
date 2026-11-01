@@ -140,11 +140,19 @@ function runSeeded(
   );
   for (const result of results) {
     print(
-      `${result.caught ? "CAUGHT" : "MISSED"} ${result.feature} by ${result.caughtBy.join(", ") || "no journey"} (evidence ${result.run}/evidence/${result.feature}, control ${result.controlRun}/evidence/${result.feature})`,
+      `${result.outcome} ${result.feature} by ${result.caughtBy.join(", ") || "no journey"} (evidence ${result.run}/evidence/${result.feature}, control ${result.controlRun}/evidence/${result.feature})`,
     );
     if (result.failingInControl.length > 0)
       print(
-        `    not passing without the patch, not counted: ${result.failingInControl.join(", ")}`,
+        `    failing without the patch, not counted: ${result.failingInControl.join(", ")}`,
+      );
+    if (result.notVerified.control.length > 0)
+      print(
+        `    not verified without the patch, not counted: ${result.notVerified.control.join(", ")}`,
+      );
+    if (result.notVerified.seeded.length > 0)
+      print(
+        `    not verified with the patch, not counted: ${result.notVerified.seeded.join(", ")}`,
       );
     if (result.harnessErrors.length > 0)
       print(
@@ -152,7 +160,7 @@ function runSeeded(
       );
     print(result.output.replace(/^/gm, "    "));
   }
-  return results.every((result) => result.caught) ? 0 : 1;
+  return results.every((result) => result.outcome === "CAUGHT") ? 0 : 1;
 }
 
 function runSeededDoors(workspace: Workspace): number {

@@ -343,7 +343,11 @@ test("clean keeps the evidence and run.json and removes the scratch folders", (t
   assert.equal(evidence(run, "../run.json").containers.length, 0);
 });
 
-function result(journey: string, status: "PASS" | "FAIL", failing: boolean) {
+function result(
+  journey: string,
+  status: "PASS" | "FAIL" | "NOT VERIFIED",
+  failing: boolean,
+) {
   const checks = [{ name: "check", pass: !failing, detail: "" }];
   return {
     feature: "f",
@@ -353,7 +357,7 @@ function result(journey: string, status: "PASS" | "FAIL", failing: boolean) {
     status,
     steps: [{ name: "s", folder: "", checks }],
     error: null,
-    notVerified: null,
+    notVerified: status === "NOT VERIFIED" ? "the service went away" : null,
     folder: "",
   };
 }
@@ -378,11 +382,16 @@ test("a seeded break counts only through a journey that passes in the control an
     ],
   };
   const missed = judgeSeeded("f", control, seeded);
-  assert.equal(missed.caught, false);
+  assert.equal(missed.outcome, "MISSED");
   assert.deepEqual(missed.failingInControl, ["b"]);
   assert.deepEqual(missed.harnessErrors, ["c"]);
   seeded.results[0] = result("a", "FAIL", true);
   const caught = judgeSeeded("f", control, seeded);
-  assert.equal(caught.caught, true);
+  assert.equal(caught.outcome, "CAUGHT");
   assert.deepEqual(caught.caughtBy, ["a"]);
+  seeded.results[0] = result("a", "NOT VERIFIED", true);
+  const unreached = judgeSeeded("f", control, seeded);
+  assert.equal(unreached.outcome, "NOT VERIFIED");
+  assert.deepEqual(unreached.caughtBy, []);
+  assert.deepEqual(unreached.notVerified.seeded, ["a (the service went away)"]);
 });
