@@ -112,12 +112,17 @@ export interface ScenePage {
   shoot(crop: string | undefined): Promise<Buffer>;
 }
 
-/** Opens the scene's route, runs its steps, waits for the page to be ready, and answers its PNG; a setup scene answers nothing. */
+/**
+ * Opens the scene's route, waits for the page to be ready, runs its steps, waits again, and answers its
+ * PNG; a setup scene answers nothing. The `load` event comes before the app mounts, so a step taken then
+ * acts on the server-rendered page: the mount drops what it filled, and a click submits its form natively.
+ */
 export async function playScene(
   page: ScenePage,
   scene: CaptureScene,
 ): Promise<Buffer | undefined> {
   await page.open(scene.route);
+  await page.ready();
   for (const step of scene.steps) await page.perform(step);
   if (scene.setup) return undefined;
   await page.ready();
