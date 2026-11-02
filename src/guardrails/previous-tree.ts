@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import {
   copyFileSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   rmSync,
   symlinkSync,
@@ -53,7 +54,8 @@ function linkModules(root: string, tree: string, env: NodeJS.ProcessEnv): void {
  * content at `revision`, or is absent when `revision` does not have it or does
  * not exist, so the files are linted under the staged configuration. The
  * checkout is deleted afterwards. With `wholeIndex`, files the index marks
- * skip-worktree (a sparse checkout) are written too, so the tree is the commit.
+ * skip-worktree (a sparse checkout) are written too, so the tree is the commit,
+ * and an empty `.git` stops ignore-file lookups at the tree, not above `TMPDIR`.
  */
 export function withPreviousTree<Result>(
   root: string,
@@ -110,6 +112,7 @@ export function withPreviousTree<Result>(
       ],
       env,
     );
+    if (wholeIndex) mkdirSync(join(tree, ".git"), { recursive: true });
     linkModules(root, tree, env);
     return use(tree);
   } finally {

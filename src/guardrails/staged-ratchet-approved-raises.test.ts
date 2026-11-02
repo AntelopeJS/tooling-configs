@@ -107,6 +107,8 @@ test("a malformed variable is refused even when the commit is clean", (t) => {
     `${RULE}=2 ${RULE}=3`,
     "=2",
     `${RULE}=1234567890123456`,
+    `${RULE}=3\nanti-slop/no-reflect-get=2`,
+    `\n${RULE}=3`,
   ]) {
     const result = bin(root, "ratchet", ["--staged", "other.ts"], {
       APPROVED_RAISES: malformed,
@@ -155,4 +157,29 @@ test("an approved raise is refused while a tracked file has an unstaged edit or 
     assert.match(result.stderr, /unstaged/, change);
     assert.doesNotMatch(result.stderr, /APPROVED RAISE ACCEPTED/, change);
   }
+});
+
+test("a ceiling raised for a rule the variable does not list is refused next to an approved raise", (t) => {
+  const root = ratchetRepo(t);
+  const other = "typescript/no-non-null-assertion";
+  put(
+    root,
+    "guardrails.ratchet.json",
+    formatCeilings({ rules: { [RULE]: 2, [other]: 1 }, oversizeFiles: {} }),
+  );
+  commit(root);
+  stageAdding(root, 1, 3);
+  put(
+    root,
+    "guardrails.ratchet.json",
+    formatCeilings({ rules: { [RULE]: 3, [other]: 50 }, oversizeFiles: {} }),
+  );
+  execFileSync("git", ["add", "-A"], { cwd: root });
+  const result = check(root, `${RULE}=3`);
+  assert.equal(result.status, 1);
+  assert.match(
+    result.stderr,
+    new RegExp(`APPROVED_RAISES does not list ${other}`),
+  );
+  assert.match(result.stderr, /raises its ceiling from 1 to 50/);
 });

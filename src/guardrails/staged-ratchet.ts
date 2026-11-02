@@ -159,20 +159,27 @@ function branchCounts(root: string, revision: string) {
   };
 }
 
-/** The ceiling `revision` (`:` for the index, which is what the commit will write; `HEAD:`) records for `rule`. */
-function ceilingAt(
-  root: string,
-  revision: string,
-  rule: string,
-): number | undefined {
+/** The ceilings `revision` (`:` for the index, which is what the commit will write; `HEAD:`) records; none when it has no ceilings file. */
+function ceilingsAt(root: string, revision: string): Record<string, number> {
   const result = spawnSync("git", ["show", `${revision}${CEILINGS_FILE}`], {
     cwd: root,
     encoding: "utf8",
   });
-  if (result.status !== 0) return undefined;
-  return parseCeilings(result.stdout, `${revision}${CEILINGS_FILE}`).rules[
-    rule
-  ];
+  if (result.status !== 0) return {};
+  return parseCeilings(result.stdout, `${revision}${CEILINGS_FILE}`).rules;
+}
+
+/** Failures for each ceiling this commit raises that the variable does not list, so an approval for one rule cannot carry another. */
+function unlistedRaises(root: string, approved: Map<string, number>): string[] {
+  if (!approved.size) return [];
+  const head = ceilingsAt(root, "HEAD:");
+  return Object.entries(ceilingsAt(root, ":")).flatMap(([rule, count]) =>
+    approved.has(rule) || count <= (head[rule] ?? 0)
+      ? []
+      : [
+          `${rule}: this commit raises its ceiling from ${head[rule] ?? 0} to ${count}; APPROVED_RAISES does not list ${rule}.`,
+        ],
+  );
 }
 
 export interface StagedRatchetResult {
@@ -199,8 +206,8 @@ function approvalRefusal(
     .filter(Boolean);
   if (unstaged.length)
     return `${rule}: an approved raise is refused while ${unstaged.length} tracked file(s) have unstaged changes (${unstaged[0]}); stage or stash them first.`;
-  const staged = ceilingAt(root, ":", rule);
-  const head = ceilingAt(root, "HEAD:", rule) ?? 0;
+  const staged = ceilingsAt(root, ":")[rule];
+  const head = ceilingsAt(root, "HEAD:")[rule] ?? 0;
   if (staged !== max)
     return `${rule}: APPROVED_RAISES approves ${max}, but the staged ${CEILINGS_FILE} records ${staged ?? "no ceiling"}; the commit must write exactly ${max}.`;
   if (max <= head)
@@ -240,6 +247,16 @@ function settleApproved(
   };
 }
 
+function higherCounts(
+  first: Map<string, number>,
+  second: Map<string, number>,
+): Map<string, number> {
+  const higher = new Map(first);
+  for (const [rule, count] of second)
+    higher.set(rule, Math.max(count, higher.get(rule) ?? 0));
+  return higher;
+}
+
 function inRanges(
   ranges: Map<string, { start: number; end: number }[]>,
   file: string,
@@ -270,14 +287,15 @@ export function stagedRatchet(
   files?: string[],
 ): StagedRatchetResult {
   const approved = parseApprovedRaises();
+  const raised = unlistedRaises(root, approved);
   const accepted: string[] = [];
   const targets = files ?? stagedNames(root, "ACMR");
-  if (!targets.length) return { failures: [], accepted };
+  if (!targets.length) return { failures: raised, accepted };
   const ceilings = readCeilings(root);
   const after = lintDiagnostics(root, undefined, targets, STAGED_LINT).filter(
     ({ rule }) => Object.hasOwn(ceilings.rules, rule) || approved.has(rule),
   );
-  if (!after.length) return { failures: [], accepted };
+  if (!after.length) return { failures: raised, accepted };
   const base = comparisonBase(root);
   const atHead = countByRule(previousDiagnostics(root, targets, undefined));
   const headAdditions = stagedAdditions(root, targets);
@@ -334,13 +352,18 @@ export function stagedRatchet(
     );
     const max = approved.get(rule);
     if (max !== undefined) {
-      repository ??= withPreviousTree(
-        root,
-        "HEAD",
-        [],
-        (tree) =>
-          countByRule(lintDiagnostics(tree, undefined, undefined, STAGED_LINT)),
-        { wholeIndex: true },
+      repository ??= higherCounts(
+        withPreviousTree(
+          root,
+          "HEAD",
+          [],
+          (tree) =>
+            countByRule(
+              lintDiagnostics(tree, undefined, undefined, STAGED_LINT),
+            ),
+          { wholeIndex: true },
+        ),
+        countByRule(lintDiagnostics(root, undefined, undefined, STAGED_LINT)),
       );
       const settled = settleApproved(root, rule, max, {
         holds: repository.get(rule) ?? 0,
@@ -364,6 +387,7 @@ export function stagedRatchet(
       ),
     );
   }
+  failures.unshift(...raised);
   return {
     failures:
       failures.length && base.revision === undefined

@@ -112,12 +112,11 @@ test("an approved raise within N is still accepted in a sparse checkout", (t) =>
   assert.match(result.stderr, /3 in the repository/);
 });
 
-test("an untracked scratch file with a finding is not part of the commit", (t) => {
+test("an untracked file with a finding still counts toward the approved total", (t) => {
   const root = repo(t);
   stageRaise(root, 1);
   put(root, "scratch.ts", "export const scratch: any = 1;\n");
-  const result = check(root);
-  assert.equal(result.status, 0, result.stderr);
+  assertRefused(root);
 });
 
 test("a variable with a non-breaking space between entries is malformed", (t) => {
