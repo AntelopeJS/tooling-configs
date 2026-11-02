@@ -206,3 +206,38 @@ it("fails when the repository opts in and Vale is not installed", (t) => {
     "standard mode needs Vale: run install-vale.sh and set VALE_BIN",
   ]);
 });
+
+it("leaves out what the site never publishes: design/ under a docs folder and grill logs", (t) => {
+  const log = `# Decision log\n\nPlease simply read [gone](missing.md).\n\n${words(3500)}\n`;
+  const { failures } = run(t, {
+    "README.md": README,
+    "docs/page.md": PAGE("Set the option."),
+    "docs/design/log.md": log,
+    "docs/design/deep/notes.md": log,
+    "docs/guides/session-grill-me.md": log,
+    "docs/session-grill.md": log,
+  });
+  assert.deepEqual(failures, []);
+});
+
+it("still checks a nested design folder, a page that merely mentions design, and a file named in docs-files", (t) => {
+  const { root } = fixture(t, {
+    "package.json": OPT_IN,
+    "README.md": README,
+    "docs/guides/design/page.md": "No frontmatter here.\n",
+    "docs/design.md": "No frontmatter here either.\n",
+    "docs/design/log.md": "No frontmatter in the named log.\n",
+  });
+  const { failures, files } = checkDocs({
+    root,
+    files: ["README.md", "docs", "docs/design/log.md"],
+    valeBin: false,
+  });
+  assert.equal(files, 4);
+  for (const path of [
+    "docs/guides/design/page.md",
+    "docs/design.md",
+    "docs/design/log.md",
+  ])
+    assert.match(failures.join("\n"), new RegExp(path));
+});

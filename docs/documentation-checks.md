@@ -317,7 +317,7 @@ CI, not privileged `pull_request_target` execution of untrusted checkout code.
 
 Standard mode is the AntelopeJS documentation standard. A repository opts in with `"antelopeJs": { "docs": { "standard": true } }` in its root `package.json`. The action reads the opt-in from the checkout, so a caller passes no new input and a released default branch keeps running the old checks. Without the opt-in, nothing below runs.
 
-With the opt-in, every selected Markdown file is checked for these:
+With the opt-in, every selected Markdown file is checked for these. Inside a selected folder, a top-level `design` folder and any `.md` file whose name contains `grill` are not selected, because antelope-web never publishes them (`design/**` and `**/*grill*.md` in its docs sources). A file named directly in `docs-files` is always checked.
 
 - **Frontmatter.** A page needs `title`, `description` and `mode`, and `mode` is `tutorial`, `how-to`, `reference` or `explanation`. A `README.md` is exempt, because GitHub shows its frontmatter as a table.
 - **No body H1.** The title comes from frontmatter. A `README.md` keeps its H1.
