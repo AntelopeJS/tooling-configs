@@ -318,13 +318,12 @@ function linkedVersion(
 
 function resolvedVersion(
   root: string,
-  lock: Document,
+  { document, importer }: Lock,
   directory: string,
   name: string,
 ): string | undefined {
-  const importer = directory || ".";
   for (const section of RESOLVED_SECTIONS) {
-    const entry = lock.getIn(["importers", importer, section, name], true);
+    const entry = document.getIn(["importers", importer, section, name], true);
     const version = isMap(entry) ? entry.get("version", true) : entry;
     if (!isScalar(version)) continue;
     const resolved = String(version.value).split("(")[0];
@@ -335,10 +334,45 @@ function resolvedVersion(
   return undefined;
 }
 
-function readLock(root: string): Document | undefined {
-  const path = join(root, LOCKFILE);
+/** A parsed pnpm lockfile and the importer that holds one package's dependencies in it. */
+interface Lock {
+  document: Document;
+  importer: string;
+}
+
+const UNSHARED_NPMRC =
+  /^\s*shared-workspace-lockfile\s*=\s*false\s*(?:[#;].*)?$/m;
+
+/** Whether the workspace keeps one root lockfile, or `shared-workspace-lockfile=false` gives each package its own. */
+function sharesLockfile(root: string): boolean {
+  const npmrc = join(root, ".npmrc");
+  if (existsSync(npmrc) && UNSHARED_NPMRC.test(readFileSync(npmrc, "utf8")))
+    return false;
+  const workspace = join(root, "pnpm-workspace.yaml");
+  return !(
+    existsSync(workspace) &&
+    parseDocument(readFileSync(workspace, "utf8")).get(
+      "sharedWorkspaceLockfile",
+    ) === false
+  );
+}
+
+/** The lockfile path of a package, relative to the root. A shared lockfile is the root's, indexed by the package directory. */
+function lockPath(shared: boolean, directory: string): string {
+  return shared ? LOCKFILE : relative(directory, LOCKFILE);
+}
+
+function readLock(
+  root: string,
+  shared: boolean,
+  directory: string,
+): Lock | undefined {
+  const path = join(root, lockPath(shared, directory));
   return existsSync(path)
-    ? parseDocument(readFileSync(path, "utf8"))
+    ? {
+        document: parseDocument(readFileSync(path, "utf8")),
+        importer: shared ? directory || "." : ".",
+      }
     : undefined;
 }
 
@@ -353,7 +387,7 @@ interface PlannedPackage {
 function planPackage(
   root: string,
   plan: DocsPlan,
-  lock: Document | undefined,
+  lock: Lock | undefined,
   standard: boolean,
   { directory, ranges, published, node }: PlannedPackage,
 ): void {
@@ -397,7 +431,7 @@ function planPackage(
  * Plans the docs-compat block of the root and of every workspace package that is not private and declares an
  * `@antelopejs/*` peer, runtime or optional dependency, and the `docs-files` lines covering the root and every workspace
  * package that is not private.
- * Tested with comes from pnpm-lock.yaml; other package managers get a dash.
+ * Tested with comes from pnpm-lock.yaml, each package's own when `shared-workspace-lockfile=false`; other package managers get a dash.
  */
 export function planDocs(root: string, manager: PackageManager): DocsPlan {
   const rootManifest = readManifest(root, "");
@@ -419,14 +453,28 @@ export function planDocs(root: string, manager: PackageManager): DocsPlan {
     errors: [],
     exists: (path) => existsSync(join(root, path)),
   };
-  const lock = manager === "pnpm" ? readLock(root) : undefined;
-  if (manager === "pnpm" && qualifying.length && !lock) {
-    plan.errors.push(
-      `${LOCKFILE} is missing, and the docs-compat block reads Tested with from it: run pnpm install, then rerun antelopejs-sync.`,
-    );
+  const shared = sharesLockfile(root);
+  const locks = new Map(
+    packages.map(({ directory }) => [
+      directory,
+      manager === "pnpm" ? readLock(root, shared, directory) : undefined,
+    ]),
+  );
+  const missing =
+    manager === "pnpm"
+      ? qualifying.filter(({ directory }) => !locks.get(directory))
+      : [];
+  if (missing.length) {
+    for (const path of new Set(
+      missing.map(({ directory }) => lockPath(shared, directory)),
+    ))
+      plan.errors.push(
+        `${path} is missing, and the docs-compat block reads Tested with from it: run pnpm install, then rerun antelopejs-sync.`,
+      );
     return plan;
   }
   const standard = rootManifest.antelopeJs?.docs?.standard === true;
-  for (const item of packages) planPackage(root, plan, lock, standard, item);
+  for (const item of packages)
+    planPackage(root, plan, locks.get(item.directory), standard, item);
   return plan;
 }
