@@ -2,7 +2,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { readCeilings } from "./ceilings.ts";
+import { parseApprovedRaises } from "./approved-raises.ts";
+import { CEILINGS_FILE, parseCeilings, readCeilings } from "./ceilings.ts";
 import {
   lintDiagnostics,
   type Diagnostic,
@@ -158,6 +159,118 @@ function branchCounts(root: string, revision: string) {
   };
 }
 
+/** The ceilings `revision` (`:` for the index, which is what the commit will write; `HEAD:`) records; none when it has no ceilings file. */
+function ceilingsAt(root: string, revision: string): Record<string, number> {
+  const result = spawnSync("git", ["show", `${revision}${CEILINGS_FILE}`], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  if (result.status !== 0) return {};
+  return parseCeilings(result.stdout, `${revision}${CEILINGS_FILE}`).rules;
+}
+
+/** Failures for each ceiling this commit raises that the variable does not list, so an approval for one rule cannot carry another. */
+function unlistedRaises(root: string, approved: Map<string, number>): string[] {
+  if (!approved.size) return [];
+  const head = ceilingsAt(root, "HEAD:");
+  return Object.entries(ceilingsAt(root, ":")).flatMap(([rule, count]) =>
+    approved.has(rule) || count <= (head[rule] ?? 0)
+      ? []
+      : [
+          `${rule}: this commit raises its ceiling from ${head[rule] ?? 0} to ${count}; APPROVED_RAISES does not list ${rule}.`,
+        ],
+  );
+}
+
+export interface StagedRatchetResult {
+  failures: string[];
+  /** One loud line per approved raise this commit relies on. */
+  accepted: string[];
+}
+
+function unlisted(rule: string, approved: Map<string, number>): string[] {
+  return approved.size ? [`  APPROVED_RAISES does not list ${rule}.`] : [];
+}
+
+/** Tracked files git is told not to look at (`S` skip-worktree, lowercase assume-unchanged), whose working copy can differ from the index unseen. */
+function hiddenTracked(root: string): string[] {
+  return execFileSync("git", ["ls-files", "-v", "-z"], {
+    cwd: root,
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter((line) => /^(S|[a-z]) /u.test(line))
+    .map((line) => line.slice(2));
+}
+
+function approvalRefusal(
+  root: string,
+  rule: string,
+  max: number,
+  holds: number,
+): string | undefined {
+  const unstaged = execFileSync("git", ["diff", "--name-only", "-z"], {
+    cwd: root,
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter(Boolean);
+  if (unstaged.length)
+    return `${rule}: an approved raise is refused while ${unstaged.length} tracked file(s) have unstaged changes (${unstaged[0]}); stage or stash them first.`;
+  const hidden = hiddenTracked(root);
+  if (hidden.length)
+    return `${rule}: an approved raise is refused while ${hidden.length} tracked file(s) are skip-worktree or assume-unchanged (${hidden[0]}); disable the sparse checkout or clear the bit first.`;
+  const staged = ceilingsAt(root, ":")[rule];
+  const head = ceilingsAt(root, "HEAD:")[rule] ?? 0;
+  if (staged !== max)
+    return `${rule}: APPROVED_RAISES approves ${max}, but the staged ${CEILINGS_FILE} records ${staged ?? "no ceiling"}; the commit must write exactly ${max}.`;
+  if (max <= head)
+    return `${rule}: APPROVED_RAISES approves ${max}, but this commit does not raise the ceiling above ${head} at HEAD.`;
+  return holds > max
+    ? `${rule}: the repository holds ${holds} findings, but APPROVED_RAISES approves at most ${max}.`
+    : undefined;
+}
+
+/**
+ * Settles `rule` against its approved `max`: it passes while this commit
+ * raises the ceiling from HEAD's to exactly `max` and the repository holds no
+ * more than `max`, so an approval left set accepts nothing in a later commit.
+ */
+function settleApproved(
+  root: string,
+  rule: string,
+  max: number,
+  { holds, rise, shown }: { holds: number; rise: number; shown: Diagnostic[] },
+): StagedRatchetResult {
+  const refusal = approvalRefusal(root, rule, max, holds);
+  if (refusal === undefined)
+    return {
+      accepted: [
+        `${rule} raised to ${max} (this commit adds ${rise}, ${holds} in the repository, ceiling ${max}), approved through APPROVED_RAISES`,
+      ],
+      failures: [],
+    };
+  return {
+    accepted: [],
+    failures: [
+      refusal,
+      ...shown.map(
+        (diagnostic) => `  ${diagnostic.location}: ${diagnostic.message}`,
+      ),
+    ],
+  };
+}
+
+function higherCounts(
+  first: Map<string, number>,
+  second: Map<string, number>,
+): Map<string, number> {
+  const higher = new Map(first);
+  for (const [rule, count] of second)
+    higher.set(rule, Math.max(count, higher.get(rule) ?? 0));
+  return higher;
+}
+
 function inRanges(
   ranges: Map<string, { start: number; end: number }[]>,
   file: string,
@@ -183,14 +296,20 @@ function inRanges(
  * rise above both fails, and lists the findings on the lines that differ from
  * HEAD and from the base.
  */
-export function stagedRatchet(root: string, files?: string[]): string[] {
+export function stagedRatchet(
+  root: string,
+  files?: string[],
+): StagedRatchetResult {
+  const approved = parseApprovedRaises();
+  const raised = unlistedRaises(root, approved);
+  const accepted: string[] = [];
   const targets = files ?? stagedNames(root, "ACMR");
-  if (!targets.length) return [];
+  if (!targets.length) return { failures: raised, accepted };
   const ceilings = readCeilings(root);
   const after = lintDiagnostics(root, undefined, targets, STAGED_LINT).filter(
-    ({ rule }) => Object.hasOwn(ceilings.rules, rule),
+    ({ rule }) => Object.hasOwn(ceilings.rules, rule) || approved.has(rule),
   );
-  if (!after.length) return [];
+  if (!after.length) return { failures: raised, accepted };
   const base = comparisonBase(root);
   const atHead = countByRule(previousDiagnostics(root, targets, undefined));
   const headAdditions = stagedAdditions(root, targets);
@@ -231,6 +350,7 @@ export function stagedRatchet(root: string, files?: string[]): string[] {
     };
   };
   const failures: string[] = [];
+  let repository: Map<string, number> | undefined;
   for (const [rule, total] of countByRule(after)) {
     const head = atHead.get(rule) ?? 0;
     if (total <= head) continue;
@@ -244,19 +364,49 @@ export function stagedRatchet(root: string, files?: string[]): string[] {
         (baseChanges === undefined ||
           previousLine(baseChanges.get(file)?.hunks ?? [], line) === undefined),
     );
+    const max = approved.get(rule);
+    if (max !== undefined) {
+      repository ??= higherCounts(
+        withPreviousTree(
+          root,
+          "HEAD",
+          [],
+          (tree) =>
+            countByRule(
+              lintDiagnostics(tree, undefined, undefined, STAGED_LINT),
+            ),
+          { wholeIndex: true },
+        ),
+        countByRule(lintDiagnostics(root, undefined, undefined, STAGED_LINT)),
+      );
+      const settled = settleApproved(root, rule, max, {
+        holds: repository.get(rule) ?? 0,
+        rise,
+        shown: added.length ? added : matches,
+      });
+      accepted.push(...settled.accepted);
+      failures.push(...settled.failures);
+      continue;
+    }
     const counts =
       kept === undefined || base.revision === undefined
         ? `${head} at HEAD`
         : `${head} at HEAD, ${kept} unchanged since ${base.label}`;
     failures.push(
       `${rule}: this commit adds ${rise} to the staged files (${counts}, ${total} staged)${raised === undefined ? "" : `; ${raised}`}; the ceiling covers only legacy findings.`,
+      ...unlisted(rule, approved),
       ...(added.length ? added : matches).map(
         (diagnostic) =>
           `  ${diagnostic.location}: ${diagnostic.message}\n    Fix: ${diagnostic.help ?? "Resolve this finding; moving, reformatting or restoring a legacy finding to its base form is allowed, adding one is not."}`,
       ),
     );
   }
-  return failures.length && base.revision === undefined
-    ? [...failures, base.note]
-    : failures;
+  failures.unshift(...raised);
+  return {
+    failures:
+      failures.length && base.revision === undefined
+        ? [...failures, base.note]
+        : failures,
+    accepted,
+  };
 }

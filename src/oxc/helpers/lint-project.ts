@@ -66,8 +66,12 @@ export default { extends: [preset]${typeAware ? ", options: { typeAware: true }"
     root,
     write,
     remove: () => rmSync(root, { recursive: true, force: true }),
-    run(measure: boolean | string = false, directory = root) {
-      const env = { ...process.env };
+    run(
+      measure: boolean | string = false,
+      directory = root,
+      extraEnv: Record<string, string> = {},
+    ) {
+      const env = { ...process.env, ...extraEnv };
       delete env.ANTELOPEJS_RATCHET_MEASURE;
       env.OXLINT_TSGOLINT_PATH = tsgolint;
       if (measure !== false)
