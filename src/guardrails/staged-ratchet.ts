@@ -192,6 +192,17 @@ function unlisted(rule: string, approved: Map<string, number>): string[] {
   return approved.size ? [`  APPROVED_RAISES does not list ${rule}.`] : [];
 }
 
+/** Tracked files git is told not to look at (`S` skip-worktree, lowercase assume-unchanged), whose working copy can differ from the index unseen. */
+function hiddenTracked(root: string): string[] {
+  return execFileSync("git", ["ls-files", "-v", "-z"], {
+    cwd: root,
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter((line) => /^(S|[a-z]) /u.test(line))
+    .map((line) => line.slice(2));
+}
+
 function approvalRefusal(
   root: string,
   rule: string,
@@ -206,6 +217,9 @@ function approvalRefusal(
     .filter(Boolean);
   if (unstaged.length)
     return `${rule}: an approved raise is refused while ${unstaged.length} tracked file(s) have unstaged changes (${unstaged[0]}); stage or stash them first.`;
+  const hidden = hiddenTracked(root);
+  if (hidden.length)
+    return `${rule}: an approved raise is refused while ${hidden.length} tracked file(s) are skip-worktree or assume-unchanged (${hidden[0]}); disable the sparse checkout or clear the bit first.`;
   const staged = ceilingsAt(root, ":")[rule];
   const head = ceilingsAt(root, "HEAD:")[rule] ?? 0;
   if (staged !== max)

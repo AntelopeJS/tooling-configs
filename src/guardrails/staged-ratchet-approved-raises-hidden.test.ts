@@ -64,7 +64,10 @@ function check(root: string) {
 function assertRefused(root: string): void {
   const result = check(root);
   assert.equal(result.status, 1, result.stderr);
-  assert.match(result.stderr, /holds 4 findings/);
+  assert.match(
+    result.stderr,
+    /holds 4 findings|skip-worktree or assume-unchanged/,
+  );
   assert.doesNotMatch(result.stderr, /APPROVED RAISE ACCEPTED/);
 }
 
@@ -103,13 +106,27 @@ test("an approved raise holding more than N is refused in a sparse checkout", (t
   assertRefused(root);
 });
 
-test("an approved raise within N is still accepted in a sparse checkout", (t) => {
+test("an approved raise within N is refused in a sparse checkout, which hides tracked files", (t) => {
   const root = repo(t);
   git(root, "sparse-checkout", "set", "--no-cone", "/*", "!/sub/");
   stageRaise(root, 1);
   const result = check(root);
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stderr, /3 in the repository/);
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /skip-worktree or assume-unchanged/);
+});
+
+test("an approved raise is refused while any tracked file is assume-unchanged", (t) => {
+  const root = repo(t);
+  put(root, "unrelated.txt", "x\n");
+  commit(root);
+  git(root, "update-index", "--assume-unchanged", "unrelated.txt");
+  stageRaise(root, 1);
+  const result = check(root);
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(
+    result.stderr,
+    /skip-worktree or assume-unchanged \(unrelated\.txt\)/,
+  );
 });
 
 test("an untracked file with a finding still counts toward the approved total", (t) => {
