@@ -130,5 +130,15 @@ tester.run("anti-slop/no-unknown-parameters at a caught-value callback type", no
 			code: "function run(onError: ((error: unknown) => void) | null) { try { work(); } catch (error) { onError?.(error); } }",
 			errors: [error],
 		},
+		{
+			name: "C9 existence-test && leaking the callback on the right",
+			code: "function run(onError?: (e: unknown) => void) { try { w(); } catch (e) { onError(e); } return onError && onError; }",
+			errors: [error],
+		},
+		{
+			name: "M8 callback passed on beside the caught value",
+			code: "function run(onError: (e: unknown) => void) { try { w(); } catch (e) { other(e, onError); } }",
+			errors: [error],
+		},
 	],
 });

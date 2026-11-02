@@ -10,9 +10,8 @@ type MaybeBranded = { [PROXY_BRAND]?: ProxyBrand };
 function isObjectLike(value: unknown): value is object {
   return (typeof value === "object" || typeof value === "function") && !!value;
 }
-function readBrand(value: object): ProxyBrand | undefined {
-  const holder: MaybeBranded = value;
-  const brand = holder[PROXY_BRAND];
+function readBrand(value: MaybeBranded): ProxyBrand | undefined {
+  const brand = value[PROXY_BRAND];
   if (!brand || brand.protocol !== RUNTIME_PROTOCOL_VERSION) return;
   return brand;
 }`;
@@ -67,6 +66,10 @@ function brandName(value: unknown): string | undefined {
 			code: `const BRAND = Symbol.for("brand");
 function isObjectLike(value: unknown): value is object { return value !== null; }
 function hasBrand(value: unknown): boolean { return isObjectLike(value) && BRAND in value; }`,
+		},
+		{
+			name: "M9 void probe stays exempt (control for void)",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction f(v: unknown): void { if (!isObj(v)) return; const h: { [BRAND]?: string } = v; if (h[BRAND]) tick(); }",
 		},
 	],
 	invalid: [
@@ -215,6 +218,81 @@ function remember(v: unknown): boolean { if (!isObj(v)) return false; const h: {
 			code: `const BRAND = Symbol.for("brand");
 function readBrand(value: object): string | undefined { const holder: { [BRAND]?: string } = value; return holder[BRAND]; }
 export function brandOf(value: unknown): string | undefined { return readBrand(arguments[0]); }`,
+			errors: [error],
+		},
+		{
+			name: "A1 primitive reader, result pushed by the probe, boolean return",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction rd(o: object): string | undefined { const h: { [BRAND]?: string } = o; return h[BRAND]; }\nfunction remember(v: unknown): boolean { if (!isObj(v)) return false; names.push(rd(v)); return true; }",
+			errors: [error],
+		},
+		{
+			name: "A2 primitive reader, const local stored, void return",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction rd(o: object): string | undefined { const h: { [BRAND]?: string } = o; return h[BRAND]; }\nfunction remember(v: unknown): void { if (!isObj(v)) return; const s = rd(v); cache.set('k', s); }",
+			errors: [error],
+		},
+		{
+			name: "A5 two readers: object reader under a primitive reader, result stored",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction a(o: object): Session | undefined { const h: { [BRAND]?: Session } = o; return h[BRAND]; }\nfunction b(o: object): string | undefined { return a(o)?.token; }\nfunction remember(v: unknown): boolean { if (!isObj(v)) return false; tokens.push(b(v)); return true; }",
+			errors: [error],
+		},
+		{
+			name: "A7 boolean computed after storing a reader's primitive",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction rd(o: object): string | undefined { const h: { [BRAND]?: string } = o; return h[BRAND]; }\nfunction has(v: unknown): boolean { if (!isObj(v)) return false; const s = rd(v); log(s); return s !== undefined; }",
+			errors: [error],
+		},
+		{
+			name: "B1 closure with primitive return reads the brand, closure stored",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction remember(v: unknown): boolean { if (!isObj(v)) return false; const h: { [BRAND]?: Session } = v; thunks.push((): string => h[BRAND]!.token); return true; }",
+			errors: [error],
+		},
+		{
+			name: "B2 named const closure stored, primitive return",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction remember(v: unknown): boolean { if (!isObj(v)) return false; const h: { [BRAND]?: string } = v; const read = (): string | undefined => h[BRAND]; thunks.push(read); return true; }",
+			errors: [error],
+		},
+		{
+			name: "B4 BRAND in value inside a stored closure keeps the value alive",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction remember(v: unknown): boolean { if (!isObj(v)) return false; thunks.push((): boolean => BRAND in v); return true; }",
+			errors: [error],
+		},
+		{
+			name: "M1 non-computed .BRAND is a string key",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction f(v: unknown): string | undefined { if (!isObj(v)) return; const h: { BRAND?: string } = v; return h.BRAND; }",
+			errors: [error],
+		},
+		{
+			name: "M2 shadowed Boolean stores the read",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction f(v: unknown): boolean { if (!isObj(v)) return false; const Boolean = keep; const h: { [BRAND]?: string } = v; return Boolean(h[BRAND]); }",
+			errors: [error],
+		},
+		{
+			name: "M3 let local holds the read",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction f(v: unknown): string | undefined { if (!isObj(v)) return; const h: { [BRAND]?: string } = v; let b = h[BRAND]; return b; }",
+			errors: [error],
+		},
+		{
+			name: "M4 let alias of the value",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction f(v: unknown): boolean { if (!isObj(v)) return false; let h = v; return BRAND in h; }",
+			errors: [error],
+		},
+		{
+			name: "M5 a guard on another parameter is no guard of this one",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction g(a: unknown, b: unknown): a is object { return true; }\nfunction f(v: unknown, x: unknown): boolean { return g(x, v) && isObj(v) && BRAND in v; }",
+			errors: [error, error, error],
+		},
+		{
+			name: "M7 owner leaks through arguments beside a real probe",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction f(v: unknown): boolean { leaked.push(arguments[0]); return isObj(v) && BRAND in v; }",
+			errors: [error],
+		},
+		{
+			name: "B18 asserts-guard instead of predicate",
+			code: "const BRAND = Symbol.for('b');\nfunction assertObj(v: unknown): asserts v is object {}\nfunction hasBrand(v: unknown): boolean { assertObj(v); return BRAND in v; }",
+			errors: [error],
+		},
+		{
+			name: "B19 parameter typed unknown inside a union",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction hasBrand(v: unknown | string): boolean { return isObj(v) && BRAND in v; }",
 			errors: [error],
 		},
 	],

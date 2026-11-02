@@ -120,9 +120,9 @@ function everyUseReaches(variable: Variable | null | undefined, reaches: (use: N
 /**
  * Return whether the value an expression yields reaches nothing but the result of the probe. The value may be tested,
  * compared, negated, read further (`.identity`), pass through `Boolean(...)`, a type wrapper, a `&&`, `||`, `??` or a
- * conditional branch, be held in a `const` whose uses obey the same rule, or be returned. A function that is not the
- * probe may return it when it declares a primitive return type too, or when it is declared in this file and every use of it
- * is a call whose value obeys the same rule.
+ * conditional branch, be held in a `const` whose uses obey the same rule, or be returned. Only the probe ends the walk. A function that is not the
+ * probe may return it when it is declared in this file and every use of it is a call whose value obeys the same rule, or when it
+ * declares a primitive return type and nothing in the file refers to it (an exported sibling probe).
  * An assignment, a `delete`, an update, a call of the value, an argument to any other call, a store or a spread refuses.
  */
 function resultReachesOnlyReturn(node: ESTree.Node, owner: RuntimeFunction, sourceCode: SourceCode, seen: Set<ESTree.Node>): boolean {
@@ -164,8 +164,10 @@ function resultReachesOnlyReturn(node: ESTree.Node, owner: RuntimeFunction, sour
 			if (user.type === "ArrowFunctionExpression" && user.body !== node) return false;
 			const returner = user.type === "ArrowFunctionExpression" ? user : enclosingFunction(user);
 			if (returner === null) return false;
-			if (returner === owner || returnsPrimitive(returner)) return true;
-			return everyUseReaches(readerVariable(returner, sourceCode), (use) => use.parent.type === "CallExpression" && use.parent.callee === use && next(use.parent));
+			if (returner === owner) return true;
+			const bound = readerVariable(returner, sourceCode);
+			if (returnsPrimitive(returner) && bound !== null && bound.references.length === 0) return true;
+			return everyUseReaches(bound, (use) => use.parent.type === "CallExpression" && use.parent.callee === use && next(use.parent));
 		}
 		default:
 			return false;
