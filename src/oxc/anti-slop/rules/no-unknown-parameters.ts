@@ -1,6 +1,8 @@
 import { defineRule } from "@oxlint/plugins";
-import type { ESTree } from "@oxlint/plugins";
+import type { ESTree, SourceCode } from "@oxlint/plugins";
 
+import { isBrandProbe } from "../shared/brand-probe.ts";
+import { isCaughtValueCallbackType } from "../shared/caught-callback.ts";
 import {
   containsUnknownType,
   type FunctionParameter,
@@ -100,10 +102,25 @@ function isRejectFunctionType(owner: ParameterOwner): boolean {
 }
 
 /** Return whether a parameter is exempt whatever its name: `this`, a boundary-decorated request value, or a promise rejection reason. */
-function isExemptPosition(owner: ParameterOwner, parameter: FunctionParameter): boolean {
+function isExemptPosition(owner: ParameterOwner, parameter: FunctionParameter, sourceCode: SourceCode): boolean {
   if (isThisParameter(parameter) || hasBoundaryDecorator(parameter)) return true;
   if (owner.params[0] === parameter && isRejectionCallback(owner)) return true;
-  return isRejectFunctionType(owner);
+  return isRejectFunctionType(owner) || (owner.type === "TSFunctionType" && isCaughtValueCallbackType(owner, sourceCode));
+}
+
+/** Return whether a parameter typed exactly `unknown` is only probed for a symbol-keyed brand this file creates, see `isBrandProbe`. */
+function probesBrand(
+  owner: RuntimeFunction,
+  name: string,
+  annotated: ESTree.TSType,
+  facts: FunctionFacts,
+  sourceCode: SourceCode,
+): boolean {
+  if (annotated.type !== "TSUnknownKeyword" || facts.readsImplicitly) return false;
+  const parameter = sourceCode
+    .getDeclaredVariables(owner)
+    .find((variable) => variable.name === name && variable.defs[0]?.type === "Parameter");
+  return isBrandProbe(owner, parameter, sourceCode);
 }
 
 /** The facts of a function the rule did not walk: a signature with no body. */
@@ -115,7 +132,7 @@ export const noUnknownParametersRule = defineRule({
     type: "problem",
     docs: {
       description:
-        "Disallow explicitly unknown function parameters except `cause`, type-predicate subjects, `this`, request values injected by `@JSONBody`, `@JsonBody` or `@Parameter`, promise rejection reasons, and a parameter a function only decodes through a schema or decoder into the value it returns; decode unknown input at its I/O boundary instead.",
+        "Disallow explicitly unknown function parameters except `cause`, type-predicate subjects, `this`, request values injected by `@JSONBody`, `@JsonBody` or `@Parameter`, promise rejection reasons, the parameter of a callback type that the function only calls with a caught value, a symbol-keyed brand probe, and a parameter a function only decodes through a schema or decoder into the value it returns; decode unknown input at its I/O boundary instead.",
     },
     messages: {
       unknownParameter:
@@ -129,7 +146,7 @@ export const noUnknownParametersRule = defineRule({
         const annotation = functionParameterTypeAnnotation(parameter);
         if (annotation === null || annotation === undefined) continue;
         if (!containsUnknownType(annotation.typeAnnotation)) continue;
-        if (isExemptPosition(node, parameter)) continue;
+        if (isExemptPosition(node, parameter, context.sourceCode)) continue;
         const name = functionParameterBindingName(parameter, context.sourceCode);
         if (name === "cause" || isTypePredicateSubject(node, name)) continue;
         if (
@@ -138,6 +155,7 @@ export const noUnknownParametersRule = defineRule({
         ) {
           continue;
         }
+        if (isRuntimeFunction(node) && probesBrand(node, name, annotation.typeAnnotation, facts, context.sourceCode)) continue;
         context.report({
           node: annotation.typeAnnotation,
           messageId: "unknownParameter",
