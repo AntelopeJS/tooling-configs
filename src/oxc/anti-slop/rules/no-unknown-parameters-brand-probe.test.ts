@@ -7,23 +7,27 @@ const error = { messageId: "unknownParameter" };
 
 const PROXIES = `const PROXY_BRAND = Symbol.for("antelopejs.interface-proxy");
 type MaybeBranded = { [PROXY_BRAND]?: ProxyBrand };
-function isObjectLike(value: Parameters<typeof IsInterfaceProxy>[0]): value is object {
+function isObjectLike(value: unknown): value is object {
   return (typeof value === "object" || typeof value === "function") && !!value;
 }
-function readBrand(value: Parameters<typeof IsInterfaceProxy>[0]): ProxyBrand | undefined {
-  if (!isObjectLike(value)) return;
+function readBrand(value: object): ProxyBrand | undefined {
   const holder: MaybeBranded = value;
   const brand = holder[PROXY_BRAND];
   if (!brand || brand.protocol !== RUNTIME_PROTOCOL_VERSION) return;
   return brand;
 }`;
 
+const PRELUDE = `const BRAND = Symbol.for("b");
+function isObj(v: unknown): v is object { return v !== null; }
+`;
+
 tester.run("anti-slop/no-unknown-parameters at a brand probe", noUnknownParametersRule, {
 	valid: [
 		{
-			name: "interface-core@4bf5b93 src/proxies.ts:118 IsInterfaceProxy",
+			name: "interface-core@4bf5b93 src/proxies.ts:118 IsInterfaceProxy, with the input spelled unknown once and guarded",
 			code: `${PROXIES}
 export function IsInterfaceProxy(value: unknown, kind?: ProxyKind): boolean {
+  if (!isObjectLike(value)) return false;
   const brand = readBrand(value);
   return Boolean(brand && (!kind || brand.kind === kind));
 }`,
@@ -32,6 +36,7 @@ export function IsInterfaceProxy(value: unknown, kind?: ProxyKind): boolean {
 			name: "interface-core@4bf5b93 src/proxies.ts:124 GetInterfaceProxyIdentity",
 			code: `${PROXIES}
 export function GetInterfaceProxyIdentity(value: unknown): string | undefined {
+  if (!isObjectLike(value)) return undefined;
   return readBrand(value)?.identity;
 }`,
 		},
@@ -128,6 +133,68 @@ export function brandOf(value: unknown): string | undefined { return readBrand(v
 const BRAND = Symbol.for("brand");
 function readBrand(value: object): string | undefined { const holder: { [BRAND]?: string } = value; return holder[BRAND]; }
 export function brandOf(value: unknown): string | undefined { return readBrand(value); }`,
+			errors: [error],
+		},
+		{
+			name: "a write of the brand",
+			code: `${PRELUDE}function stamp(v: unknown): void { if (!isObj(v)) return; const h: { [BRAND]?: number } = v; h[BRAND] = 1; }`,
+			errors: [error],
+		},
+		{
+			name: "a write of the brand, string return",
+			code: `${PRELUDE}function stamp(v: unknown): string { if (!isObj(v)) return ''; const h: { [BRAND]?: string } = v; h[BRAND] = 'x'; return 'ok'; }`,
+			errors: [error],
+		},
+		{
+			name: "a delete of the brand",
+			code: `${PRELUDE}function strip(v: unknown): boolean { if (!isObj(v)) return false; const h: { [BRAND]?: number } = v; return delete h[BRAND]; }`,
+			errors: [error],
+		},
+		{
+			name: "a call of the brand member with an outside value",
+			code: `${PRELUDE}function poke(v: unknown, secret: string): void { if (!isObj(v)) return; const h: { [BRAND]?: (s: string) => void } = v; h[BRAND]?.(secret); }`,
+			errors: [error],
+		},
+		{
+			name: "the brand member stored through an annotated alias, void return",
+			code: `${PRELUDE}function remember(v: unknown): void { if (!isObj(v)) return; const h: { [BRAND]?: Session } = v; sessions.push(h[BRAND]!); }`,
+			errors: [error],
+		},
+		{
+			name: "the brand member stored through an annotated alias, boolean return",
+			code: `${PRELUDE}function remember(v: unknown): boolean { if (!isObj(v)) return false; const h: { [BRAND]?: Session } = v; sessions.push(h[BRAND]!); return true; }`,
+			errors: [error],
+		},
+		{
+			name: "the brand member read into a local that is stored",
+			code: `${PRELUDE}function remember(v: unknown): boolean { if (!isObj(v)) return false; const h: { [BRAND]?: Session } = v; const session = h[BRAND]; cache.set("s", session); return session !== undefined; }`,
+			errors: [error],
+		},
+		{
+			name: "the brand member returned from a reader whose result is stored",
+			code: `${PRELUDE}function readBrand(v: object): Session | undefined { const h: { [BRAND]?: Session } = v; return h[BRAND]; }
+function remember(v: unknown): boolean { if (!isObj(v)) return false; sessions.push(readBrand(v)!); return true; }`,
+			errors: [error],
+		},
+		{
+			name: "the brand member handed to a function declared in this file",
+			code: `${PRELUDE}function keep(session: Session | undefined): void { sessions.push(session!); }
+function remember(v: unknown): boolean { if (!isObj(v)) return false; const h: { [BRAND]?: Session } = v; keep(h[BRAND]); return true; }`,
+			errors: [error],
+		},
+		{
+			name: "the brand member passed to a global other than Boolean",
+			code: `${PRELUDE}function label(v: unknown): boolean { if (!isObj(v)) return false; const h: { [BRAND]?: string } = v; return String(h[BRAND]) === 'x'; }`,
+			errors: [error],
+		},
+		{
+			name: "the brand member used as a key into a store",
+			code: `${PRELUDE}function remember(v: unknown): boolean { if (!isObj(v)) return false; const h: { [BRAND]?: string } = v; return registry[h[BRAND]!] === undefined; }`,
+			errors: [error],
+		},
+		{
+			name: "the brand member joined into a string",
+			code: `${PRELUDE}function label(v: unknown): string { if (!isObj(v)) return ''; const h: { [BRAND]?: string } = v; return 'brand:' + h[BRAND]; }`,
 			errors: [error],
 		},
 		{

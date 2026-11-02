@@ -94,6 +94,85 @@ function guardsParameterAt(owner: RuntimeFunction, position: number): boolean {
 	);
 }
 
+
+/** Operators whose result is a boolean about the operands, which a probe may hand back. */
+const COMPARISONS: ReadonlySet<string> = new Set(["===", "!==", "==", "!=", "<", ">", "<=", ">="]);
+
+/** Return the function a node is written in. */
+function enclosingFunction(node: ESTree.Node): RuntimeFunction | null {
+	for (let at: ESTree.Node | null = node.parent; at !== null; at = at.parent) if (isRuntimeFunction(at)) return at;
+	return null;
+}
+
+/** Return whether every reference of a `const` or function binding is a use that `reaches` accepts. */
+function everyUseReaches(variable: Variable | null | undefined, reaches: (use: Name) => boolean): boolean {
+	if (variable === null || variable === undefined) return false;
+	const reads = variable.references.filter((reference) => !reference.init);
+	return reads.length > 0 && variable.references.every((reference) => reference.init || !reference.isWrite()) && reads.every((reference) => reaches(reference.identifier));
+}
+
+/**
+ * Return whether the value an expression yields reaches nothing but the result of the probe. The value may be tested,
+ * compared, negated, read further (`.identity`), pass through `Boolean(...)`, a type wrapper, a `&&`, `||`, `??` or a
+ * conditional branch, be held in a `const` whose uses obey the same rule, or be returned. A function that is not the
+ * probe may return it only when it is declared in this file and every use of it is a call whose value obeys the same rule.
+ * An assignment, a `delete`, an update, a call of the value, an argument to any other call, a store or a spread refuses.
+ */
+function resultReachesOnlyReturn(node: ESTree.Node, owner: RuntimeFunction, sourceCode: SourceCode, seen: Set<ESTree.Node>): boolean {
+	if (seen.has(node)) return true;
+	seen.add(node);
+	const user = node.parent;
+	if (user === null) return false;
+	const next = (target: ESTree.Node) => resultReachesOnlyReturn(target, owner, sourceCode, seen);
+	switch (user.type) {
+		case "ChainExpression":
+		case "TSAsExpression":
+		case "TSNonNullExpression":
+		case "TSSatisfiesExpression":
+		case "TSTypeAssertion":
+			return next(user);
+		case "MemberExpression":
+			return user.object === node && next(user);
+		case "UnaryExpression":
+			return (user.operator === "!" || user.operator === "typeof") && next(user);
+		case "BinaryExpression":
+			return COMPARISONS.has(user.operator) && next(user);
+		case "LogicalExpression":
+			return next(user);
+		case "ConditionalExpression":
+			return user.test === node || next(user);
+		case "IfStatement":
+			return user.test === node;
+		case "ExpressionStatement":
+			return true;
+		case "CallExpression":
+			return user.callee.type === "Identifier" && user.callee.name === "Boolean" && isGlobalName(user.callee, sourceCode) && user.arguments[0] === node && next(user);
+		case "VariableDeclarator": {
+			if (user.id.type !== "Identifier" || user.parent.type !== "VariableDeclaration" || user.parent.kind !== "const") return false;
+			const local = sourceCode.getDeclaredVariables(user).find((each) => each.name === (user.id as Name).name);
+			return everyUseReaches(local, next);
+		}
+		case "ReturnStatement":
+		case "ArrowFunctionExpression": {
+			if (user.type === "ArrowFunctionExpression" && user.body !== node) return false;
+			const returner = user.type === "ArrowFunctionExpression" ? user : enclosingFunction(user);
+			if (returner === owner) return true;
+			if (returner === null) return false;
+			return everyUseReaches(readerVariable(returner, sourceCode), (use) => use.parent.type === "CallExpression" && use.parent.callee === use && next(use.parent));
+		}
+		default:
+			return false;
+	}
+}
+
+/** Return the variable a function declared in this file is bound to. */
+function readerVariable(reader: RuntimeFunction, sourceCode: SourceCode): Variable | null {
+	if (reader.type === "FunctionDeclaration") return reader.id === null ? null : (sourceCode.getDeclaredVariables(reader).find((variable) => variable.name === reader.id?.name && variable.defs[0]?.type === "FunctionName") ?? null);
+	const declarator = reader.parent;
+	if (declarator.type !== "VariableDeclarator" || declarator.init !== reader || declarator.id.type !== "Identifier") return null;
+	return sourceCode.getDeclaredVariables(declarator).find((variable) => variable.name === (declarator.id as Name).name) ?? null;
+}
+
 /** What a walk of a value's uses found: whether every use is allowed, and whether some use probes a brand. */
 interface Uses {
 	readonly allowed: boolean;
@@ -111,7 +190,7 @@ function combine(uses: readonly Uses[]): Uses {
  * file, the initializer of a `const` alias whose own uses are allowed, or an argument to a function declared in this file whose
  * matching parameter's uses are allowed. Any other use (a store, a return, a call elsewhere, a cast, an assignment) refuses.
  */
-function usesOf(variable: Variable, sourceCode: SourceCode, seen: Set<Variable>): Uses {
+function usesOf(variable: Variable, owner: RuntimeFunction, sourceCode: SourceCode, seen: Set<Variable>): Uses {
 	if (seen.has(variable)) return { allowed: true, probed: false };
 	seen.add(variable);
 	const reads = variable.references.filter((reference) => !reference.init);
@@ -119,11 +198,11 @@ function usesOf(variable: Variable, sourceCode: SourceCode, seen: Set<Variable>)
 	return combine(
 		reads.map((reference) => {
 			const { identifier } = reference;
-			if (isProbe(identifier, sourceCode)) return { allowed: true, probed: true };
+			if (isProbe(identifier, sourceCode)) return resultReachesOnlyReturn(identifier.parent, owner, sourceCode, new Set()) ? { allowed: true, probed: true } : REFUSED;
 			const user = identifier.parent;
 			if (user.type === "VariableDeclarator" && user.init === identifier && user.id.type === "Identifier" && user.parent.type === "VariableDeclaration" && user.parent.kind === "const") {
 				const alias = sourceCode.getDeclaredVariables(user).find((each) => each.name === (user.id as Name).name);
-				return alias === undefined ? REFUSED : usesOf(alias, sourceCode, seen);
+				return alias === undefined ? REFUSED : usesOf(alias, owner, sourceCode, seen);
 			}
 			if (user.type !== "CallExpression") return REFUSED;
 			const position = user.arguments.findIndex((argument) => argument === identifier);
@@ -131,7 +210,7 @@ function usesOf(variable: Variable, sourceCode: SourceCode, seen: Set<Variable>)
 			if (position < 0 || callee === null) return REFUSED;
 			if (guardsParameterAt(callee, position)) return { allowed: true, probed: false };
 			const parameter = parameterAt(callee, position, sourceCode);
-			return parameter === null ? REFUSED : usesOf(parameter, sourceCode, seen);
+			return parameter === null ? REFUSED : usesOf(parameter, owner, sourceCode, seen);
 		}),
 	);
 }
@@ -146,6 +225,6 @@ function usesOf(variable: Variable, sourceCode: SourceCode, seen: Set<Variable>)
 export function isBrandProbe(owner: RuntimeFunction, parameter: Variable | undefined, sourceCode: SourceCode): boolean {
 	const returned = owner.returnType?.typeAnnotation;
 	if (parameter === undefined || returned === undefined || !isPrimitiveType(returned)) return false;
-	const uses = usesOf(parameter, sourceCode, new Set());
+	const uses = usesOf(parameter, owner, sourceCode, new Set());
 	return uses.allowed && uses.probed;
 }
