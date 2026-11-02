@@ -19,6 +19,16 @@ import { checkTypescript } from "./typescript.mjs";
 import { checkVersionClaims, plain, sameRange } from "./versions.mjs";
 
 const markdown = /\.(md|mdc)$/i;
+
+/** What antelope-web leaves out of every docs source, relative to the docs folder: a top-level `design` folder and any Markdown file whose name holds `grill`. */
+const UNPUBLISHED_FOLDER = "design";
+const UNPUBLISHED_FILE = /grill.*\.md$/;
+
+function unpublished(base, path, entry) {
+  return entry.isDirectory()
+    ? relative(base, path) === UNPUBLISHED_FOLDER
+    : UNPUBLISHED_FILE.test(entry.name);
+}
 const fields = new Set([
   "dependencies",
   "peerDependencies",
@@ -273,12 +283,14 @@ export function checkDocs({
     return path;
   };
   const selected = new Set();
-  const collect = (path) => {
+  const collect = (path, base = path) => {
     localPath(path);
     if (statSync(path).isDirectory()) {
       for (const entry of readdirSync(path, { withFileTypes: true })) {
+        const child = resolve(path, entry.name);
+        if (unpublished(base, child, entry)) continue;
         if (entry.isDirectory() || markdown.test(entry.name)) {
-          collect(resolve(path, entry.name));
+          collect(child, base);
         }
       }
     } else if (markdown.test(path)) {
