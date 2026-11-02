@@ -13,6 +13,23 @@ import { ratchet } from "../guardrails/ratchet.ts";
 import { suppressionBase } from "../guardrails/suppression-base.ts";
 import { stagedRatchet } from "../guardrails/staged-ratchet.ts";
 
+function stagedResult(root: string, files: string[]) {
+  const staged = stagedRatchet(
+    root,
+    files.length
+      ? files.map((file) => repositoryPath(root, resolve(file)))
+      : undefined,
+  );
+  return {
+    failures: staged.failures,
+    accepted: staged.accepted,
+    lowered: [],
+    adoptions: [],
+    retired: false,
+    created: false,
+  };
+}
+
 runCli(() => {
   const { values, positionals } = parseArgs({
     options: {
@@ -30,26 +47,18 @@ runCli(() => {
   if (positionals.length && !values.staged)
     throw new Error("File arguments require --staged.");
   const result = values.staged
-    ? {
-        failures: stagedRatchet(
+    ? stagedResult(root, positionals)
+    : {
+        ...ratchet(
           root,
-          positionals.length
-            ? positionals.map((file) => repositoryPath(root, resolve(file)))
-            : undefined,
+          values.update,
+          values.base === undefined
+            ? undefined
+            : resolveRevision(root, values.base),
+          suppressionBase(root, values.base),
         ),
-        lowered: [],
-        adoptions: [],
-        retired: false,
-        created: false,
-      }
-    : ratchet(
-        root,
-        values.update,
-        values.base === undefined
-          ? undefined
-          : resolveRevision(root, values.base),
-        suppressionBase(root, values.base),
-      );
+        accepted: [],
+      };
   if (result.created)
     process.stdout.write(
       `Created ${CEILINGS_FILE} for the rules the pack newly enabled. Run antelopejs-sync.\n`,
@@ -62,6 +71,10 @@ runCli(() => {
     );
   for (const message of result.lowered)
     process.stdout.write(`Lowered ${message}\n`);
+  for (const message of result.accepted)
+    process.stderr.write(
+      `APPROVED RAISE ACCEPTED: ${message}. APPROVED_RAISES is set in this environment, and only that lets this commit pass.\n`,
+    );
   for (const message of result.failures) process.stderr.write(`${message}\n`);
   if (!result.failures.length)
     process.stdout.write("Ratchet: within ceilings.\n");
