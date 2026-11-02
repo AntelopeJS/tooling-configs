@@ -9,12 +9,16 @@ import {
 /** The Vale style name; its rules live in `styles/AntelopeJS/`. */
 const VALE_STYLE = "AntelopeJS";
 
-/** The Vale configuration the docs action runs with: every rule of the style, warnings and above. */
+/** An MDC component line followed by its YAML props block: the `---` fences are not Markdown headings or prose. */
+const MDC_PROPS_BLOCK = String.raw`(?s)(?m)^::+[a-z][a-z0-9-]*[^\n]*\n---[ \t]*\n.*?^---[ \t]*$`;
+
+/** The Vale configuration the docs action runs with: every rule of the style, warnings and above, MDC props blocks skipped. */
 const VALE_INI = `StylesPath = styles
 MinAlertLevel = warning
 
 [*.md]
 BasedOnStyles = ${VALE_STYLE}
+BlockIgnores = ${MDC_PROPS_BLOCK}
 `;
 
 /** The unslop skill's rule section, from its heading to the end of the file. */
