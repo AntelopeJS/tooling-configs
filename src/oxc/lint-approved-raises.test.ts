@@ -26,26 +26,20 @@ function codes(approved?: string): string[] {
   }
 }
 
-test("a rule absent from the ceilings is reported without APPROVED_RAISES", () => {
+test("a rule absent from the ceilings is reported", () => {
   const reported = codes();
   assert(reported.includes(COMMENT), reported.join());
   assert(reported.includes(OBJECT), reported.join());
 });
 
-test("APPROVED_RAISES turns off exactly the rules it lists", () => {
-  const reported = codes("antelopejs/no-comments=1");
-  assert(!reported.includes(COMMENT), reported.join());
-  assert(reported.includes(OBJECT), reported.join());
-});
-
-test("a malformed APPROVED_RAISES approves nothing", () => {
-  for (const malformed of [
-    "antelopejs/no-comments",
-    "antelopejs/no-comments=one",
-    "antelopejs/no-comments=1 antelopejs/no-comments=2",
+test("APPROVED_RAISES switches no rule off, under its name or an alias", () => {
+  for (const approved of [
+    "antelopejs/no-comments=1",
+    "no-comments=1",
+    "eslint/no-debugger=1 no-debugger=1",
   ]) {
-    const reported = codes(malformed);
-    assert(reported.includes(COMMENT), `${malformed}: ${reported.join()}`);
-    assert(reported.includes(OBJECT), `${malformed}: ${reported.join()}`);
+    const reported = codes(approved);
+    assert(reported.includes(COMMENT), `${approved}: ${reported.join()}`);
+    assert(reported.includes(OBJECT), `${approved}: ${reported.join()}`);
   }
 });

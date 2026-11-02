@@ -159,14 +159,20 @@ function branchCounts(root: string, revision: string) {
   };
 }
 
-/** The ceiling the index records for `rule`, which is what the commit will write. */
-function stagedCeiling(root: string, rule: string): number | undefined {
-  const result = spawnSync("git", ["show", `:${CEILINGS_FILE}`], {
+/** The ceiling `revision` (`:` for the index, which is what the commit will write; `HEAD:`) records for `rule`. */
+function ceilingAt(
+  root: string,
+  revision: string,
+  rule: string,
+): number | undefined {
+  const result = spawnSync("git", ["show", `${revision}${CEILINGS_FILE}`], {
     cwd: root,
     encoding: "utf8",
   });
   if (result.status !== 0) return undefined;
-  return parseCeilings(result.stdout, `staged ${CEILINGS_FILE}`).rules[rule];
+  return parseCeilings(result.stdout, `${revision}${CEILINGS_FILE}`).rules[
+    rule
+  ];
 }
 
 export interface StagedRatchetResult {
@@ -179,9 +185,35 @@ function unlisted(rule: string, approved: Map<string, number>): string[] {
   return approved.size ? [`  APPROVED_RAISES does not list ${rule}.`] : [];
 }
 
+function approvalRefusal(
+  root: string,
+  rule: string,
+  max: number,
+  holds: number,
+): string | undefined {
+  const unstaged = execFileSync("git", ["diff", "--name-only", "-z"], {
+    cwd: root,
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter(Boolean);
+  if (unstaged.length)
+    return `${rule}: APPROVED_RAISES counts the repository from the working tree, which differs from the index in ${unstaged.length} tracked file(s) with unstaged changes (${unstaged[0]}); stage or stash them first.`;
+  const staged = ceilingAt(root, ":", rule);
+  const head = ceilingAt(root, "HEAD:", rule) ?? 0;
+  if (staged !== max)
+    return `${rule}: APPROVED_RAISES approves ${max}, but the staged ${CEILINGS_FILE} records ${staged ?? "no ceiling"}; the commit must write exactly ${max}.`;
+  if (max <= head)
+    return `${rule}: APPROVED_RAISES approves ${max}, but this commit does not raise the ceiling above ${head} at HEAD.`;
+  return holds > max
+    ? `${rule}: the repository holds ${holds} findings, but APPROVED_RAISES approves at most ${max}.`
+    : undefined;
+}
+
 /**
- * Settles `rule` against its approved `max`: it passes while the index records
- * exactly `max` as its ceiling and the repository holds no more than `max`.
+ * Settles `rule` against its approved `max`: it passes while this commit
+ * raises the ceiling from HEAD's to exactly `max` and the repository holds no
+ * more than `max`, so an approval left set accepts nothing in a later commit.
  */
 function settleApproved(
   root: string,
@@ -189,18 +221,14 @@ function settleApproved(
   max: number,
   { holds, rise, shown }: { holds: number; rise: number; shown: Diagnostic[] },
 ): StagedRatchetResult {
-  const staged = stagedCeiling(root, rule);
-  if (staged === max && holds <= max)
+  const refusal = approvalRefusal(root, rule, max, holds);
+  if (refusal === undefined)
     return {
       accepted: [
         `${rule} raised to ${max} (this commit adds ${rise}, ${holds} in the repository, ceiling ${max}), approved through APPROVED_RAISES`,
       ],
       failures: [],
     };
-  const refusal =
-    staged === max
-      ? `${rule}: the repository holds ${holds} findings, but APPROVED_RAISES approves at most ${max}.`
-      : `${rule}: APPROVED_RAISES approves ${max}, but the staged ${CEILINGS_FILE} records ${staged ?? "no ceiling"}; the commit must write exactly ${max}.`;
   return {
     accepted: [],
     failures: [

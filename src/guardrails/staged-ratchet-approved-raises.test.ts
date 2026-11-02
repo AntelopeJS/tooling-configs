@@ -125,3 +125,34 @@ test("without the variable a raise is refused as before", (t) => {
     assert.doesNotMatch(result.stderr, /APPROVED/);
   }
 });
+
+test("an approval with no raised ceiling in the commit accepts nothing", (t) => {
+  const root = ratchetRepo(t);
+  writeCeiling(root, 3);
+  commit(root);
+  put(
+    root,
+    "source.ts",
+    `export const keep = 0;\n${LEGACY}export const added0: any = 0;\n`,
+  );
+  execFileSync("git", ["add", "-A"], { cwd: root });
+  const result = check(root, `${RULE}=3`);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /does not raise/);
+  assert.doesNotMatch(result.stderr, /APPROVED RAISE ACCEPTED/);
+});
+
+test("an approved raise is refused while a tracked file has an unstaged edit or deletion", (t) => {
+  for (const change of ["edit", "delete"]) {
+    const root = ratchetRepo(t);
+    put(root, "legacy.ts", LEGACY);
+    commit(root);
+    stageAdding(root, 2, 3);
+    if (change === "edit") put(root, "legacy.ts", "export const gone = 0;\n");
+    else execFileSync("rm", ["legacy.ts"], { cwd: root });
+    const result = check(root, `${RULE}=3`);
+    assert.equal(result.status, 1, change);
+    assert.match(result.stderr, /unstaged/, change);
+    assert.doesNotMatch(result.stderr, /APPROVED RAISE ACCEPTED/, change);
+  }
+});

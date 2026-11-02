@@ -1,6 +1,5 @@
 import { defineConfig } from "oxlint";
 
-import { parseApprovedRaises } from "../guardrails/approved-raises.ts";
 import { findGitRoot, MEASURE_ENV } from "../guardrails/ceilings.ts";
 import { readCarriedCeilings } from "../guardrails/renames.ts";
 import { PRESET_CONFIGS } from "../guardrails/templates.ts";
@@ -299,27 +298,12 @@ function importSortingPreset() {
   });
 }
 
-/** The rules `APPROVED_RAISES` lists; a malformed list approves none, and the staged ratchet refuses it. */
-function approvedRules(): string[] {
-  try {
-    return [...parseApprovedRaises().keys()];
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Overrides run after rules, including test-specific rules; measurement bypasses all ceilings.
- * A rule `APPROVED_RAISES` lists is off like a ceilinged one: `antelopejs-ratchet --staged` holds it to its approved maximum.
- */
+/** Overrides run after rules, including test-specific rules; measurement bypasses all ceilings. */
 function ratchetOverrides() {
   if (process.env[MEASURE_ENV] !== undefined) return [];
   const ceilings = readCarriedCeilings(findGitRoot());
   const rules: Record<string, "off"> = Object.fromEntries(
-    [...Object.keys(ceilings.rules), ...approvedRules()].map((rule) => [
-      rule,
-      "off",
-    ]),
+    Object.keys(ceilings.rules).map((rule) => [rule, "off"]),
   );
   return [
     ...Object.keys(ceilings.oversizeFiles).map((path) => ({
