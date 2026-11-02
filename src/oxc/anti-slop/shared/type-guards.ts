@@ -3,7 +3,7 @@ import type { ESTree, SourceCode } from "@oxlint/plugins";
 export type RuntimeFunction = ESTree.ArrowFunctionExpression | ESTree.Function;
 
 /** Files whose functions may declare a type predicate in JSDoc instead of a TypeScript return type. */
-const JSDOC_PREDICATE_FILE = /\.m?js$/;
+const JSDOC_PREDICATE_FILE = /\.[cm]?js$/;
 
 /** A `@returns {x is T}` type, `x` captured: `asserts x is T` does not match. */
 const JSDOC_PREDICATE = /^\s*([A-Za-z_$][\w$]*)\s+is\s+\S/;
@@ -65,7 +65,7 @@ function hasJsDocTypePredicate(fn: RuntimeFunction, sourceCode: SourceCode): boo
 	);
 }
 
-/** Return whether a function declares a type predicate or assertion, or a JSDoc `@returns {x is T}` in a `.js`/`.mjs` file. */
+/** Return whether a function declares a type predicate or assertion, or a JSDoc `@returns {x is T}` in a `.js`, `.mjs` or `.cjs` file. */
 function isTypeGuard(fn: RuntimeFunction, sourceCode: SourceCode, filename: string): boolean {
 	if (fn.returnType?.typeAnnotation.type === "TSTypePredicate") return true;
 	return JSDOC_PREDICATE_FILE.test(filename) && hasJsDocTypePredicate(fn, sourceCode);

@@ -95,6 +95,12 @@ tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 			code: 'const guards = {\n  /** @returns {value is string} */\n  isText(value) { return typeof value === "string"; },\n};',
 			options: allowInTypeGuards,
 		},
+		{
+			name: "a JSDoc predicate in a .cjs file",
+			filename: "probe.cjs",
+			code: '/**\n * @param {unknown} value\n * @returns {value is string}\n */\nfunction isString(value) {\n  return typeof value === "string";\n}',
+			options: allowInTypeGuards,
+		},
 	],
 	invalid: [
 		{
@@ -374,7 +380,7 @@ tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 			errors: [error],
 		},
 		{
-			name: "a JSDoc predicate only counts in .js and .mjs files",
+			name: "a JSDoc predicate only counts in .js, .mjs and .cjs files",
 			filename: "values.ts",
 			code: '/** @returns {value is string} */\nfunction isText(value: unknown) { return typeof value === "string"; }',
 			options: allowInTypeGuards,
@@ -404,6 +410,20 @@ tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 		{
 			name: "a JSDoc predicate does not cover a callback inside the guard",
 			filename: "values.mjs",
+			code: '/** @returns {value is string[]} */\nfunction isTexts(value) { return Array.isArray(value) && value.every((item) => typeof item === "string"); }',
+			options: allowInTypeGuards,
+			errors: [error],
+		},
+		{
+			name: "inline typeof in a .cjs file outside a guard",
+			filename: "probe.cjs",
+			code: '/** @returns {boolean} */\nfunction check(value) { return typeof value === "string"; }\nconst inline = typeof process === "string";',
+			options: allowInTypeGuards,
+			errors: [error, error],
+		},
+		{
+			name: "a .cjs predicate does not cover a callback inside the guard",
+			filename: "probe.cjs",
 			code: '/** @returns {value is string[]} */\nfunction isTexts(value) { return Array.isArray(value) && value.every((item) => typeof item === "string"); }',
 			options: allowInTypeGuards,
 			errors: [error],
