@@ -41,6 +41,19 @@ export function GetInterfaceProxyIdentity(value: unknown): string | undefined {
 }`,
 		},
 		{
+			name: "two probes sharing one reader, as in interface-core",
+			code: `${PROXIES}
+export function IsInterfaceProxy(value: unknown, kind?: ProxyKind): boolean {
+  if (!isObjectLike(value)) return false;
+  const brand = readBrand(value);
+  return Boolean(brand && (!kind || brand.kind === kind));
+}
+export function GetInterfaceProxyIdentity(value: unknown): string | undefined {
+  if (!isObjectLike(value)) return undefined;
+  return readBrand(value)?.identity;
+}`,
+		},
+		{
 			name: "a symbol-keyed read on a value an object guard narrowed",
 			code: `const BRAND = Symbol("brand");
 function isObjectLike(value: unknown): value is object { return value !== null; }
