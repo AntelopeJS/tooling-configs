@@ -119,8 +119,11 @@ Supported is the declared range, taken from `peerDependencies` before
 `dependencies` before `optionalDependencies`. Tested with is the version
 `pnpm-lock.yaml` resolves for that package; a workspace link shows the linked
 package's version, and a dependency the lockfile does not resolve shows `—`.
-Without `pnpm-lock.yaml` a pnpm repository fails sync until `pnpm install` writes
-it; other package managers get `—` in every Tested with cell.
+When `.npmrc` sets `shared-workspace-lockfile=false` (or `pnpm-workspace.yaml`
+sets `sharedWorkspaceLockfile: false`), each package keeps its own
+`pnpm-lock.yaml` and sync reads that one. Without the lockfile a pnpm repository
+fails sync until `pnpm install` writes it; other package managers get `—` in
+every Tested with cell.
 
 Sync replaces the block between its markers. A README without them gets the
 block in place of its first `<!-- docs-compat: ./package.json#... -->` table
