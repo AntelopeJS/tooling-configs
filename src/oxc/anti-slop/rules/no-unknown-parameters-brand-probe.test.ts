@@ -71,6 +71,30 @@ function hasBrand(value: unknown): boolean { return isObjectLike(value) && BRAND
 			name: "M9 void probe stays exempt (control for void)",
 			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction f(v: unknown): void { if (!isObj(v)) return; const h: { [BRAND]?: string } = v; if (h[BRAND]) tick(); }",
 		},
+		{
+			name: "a probe called in the file",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction has(v: unknown): boolean { return isObj(v) && BRAND in v; }\nconst ok = has(1);\n",
+		},
+		{
+			name: "a probe exported through a specifier",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction has(v: unknown): boolean { return isObj(v) && BRAND in v; }\nexport { has };\n",
+		},
+		{
+			name: "a probe over a shared reader, referenced in the file",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction rd(o: object): Session | undefined { const h: { [BRAND]?: Session } = o; return h[BRAND]; }\nfunction has(v: unknown): boolean { return isObj(v) && rd(v) !== undefined; }\nexport { has };\n",
+		},
+		{
+			name: "a literal-only return type",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction has(v: unknown): 'yes' | 'no' { return isObj(v) && BRAND in v ? 'yes' : 'no'; }\n",
+		},
+		{
+			name: "a literal boolean return type",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction has(v: unknown): true | false { return isObj(v) && BRAND in v; }\n",
+		},
+		{
+			name: "a non-null read returned",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction idOf(v: unknown): string { if (!isObj(v)) return ''; const h: { [BRAND]?: string } = v; return h[BRAND]!; }\n",
+		},
 	],
 	invalid: [
 		{
@@ -293,6 +317,16 @@ export function brandOf(value: unknown): string | undefined { return readBrand(a
 		{
 			name: "B19 parameter typed unknown inside a union",
 			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction hasBrand(v: unknown | string): boolean { return isObj(v) && BRAND in v; }",
+			errors: [error],
+		},
+		{
+			name: "an exported sibling returning the shared reader's object shape",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction rd(o: object): Session | undefined { const h: { [BRAND]?: Session } = o; return h[BRAND]; }\nfunction has(v: unknown): boolean { return isObj(v) && rd(v) !== undefined; }\nexport function leak(o: object): Session | undefined { return rd(o); }\n",
+			errors: [error],
+		},
+		{
+			name: "an exported sibling with no return type",
+			code: "const BRAND = Symbol.for(\"b\");\nfunction isObj(v: unknown): v is object { return typeof v === \"object\" && v !== null; }\nfunction rd(o: object): Session | undefined { const h: { [BRAND]?: Session } = o; return h[BRAND]; }\nfunction has(v: unknown): boolean { return isObj(v) && rd(v) !== undefined; }\nexport function leak(o: object) { return rd(o); }\n",
 			errors: [error],
 		},
 	],
