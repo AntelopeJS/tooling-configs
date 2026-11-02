@@ -97,3 +97,96 @@ it(
 it("accepts the names listed as heading exceptions", vale, (t) => {
   assert.deepEqual(alerts(t, "## Configure the AntelopeJS DMS API\n"), []);
 });
+
+const PLAYGROUND = [
+  '::block-playground{type="Meter" height="160"}',
+  "---",
+  "options:",
+  "  label: Seats",
+  "---",
+  "::",
+];
+
+it("ignores the YAML props block of an MDC component", vale, (t) => {
+  assert.deepEqual(
+    alerts(t, ["Intro text.", "", ...PLAYGROUND, ""].join("\n")),
+    [],
+  );
+});
+
+it(
+  "ignores props blocks of nested components and several in a page",
+  vale,
+  (t) => {
+    const found = alerts(
+      t,
+      [
+        "Intro text.",
+        "",
+        ":::block-group",
+        "---",
+        "Props Title Case:",
+        "  Label: Seats",
+        "---",
+        ...PLAYGROUND,
+        ":::",
+        "",
+        ...PLAYGROUND,
+        "",
+      ].join("\n"),
+    );
+    assert.deepEqual(found, []);
+  },
+);
+
+it("still checks a heading and a paragraph after a props block", vale, (t) => {
+  const found = alerts(
+    t,
+    [
+      ...PLAYGROUND,
+      "",
+      "## Install The Package",
+      "",
+      "Simply run the command.",
+      "",
+    ].join("\n"),
+  );
+  assert.deepEqual(found, [
+    ["Unslop17", "Install The Package", 8],
+    ["Procedure", "Simply", 10],
+  ]);
+});
+
+it(
+  "still checks prose inside a component body and before the props",
+  vale,
+  (t) => {
+    const found = alerts(
+      t,
+      [
+        "Simply start here.",
+        "",
+        '::block-callout{type="note"}',
+        "---",
+        "title: Heads Up",
+        "---",
+        "Please read this crucial note.",
+        "::",
+        "",
+      ].join("\n"),
+    );
+    assert.deepEqual(found, [
+      ["Procedure", "Simply", 1],
+      ["Procedure", "Please", 7],
+      ["Unslop07", "crucial", 7],
+    ]);
+  },
+);
+
+it("keeps reading a component without a props block", vale, (t) => {
+  const found = alerts(
+    t,
+    ["::block-callout", "Simply run the command.", "::", ""].join("\n"),
+  );
+  assert.deepEqual(found, [["Procedure", "Simply", 2]]);
+});
