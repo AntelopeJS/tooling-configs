@@ -198,7 +198,7 @@ function approvalRefusal(
     .split("\0")
     .filter(Boolean);
   if (unstaged.length)
-    return `${rule}: APPROVED_RAISES counts the repository from the working tree, which differs from the index in ${unstaged.length} tracked file(s) with unstaged changes (${unstaged[0]}); stage or stash them first.`;
+    return `${rule}: an approved raise is refused while ${unstaged.length} tracked file(s) have unstaged changes (${unstaged[0]}); stage or stash them first.`;
   const staged = ceilingAt(root, ":", rule);
   const head = ceilingAt(root, "HEAD:", rule) ?? 0;
   if (staged !== max)
@@ -334,8 +334,13 @@ export function stagedRatchet(
     );
     const max = approved.get(rule);
     if (max !== undefined) {
-      repository ??= countByRule(
-        lintDiagnostics(root, undefined, undefined, STAGED_LINT),
+      repository ??= withPreviousTree(
+        root,
+        "HEAD",
+        [],
+        (tree) =>
+          countByRule(lintDiagnostics(tree, undefined, undefined, STAGED_LINT)),
+        { wholeIndex: true },
       );
       const settled = settleApproved(root, rule, max, {
         holds: repository.get(rule) ?? 0,

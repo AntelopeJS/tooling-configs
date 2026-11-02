@@ -52,13 +52,15 @@ function linkModules(root: string, tree: string, env: NodeJS.ProcessEnv): void {
  * Runs `use` on a checkout of the index in which each of `paths` holds its
  * content at `revision`, or is absent when `revision` does not have it or does
  * not exist, so the files are linted under the staged configuration. The
- * checkout is deleted afterwards.
+ * checkout is deleted afterwards. With `wholeIndex`, files the index marks
+ * skip-worktree (a sparse checkout) are written too, so the tree is the commit.
  */
 export function withPreviousTree<Result>(
   root: string,
   revision: string,
   paths: string[],
   use: (tree: string) => Result,
+  { wholeIndex = false }: { wholeIndex?: boolean } = {},
 ): Result {
   const scratch = mkdtempSync(join(tmpdir(), "antelopejs-previous."));
   try {
@@ -97,7 +99,17 @@ export function withPreviousTree<Result>(
         removed.map((path) => `${path}\0`).join(""),
       );
     const tree = join(scratch, "tree");
-    git(root, ["checkout-index", "-a", "-f", `--prefix=${tree}/`], env);
+    git(
+      root,
+      [
+        "checkout-index",
+        "-a",
+        "-f",
+        ...(wholeIndex ? ["--ignore-skip-worktree-bits"] : []),
+        `--prefix=${tree}/`,
+      ],
+      env,
+    );
     linkModules(root, tree, env);
     return use(tree);
   } finally {
