@@ -54,3 +54,29 @@ export function typescriptFixture(t, text, files = {}) {
   );
   return setup;
 }
+
+/** The JavaScript entry of typescript@7.0.2, which exposes only its version: no `ts.sys`, no `ts.readConfigFile`. */
+export const TYPESCRIPT_7_FILES = {
+  "node_modules/typescript/package.json": JSON.stringify({
+    name: "typescript",
+    version: "7.0.2",
+    exports: { ".": "./lib/version.cjs", "./package.json": "./package.json" },
+  }),
+  "node_modules/typescript/lib/version.cjs":
+    'const { version } = require("../package.json");\nexports.version = version;\nexports.versionMajorMinor = "7.0";\n',
+};
+
+/** A checkout whose `typescript` is the TypeScript 7 entry. */
+export function typescript7Fixture(t, text, files = {}) {
+  return fixture(t, {
+    "README.md": text,
+    "package.json": '{"type":"module"}',
+    "src/index.ts": "export const answer: number = 42;",
+    "tsconfig.json": JSON.stringify({
+      compilerOptions: { strict: true, module: "NodeNext", types: [] },
+      include: ["src/**/*.ts"],
+    }),
+    ...TYPESCRIPT_7_FILES,
+    ...files,
+  });
+}
