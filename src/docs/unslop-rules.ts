@@ -1,3 +1,5 @@
+import { DOC_NAMES } from "./names.ts";
+
 /** The sections of the unslop skill, in the order they appear. */
 export const UNSLOP_GROUPS = [
   "Content",
@@ -44,15 +46,11 @@ export const HOUSE_CHECKS: readonly { name: string; check: UnslopCheck }[] = [
     check: {
       kind: "substitution",
       message: "Write '%s' instead of '%s'.",
-      swap: {
-        "Antelope JS": "AntelopeJS",
-        "Antelope\\.js": "AntelopeJS",
-        antelopejs: "AntelopeJS",
-        Antelopejs: "AntelopeJS",
-        antelopeJS: "AntelopeJS",
-        Dms: "DMS",
-        dms: "DMS",
-      },
+      swap: Object.fromEntries(
+        DOC_NAMES.flatMap(({ name, misspellings = [] }) =>
+          misspellings.map((wrong) => [wrong, name]),
+        ),
+      ),
     },
   },
   {
@@ -177,46 +175,7 @@ export const UNSLOP_RULES: readonly UnslopRule[] = [
     check: {
       kind: "capitalization",
       message: "Use sentence case in headings (unslop rule 17).",
-      exceptions: [
-        "AntelopeJS",
-        "AdonisJS",
-        "AI",
-        "Claude Code",
-        "Claude",
-        "Codex",
-        "DMS",
-        "API",
-        "CLI",
-        "CI",
-        "HTTP",
-        "HTTPS",
-        "JSON",
-        "YAML",
-        "SQL",
-        "URL",
-        "README",
-        "Markdown",
-        "TypeScript",
-        "JavaScript",
-        "Node.js",
-        "MongoDB",
-        "PostgreSQL",
-        "RethinkDB",
-        "Redis",
-        "GitHub",
-        "Docker",
-        "Vue",
-        "Nuxt",
-        "Vale",
-        "Playwright",
-        "Diátaxis",
-        "OAuth",
-        "JWT",
-        "MDC",
-        "TLA+",
-        "npm",
-        "pnpm",
-      ],
+      exceptions: DOC_NAMES.map(({ name }) => name),
     },
   },
   {

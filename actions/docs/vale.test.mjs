@@ -6,6 +6,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { it } from "node:test";
 
+import {
+  SENTENCE_CASE_HEADINGS,
+  TITLE_CASE_HEADINGS,
+} from "./heading-corpus.mjs";
+
 const INI = fileURLToPath(new URL("vale/vale.ini", import.meta.url));
 const VALE = process.env.VALE_BIN ?? "vale";
 
@@ -137,6 +142,33 @@ for (const heading of [
     },
   );
 }
+
+it(
+  "accepts every sentence-case heading of the organisation's docs",
+  vale,
+  (t) => {
+    const found = alerts(
+      t,
+      `${SENTENCE_CASE_HEADINGS.map((heading) => `## ${heading}`).join("\n\n")}\n`,
+    );
+    assert.deepEqual(found, []);
+  },
+);
+
+it(
+  "still flags every title-case heading of the organisation's docs",
+  vale,
+  (t) => {
+    const found = alerts(
+      t,
+      `${TITLE_CASE_HEADINGS.map((heading) => `## ${heading}`).join("\n\n")}\n`,
+    );
+    assert.deepEqual(
+      found.map(([check, hit]) => [check, hit]),
+      TITLE_CASE_HEADINGS.map((heading) => ["Unslop17", heading]),
+    );
+  },
+);
 
 const PLAYGROUND = [
   '::block-playground{type="Meter" height="160"}',
