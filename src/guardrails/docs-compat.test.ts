@@ -1,11 +1,9 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { parseDocument } from "yaml";
 
-import { ANTELOPE_STYLE } from "../oxc/fmt.ts";
 import { CI_CALLER } from "./ci-workflow.ts";
 import {
   compatBlock,
@@ -15,22 +13,7 @@ import {
 } from "./docs-compat.ts";
 import type { Manifest } from "./package.ts";
 import { syncRepository } from "./sync.ts";
-import { PACKAGE_ROOT, put, read, testRepo } from "./helpers/test-repo.ts";
-
-function formatted(root: string, files: string[]) {
-  put(root, "house-style.json", JSON.stringify(ANTELOPE_STYLE));
-  return spawnSync(
-    process.execPath,
-    [
-      join(PACKAGE_ROOT, "node_modules/oxfmt/bin/oxfmt"),
-      "--config",
-      "house-style.json",
-      "--check",
-      ...files,
-    ],
-    { cwd: root, encoding: "utf8" },
-  );
-}
+import { formatCheck, put, read, testRepo } from "./helpers/test-repo.ts";
 
 function manifest(fields: Manifest): string {
   return `${JSON.stringify(fields, null, 2)}\n`;
@@ -71,7 +54,7 @@ ${DOCS_COMPAT_END}
   );
   const root = testRepo(t);
   put(root, "README.md", placeCompatBlock("# Fixture\n\nIntro.\n", block));
-  const check = formatted(root, ["README.md"]);
+  const check = formatCheck(root, ["README.md"]);
   assert.equal(check.status, 0, check.stdout + check.stderr);
 });
 
@@ -323,7 +306,7 @@ test("sync writes the block of every qualifying workspace package, lists every p
     "extra-commands": "pnpm --dir packages/a check\n",
   });
   assert.match(workflow, /# The interface examples compile against this/);
-  const style = formatted(root, [
+  const style = formatCheck(root, [
     ".github/workflows/ci.yml",
     "packages/a/README.md",
     "packages/d/README.md",

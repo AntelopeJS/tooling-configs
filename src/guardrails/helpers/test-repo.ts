@@ -13,6 +13,8 @@ import { dirname, join } from "node:path";
 import type { TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { ANTELOPE_STYLE } from "../../oxc/fmt.ts";
+
 export const PACKAGE_ROOT = fileURLToPath(
   new URL("../../../", import.meta.url),
 );
@@ -153,4 +155,20 @@ export function apiRepo(t: TestContext): string {
     }),
   );
   return root;
+}
+
+/** `oxfmt --check` with the house style over `files` of the fixture repository. */
+export function formatCheck(root: string, files: string[]) {
+  put(root, "house-style.json", JSON.stringify(ANTELOPE_STYLE));
+  return spawnSync(
+    process.execPath,
+    [
+      join(PACKAGE_ROOT, "node_modules/oxfmt/bin/oxfmt"),
+      "--config",
+      "house-style.json",
+      "--check",
+      ...files,
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
 }

@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { bin, linkOxlint, put, read, testRepo } from "./helpers/test-repo.ts";
+import {
+  bin,
+  formatCheck,
+  linkOxlint,
+  put,
+  read,
+  testRepo,
+} from "./helpers/test-repo.ts";
 
 const START = "<!-- antelopejs-docs-node:start -->";
 const END = "<!-- antelopejs-docs-node:end -->";
-const BLOCK = `${START}\nThis package requires Node.js \`>=22.18.0\`.\n${END}`;
+const BLOCK = `${START}\n\nThis package requires Node.js \`>=22.18.0\`.\n${END}`;
 
 interface FixtureManifest {
   name: string;
@@ -97,4 +104,32 @@ test("sync leaves the README alone without the opt-in, without engines, and with
     bin(noReadme, "sync", ["--check"]).stdout,
     "Guardrails are in sync.\n",
   );
+});
+
+test("the generated Node block is unchanged by oxfmt and sync --check passes on the formatted README", (t) => {
+  const root = repo(t);
+  put(root, "README.md", "# Fixture\n\nIntro.\n");
+  assert.equal(bin(root, "sync").status, 0);
+  const check = formatCheck(root, ["README.md"]);
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+  assert.equal(
+    read(root, "README.md"),
+    `# Fixture\n\nIntro.\n\n## Requirements\n\n${BLOCK}\n`,
+  );
+  assert.equal(
+    bin(root, "sync", ["--check"]).stdout,
+    "Guardrails are in sync.\n",
+  );
+});
+
+test("the unformatted block of earlier packs is rewritten to the formatted shape", (t) => {
+  const root = repo(t);
+  put(
+    root,
+    "README.md",
+    `# Fixture\n\n${START}\nThis package requires Node.js \`>=22.18.0\`.\n${END}\n`,
+  );
+  assert.equal(bin(root, "sync", ["--check"]).status, 1);
+  assert.equal(bin(root, "sync").status, 0);
+  assert.equal(formatCheck(root, ["README.md"]).status, 0);
 });
