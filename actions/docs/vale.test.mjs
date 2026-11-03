@@ -98,6 +98,46 @@ it("accepts the names listed as heading exceptions", vale, (t) => {
   assert.deepEqual(alerts(t, "## Configure the AntelopeJS DMS API\n"), []);
 });
 
+const PRODUCT_HEADINGS = [
+  "# AntelopeJS DMS AdonisJS template",
+  "## AI assistant",
+  "## AI coding agents",
+  "### Claude Code",
+  "### Codex",
+  "## Use Claude Code with the DMS CLI",
+  "## Add an AI assistant to AdonisJS",
+  "## Configure Claude in Codex",
+];
+
+it(
+  "accepts sentence-case headings that contain AI, Claude, Claude Code, Codex or AdonisJS",
+  vale,
+  (t) => {
+    assert.deepEqual(
+      alerts(t, `${PRODUCT_HEADINGS.join("\n\nText.\n\n")}\n`),
+      [],
+    );
+  },
+);
+
+for (const heading of [
+  "## Install The Package",
+  "## Claude Code Setup",
+  "## Using AI Agents",
+  "## Add An AI Assistant To AdonisJS",
+  "## Configure Claude In Codex",
+]) {
+  it(
+    `still flags the title-case heading ${JSON.stringify(heading)}`,
+    vale,
+    (t) => {
+      assert.deepEqual(alerts(t, `${heading}\n`), [
+        ["Unslop17", heading.replace(/^#+ /, ""), 1],
+      ]);
+    },
+  );
+}
+
 const PLAYGROUND = [
   '::block-playground{type="Meter" height="160"}',
   "---",

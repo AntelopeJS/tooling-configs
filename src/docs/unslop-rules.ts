@@ -179,6 +179,11 @@ export const UNSLOP_RULES: readonly UnslopRule[] = [
       message: "Use sentence case in headings (unslop rule 17).",
       exceptions: [
         "AntelopeJS",
+        "AdonisJS",
+        "AI",
+        "Claude Code",
+        "Claude",
+        "Codex",
         "DMS",
         "API",
         "CLI",

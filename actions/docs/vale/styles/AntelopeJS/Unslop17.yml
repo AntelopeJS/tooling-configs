@@ -5,6 +5,11 @@ scope: heading
 match: $sentence
 exceptions:
   - "AntelopeJS"
+  - "AdonisJS"
+  - "AI"
+  - "Claude Code"
+  - "Claude"
+  - "Codex"
   - "DMS"
   - "API"
   - "CLI"
