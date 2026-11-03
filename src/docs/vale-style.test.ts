@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { DOC_NAMES } from "./names.ts";
 import { valeFiles } from "./vale-style.ts";
 import { UNSLOP_RULES } from "./unslop-rules.ts";
 import { UNSLOP_SKILL } from "./unslop-skill.ts";
@@ -43,4 +44,20 @@ test("a rule changed in the table changes the generated style and the rendered s
     Object.fromEntries(valeFiles(edited)),
     Object.fromEntries(valeFiles()),
   );
+});
+
+test("every documented name is a sentence-case exception and each misspelling is rewritten to its name", () => {
+  const names = DOC_NAMES.map(({ name }) => name);
+  assert.equal(new Set(names).size, names.length);
+  const files = valeFiles();
+  const exceptions = files.get("styles/AntelopeJS/Unslop17.yml") ?? "";
+  const swaps = files.get("styles/AntelopeJS/Names.yml") ?? "";
+  for (const { name, misspellings = [] } of DOC_NAMES) {
+    assert.ok(exceptions.includes(`  - ${JSON.stringify(name)}\n`), name);
+    for (const wrong of misspellings)
+      assert.ok(
+        swaps.includes(`  ${JSON.stringify(wrong)}: ${JSON.stringify(name)}\n`),
+        wrong,
+      );
+  }
 });
