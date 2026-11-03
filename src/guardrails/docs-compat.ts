@@ -129,9 +129,9 @@ export function placeCompatBlock(
   return `${before}${before ? "\n\n" : ""}## Compatibility\n\n${block}`;
 }
 
-/** The generated Node prerequisite block for an `engines.node` range. */
+/** The generated Node prerequisite block for an `engines.node` range, formatted as oxfmt leaves it. */
 function nodeBlock(range: string): string {
-  return `${DOCS_NODE_START}\nThis package requires Node.js \`${range}\`.\n${DOCS_NODE_END}\n`;
+  return `${DOCS_NODE_START}\n\nThis package requires Node.js \`${range}\`.\n${DOCS_NODE_END}\n`;
 }
 
 /** The README with the Node block in place: between its markers, under `## Requirements`, or in a new `## Requirements` section at the end. */
