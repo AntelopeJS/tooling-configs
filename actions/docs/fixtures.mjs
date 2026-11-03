@@ -56,7 +56,7 @@ export function typescriptFixture(t, text, files = {}) {
 }
 
 /** The JavaScript entry of typescript@7.0.2, which exposes only its version: no `ts.sys`, no `ts.readConfigFile`. */
-export const TYPESCRIPT_7_FILES = {
+const TYPESCRIPT_7_FILES = {
   "node_modules/typescript/package.json": JSON.stringify({
     name: "typescript",
     version: "7.0.2",
