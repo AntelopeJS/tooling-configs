@@ -22,12 +22,27 @@ const DOCS_PROGRAM_OPTIONS = {
   emitDeclarationOnly: undefined,
 };
 
+/** Packages that carry the compiler's JavaScript API, in preference order; `typescript` 7 and later does not. */
+const COMPILER_PACKAGES = ["typescript", "@typescript/typescript6"];
+
+const hasJavaScriptApi = (ts) =>
+  ts.sys !== undefined && ts.createProgram !== undefined;
+
+/** The first compiler the tsconfig resolves that has the JavaScript API, else the first compiler it resolved without one. */
 function loadTypescript(project) {
-  try {
-    return createRequire(project)("typescript");
-  } catch {
-    return undefined;
+  const require = createRequire(project);
+  let unusable;
+  for (const name of COMPILER_PACKAGES) {
+    let ts;
+    try {
+      ts = require(name);
+    } catch {
+      continue;
+    }
+    if (hasJavaScriptApi(ts)) return { ts };
+    unusable ??= ts;
   }
+  return { unusable };
 }
 
 /**
@@ -37,10 +52,12 @@ function loadTypescript(project) {
  */
 export function checkTypescript({ root, project, documents, fail }) {
   const display = (path) => relative(root, path);
-  const ts = loadTypescript(project);
+  const { ts, unusable } = loadTypescript(project);
   if (!ts) {
     fail(
-      `${display(project)}: TypeScript does not resolve from this tsconfig; install the checkout's dependencies before the docs action`,
+      unusable
+        ? `${display(project)}: TypeScript ${unusable.version} has no JavaScript API, so the docs action cannot check examples with it; add @typescript/typescript6 to the checkout's devDependencies, or mark illustrative fences \`fragment\``
+        : `${display(project)}: TypeScript does not resolve from this tsconfig; install the checkout's dependencies before the docs action`,
     );
     return 0;
   }
