@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.2.18
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.17...v0.2.18)
+
+### 🩹 Fixes
+
+- **suppressions:** Count directives and size in repo-authored agent files ([#84](https://github.com/AntelopeJS/tooling-configs/pull/84))
+
+### 📖 Documentation
+
+- **guardrails:** List per-step checks to run while iterating ([#86](https://github.com/AntelopeJS/tooling-configs/pull/86))
+- **readme:** Use one Discord invite ([#123](https://github.com/AntelopeJS/tooling-configs/pull/123))
+- **github:** Send questions and ideas to Discord ([#145](https://github.com/AntelopeJS/tooling-configs/pull/145))
+
+### 🏡 Chore
+
+- Land the cleanup campaign on main ([#167](https://github.com/AntelopeJS/tooling-configs/pull/167))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.2.17
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.16...v0.2.17)
