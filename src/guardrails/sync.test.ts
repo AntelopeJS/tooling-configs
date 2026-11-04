@@ -223,7 +223,7 @@ test("sync keeps AGENTS prose once when AGENTS.md links to CLAUDE.md", (t) => {
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
 });
 
-test("template profile manages only presets and AGENTS, and appends without replacing handwritten content", (t) => {
+test("template profile manages presets, AGENTS and the checks scripts, and appends without replacing handwritten content", (t) => {
   const root = testRepo(t);
   const originalPackage = read(root, "package.json");
   put(root, "AGENTS.md", "Handwritten without a final newline.");
@@ -235,15 +235,26 @@ test("template profile manages only presets and AGENTS, and appends without repl
   const customFormatter = read(root, "oxfmt.config.ts");
   const result = syncRepository(root, { profile: "template" });
   assert.deepEqual(result.paths.sort(), [
+    ".agents/skills/technical-writing/SKILL.md",
+    ".agents/skills/unslop/SKILL.md",
     ".agents/skills/verify-template/SKILL.md",
     ".agents/skills/verify-template/package.json",
     ".agents/skills/verify-template/tsconfig.json",
+    ".claude/skills/technical-writing",
+    ".claude/skills/unslop",
     ".claude/skills/verify-template",
     "AGENTS.md",
     "knip.config.ts",
     "oxlint.config.ts",
+    "package.json",
   ]);
-  assert.equal(read(root, "package.json"), originalPackage);
+  assert.deepEqual(parseManifest(read(root, "package.json")), {
+    ...parseManifest(originalPackage),
+    scripts: {
+      suppressions: "antelopejs-suppressions",
+      "suppressions:update": "antelopejs-suppressions --update",
+    },
+  });
   assert.equal(read(root, "oxfmt.config.ts"), customFormatter);
   assert.match(
     read(root, "AGENTS.md"),

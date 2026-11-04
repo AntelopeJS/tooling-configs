@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import {
   adoptedRelease,
@@ -8,7 +8,9 @@ import {
   PACK_NEW_RULES,
 } from "./adoption.ts";
 import { CEILINGS_FILE, parseCeilings, type Ceilings } from "./ceilings.ts";
-import { isAgentFile } from "./files.ts";
+import { isAgentFile, LINT_CONFIG } from "./files.ts";
+import { lintDiagnostics } from "./oxlint.ts";
+import { withPreviousTree } from "./previous-tree.ts";
 import { renamedPaths } from "./renames.ts";
 import { SUPPRESSIONS_FILE } from "./suppression-budget.ts";
 
@@ -52,11 +54,38 @@ function notNewlyEnabled(rule: string, adopted: string | undefined): string {
     : `${CEILINGS_FILE}: adds ${rule}, which the pack enabled in ${since}, not after this repository's ${adopted ?? since}.`;
 }
 
+/** The rules' finding counts over the tree at `revision`, linted under the current configuration; the repository's files that differ from `revision` are restored to it. */
+function countsAtRevision(root: string, revision: string) {
+  const differing = execFileSync(
+    "git",
+    ["diff", "--cached", "--name-only", "--no-renames", "-z", revision],
+    { cwd: root, encoding: "utf8" },
+  )
+    .split("\0")
+    .filter((file) => file && !LINT_CONFIG.test(file));
+  return withPreviousTree(root, revision, differing, (tree) => {
+    const counts = new Map<string, number>();
+    for (const { rule } of lintDiagnostics(tree))
+      counts.set(rule, (counts.get(rule) ?? 0) + 1);
+    return counts;
+  });
+}
+
+/** Counts a rule's findings at the base revision, linting it once and only when an adoption asks. */
+function baseCounter(root: string, revision: string) {
+  let counts: Map<string, number> | undefined;
+  return (rule: string): number => {
+    counts ??= countsAtRevision(root, revision);
+    return counts.get(rule) ?? 0;
+  };
+}
+
 function ruleFailures(
   base: Ceilings,
   ceilings: Ceilings,
   measured: Ceilings,
   adopted: string | undefined,
+  countAtBase: (rule: string) => number,
 ): string[] {
   const failures: string[] = [];
   for (const [rule, limit] of Object.entries(ceilings.rules)) {
@@ -73,6 +102,13 @@ function ruleFailures(
       failures.push(
         `${CEILINGS_FILE}: adds ${rule} at ${limit}, above its ${count} findings.`,
       );
+    else {
+      const atBase = countAtBase(rule);
+      if (limit > atBase)
+        failures.push(
+          `${CEILINGS_FILE}: adds ${rule} at ${limit}, above its ${atBase} findings on the base.`,
+        );
+    }
   }
   return failures;
 }
@@ -119,7 +155,8 @@ function oversizeFailures(
 /**
  * Fails each ceiling of `ceilings` added or raised against the ratchet file
  * at `revision`, except a rule the pack enabled after the base's adopted
- * release, recorded at no more than its `measured` count, and an oversize
+ * release, recorded at no more than its `measured` count and its count in the
+ * tree at `revision`, and an oversize
  * agent file that exists at the base, allowed at no more than its size there
  * and its measured size, while the base predates counting those files; and a recorded pack
  * release dropped or lowered. Renamed files keep their allowance. A base with
@@ -144,7 +181,13 @@ export function raisedRatchet(
   const adopted = adoptedRelease(root, base.pack, revision);
   const failures = [
     ...packFailure(base, ceilings),
-    ...ruleFailures(base, ceilings, measured, adopted),
+    ...ruleFailures(
+      base,
+      ceilings,
+      measured,
+      adopted,
+      baseCounter(root, revision),
+    ),
     ...oversizeFailures(
       {
         root,

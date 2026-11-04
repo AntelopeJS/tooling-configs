@@ -119,8 +119,11 @@ Supported is the declared range, taken from `peerDependencies` before
 `dependencies` before `optionalDependencies`. Tested with is the version
 `pnpm-lock.yaml` resolves for that package; a workspace link shows the linked
 package's version, and a dependency the lockfile does not resolve shows `—`.
-Without `pnpm-lock.yaml` a pnpm repository fails sync until `pnpm install` writes
-it; other package managers get `—` in every Tested with cell.
+When `.npmrc` sets `shared-workspace-lockfile=false` (or `pnpm-workspace.yaml`
+sets `sharedWorkspaceLockfile: false`), each package keeps its own
+`pnpm-lock.yaml` and sync reads that one. Without the lockfile a pnpm repository
+fails sync until `pnpm install` writes it; other package managers get `—` in
+every Tested with cell.
 
 Sync replaces the block between its markers. A README without them gets the
 block in place of its first `<!-- docs-compat: ./package.json#... -->` table
@@ -312,6 +315,75 @@ dependencies with lifecycle scripts and auditing disabled; it sends no consumer
 documents, source, or diagnostics to an external checking service. It works with
 public or private checkouts and needs no extra token. Use ordinary `pull_request`
 CI, not privileged `pull_request_target` execution of untrusted checkout code.
+
+## Standard mode
+
+Standard mode is the AntelopeJS documentation standard. A repository opts in with `"antelopeJs": { "docs": { "standard": true } }` in its root `package.json`. The action reads the opt-in from the checkout, so a caller passes no new input and a released default branch keeps running the old checks. Without the opt-in, nothing below runs.
+
+With the opt-in, every selected Markdown file is checked for these. Inside a selected folder, a top-level `design` folder and any `.md` file whose name contains `grill` are not selected, because antelope-web never publishes them (`design/**` and `**/*grill*.md` in its docs sources). A file named directly in `docs-files` is always checked.
+
+- **Frontmatter.** A page needs `title`, `description` and `mode`, and `mode` is `tutorial`, `how-to`, `reference` or `explanation`. A `README.md` is exempt, because GitHub shows its frontmatter as a table.
+- **No body H1.** The title comes from frontmatter. A `README.md` keeps its H1.
+- **Page length.** A page has at most 3,000 words. Fenced code and frontmatter do not count.
+- **Node versions.** Prose names no Node version range, such as "Node.js 22" or "Node >= 22.18". State the range once in `engines`. `antelopejs-sync` writes it between `<!-- antelopejs-docs-node:start -->` and `<!-- antelopejs-docs-node:end -->` in each published package's README, under `## Requirements` when the markers are absent, and the check allows a version there. Code spans and fences are exempt.
+- **Images.** An image is either an `output` of a scene in `docs/captures.ts`, or marked `illustration`: the Markdown title `![Alt](path "illustration")`, or `data-illustration` on an `<img>` tag. The check reads `docs/captures.ts` as text and finds `output: "..."` string literals; it never runs the file.
+- **English.** A paragraph of prose is not English when other-language function words outnumber English ones, or when most of its letters are not Latin. Fences, inline code, comments, HTML tags and URLs are skipped, and so is a paragraph shorter than five words. It checks whole paragraphs and does not detect a foreign sentence inside an English paragraph.
+- **Vale.** The generated style in `actions/docs/vale/` reports no warning. The action installs the pinned Vale with `install-vale.sh` when the repository opts in. Locally, set `VALE_BIN` to a Vale binary or put `vale` on `PATH`.
+
+Each failure names the file and, where it has one, the line.
+
+## The writing rules table
+
+`src/docs/unslop-rules.ts` holds the numbered rules of the `unslop` skill as data: the id other skills cite, the section, the skill's own wording, and, for the rules a machine can check, the check. Two outputs come from it.
+
+- The rule section of the vendored `unslop` skill. `src/docs/vale-style.test.ts` fails unless the skill, with that section rendered from the table, equals the upstream copy in `src/docs/fixtures/unslop-upstream.md`.
+- The Vale style in `actions/docs/vale/`. Run `pnpm run docs:generate` after you change the table. The same test fails when the committed style differs from what the table generates.
+
+The style has one Vale rule per checked unslop rule (`Unslop07.yml` for rule 7), plus two rules that belong to the AntelopeJS standard and not to the skill: `Names.yml` requires `AntelopeJS` and `DMS` spelled that way, and `Procedure.yml` bans "simply", "easy", "easily", "quickly" and "please". Every rule is a warning, and `vale.ini` reports warnings and above. Vale skips code spans and fences. `vale.ini` also skips the YAML props block under an MDC component such as `::block-playground{...}`, from the component line to the closing `---`; the component's body prose is still checked.
+
+`actions/docs/vale.test.mjs` runs a Vale binary over a seeded sentence for each rule and over clean prose. `actions/docs/install-vale.sh <directory>` downloads the pinned Vale release, checks its SHA-256 and prints the binary path. The tests read it from `VALE_BIN`, or from `PATH`. They skip when Vale is missing, except in CI, where a missing Vale fails them.
+
+## Capture screenshots
+
+`antelopejs-capture [--check] [--scene <id>] [--demo-ref <ref>]` regenerates the screenshots a docs repository references, from the scenes in `docs/captures.ts`. It prints failures only.
+
+```ts
+import { defineScenes } from "@antelopejs/tooling-configs/capture";
+
+export default defineScenes([
+  {
+    id: "onboarding",
+    route: "/",
+    setup: true,
+    steps: [
+      {
+        action: "fill",
+        selector: "input[name=email]",
+        value: "admin@helio.example",
+      },
+    ],
+  },
+  {
+    id: "dashboard-overview",
+    route: "/home",
+    crop: "main",
+    output: "docs/images/dashboard-overview.webp",
+  },
+]);
+```
+
+A screenshot scene sets an `id` in kebab-case, a `route`, an `output` path ending in `.webp`, and optionally a `viewport` (default 1440 by 900), `steps` and a `crop` selector. A setup scene sets `setup: true`, takes no `output`, and runs once before any screenshot. The steps are `click`, `fill`, `press` and `wait`.
+
+A run does this:
+
+1. Clones AntelopeJS/template-dms-demo at `--demo-ref` (default `main`) into a temporary directory, and sets the pnpm overrides there so every published package of the current repository resolves to the working tree. The demo's own overrides are kept next to them, in `package.json` and in `pnpm-workspace.yaml`, because the pnpm that installs decides which one it reads. Nothing is committed.
+2. Starts an empty MongoDB with `mongodb-memory-server` and the demo's `pnpm run capture:start`, with `HELIO_NOW=2026-06-15T09:00:00Z`, `HELIO_SIMULATORS=off` and `TZ=UTC`.
+3. Opens Chromium dark, at 2x, with the browser clock frozen on `HELIO_NOW`, runs the setup scenes, then captures each scene as lossless WebP.
+4. Writes the files. A scene whose committed file differs by no more than 0.1% of the pixels (pixelmatch) keeps its committed bytes, so render noise changes no file. With `--check` it compares each scene the same way, fails above 0.1% changed pixels, and writes nothing.
+
+A scene is shot once its page is ready, all seen in one look: the app has set `data-dms-ready` on `<html>`, the font faces its text and form fields use are loaded, and no request has started or ended for 500 ms. A page that is not ready within 60 s is not shot: its scene fails and names what was still pending. An event stream (`EventSource`) or a WebSocket is not waited for; any other request that never ends keeps the page from being ready. Add a `wait` step for a change the page makes later without a request. A scene that fails to render fails the run, and its id leads the failure line. Set `ANTELOPEJS_CAPTURE_DEMO_URL` to clone the demo from another URL or a local path.
+
+The repository installs `playwright-core`, `sharp`, `pixelmatch` and `mongodb-memory-server` as development dependencies, and Chromium with `pnpm exec playwright-core install chromium`. They are optional peers of this package, so a repository without captures installs none of them. Because the demo, its MongoDB and its ports are a shared machine resource, take `flock ~/.cache/campaign/capture.lock` around a run on a shared machine.
 
 ## Run locally at the same revision
 

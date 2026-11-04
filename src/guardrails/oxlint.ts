@@ -16,6 +16,8 @@ export interface Diagnostic {
   help: string | undefined;
 }
 
+const TSCONFIG_ERROR = "typescript/tsconfig-error";
+
 function resolveOxlint(root: string): string {
   try {
     const require = createRequire(join(root, "package.json"));
@@ -121,14 +123,28 @@ function runOxlint(
   }
 }
 
+export interface LintOptions {
+  /** Throws when a TypeScript project fails to load, whose type-aware rules would otherwise read as zero findings. */
+  rejectBrokenProject?: boolean;
+}
+
 export function lintDiagnostics(
   root: string,
   config?: string,
   files?: string[],
+  { rejectBrokenProject = false }: LintOptions = {},
 ): Diagnostic[] {
-  return runOxlint(root, config, files, []).map((item) =>
+  const diagnostics = runOxlint(root, config, files, []).map((item) =>
     toDiagnostic(item, root),
   );
+  const broken = rejectBrokenProject
+    ? diagnostics.find(({ rule }) => rule === TSCONFIG_ERROR)
+    : undefined;
+  if (broken)
+    throw new Error(
+      `${broken.location}: ${broken.message}${broken.help ? ` ${broken.help}` : ""}. The type-aware rules cannot be measured until the TypeScript project loads.`,
+    );
+  return diagnostics;
 }
 
 /** A lint directive oxlint reports as suppressing nothing: the rules it names as dead, or none named when the whole directive is dead. */

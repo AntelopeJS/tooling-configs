@@ -13,6 +13,7 @@ import { toolingVersions } from "./package.ts";
 export const PACK_NEW_RULES = new Map([
   ["antelopejs/no-inherited-key-lookup", "0.2.17"],
   ["antelopejs/no-presence-only-type-guard", "0.2.17"],
+  ["antelopejs/require-tsconfig-include", "0.2.18"],
   ["typescript/no-unnecessary-type-parameters", "0.2.17"],
   ["typescript/no-unsafe-argument", "0.2.17"],
   ["typescript/no-unsafe-assignment", "0.2.17"],

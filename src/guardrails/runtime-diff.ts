@@ -30,7 +30,7 @@ const DESCRIBE = `
 const { readFileSync, existsSync } = require("node:fs");
 const { dirname, join, extname } = require("node:path");
 const { pathToFileURL } = require("node:url");
-const file = process.argv[1];
+const file = process.argv[2];
 let directory = dirname(file);
 while (!existsSync(join(directory, "package.json")) && dirname(directory) !== directory) directory = dirname(directory);
 const manifest = existsSync(join(directory, "package.json")) ? JSON.parse(readFileSync(join(directory, "package.json"), "utf8")) : {};
@@ -180,6 +180,7 @@ function buildPackage(
   directory: string,
   output: string,
   manifest: ProofManifest,
+  describe: string,
 ):
   | {
       count: number;
@@ -209,7 +210,7 @@ function buildPackage(
   const { entries, skipped } = built;
   for (const { entry, file } of entries) {
     const destination = join(output, `${encodeURIComponent(entry)}.json`);
-    const metadata = childJson(["-e", DESCRIBE, file], directory);
+    const metadata = childJson([describe, file], directory);
     mkdirSync(dirname(destination), { recursive: true });
     writeFileSync(destination, metadata);
   }
@@ -235,6 +236,9 @@ export function runtimeDiff(
       const packages = packagesAt(worktree, true);
       const published: PublishedEntry[] = [];
       let entries = 0;
+      mkdirSync(scratch, { recursive: true });
+      const describe = join(scratch, "describe.cjs");
+      writeFileSync(describe, DESCRIBE);
       for (const { directory, manifest } of packages) {
         const folder = encodeURIComponent(directory).replaceAll(".", "%2E");
         try {
@@ -242,6 +246,7 @@ export function runtimeDiff(
             join(worktree, directory),
             join(output, folder),
             manifest,
+            describe,
           );
           if (built === undefined) skippedPackages.add(directory);
           else {
@@ -279,7 +284,6 @@ export function runtimeDiff(
             },
           );
       if (probe !== undefined) {
-        mkdirSync(scratch, { recursive: true });
         const script = join(scratch, "probe.cjs");
         writeFileSync(script, probe);
         writeFileSync(

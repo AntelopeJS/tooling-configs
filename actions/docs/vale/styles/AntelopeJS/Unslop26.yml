@@ -1,0 +1,17 @@
+extends: existence
+message: "Use the concrete word instead of '%s' (unslop rule 26)."
+level: warning
+ignorecase: true
+tokens:
+  - "substrate"
+  - "wedge"
+  - "nexus"
+  - "locus"
+  - "vantage"
+  - "bedrock"
+  - "north star"
+  - "flywheel"
+  - "endgame"
+  - "paradigm"
+  - "modality"
+  - "gold-plating"

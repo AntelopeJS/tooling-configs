@@ -100,6 +100,20 @@ export function startServices(
   }
 }
 
+/** Runs a service's readiness command once in its container, recorded in `folder`: the stderr when it fails, `null` when it passes. */
+export function readinessFailure(
+  container: string,
+  ready: string[],
+  folder: string,
+): string | null {
+  const args = ["exec", container, ...ready];
+  const result = docker(args);
+  record(folder, args, result);
+  return result.status === 0
+    ? null
+    : result.stderr.trim().slice(-300) || `exit ${result.status}`;
+}
+
 /** Whether a recorded container is running. */
 export function containerRunning(name: string): boolean {
   return (

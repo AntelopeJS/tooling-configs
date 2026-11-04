@@ -8,10 +8,11 @@ import { noPresenceOnlyTypeGuardRule } from "./rules/no-presence-only-type-guard
 import { noSelfImportInTestsRule } from "./rules/no-self-import-in-tests.ts";
 import { noTypeofFunctionOnlyTestRule } from "./rules/no-typeof-function-only-test.ts";
 import { requireAssertionRule } from "./rules/require-assertion.ts";
+import { requireTsconfigIncludeRule } from "./rules/require-tsconfig-include.ts";
 
 export { ASSERTION_FUNCTION_NAMES, TEST_FILE_GLOBS } from "./shared.ts";
 
-/** AntelopeJS rules that reject comments, inherited-key lookups, presence-only type guards and low-evidence tests. */
+/** AntelopeJS rules that reject comments, inherited-key lookups, presence-only type guards, low-evidence tests and files no tsconfig lists. */
 const guardrailsPlugin = eslintCompatPlugin({
   meta: { name: "antelopejs" },
   rules: {
@@ -23,6 +24,7 @@ const guardrailsPlugin = eslintCompatPlugin({
     "no-self-import-in-tests": noSelfImportInTestsRule,
     "no-typeof-function-only-test": noTypeofFunctionOnlyTestRule,
     "require-assertion": requireAssertionRule,
+    "require-tsconfig-include": requireTsconfigIncludeRule,
   },
 });
 

@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { parseDocument } from "yaml";
 
-import { ANTELOPE_STYLE } from "../oxc/fmt.ts";
 import { CI_CALLER } from "./ci-workflow.ts";
 import {
   compatBlock,
@@ -14,22 +13,7 @@ import {
 } from "./docs-compat.ts";
 import type { Manifest } from "./package.ts";
 import { syncRepository } from "./sync.ts";
-import { PACKAGE_ROOT, put, read, testRepo } from "./helpers/test-repo.ts";
-
-function formatted(root: string, files: string[]) {
-  put(root, "house-style.json", JSON.stringify(ANTELOPE_STYLE));
-  return spawnSync(
-    process.execPath,
-    [
-      join(PACKAGE_ROOT, "node_modules/oxfmt/bin/oxfmt"),
-      "--config",
-      "house-style.json",
-      "--check",
-      ...files,
-    ],
-    { cwd: root, encoding: "utf8" },
-  );
-}
+import { formatCheck, put, read, testRepo } from "./helpers/test-repo.ts";
 
 function manifest(fields: Manifest): string {
   return `${JSON.stringify(fields, null, 2)}\n`;
@@ -70,7 +54,7 @@ ${DOCS_COMPAT_END}
   );
   const root = testRepo(t);
   put(root, "README.md", placeCompatBlock("# Fixture\n\nIntro.\n", block));
-  const check = formatted(root, ["README.md"]);
+  const check = formatCheck(root, ["README.md"]);
   assert.equal(check.status, 0, check.stdout + check.stderr);
 });
 
@@ -322,7 +306,7 @@ test("sync writes the block of every qualifying workspace package, lists every p
     "extra-commands": "pnpm --dir packages/a check\n",
   });
   assert.match(workflow, /# The interface examples compile against this/);
-  const style = formatted(root, [
+  const style = formatCheck(root, [
     ".github/workflows/ci.yml",
     "packages/a/README.md",
     "packages/d/README.md",
@@ -366,4 +350,93 @@ test("a pnpm repository without a lockfile fails naming the fix, and another man
       },
     ])}`,
   );
+});
+
+const PER_PACKAGE_LOCK = (core: string) => `lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    dependencies:
+      '@antelopejs/core':
+        specifier: ^1.17.0
+        version: ${core}(typescript@5.9.3)
+`;
+
+function perPackageRepo(t: TestContext, setting: "npmrc" | "workspace" | "on") {
+  const root = testRepo(t, false);
+  put(
+    root,
+    "package.json",
+    manifest({
+      name: "fixture-workspace",
+      private: true,
+      packageManager: "pnpm@10.2.0",
+      scripts: { "sync:check": "antelopejs-sync --check" },
+    }),
+  );
+  put(
+    root,
+    "pnpm-workspace.yaml",
+    `packages:\n  - "packages/*"\n${setting === "workspace" ? "sharedWorkspaceLockfile: false\n" : ""}`,
+  );
+  if (setting === "npmrc")
+    put(root, ".npmrc", "# per package\nshared-workspace-lockfile=false\n");
+  if (setting === "on") put(root, ".npmrc", "shared-workspace-lockfile=true\n");
+  put(
+    root,
+    "pnpm-lock.yaml",
+    "lockfileVersion: '9.0'\n\nimporters:\n\n  .: {}\n",
+  );
+  for (const [name, core] of [
+    ["a", "1.17.2"],
+    ["b", "1.18.0"],
+  ]) {
+    put(
+      root,
+      `packages/${name}/package.json`,
+      manifest({
+        name: `@antelopejs/${name}`,
+        version: "1.0.0",
+        peerDependencies: { "@antelopejs/core": ">=1.17.0 <2" },
+      }),
+    );
+    put(root, `packages/${name}/README.md`, `# ${name}\n`);
+    put(root, `packages/${name}/pnpm-lock.yaml`, PER_PACKAGE_LOCK(core));
+  }
+  return root;
+}
+
+function testedWith(root: string, name: string): string {
+  return read(root, `packages/${name}/README.md`)
+    .split("\n")
+    .filter((line) => line.startsWith("| `@antelopejs/core`"))
+    .join("");
+}
+
+for (const setting of ["npmrc", "workspace"] as const)
+  test(`Tested with reads each package's own lockfile when shared-workspace-lockfile is off in ${setting === "npmrc" ? ".npmrc" : "pnpm-workspace.yaml"}`, (t) => {
+    const root = perPackageRepo(t, setting);
+    assert.deepEqual(syncRepository(root).errors, []);
+    assert.match(testedWith(root, "a"), /`1\.17\.2`/);
+    assert.match(testedWith(root, "b"), /`1\.18\.0`/);
+    assert.deepEqual(
+      syncRepository(root, { check: true }).paths.filter((path) =>
+        path.endsWith("README.md"),
+      ),
+      [],
+    );
+  });
+
+test("a package without its own lockfile fails naming that lockfile when the workspace lockfile is not shared", (t) => {
+  const root = perPackageRepo(t, "npmrc");
+  rmSync(join(root, "packages/b/pnpm-lock.yaml"));
+  const { errors } = syncRepository(root, { check: true });
+  assert.match(errors.join("\n"), /packages\/b\/pnpm-lock\.yaml.*is missing/);
+});
+
+test("an explicit shared-workspace-lockfile=true keeps reading the root lockfile", (t) => {
+  const root = perPackageRepo(t, "on");
+  assert.deepEqual(syncRepository(root).errors, []);
+  assert.match(testedWith(root, "a"), /\| —\s+\|/);
 });

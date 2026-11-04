@@ -2,12 +2,13 @@ import { execFileSync, spawnSync } from "node:child_process";
 import {
   copyFileSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   rmSync,
   symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 function git(root: string, args: string[], env: NodeJS.ProcessEnv, input = "") {
   return execFileSync("git", args, {
@@ -30,17 +31,38 @@ function revisionEntries(root: string, revision: string): Map<string, string> {
   return entries;
 }
 
+/** Links the `node_modules` of the repository root and of each tracked package into `tree`, so the checkout resolves dependencies as the real one does. */
+function linkModules(root: string, tree: string, env: NodeJS.ProcessEnv): void {
+  const manifests = git(
+    root,
+    ["ls-files", "-z", "--", "package.json", ":(glob)**/package.json"],
+    env,
+  )
+    .split("\0")
+    .filter(Boolean);
+  for (const manifest of manifests) {
+    const directory = dirname(manifest);
+    const modules = join(root, directory, "node_modules");
+    const target = join(tree, directory, "node_modules");
+    if (existsSync(modules) && !existsSync(target))
+      symlinkSync(modules, target, "dir");
+  }
+}
+
 /**
  * Runs `use` on a checkout of the index in which each of `paths` holds its
  * content at `revision`, or is absent when `revision` does not have it or does
  * not exist, so the files are linted under the staged configuration. The
- * checkout is deleted afterwards.
+ * checkout is deleted afterwards. With `wholeIndex`, files the index marks
+ * skip-worktree (a sparse checkout) are written too, so the tree is the commit,
+ * and an empty `.git` stops ignore-file lookups at the tree, not above `TMPDIR`.
  */
 export function withPreviousTree<Result>(
   root: string,
   revision: string,
   paths: string[],
   use: (tree: string) => Result,
+  { wholeIndex = false }: { wholeIndex?: boolean } = {},
 ): Result {
   const scratch = mkdtempSync(join(tmpdir(), "antelopejs-previous."));
   try {
@@ -79,13 +101,19 @@ export function withPreviousTree<Result>(
         removed.map((path) => `${path}\0`).join(""),
       );
     const tree = join(scratch, "tree");
-    git(root, ["checkout-index", "-a", "-f", `--prefix=${tree}/`], env);
-    if (existsSync(join(root, "node_modules")))
-      symlinkSync(
-        join(root, "node_modules"),
-        join(tree, "node_modules"),
-        "dir",
-      );
+    git(
+      root,
+      [
+        "checkout-index",
+        "-a",
+        "-f",
+        ...(wholeIndex ? ["--ignore-skip-worktree-bits"] : []),
+        `--prefix=${tree}/`,
+      ],
+      env,
+    );
+    if (wholeIndex) mkdirSync(join(tree, ".git"), { recursive: true });
+    linkModules(root, tree, env);
     return use(tree);
   } finally {
     rmSync(scratch, { recursive: true, force: true });

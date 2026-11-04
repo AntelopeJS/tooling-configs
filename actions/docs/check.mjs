@@ -14,10 +14,21 @@ import { decodeHTML } from "entities";
 import GithubSlugger from "github-slugger";
 import { marked } from "marked";
 
+import { checkStandard, readStandard } from "./standard.mjs";
 import { checkTypescript } from "./typescript.mjs";
 import { checkVersionClaims, plain, sameRange } from "./versions.mjs";
 
 const markdown = /\.(md|mdc)$/i;
+
+/** What antelope-web leaves out of every docs source, relative to the docs folder: a top-level `design` folder and any Markdown file whose name holds `grill`. */
+const UNPUBLISHED_FOLDER = "design";
+const UNPUBLISHED_FILE = /grill.*\.md$/;
+
+function unpublished(base, path, entry) {
+  return entry.isDirectory()
+    ? relative(base, path) === UNPUBLISHED_FOLDER
+    : UNPUBLISHED_FILE.test(entry.name);
+}
 const fields = new Set([
   "dependencies",
   "peerDependencies",
@@ -249,7 +260,13 @@ function typescriptProject(root, project, localPath) {
   return existsSync(fallback) ? localPath(fallback) : undefined;
 }
 
-export function checkDocs({ root = process.cwd(), files, project = "" }) {
+export function checkDocs({
+  root = process.cwd(),
+  files,
+  project = "",
+  standard,
+  valeBin,
+}) {
   root = realpathSync(root);
   const failures = [];
   const fail = (message) => failures.push(message);
@@ -266,12 +283,14 @@ export function checkDocs({ root = process.cwd(), files, project = "" }) {
     return path;
   };
   const selected = new Set();
-  const collect = (path) => {
+  const collect = (path, base = path) => {
     localPath(path);
     if (statSync(path).isDirectory()) {
       for (const entry of readdirSync(path, { withFileTypes: true })) {
+        const child = resolve(path, entry.name);
+        if (unpublished(base, child, entry)) continue;
         if (entry.isDirectory() || markdown.test(entry.name)) {
-          collect(resolve(path, entry.name));
+          collect(child, base);
         }
       }
     } else if (markdown.test(path)) {
@@ -296,6 +315,14 @@ export function checkDocs({ root = process.cwd(), files, project = "" }) {
     checkCompatibility(doc, localPath, fail);
     blocks += checkVersionClaims(doc, context);
     for (const entry of doc.api) localPath(resolve(dirname(doc.path), entry));
+  }
+  if (standard ?? readStandard(root)) {
+    checkStandard({
+      root,
+      documents,
+      fail,
+      valeBin: valeBin ?? process.env.VALE_BIN ?? "vale",
+    });
   }
   const typed = documents.some((doc) => doc.api.length || doc.examples.length);
   const tsconfig = typescriptProject(root, project, localPath);
@@ -325,9 +352,14 @@ function main() {
     options: {
       files: { type: "string" },
       "typescript-project": { type: "string", default: "" },
+      "print-standard": { type: "boolean" },
     },
     allowPositionals: true,
   });
+  if (values["print-standard"]) {
+    console.log(readStandard(process.cwd()));
+    return 0;
+  }
   const files = [
     ...positionals,
     ...(values.files ?? "")

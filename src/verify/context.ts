@@ -13,6 +13,7 @@ import {
   type JsonObject,
   type JsonValue,
 } from "../garden/json.ts";
+import { readinessFailure } from "./docker.ts";
 import { ajsEntry, writeFixture, type Fixture } from "./fixture.ts";
 import {
   freePort,
@@ -61,6 +62,15 @@ const READY_TIMEOUT_MS = 120_000;
 const STOP_TIMEOUT_MS = 30_000;
 const POLL_MS = 250;
 const SETTLE_MS = 3000;
+/** The waits between the readiness reruns after a failed journey: one miss under load does not hide a catch. */
+const READINESS_RETRY_MS = [500, 1000, 2000];
+/** The signals a process outside the run sends to end an app. Any other signal, such as SIGABRT or SIGSEGV, is the product crashing. */
+const OUTSIDE_KILLS: ReadonlySet<string> = new Set([
+  "SIGKILL",
+  "SIGTERM",
+  "SIGHUP",
+  "SIGINT",
+]);
 
 function slug(text: string): string {
   return text
@@ -76,6 +86,9 @@ function sleep(ms: number): Promise<void> {
 interface Running {
   app: App;
   handle: BackgroundHandle;
+  /** The signals the harness sent the app, so an exit by any other signal came from outside the run. */
+  sent: string[];
+  exit: { exitCode: number | null; signal: string | null } | null;
 }
 
 /** The harness side of a journey: every driving call writes its evidence into a new numbered step folder. */
@@ -86,6 +99,7 @@ export class VerifyContext implements JourneyContext {
   readonly home: string;
   readonly steps: StepRecord[] = [];
   private readonly running: Running[] = [];
+  private readonly started: Running[] = [];
   private readonly fixtures = new Map<string, Fixture>();
   private index = 0;
 
@@ -284,7 +298,12 @@ export class VerifyContext implements JourneyContext {
     });
     writeFileSync(join(folder, "port.txt"), `${port}\n`);
     const app: App = { name, pid: handle.pid, folder, project, port };
-    this.running.push({ app, handle });
+    const entry: Running = { app, handle, sent: [], exit: null };
+    void handle.exited.then((exit) => {
+      entry.exit = exit;
+    });
+    this.running.push(entry);
+    this.started.push(entry);
     this.state.processes.push({
       name: `${name} (${project})`,
       pid: handle.pid,
@@ -356,7 +375,6 @@ export class VerifyContext implements JourneyContext {
     this.expect(folder, check.pass ? [check, alive] : [check], {
       critical: true,
     });
-    this.expect(folder, [check], { critical: true });
   }
 
   /** Posts a JSON body to a route of the driver module. */
@@ -395,6 +413,7 @@ export class VerifyContext implements JourneyContext {
     const folder = this.step(name);
     writeFileSync(join(folder, "command.txt"), `kill -INT ${app.pid}\n`);
     const running = this.running.find((entry) => entry.app.pid === app.pid);
+    running?.sent.push("SIGINT");
     try {
       process.kill(app.pid, "SIGINT");
     } catch {
@@ -409,6 +428,7 @@ export class VerifyContext implements JourneyContext {
       : { exitCode: null, signal: null };
     clearTimeout(timer);
     if (!outcome) {
+      running?.sent.push("SIGKILL");
       killGroup(app.pid);
       writeFileSync(
         join(folder, "note.txt"),
@@ -469,6 +489,57 @@ export class VerifyContext implements JourneyContext {
   async cleanup(): Promise<void> {
     for (const entry of this.running.slice())
       await this.stop(`cleanup ${entry.app.name}`, entry.app);
+  }
+
+  /**
+   * Why the run's environment, not the product, explains a failed journey,
+   * or `null` when nothing points away from the product: a service that
+   * still fails its readiness command after a few reruns, an app killed by
+   * SIGKILL, SIGTERM, SIGHUP or SIGINT that the harness did not send, or the
+   * app the harness started failing to bind the driver's port. A break that
+   * takes its own service down reads as an outage. Call it after `cleanup`,
+   * when every app has exited.
+   */
+  async environmentFault(): Promise<string | null> {
+    for (const [name, service] of Object.entries(
+      this.workspace.config.services ?? {},
+    )) {
+      const failure = await this.unready(name, service.ready);
+      if (failure !== null)
+        return `the service ${name} no longer passes its readiness command: ${failure}`;
+    }
+    for (const { app, sent, exit } of this.started) {
+      const label = `${app.name} (pid ${app.pid})`;
+      if (
+        exit?.signal &&
+        OUTSIDE_KILLS.has(exit.signal) &&
+        !sent.includes(exit.signal)
+      )
+        return `${label} was killed by ${exit.signal}, a signal the harness did not send`;
+      const output = readOutput(app.folder);
+      const port = new RegExp(`(?<![0-9])${app.port}(?![0-9])`);
+      const taken = `${output.stdout}\n${output.stderr}`
+        .split("\n")
+        .find((line) => line.includes("EADDRINUSE") && port.test(line));
+      if (taken !== undefined)
+        return `${label} could not bind port ${app.port}, which another process holds: ${taken.trim().slice(0, 300)}`;
+    }
+    return null;
+  }
+
+  /** The last readiness failure of a service after the reruns, or `null` once one rerun passes. */
+  private async unready(name: string, ready: string[]): Promise<string | null> {
+    let failure: string | null = null;
+    for (const wait of [0, ...READINESS_RETRY_MS]) {
+      await sleep(wait);
+      failure = readinessFailure(
+        this.service(name).container,
+        ready,
+        this.step(`${name} readiness after the failure`),
+      );
+      if (failure === null) return null;
+    }
+    return failure;
   }
 
   /** Records why the journey ended without a verdict on the product. */

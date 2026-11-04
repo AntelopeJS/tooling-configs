@@ -11,7 +11,11 @@ import {
 export const DOCS_COMPAT_START = "<!-- antelopejs-docs-compat:start -->";
 export const DOCS_COMPAT_END = "<!-- antelopejs-docs-compat:end -->";
 
+const DOCS_NODE_START = "<!-- antelopejs-docs-node:start -->";
+const DOCS_NODE_END = "<!-- antelopejs-docs-node:end -->";
+
 const LOCKFILE = "pnpm-lock.yaml";
+const REQUIREMENTS_HEADING = /^##\s+Requirements\s*$/i;
 const SCOPE = "@antelopejs/";
 const UNRESOLVED = "—";
 const LEGACY_MARKER = /^<!--\s*docs-compat:\s*\.\/package\.json#\w+\s*-->\s*$/;
@@ -123,6 +127,38 @@ export function placeCompatBlock(
   }
   const before = text.trimEnd();
   return `${before}${before ? "\n\n" : ""}## Compatibility\n\n${block}`;
+}
+
+/** The generated Node prerequisite block for an `engines.node` range, formatted as oxfmt leaves it. */
+function nodeBlock(range: string): string {
+  return `${DOCS_NODE_START}\n\nThis package requires Node.js \`${range}\`.\n${DOCS_NODE_END}\n`;
+}
+
+/** The README with the Node block in place: between its markers, under `## Requirements`, or in a new `## Requirements` section at the end. */
+function placeNodeBlock(current: string, block: string): string {
+  const start = current.indexOf(DOCS_NODE_START);
+  const end = current.indexOf(DOCS_NODE_END);
+  if ((start === -1) !== (end === -1) || end < start)
+    throw new Error(
+      "incomplete antelopejs-docs-node markers. Repair or delete them, then rerun antelopejs-sync.",
+    );
+  if (start !== -1)
+    return `${current.slice(0, start)}${block}${current.slice(end + DOCS_NODE_END.length).replace(/^\r?\n/, "")}`;
+  const lines = current.split("\n");
+  const heading = lines.findIndex((line) => REQUIREMENTS_HEADING.test(line));
+  if (heading !== -1) {
+    let rest = heading + 1;
+    while (rest < lines.length && !lines[rest].trim()) rest++;
+    return finalNewline(
+      [
+        ...lines.slice(0, heading + 1),
+        "",
+        ...block.trimEnd().split("\n"),
+        ...(rest < lines.length ? ["", ...lines.slice(rest)] : []),
+      ].join("\n"),
+    );
+  }
+  return `${current.trimEnd()}\n\n## Requirements\n\n${block}`;
 }
 
 /** What sync writes for the documentation: each qualifying package's README and the caller's `docs-files` lines. */
@@ -282,13 +318,12 @@ function linkedVersion(
 
 function resolvedVersion(
   root: string,
-  lock: Document,
+  { document, importer }: Lock,
   directory: string,
   name: string,
 ): string | undefined {
-  const importer = directory || ".";
   for (const section of RESOLVED_SECTIONS) {
-    const entry = lock.getIn(["importers", importer, section, name], true);
+    const entry = document.getIn(["importers", importer, section, name], true);
     const version = isMap(entry) ? entry.get("version", true) : entry;
     if (!isScalar(version)) continue;
     const resolved = String(version.value).split("(")[0];
@@ -299,18 +334,104 @@ function resolvedVersion(
   return undefined;
 }
 
-function readLock(root: string): Document | undefined {
-  const path = join(root, LOCKFILE);
+/** A parsed pnpm lockfile and the importer that holds one package's dependencies in it. */
+interface Lock {
+  document: Document;
+  importer: string;
+}
+
+const UNSHARED_NPMRC =
+  /^\s*shared-workspace-lockfile\s*=\s*false\s*(?:[#;].*)?$/m;
+
+/** Whether the workspace keeps one root lockfile, or `shared-workspace-lockfile=false` gives each package its own. */
+function sharesLockfile(root: string): boolean {
+  const npmrc = join(root, ".npmrc");
+  if (existsSync(npmrc) && UNSHARED_NPMRC.test(readFileSync(npmrc, "utf8")))
+    return false;
+  const workspace = join(root, "pnpm-workspace.yaml");
+  return !(
+    existsSync(workspace) &&
+    parseDocument(readFileSync(workspace, "utf8")).get(
+      "sharedWorkspaceLockfile",
+    ) === false
+  );
+}
+
+/** The lockfile path of a package, relative to the root. A shared lockfile is the root's, indexed by the package directory. */
+function lockPath(shared: boolean, directory: string): string {
+  return shared ? LOCKFILE : relative(directory, LOCKFILE);
+}
+
+function readLock(
+  root: string,
+  shared: boolean,
+  directory: string,
+): Lock | undefined {
+  const path = join(root, lockPath(shared, directory));
   return existsSync(path)
-    ? parseDocument(readFileSync(path, "utf8"))
+    ? {
+        document: parseDocument(readFileSync(path, "utf8")),
+        importer: shared ? directory || "." : ".",
+      }
     : undefined;
+}
+
+interface PlannedPackage {
+  directory: string;
+  published: boolean;
+  node: string | undefined;
+  ranges: ReadonlyMap<string, string>;
+}
+
+/** Adds one package's `docs-files` lines and, when it needs one, its README with the generated blocks. */
+function planPackage(
+  root: string,
+  plan: DocsPlan,
+  lock: Lock | undefined,
+  standard: boolean,
+  { directory, ranges, published, node }: PlannedPackage,
+): void {
+  const readme = relative(directory, "README.md");
+  const docs = relative(directory, "docs");
+  if (!published) return;
+  if (ranges.size > 0 || existsSync(join(root, readme)))
+    plan.docsFiles.push(readme);
+  if (isDirectory(root, docs)) plan.docsFiles.push(docs);
+  const current = existsSync(join(root, readme))
+    ? readFileSync(join(root, readme), "utf8")
+    : undefined;
+  const nodeRange = standard && current !== undefined ? node : undefined;
+  if (ranges.size === 0 && nodeRange === undefined) return;
+  const rows = [...ranges].map(([name, supported]) => ({
+    name,
+    supported,
+    tested: lock && resolvedVersion(root, lock, directory, name),
+  }));
+  try {
+    const withRequirements =
+      nodeRange !== undefined && current !== undefined
+        ? placeNodeBlock(current, nodeBlock(nodeRange))
+        : current;
+    plan.readmes.push({
+      path: readme,
+      current,
+      content:
+        rows.length > 0
+          ? placeCompatBlock(withRequirements, compatBlock(rows))
+          : (withRequirements ?? ""),
+    });
+  } catch (error) {
+    plan.errors.push(
+      `${readme}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 /**
  * Plans the docs-compat block of the root and of every workspace package that is not private and declares an
  * `@antelopejs/*` peer, runtime or optional dependency, and the `docs-files` lines covering the root and every workspace
  * package that is not private.
- * Tested with comes from pnpm-lock.yaml; other package managers get a dash.
+ * Tested with comes from pnpm-lock.yaml, each package's own when `shared-workspace-lockfile=false`; other package managers get a dash.
  */
 export function planDocs(root: string, manager: PackageManager): DocsPlan {
   const rootManifest = readManifest(root, "");
@@ -319,6 +440,7 @@ export function planDocs(root: string, manager: PackageManager): DocsPlan {
     return {
       directory,
       published: !directory || !manifest.private,
+      node: manifest.engines?.node,
       ranges: manifest.private
         ? new Map<string, string>()
         : declaredRanges(manifest),
@@ -331,41 +453,28 @@ export function planDocs(root: string, manager: PackageManager): DocsPlan {
     errors: [],
     exists: (path) => existsSync(join(root, path)),
   };
-  const lock = manager === "pnpm" ? readLock(root) : undefined;
-  if (manager === "pnpm" && qualifying.length && !lock) {
-    plan.errors.push(
-      `${LOCKFILE} is missing, and the docs-compat block reads Tested with from it: run pnpm install, then rerun antelopejs-sync.`,
-    );
+  const shared = sharesLockfile(root);
+  const locks = new Map(
+    packages.map(({ directory }) => [
+      directory,
+      manager === "pnpm" ? readLock(root, shared, directory) : undefined,
+    ]),
+  );
+  const missing =
+    manager === "pnpm"
+      ? qualifying.filter(({ directory }) => !locks.get(directory))
+      : [];
+  if (missing.length) {
+    for (const path of new Set(
+      missing.map(({ directory }) => lockPath(shared, directory)),
+    ))
+      plan.errors.push(
+        `${path} is missing, and the docs-compat block reads Tested with from it: run pnpm install, then rerun antelopejs-sync.`,
+      );
     return plan;
   }
-  for (const { directory, ranges, published } of packages) {
-    const readme = relative(directory, "README.md");
-    const docs = relative(directory, "docs");
-    const generated = ranges.size > 0;
-    if (!published) continue;
-    if (generated || existsSync(join(root, readme)))
-      plan.docsFiles.push(readme);
-    if (isDirectory(root, docs)) plan.docsFiles.push(docs);
-    if (!generated) continue;
-    const rows = [...ranges].map(([name, supported]) => ({
-      name,
-      supported,
-      tested: lock && resolvedVersion(root, lock, directory, name),
-    }));
-    const current = existsSync(join(root, readme))
-      ? readFileSync(join(root, readme), "utf8")
-      : undefined;
-    try {
-      plan.readmes.push({
-        path: readme,
-        current,
-        content: placeCompatBlock(current, compatBlock(rows)),
-      });
-    } catch (error) {
-      plan.errors.push(
-        `${readme}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
+  const standard = rootManifest.antelopeJs?.docs?.standard === true;
+  for (const item of packages)
+    planPackage(root, plan, locks.get(item.directory), standard, item);
   return plan;
 }

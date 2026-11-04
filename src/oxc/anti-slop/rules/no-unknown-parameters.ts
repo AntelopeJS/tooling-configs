@@ -1,13 +1,16 @@
 import { defineRule } from "@oxlint/plugins";
-import type { ESTree } from "@oxlint/plugins";
+import type { ESTree, SourceCode } from "@oxlint/plugins";
 
+import { isBrandProbe } from "../shared/brand-probe.ts";
+import { isCaughtValueCallbackType } from "../shared/caught-callback.ts";
 import {
   containsUnknownType,
   type FunctionParameter,
   functionParameterBindingName,
   functionParameterTypeAnnotation,
 } from "../shared/function-parameters.ts";
-import { isRuntimeFunction } from "../shared/type-guards.ts";
+import { decodesParameterIntoResult, type FunctionFacts, IMPLICIT_READERS } from "../shared/parse-boundary.ts";
+import { isRuntimeFunction, type RuntimeFunction } from "../shared/type-guards.ts";
 
 type ParameterOwner =
   | ESTree.ArrowFunctionExpression
@@ -99,11 +102,29 @@ function isRejectFunctionType(owner: ParameterOwner): boolean {
 }
 
 /** Return whether a parameter is exempt whatever its name: `this`, a boundary-decorated request value, or a promise rejection reason. */
-function isExemptPosition(owner: ParameterOwner, parameter: FunctionParameter): boolean {
+function isExemptPosition(owner: ParameterOwner, parameter: FunctionParameter, sourceCode: SourceCode): boolean {
   if (isThisParameter(parameter) || hasBoundaryDecorator(parameter)) return true;
   if (owner.params[0] === parameter && isRejectionCallback(owner)) return true;
-  return isRejectFunctionType(owner);
+  return isRejectFunctionType(owner) || (owner.type === "TSFunctionType" && isCaughtValueCallbackType(owner, sourceCode));
 }
+
+/** Return whether a parameter typed exactly `unknown` is only probed for a symbol-keyed brand this file creates, see `isBrandProbe`. */
+function probesBrand(
+  owner: RuntimeFunction,
+  name: string,
+  annotated: ESTree.TSType,
+  facts: FunctionFacts,
+  sourceCode: SourceCode,
+): boolean {
+  if (annotated.type !== "TSUnknownKeyword" || facts.readsImplicitly) return false;
+  const parameter = sourceCode
+    .getDeclaredVariables(owner)
+    .find((variable) => variable.name === name && variable.defs[0]?.type === "Parameter");
+  return isBrandProbe(owner, parameter, sourceCode);
+}
+
+/** The facts of a function the rule did not walk: a signature with no body. */
+const NO_FACTS: FunctionFacts = { returns: [], readsImplicitly: false };
 
 /** Disallow unknown inputs except explicitly named error-cause enrichment. */
 export const noUnknownParametersRule = defineRule({
@@ -111,22 +132,30 @@ export const noUnknownParametersRule = defineRule({
     type: "problem",
     docs: {
       description:
-        "Disallow explicitly unknown function parameters except `cause`, type-predicate subjects, `this`, request values injected by `@JSONBody`, `@JsonBody` or `@Parameter`, and promise rejection reasons; decode unknown input at its I/O boundary instead.",
+        "Disallow explicitly unknown function parameters except `cause`, type-predicate subjects, `this`, request values injected by `@JSONBody`, `@JsonBody` or `@Parameter`, promise rejection reasons, the parameter of a callback type that the function only calls with a caught value, a symbol-keyed brand probe, and a parameter a function only decodes through a schema or decoder into the value it returns; decode unknown input at its I/O boundary instead.",
     },
     messages: {
       unknownParameter:
-        "Parameter `{{parameter}}` leaves input unparsed. Accept a named domain type; run the expected schema or parser at the I/O boundary before calling this function.",
+        "Parameter `{{parameter}}` leaves input unparsed. Accept a named domain type and run the expected schema or parser at the I/O boundary before calling this function, or make this function that parser: pass the parameter only to the schema and return its result under a declared type.",
     },
   },
   createOnce(context) {
-    const checkParameters = (node: ParameterOwner) => {
+    const open: { returns: ESTree.ReturnStatement[]; readsImplicitly: boolean }[] = [];
+    const checkParameters = (node: ParameterOwner, facts: FunctionFacts = NO_FACTS) => {
       for (const parameter of node.params) {
         const annotation = functionParameterTypeAnnotation(parameter);
         if (annotation === null || annotation === undefined) continue;
         if (!containsUnknownType(annotation.typeAnnotation)) continue;
-        if (isExemptPosition(node, parameter)) continue;
+        if (isExemptPosition(node, parameter, context.sourceCode)) continue;
         const name = functionParameterBindingName(parameter, context.sourceCode);
         if (name === "cause" || isTypePredicateSubject(node, name)) continue;
+        if (
+          isRuntimeFunction(node) &&
+          decodesParameterIntoResult(node, name, annotation.typeAnnotation, facts, context.sourceCode)
+        ) {
+          continue;
+        }
+        if (isRuntimeFunction(node) && probesBrand(node, name, annotation.typeAnnotation, facts, context.sourceCode)) continue;
         context.report({
           node: annotation.typeAnnotation,
           messageId: "unknownParameter",
@@ -135,10 +164,27 @@ export const noUnknownParametersRule = defineRule({
       }
     };
 
+    const enterFunction = () => {
+      open.push({ returns: [], readsImplicitly: false });
+    };
+    const leaveFunction = (node: RuntimeFunction) => {
+      checkParameters(node, open.pop());
+    };
+
     return {
-      ArrowFunctionExpression: checkParameters,
-      FunctionDeclaration: checkParameters,
-      FunctionExpression: checkParameters,
+      ArrowFunctionExpression: enterFunction,
+      FunctionDeclaration: enterFunction,
+      FunctionExpression: enterFunction,
+      "ArrowFunctionExpression:exit": leaveFunction,
+      "FunctionDeclaration:exit": leaveFunction,
+      "FunctionExpression:exit": leaveFunction,
+      ReturnStatement(node) {
+        open.at(-1)?.returns.push(node);
+      },
+      Identifier(node) {
+        if (!IMPLICIT_READERS.has(node.name)) return;
+        for (const frame of open) frame.readsImplicitly = true;
+      },
       TSCallSignatureDeclaration: checkParameters,
       TSConstructSignatureDeclaration: checkParameters,
       TSConstructorType: checkParameters,

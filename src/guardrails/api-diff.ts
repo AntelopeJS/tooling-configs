@@ -142,6 +142,22 @@ function targetPattern(target: string): RegExp {
   );
 }
 
+/** A published target outside the build output is no compiler emit; the package's own declaration at that path stands for it. */
+function authoredDeclaration(
+  directory: string,
+  target: string,
+  path: string,
+  scratch: string,
+): string | undefined {
+  const source = resolve(directory, target);
+  if (!path.startsWith("../") || path.includes("*") || !existsSync(source))
+    return undefined;
+  const file = `.published/${relative(directory, source).split("\\").join("/")}`;
+  mkdirSync(dirname(join(scratch, file)), { recursive: true });
+  copyFileSync(source, join(scratch, file));
+  return file;
+}
+
 function publishedEntries(
   directory: string,
   manifest: ProofManifest,
@@ -164,6 +180,10 @@ function publishedEntries(
       .join("/");
     const pattern = targetPattern(path);
     const found = files.filter((file) => pattern.test(file));
+    if (!found.length) {
+      const authored = authoredDeclaration(directory, target, path, scratch);
+      if (authored !== undefined) found.push(authored);
+    }
     if (!found.length && !path.includes("*"))
       throw new Error(
         `${directory}: published target ${target} has no emitted declaration.`,

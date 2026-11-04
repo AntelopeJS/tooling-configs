@@ -1,0 +1,6 @@
+extends: existence
+message: "Use a straight quote (unslop rule 19)."
+level: warning
+nonword: true
+tokens:
+  - "[‘’“”]"

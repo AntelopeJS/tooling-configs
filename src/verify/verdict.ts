@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 import type { JourneyResult } from "./results.ts";
@@ -41,6 +41,33 @@ function bullets(entries: string[], empty: string): string[] {
   return (entries.length > 0 ? entries : [empty]).map((entry) => `- ${entry}`);
 }
 
+function journeyRow(
+  label: string,
+  result: JourneyResult,
+  link: (path: string) => string,
+): string {
+  const outcome =
+    result.status === "PASS"
+      ? "pass"
+      : result.status === "FAIL"
+        ? "**fail**"
+        : "**not verified**";
+  return `| ${label} | \`${result.journey}\`: ${result.entryPoint} | ${outcome}: ${result.title} | [${result.folder}](${link(result.folder)}) |`;
+}
+
+/** The features outside the plan that have journey results in the run's evidence, in name order. */
+function featuresOutsidePlan(state: RunState, plan: Plan): string[] {
+  return readdirSync(state.evidence, { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        !plan.run.includes(entry.name) &&
+        existsSync(join(state.evidence, entry.name, "feature.json")),
+    )
+    .map((entry) => entry.name)
+    .sort();
+}
+
 function journeyRows(
   workspace: Workspace,
   state: RunState,
@@ -50,6 +77,7 @@ function journeyRows(
   const rows: string[] = [];
   const reasons: string[] = [];
   const notVerified: string[] = [];
+  const outsideNotVerified: string[] = [];
   const byJourney = new Map<string, JourneyResult>();
   for (const feature of plan.run) {
     const results = readResults(state, feature) ?? [];
@@ -68,18 +96,24 @@ function journeyRows(
         reasons.push(`${feature}/${result.journey} failed`);
       if (result.status === "NOT VERIFIED")
         notVerified.push(`${feature}/${result.journey}: ${result.notVerified}`);
-      const outcome =
-        result.status === "PASS"
-          ? "pass"
-          : result.status === "FAIL"
-            ? "**fail**"
-            : "**not verified**";
-      rows.push(
-        `| ${feature} | \`${result.journey}\`: ${result.entryPoint} | ${outcome}: ${result.title} | [${result.folder}](${link(result.folder)}) |`,
-      );
+      rows.push(journeyRow(feature, result, link));
     }
   }
-  return { rows, reasons, notVerified, byJourney };
+  for (const feature of featuresOutsidePlan(state, plan))
+    for (const result of readResults(state, feature) ?? []) {
+      if (result.status === "FAIL")
+        reasons.push(
+          `${feature}/${result.journey} failed; ${feature} is outside the diff's features, so check its covers globs`,
+        );
+      if (result.status === "NOT VERIFIED")
+        outsideNotVerified.push(
+          `${feature}/${result.journey}: ${result.notVerified}`,
+        );
+      rows.push(
+        journeyRow(`${feature} (outside the diff's features)`, result, link),
+      );
+    }
+  return { rows, reasons, notVerified, outsideNotVerified, byJourney };
 }
 
 function doorReasons(
@@ -233,7 +267,11 @@ export function renderVerdict(
     ...doorReasons(workspace, judgement, journeys.byJourney, plan),
     ...formal.reasons,
   );
-  const notVerified = [...journeys.notVerified, ...judgement.notVerified];
+  const notVerified = [
+    ...journeys.notVerified,
+    ...journeys.outsideNotVerified,
+    ...judgement.notVerified,
+  ];
   const result = resultOf(
     reasons,
     journeys.notVerified,

@@ -37,6 +37,13 @@ export default {
     ${journey("ok", 0)},
     ${journey("bad", 3)},
     ${journey("kept", 0)},
+    "unreachable": {
+      title: "unreachable",
+      entryPoint: "node",
+      async run(context) {
+        context.notVerified("the sandbox is down");
+      },
+    },
   },
   ${extra}
 };
@@ -208,6 +215,75 @@ test("the verdict passes only when every registered journey ran and passed, with
   );
 });
 
+test("a journey that failed outside the diff's features fails the verdict, even when an unrun journey sits beside it", (t) => {
+  const { root, tmp } = runRepo(t);
+  put(
+    root,
+    `${SKILL}/features/store.md`,
+    feature(["src/**"], ["ok", "bad", "kept"]),
+  );
+  const run = newRun(root, tmp);
+  assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
+  assert.equal(verify(root, tmp, ["journey", run, "store", "ok"]).status, 0);
+  judgement(run, JUDGED);
+  const passed = verify(root, tmp, ["verdict", run, "--pr", "7"]);
+  assert.equal(passed.status, 0, passed.stderr);
+  assert.match(passed.stdout, /^## Verify: PASS\n/);
+  assert.deepEqual(evidence(run, "plan.json").run, ["smoke"]);
+  assert.match(
+    passed.stdout,
+    /\| store \(outside the diff's features\) \| `ok`: node \| pass: /,
+  );
+  assert.equal(verify(root, tmp, ["journey", run, "store", "bad"]).status, 1);
+  const failed = verify(root, tmp, ["verdict", run, "--pr", "7"]);
+  assert.equal(failed.status, 1);
+  assert.match(failed.stdout, /^## Verify: FAIL\n/);
+  assert.match(
+    failed.stdout,
+    /### Why it fails\n- store\/bad failed; store is outside the diff's features, so check its covers globs\n\n/,
+  );
+  assert.match(
+    failed.stdout,
+    /\| store \(outside the diff's features\) \| `bad`: node \| \*\*fail\*\*: /,
+  );
+  assert.deepEqual(evidence(run, "verdict.json").reasons, [
+    "store/bad failed; store is outside the diff's features, so check its covers globs",
+  ]);
+  assert.equal(evidence(run, "verdict.json").result, "FAIL");
+});
+
+test("a NOT VERIFIED journey outside the diff's features is listed and downgrades PASS, and never hides a FAIL beside it", (t) => {
+  const { root, tmp } = runRepo(t);
+  put(
+    root,
+    `${SKILL}/features/store.md`,
+    feature(["src/**"], ["bad", "unreachable"]),
+  );
+  const run = newRun(root, tmp);
+  assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
+  assert.equal(
+    verify(root, tmp, ["journey", run, "store", "unreachable"]).status,
+    1,
+  );
+  judgement(run, JUDGED);
+  const noted = verify(root, tmp, ["verdict", run, "--pr", "7"]);
+  assert.equal(noted.status, 0, noted.stderr);
+  assert.match(noted.stdout, /^## Verify: PASS\+NOTES\n/);
+  assert.match(
+    noted.stdout,
+    /### Not verified\n- store\/unreachable: the sandbox is down\n/,
+  );
+  assert.equal(verify(root, tmp, ["journey", run, "store", "bad"]).status, 1);
+  const failed = verify(root, tmp, ["verdict", run, "--pr", "7"]);
+  assert.equal(failed.status, 1);
+  assert.match(failed.stdout, /^## Verify: FAIL\n/);
+  assert.match(failed.stdout, /- store\/bad failed; store is outside/);
+  assert.match(
+    failed.stdout,
+    /### Not verified\n- store\/unreachable: the sandbox is down\n/,
+  );
+});
+
 test("a flagged door needs a row or a reasoned false positive, and a Data row needs its containment journey passing", (t) => {
   const { root, tmp } = runRepo(t);
   put(root, "src/store.ts", "export const store = 2;\n");
@@ -267,7 +343,11 @@ test("clean keeps the evidence and run.json and removes the scratch folders", (t
   assert.equal(evidence(run, "../run.json").containers.length, 0);
 });
 
-function result(journey: string, status: "PASS" | "FAIL", failing: boolean) {
+function result(
+  journey: string,
+  status: "PASS" | "FAIL" | "NOT VERIFIED",
+  failing: boolean,
+) {
   const checks = [{ name: "check", pass: !failing, detail: "" }];
   return {
     feature: "f",
@@ -277,7 +357,7 @@ function result(journey: string, status: "PASS" | "FAIL", failing: boolean) {
     status,
     steps: [{ name: "s", folder: "", checks }],
     error: null,
-    notVerified: null,
+    notVerified: status === "NOT VERIFIED" ? "the service went away" : null,
     folder: "",
   };
 }
@@ -302,11 +382,16 @@ test("a seeded break counts only through a journey that passes in the control an
     ],
   };
   const missed = judgeSeeded("f", control, seeded);
-  assert.equal(missed.caught, false);
+  assert.equal(missed.outcome, "MISSED");
   assert.deepEqual(missed.failingInControl, ["b"]);
   assert.deepEqual(missed.harnessErrors, ["c"]);
   seeded.results[0] = result("a", "FAIL", true);
   const caught = judgeSeeded("f", control, seeded);
-  assert.equal(caught.caught, true);
+  assert.equal(caught.outcome, "CAUGHT");
   assert.deepEqual(caught.caughtBy, ["a"]);
+  seeded.results[0] = result("a", "NOT VERIFIED", true);
+  const unreached = judgeSeeded("f", control, seeded);
+  assert.equal(unreached.outcome, "NOT VERIFIED");
+  assert.deepEqual(unreached.caughtBy, []);
+  assert.deepEqual(unreached.notVerified.seeded, ["a (the service went away)"]);
 });

@@ -1,0 +1,11 @@
+extends: substitution
+message: "Write '%s' instead of '%s'."
+level: warning
+swap:
+  "Antelope JS": "AntelopeJS"
+  "Antelope\\.js": "AntelopeJS"
+  "antelopejs": "AntelopeJS"
+  "Antelopejs": "AntelopeJS"
+  "antelopeJS": "AntelopeJS"
+  "Dms": "DMS"
+  "dms": "DMS"

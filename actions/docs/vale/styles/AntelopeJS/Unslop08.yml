@@ -1,0 +1,8 @@
+extends: existence
+message: "Say 'is' or 'has' instead of '%s' (unslop rule 8)."
+level: warning
+ignorecase: true
+tokens:
+  - "serves as"
+  - "stands as"
+  - "boasts"
