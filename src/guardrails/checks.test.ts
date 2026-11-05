@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { CHECKS_SKIP_ENV } from "./checks.ts";
 import { bin, put, testRepo } from "./helpers/test-repo.ts";
 
 test("checks suppresses passing output, reports missing scripts, and continues after failures", (t) => {
@@ -134,6 +135,19 @@ test("an unknown ANTELOPEJS_CHECKS_SKIP name fails and names the valid steps ins
     result.stdout,
     /Valid steps: typecheck, lint, format:check, knip, test, size, ratchet, suppressions, sync:check\./,
   );
+});
+
+test("a checks skip set in the test runner's own environment does not reach the bin under test", (t) => {
+  const previous = process.env[CHECKS_SKIP_ENV];
+  process.env[CHECKS_SKIP_ENV] = "test";
+  t.after(() => {
+    if (previous === undefined) delete process.env[CHECKS_SKIP_ENV];
+    else process.env[CHECKS_SKIP_ENV] = previous;
+  });
+  const root = stepsRepo(t, ["test"]);
+  const result = bin(root, "checks");
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /Checks: 8 passed, 1 failed\./);
 });
 
 test("an unset, empty or blank ANTELOPEJS_CHECKS_SKIP runs every step", (t) => {
