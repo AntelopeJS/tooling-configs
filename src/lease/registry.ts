@@ -37,6 +37,7 @@ import {
 
 const LOCK_WAIT_MS = 15_000;
 const RECORD_FILE = "lease.json";
+const RUNS_DIR = "runs";
 
 /** The git worktree a command runs in. */
 export interface Worktree {
@@ -98,7 +99,7 @@ export interface Observed {
 export interface SweepPolicy {
   /** Remove directories with no record. Safe only under the lock, where no claim is in progress. */
   readonly leftovers: boolean;
-  /** Remove live leases with no mongod and no listening port, untouched since this epoch time. */
+  /** Remove live leases with no run, no mongod and no listening port, untouched since this epoch time. */
   readonly idleBefore?: number;
 }
 
@@ -238,7 +239,39 @@ export async function removeLease(dir: string): Promise<void> {
   rmSync(dir, { recursive: true, force: true });
 }
 
+function running(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function runPids(dir: string): number[] {
+  try {
+    return readdirSync(join(dir, RUNS_DIR)).map(Number);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Records that process `pid` runs a command under the lease in `dir`, and forgets the runs that
+ * have exited. `gc` never removes a lease while one of its runs is alive. A pid the system reused
+ * keeps the lease until that process exits too, which only delays `gc`.
+ */
+export function markRun(dir: string, pid: number): void {
+  const runs = join(dir, RUNS_DIR);
+  mkdirSync(runs, { recursive: true });
+  for (const gone of runPids(dir).filter((other) => !running(other)))
+    rmSync(join(runs, String(gone)), { force: true });
+  writeFileSync(join(runs, String(pid)), "");
+}
+
 async function quiet(record: LeaseRecord, dir: string): Promise<boolean> {
+  if (runPids(dir).some(running)) return false;
   if (mongodPid(mongodPaths(dir).dbpath) !== undefined) return false;
   for (const port of Object.values(record.ports))
     if (await accepting(port)) return false;

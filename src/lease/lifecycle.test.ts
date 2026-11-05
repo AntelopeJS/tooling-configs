@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, rmSync, utimesSync } from "node:fs";
 import type { Server } from "node:net";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,13 +7,18 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   externalEnv,
+  firstLine,
   gitInit,
   lease,
   leasedEnv,
   scratch,
+  startLease,
   statusRows,
 } from "./helpers/cli.ts";
 import { claimPort, closeServer } from "./ports.ts";
+
+const PRINT_DIR_THEN_WAIT =
+  "console.log(process.env.ANTELOPEJS_LEASE_DIR); setInterval(() => {}, 1000)";
 
 const ROLE_VARS = [
   "ANTELOPEJS_LEASE",
@@ -141,19 +146,52 @@ test("down refuses while the api port listens and tears the lease down once forc
   assert.equal(existsSync(dir), false);
 });
 
+function backdate(dir: string, days: number): void {
+  const then = new Date(Date.now() - days * 86_400_000);
+  utimesSync(dir, then, then);
+}
+
 test("gc removes a crash leftover at once and an idle lease only past --idle (fails when gc skips leftovers or ignores the idle age)", async (t) => {
   const root = scratch(t);
   const home = join(root, ".home");
   const worktree = gitInit(join(root, "w"));
   const env = externalEnv(home);
-  const printed = await leasedEnv(worktree, env);
+  const dir = String((await leasedEnv(worktree, env)).ANTELOPEJS_LEASE_DIR);
   const leftover = join(home, "0123456789");
   mkdirSync(leftover);
-  assert.equal((await lease(["gc"], root, env)).code, 0);
+  assert.equal((await lease(["gc", "--idle", "1"], root, env)).code, 0);
   assert.equal(existsSync(leftover), false);
-  assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), true);
-  assert.equal((await lease(["gc", "--idle", "0"], root, env)).code, 0);
-  assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), false);
+  assert.equal(existsSync(dir), true);
+  backdate(dir, 2);
+  assert.equal((await lease(["gc", "--idle", "1"], root, env)).code, 0);
+  assert.equal(existsSync(dir), false);
+});
+
+test("gc refuses an --idle below one day (fails when --idle 0 is accepted, which removes the lease of a run that is still starting)", async (t) => {
+  const root = scratch(t);
+  const outcome = await lease(["gc", "--idle", "0"], root, externalEnv(root));
+  assert.equal(outcome.code, 1);
+  assert.match(outcome.stderr, /--idle takes 1 or more days, not 0/u);
+});
+
+test("gc keeps the lease of a run that is still running, however old its directory looks, and removes it once the run ends (fails when gc judges idleness by directory age and ports alone, which deletes the TMPDIR of a running command)", async (t) => {
+  const root = scratch(t);
+  const worktree = gitInit(join(root, "w"));
+  const env = externalEnv(join(root, ".home"));
+  const running = startLease(
+    ["run", "--", process.execPath, "-e", PRINT_DIR_THEN_WAIT],
+    worktree,
+    env,
+  );
+  t.after(() => running.child.kill("SIGTERM"));
+  const dir = await firstLine(running);
+  backdate(dir, 30);
+  assert.equal((await lease(["gc", "--idle", "1"], root, env)).code, 0);
+  assert.equal(existsSync(join(dir, "tmp")), true);
+  running.child.kill("SIGTERM");
+  await running.done;
+  assert.equal((await lease(["gc", "--idle", "1"], root, env)).code, 0);
+  assert.equal(existsSync(dir), false);
 });
 
 test("status prints nothing when no lease exists (fails when it prints a bare header)", async (t) => {

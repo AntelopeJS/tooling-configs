@@ -3,6 +3,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TestContext } from "node:test";
+import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -78,7 +79,8 @@ export function externalEnv(home: string): NodeJS.ProcessEnv {
   return envFor(home, { DMS_MONGO_URL: "mongodb://127.0.0.1:1" });
 }
 
-function start(
+/** Starts one bin invocation and leaves it running. */
+export function startLease(
   args: readonly string[],
   cwd: string,
   env: NodeJS.ProcessEnv,
@@ -103,7 +105,20 @@ export function lease(
   cwd: string,
   env: NodeJS.ProcessEnv,
 ): Promise<Outcome> {
-  return start(args, cwd, env).done;
+  return startLease(args, cwd, env).done;
+}
+
+/** Waits until `started` has printed a line, and answers that line. Throws after 10 s. */
+export async function firstLine(started: Started): Promise<string> {
+  const deadline = Date.now() + 10_000;
+  while (!started.stdout().includes("\n")) {
+    if (Date.now() > deadline || started.child.exitCode !== null)
+      throw new Error(
+        `no line printed; got ${JSON.stringify(started.stdout())}`,
+      );
+    await sleep(20);
+  }
+  return started.stdout().split("\n")[0] ?? "";
 }
 
 /** The JSON object a `run -- <print env>` printed. */
@@ -130,7 +145,7 @@ export async function leasedEnv(
 
 /** Starts `run -- <print env>` and leaves it running. */
 export function startLeasedEnv(cwd: string, env: NodeJS.ProcessEnv): Started {
-  return start(["run", "--", process.execPath, "-e", PRINT_ENV], cwd, env);
+  return startLease(["run", "--", process.execPath, "-e", PRINT_ENV], cwd, env);
 }
 
 function field(source: JsonObject, key: string): JsonValue | undefined {

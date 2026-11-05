@@ -8,6 +8,7 @@ import { isServerRole } from "../lease/env.ts";
 const USAGE =
   "usage: antelopejs-lease run [--as api|web] -- <command...> | status [--json] | down [--force] | gc [--idle <days>]";
 const DEFAULT_IDLE_DAYS = 14;
+const MIN_IDLE_DAYS = 1;
 
 function usage(problem: string): Error {
   return new Error(`antelopejs-lease: ${problem}\n${USAGE}`);
@@ -46,8 +47,10 @@ async function gcVerb(args: string[]): Promise<number> {
   const { values } = parseArgs({ args, options: { idle: { type: "string" } } });
   const days =
     values.idle === undefined ? DEFAULT_IDLE_DAYS : Number(values.idle);
-  if (!Number.isFinite(days) || days < 0)
-    throw usage(`--idle takes a number of days, not ${values.idle}`);
+  if (!Number.isFinite(days) || days < MIN_IDLE_DAYS)
+    throw usage(
+      `--idle takes ${MIN_IDLE_DAYS} or more days, not ${values.idle}; a lease a run opened within the last day is never idle`,
+    );
   await gc(process.env, days);
   return 0;
 }

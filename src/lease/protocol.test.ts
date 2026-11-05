@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -59,7 +65,9 @@ test("a record of an unknown version keeps its ports and survives gc (fails when
     JSON.stringify({ version: 2, ports: { api: first, web: first + 1 } }),
   );
   const env = externalEnv(home);
-  assert.equal((await lease(["gc", "--idle", "0"], root, env)).code, 0);
+  const then = new Date(Date.now() - 30 * 86_400_000);
+  utimesSync(foreign, then, then);
+  assert.equal((await lease(["gc", "--idle", "1"], root, env)).code, 0);
   assert.equal(existsSync(join(foreign, "lease.json")), true);
   const api = Number((await leasedEnv(worktree, env)).DMS_BACK_PORT);
   assert.ok(

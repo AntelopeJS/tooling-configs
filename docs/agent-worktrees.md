@@ -72,7 +72,7 @@ Run each command from inside your worktree. Each step is one shell command, and 
    pnpm exec antelopejs-lease gc
    ```
 
-   `gc` removes the leases of deleted worktrees, the lease directories that a crash left without a record, and the leases that had no mongod and no listening port for 14 days. `--idle <days>` changes that age. `run` and `status` already remove the leases of deleted worktrees, so `gc` matters after a crash or when the disk fills up.
+   `gc` removes the leases of deleted worktrees, the lease directories that a crash left without a record, and the leases that had no running `run`, no mongod and no listening port for 14 days. `--idle <days>` changes that age. It takes 1 or more days, so a lease that a `run` opened within the last day is never idle, and neither is a lease whose `run` still runs. `run` and `status` already remove the leases of deleted worktrees, so `gc` matters after a crash or when the disk fills up.
 
 ## Variables that `run` sets
 
@@ -96,7 +96,7 @@ Run each command from inside your worktree. Each step is one shell command, and 
 
 To use a Mongo server you run yourself, set `DMS_MONGO_URL` before `run`. `run` then starts no mongod, and `MONGO_DATABASE` still gives each worktree its own database on that server.
 
-The lease directory is `~/.antelopejs/leases/<lease id>/`. It holds `lease.json`, the mongod data in `mongo/`, the logs in `logs/` with `mongod.log` beside the two server logs, and `tmp/`. The tests set `ANTELOPEJS_LEASE_HOME` to move the whole registry.
+The lease directory is `~/.antelopejs/leases/<lease id>/`. It holds `lease.json`, the mongod data in `mongo/`, the logs in `logs/` with `mongod.log` beside the two server logs, `tmp/`, and `runs/` with one empty file per `run`, named by its pid, that `gc` reads to keep the lease of a running command. The tests set `ANTELOPEJS_LEASE_HOME` to move the whole registry.
 
 ## Why the ports sit between 20010 and 29999
 

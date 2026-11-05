@@ -14,6 +14,7 @@ import {
 import {
   foreignRecord,
   locateWorktree,
+  markRun,
   mongodPaths,
   openLease,
   readEntries,
@@ -85,6 +86,7 @@ export async function run(
     worktree,
     env.DMS_MONGO_URL ? "external" : "owned",
   );
+  markRun(lease.dir, process.pid);
   if (lease.record.mongo === "owned")
     await ensureMongod(lease.record.ports.mongo, mongodPaths(lease.dir), env);
   return execute(command, leaseEnv(lease, env, as));
@@ -195,7 +197,8 @@ export async function down(
 
 /**
  * Removes every lease left behind machine-wide: stale leases, directories with no record, and
- * leases with no mongod and no listening port that no `run` touched for `idleDays`.
+ * leases with no running `run`, no mongod and no listening port that no `run` opened for
+ * `idleDays`.
  */
 export async function gc(
   env: NodeJS.ProcessEnv,
