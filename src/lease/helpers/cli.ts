@@ -1,4 +1,9 @@
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import {
+  execFileSync,
+  spawn,
+  type ChildProcess,
+  type SpawnOptions,
+} from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -79,25 +84,36 @@ export function externalEnv(home: string): NodeJS.ProcessEnv {
   return envFor(home, { DMS_MONGO_URL: "mongodb://127.0.0.1:1" });
 }
 
+/** The argv that runs the bin from source. */
+export const LEASE_ARGV: readonly string[] = [process.execPath, BIN];
+
+/** Spawns `file` with piped stdout and stderr, and collects both. */
+export function startCaptured(
+  file: string,
+  args: readonly string[],
+  options: SpawnOptions,
+): Started {
+  const started = spawn(file, args, {
+    stdio: ["ignore", "pipe", "pipe"],
+    ...options,
+  });
+  let stdout = "";
+  let stderr = "";
+  started.stdout?.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+  started.stderr?.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+  const done = new Promise<Outcome>((resolve) =>
+    started.once("close", (code) => resolve({ code, stdout, stderr })),
+  );
+  return { child: started, done, stdout: () => stdout };
+}
+
 /** Starts one bin invocation and leaves it running. */
 export function startLease(
   args: readonly string[],
   cwd: string,
   env: NodeJS.ProcessEnv,
 ): Started {
-  const started = spawn(process.execPath, [BIN, ...args], {
-    cwd,
-    env,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let stdout = "";
-  let stderr = "";
-  started.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
-  started.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
-  const done = new Promise<Outcome>((resolve) =>
-    started.once("close", (code) => resolve({ code, stdout, stderr })),
-  );
-  return { child: started, done, stdout: () => stdout };
+  return startCaptured(process.execPath, [BIN, ...args], { cwd, env });
 }
 
 export function lease(
@@ -118,7 +134,7 @@ export async function firstLine(started: Started): Promise<string> {
       );
     await sleep(20);
   }
-  return started.stdout().split("\n")[0] ?? "";
+  return (started.stdout().split("\n")[0] ?? "").trimEnd();
 }
 
 /** The JSON object a `run -- <print env>` printed. */

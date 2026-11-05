@@ -22,7 +22,7 @@ Run each command from inside your worktree. Each step is one shell command, and 
    DMS_BACK_DIR=$PWD/packages/dms/playground pnpm exec antelopejs-lease run -- bash packages/dms/skills/dms-project/scripts/dms-dev.sh start
    ```
 
-   `run` opens the lease of the worktree, starts its mongod if none runs, and runs the command after `--` with the lease variables. The ports, the Mongo URL and the log files come from the lease. Do not set `PORT`, `MONGO_URL` or a log path yourself. `run` prints nothing of its own and exits with the exit code of the command. A second `run` in the same worktree gets the same ports, mongod and data.
+   `run` opens the lease of the worktree, starts its mongod if none runs, and runs the command after `--` with the lease variables. The ports, the Mongo URL and the log files come from the lease. Do not set `PORT`, `MONGO_URL` or a log path yourself. `run` prints nothing of its own, then hands its process over to the command, which keeps the pid of `run` and its exit code. A Ctrl-C, a kill of the process group or a `kill` of that pid reaches the command once. A second `run` in the same worktree gets the same ports, mongod and data.
 
    `dms-dev.sh` gives each server its own port once it reads `DMS_BACK_PORT` and `DMS_FRONT_PORT`, a change that lands in the dms repository. Until then, each server falls back to its own default port.
 
@@ -122,7 +122,7 @@ A lock on 127.0.0.1:20000 keeps two callers from choosing at the same moment. A 
 
 ## Fix an error
 
-`antelopejs-lease` prints each failure as one line on stderr, prefixed with `antelopejs-lease:`, and exits with code 1. The command after `--` keeps its own exit code, and a command that cannot start exits with 127.
+`antelopejs-lease` prints each failure as one line on stderr, prefixed with `antelopejs-lease:`, and exits with code 1. The command after `--` keeps its own exit code. A command that is not found exits with 127, and one that is not executable with 126.
 
 | The message says                                                   | What to do                                                                                                                      |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |

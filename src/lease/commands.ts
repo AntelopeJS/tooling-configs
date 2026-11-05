@@ -1,6 +1,3 @@
-import { spawn } from "node:child_process";
-import { constants } from "node:os";
-
 import { leaseEnv, type ServerRole } from "./env.ts";
 import { ensureMongod, mongodPid, stopMongod } from "./mongo.ts";
 import { accepting, listenerPids } from "./ports.ts";
@@ -27,7 +24,8 @@ import {
 
 const DOWN_GRACE_MS = 10_000;
 const DAY_MS = 86_400_000;
-const FORWARDED: readonly NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
+const IGNORED_BY_NODE: readonly NodeJS.Signals[] = ["SIGPIPE", "SIGXFSZ"];
+const EXEC = `command -v "$1" >/dev/null 2>&1 || { printf 'antelopejs-lease: cannot run %s: not found\\n' "$1" >&2; exit 127; }; exec "$@"`;
 const ROLES = Object.keys(PORT_ROLES).filter(isRole);
 
 /** One lease as `status` reports it. */
@@ -44,42 +42,31 @@ export interface LeaseReport {
   readonly pids: readonly number[];
 }
 
-function execute(
-  command: readonly string[],
-  env: NodeJS.ProcessEnv,
-): Promise<number> {
-  const [file, ...args] = command;
-  if (file === undefined)
-    throw new Error("antelopejs-lease: run needs a command after --");
-  return new Promise((resolve) => {
-    const child = spawn(file, args, { stdio: "inherit", env });
-    const forward = (signal: NodeJS.Signals) => child.kill(signal);
-    for (const signal of FORWARDED) process.on(signal, forward);
-    const settle = (code: number) => {
-      for (const signal of FORWARDED) process.off(signal, forward);
-      resolve(code);
-    };
-    child.once("error", (error) => {
-      process.stderr.write(
-        `antelopejs-lease: cannot run ${file}: ${error.message}\n`,
-      );
-      settle(127);
-    });
-    child.once("exit", (code, signal) =>
-      settle(code ?? 128 + (signal === null ? 0 : constants.signals[signal])),
+/**
+ * Replaces this process with `command`. The command keeps this pid and is the only process, so a
+ * signal from a terminal, a process-group kill or `kill <pid>` reaches it once, and its exit
+ * status, 128 plus the signal included, is the caller's. `/bin/sh` finds the command on `PATH`.
+ * Node ignores SIGPIPE and SIGXFSZ, and an ignored signal stays ignored across `execve`, so both
+ * get a handler first, which `execve` resets to the default.
+ */
+function execute(command: readonly string[], env: NodeJS.ProcessEnv): never {
+  if (process.execve === undefined)
+    throw new Error(
+      "antelopejs-lease: run needs process.execve, from Node 22.15 on Linux or macOS",
     );
-  });
+  for (const signal of IGNORED_BY_NODE) process.on(signal, () => undefined);
+  return process.execve("/bin/sh", ["sh", "-c", EXEC, "sh", ...command], env);
 }
 
 /**
  * Opens this worktree's lease, makes sure its mongod runs unless `DMS_MONGO_URL` names another
- * server, and runs `command` with the lease's environment. Answers the command's exit code.
+ * server, and replaces this process with `command` under the lease's environment.
  */
 export async function run(
   command: readonly string[],
   as: ServerRole | undefined,
   env: NodeJS.ProcessEnv,
-): Promise<number> {
+): Promise<never> {
   const worktree = locateWorktree(process.cwd());
   const lease = await openLease(
     leaseHome(env),
