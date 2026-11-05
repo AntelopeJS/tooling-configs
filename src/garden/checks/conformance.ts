@@ -243,16 +243,34 @@ async function branchCleanup(
       ];
 }
 
-/** Turns `delete_branch_on_merge` on for each repository a finding reports it off on, and writes nothing else. */
+/** Reported as a conformance finding, but read apart so a token that cannot see merge settings hides no other finding. */
+export const deleteBranchOnMerge: Check = {
+  id: BRANCH_CLEANUP,
+  async run(context) {
+    return perRepo(await context.scope(), (repo) =>
+      branchCleanup(context, repo),
+    );
+  },
+};
+
+/** Turns `delete_branch_on_merge` on for each repository a finding reports it off on, and writes nothing else; returns the writes that failed. */
 export async function applySettings(
   api: GardenApi,
   findings: readonly Finding[],
-): Promise<void> {
+): Promise<string[]> {
+  const failed: string[] = [];
   for (const entry of findings)
     if (entry.check === CHECK && entry.subject === BRANCH_CLEANUP)
-      await api.send("PATCH", `/repos/${ORG}/${entry.repo}`, {
-        delete_branch_on_merge: true,
-      });
+      await api
+        .send("PATCH", `/repos/${ORG}/${entry.repo}`, {
+          delete_branch_on_merge: true,
+        })
+        .catch((error: unknown) => {
+          failed.push(
+            `${entry.repo}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+  return failed;
 }
 
 async function scan(
@@ -265,7 +283,6 @@ async function scan(
     ...(await toolingVersion(context, repo)),
     ...(await checksStatus(context, repo)),
     ...(await cleanRatchet(context, repo)),
-    ...(await branchCleanup(context, repo)),
   ];
 }
 

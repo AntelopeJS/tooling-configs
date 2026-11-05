@@ -49,6 +49,7 @@ export class FakeApi implements GardenApi {
   private readonly archives = new Map<string, Uint8Array>();
   private readonly packages = new Map<string, JsonValue>();
   private readonly lengths = new Map<string, number>();
+  private readonly refusals = new Map<string, number>();
 
   route(path: string, body: JsonValue | ApiError): this {
     this.routes.set(path, body);
@@ -72,6 +73,12 @@ export class FakeApi implements GardenApi {
 
   size(url: string, bytes: number): this {
     this.lengths.set(url, bytes);
+    return this;
+  }
+
+  /** Makes a write to the path fail with the status; the attempt is not recorded as a write. */
+  refuse(path: string, status: number): this {
+    this.refusals.set(path, status);
     return this;
   }
 
@@ -169,6 +176,9 @@ export class FakeApi implements GardenApi {
     path: string,
     body?: JsonValue,
   ): Promise<void> {
+    const refused = this.refusals.get(path);
+    if (refused !== undefined)
+      throw new ApiError(refused, `${method} ${path}: HTTP ${refused}`);
     this.writes.push(
       body === undefined ? { method, path } : { method, path, body },
     );

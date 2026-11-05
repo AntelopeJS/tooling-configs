@@ -7,7 +7,11 @@ import {
   plannedPrunes,
   staleBranches,
 } from "./checks/branches.ts";
-import { applySettings, conformance } from "./checks/conformance.ts";
+import {
+  applySettings,
+  conformance,
+  deleteBranchOnMerge,
+} from "./checks/conformance.ts";
 import {
   governanceDrift,
   nextGovernance,
@@ -28,6 +32,7 @@ import type { Finding, Report, Skipped } from "./types.ts";
 
 const CHECKS: readonly Check[] = [
   conformance,
+  deleteBranchOnMerge,
   redBranch,
   ciDuration,
   advisories,
@@ -100,8 +105,22 @@ export async function garden(
   );
   if (options.applyPauses) await applyPauses(api, pauses);
   const prunes = await plannedPrunes(context, findings);
-  if (options.apply === true) await applySettings(api, findings);
-  if (options.applyPrunes === true) await applyPrunes(api, prunes);
+  const writes = [
+    ...(options.apply === true
+      ? (await applySettings(api, findings)).map((reason) => ({
+          check: "apply",
+          reason,
+        }))
+      : []),
+    ...(options.applyPrunes === true
+      ? (await applyPrunes(api, prunes)).map((reason) => ({
+          check: "apply-prunes",
+          reason,
+        }))
+      : []),
+  ];
+  failures.push(...writes);
+  skipped.push(...writes);
   return {
     report: {
       generatedAt: api.now().toISOString(),

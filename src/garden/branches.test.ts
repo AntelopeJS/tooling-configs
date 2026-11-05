@@ -215,3 +215,26 @@ test("a repository whose branches could not be read fails the check and is never
     ["stale-branches"],
   );
 });
+
+test("a refused deletion is reported and the remaining prunes still run", async () => {
+  const api = world([
+    { name: "a-old", days: 90 },
+    { name: "b-old", days: 90 },
+  ]);
+  api.refuse(`/repos/${REPO}/git/refs/heads/a-old`, 422);
+  const outcome = await garden(api, {
+    applyPauses: false,
+    applyPrunes: true,
+    checks: [staleBranches],
+  });
+  assert.deepEqual(
+    api.writes.map(({ path }) => path),
+    [`/repos/${REPO}/git/refs/heads/b-old`],
+  );
+  assert.deepEqual(outcome.failures, [
+    {
+      check: "apply-prunes",
+      reason: `mongodb a-old: DELETE /repos/${REPO}/git/refs/heads/a-old: HTTP 422`,
+    },
+  ]);
+});

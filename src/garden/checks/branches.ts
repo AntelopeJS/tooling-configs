@@ -131,14 +131,22 @@ function refPath(name: string): string {
   return name.split("/").map(encodeURIComponent).join("/");
 }
 
-/** Deletes each planned branch ref and nothing else. */
+/** Deletes each planned branch ref and nothing else; a failed deletion does not stop the rest and is returned. */
 export async function applyPrunes(
   api: GardenApi,
   prunes: readonly Prune[],
-): Promise<void> {
+): Promise<string[]> {
+  const failed: string[] = [];
   for (const prune of prunes)
-    await api.send(
-      "DELETE",
-      `/repos/${ORG}/${prune.repo}/git/refs/heads/${refPath(prune.branch)}`,
-    );
+    await api
+      .send(
+        "DELETE",
+        `/repos/${ORG}/${prune.repo}/git/refs/heads/${refPath(prune.branch)}`,
+      )
+      .catch((error: unknown) => {
+        failed.push(
+          `${prune.repo} ${prune.branch}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+  return failed;
 }

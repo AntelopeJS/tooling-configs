@@ -323,7 +323,7 @@ export class GardenContext {
       );
       if (!Object.hasOwn(body, "delete_branch_on_merge"))
         throw new Error(
-          "delete_branch_on_merge is not readable; the token needs admin access",
+          "delete_branch_on_merge is not readable; merge settings need a token with contents write access",
         );
       return flag(body, "delete_branch_on_merge");
     });
