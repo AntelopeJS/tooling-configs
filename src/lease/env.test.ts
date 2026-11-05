@@ -39,7 +39,6 @@ test("leaseEnv drops an inherited PORT and maps every role variable onto its own
       env.DMS_FRONT_PORT,
       env.DMS_SMTP_PORT,
       env.DMS_INSPECT_PORT,
-      env.DMS_API_BASE_URL,
       env.DMS_CLIENT_BASE_URL,
       env.MONGO_URL,
       env.MONGO_DATABASE,
@@ -50,7 +49,6 @@ test("leaseEnv drops an inherited PORT and maps every role variable onto its own
       "21111",
       "21113",
       "21114",
-      "http://localhost:21110",
       "http://localhost:21111",
       "mongodb://127.0.0.1:21112",
       `dms_${id}`,
@@ -65,6 +63,13 @@ test("leaseEnv drops an inherited PORT and maps every role variable onto its own
       "/leases/one/tmp",
       "/leases/one",
     ],
+  );
+});
+
+test("leaseEnv leaves DMS_API_BASE_URL unset, so the dashboard finds the backend through .antelope/dev.json (fails when the leased api port is exported, which points the dashboard at an empty port wherever the backend config hard-codes 5010)", () => {
+  assert.equal(
+    Object.hasOwn(leaseEnv(lease, parent), "DMS_API_BASE_URL"),
+    false,
   );
 });
 

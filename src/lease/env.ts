@@ -19,6 +19,8 @@ export function isServerRole(value: string): value is ServerRole {
  * The environment `run` hands its command: `parent` without `PORT`, plus the lease's variables.
  * `PORT` comes back only for `as`, because one shell-wide `PORT` makes the backend and the
  * dashboard bind the same port. `DMS_MONGO_URL` in `parent` replaces the lease's own mongod.
+ * `DMS_API_BASE_URL` stays unset. A backend whose config hard-codes its port falls back to a free
+ * one and records it in `.antelope/dev.json`, and `ajs dms dev` reads that file only without it.
  */
 export function leaseEnv(
   lease: Lease,
@@ -35,7 +37,6 @@ export function leaseEnv(
     DMS_FRONT_PORT: String(ports.web),
     DMS_INSPECT_PORT: String(ports.inspect),
     DMS_SMTP_PORT: String(ports.smtp),
-    DMS_API_BASE_URL: `http://localhost:${ports.api}`,
     DMS_CLIENT_BASE_URL: `http://localhost:${ports.web}`,
     MONGO_URL: parent.DMS_MONGO_URL || `mongodb://127.0.0.1:${ports.mongo}`,
     MONGO_DATABASE: `dms_${record.id}`,
