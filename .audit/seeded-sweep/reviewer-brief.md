@@ -5,8 +5,8 @@ Inspect only, change no file in any existing checkout, and post nothing on GitHu
 Antony removed seeded runs from every AntelopeJS repo on 2026-11-05. The repo's verification skill must end in Lauren's shape: SKILL.md, features/README.md, one file per feature, journeys, verify.config.ts. Formal checks and one-way door detection stay. `@antelopejs/tooling-configs@0.3.0` and `@antelopejs/dms@0.17.0` are released without seeded runs.
 
 Done means:
-- `@antelopejs/tooling-configs` at 0.3.0 (and `@antelopejs/dms` at 0.17.0 where the repo uses dms-control, in the root pnpm workspace's manifests only); lockfile updated.
-- The repo's `sync` re-run so every managed file matches 0.3.0.
+- `@antelopejs/tooling-configs` at 0.3.0 (and `@antelopejs/dms` at 0.17.0 where the repo uses dms-control, in the root pnpm workspace's manifests, plus any folder SKILL.md runs dms-control from); lockfile updated.
+- The repo's `sync` re-run so every managed file matches 0.3.0. An explicit `test-job: false` in ci.yml is allowed when the repo's tests need a build first; the tests must still run inside `ci / checks`. A new `guardrails.ratchet.json` is not allowed: report it as a finding.
 - `seeded-breaks/`, `seeded-doors/` and containment journeys deleted; `verify.config.ts`, SKILL.md and features no longer mention them; nothing else in the skill changes. A containment journey that a feature lists and that tests real product behaviour stays as an ordinary journey with only its containment label dropped (AntelopeJS/dms#774 made that call). A door row's prose `containment` column stays.
 - `pnpm run checks` and CI green on the head. No product code, no other version range changed. No Notion link, session URL or attribution in the PR.
 - The PR body has an English snapshot of the goal and done means, and the counts block copied from the removal script's output.
