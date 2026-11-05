@@ -33,7 +33,6 @@ function ruleset(
         parameters: {
           required_status_checks: [
             { context: "ci / checks", integration_id: 15368 },
-            { context: "verify-gate", integration_id: 15368 },
           ],
         },
       },
@@ -92,8 +91,7 @@ test("the repository checks stay skipped until the NEXT_AUTOMERGE variable exist
   );
   assert.deepEqual(result, {
     kind: "skipped",
-    reason:
-      "NEXT_AUTOMERGE exists on no repository yet (the verify-gate task has not landed).",
+    reason: "NEXT_AUTOMERGE exists on no repository yet.",
   });
 });
 
@@ -106,16 +104,12 @@ test("rulesets that follow the Next channel policy raise nothing", async () => {
   );
 });
 
-test("the live antelopejs next ruleset is drift: no verify-gate, a review rule, a role that bypasses always", async () => {
+test("the live antelopejs next ruleset is drift: a review rule, a role that bypasses always", async () => {
   const live = fixture("ruleset-next.json");
   const found = subjects(
     await nextGovernance.run(world("shadow", [live, MAIN]).context()),
   );
-  assert.deepEqual(found, [
-    "next:verify-gate:urgent",
-    "next:review-rule:urgent",
-    "next:bypass:urgent",
-  ]);
+  assert.deepEqual(found, ["next:review-rule:urgent", "next:bypass:urgent"]);
 });
 
 test("squash-only and the checks context are normal drift, and the legacy checks context is still accepted", async () => {
@@ -126,7 +120,6 @@ test("squash-only and the checks context are normal drift, and the legacy checks
         parameters: {
           required_status_checks: [
             { context: "checks", integration_id: 15368 },
-            { context: "verify-gate", integration_id: 15368 },
           ],
         },
       },
@@ -148,9 +141,7 @@ test("squash-only and the checks context are normal drift, and the legacy checks
       {
         type: "required_status_checks",
         parameters: {
-          required_status_checks: [
-            { context: "verify-gate", integration_id: 15368 },
-          ],
+          required_status_checks: [],
         },
       },
       {
@@ -176,7 +167,6 @@ test("a required check from another app does not count as GitHub Actions", async
         parameters: {
           required_status_checks: [
             { context: "ci / checks", integration_id: 1 },
-            { context: "verify-gate", integration_id: 1 },
           ],
         },
       },
@@ -191,7 +181,7 @@ test("a required check from another app does not count as GitHub Actions", async
   });
   assert.deepEqual(
     subjects(await nextGovernance.run(world("off", [foreign, MAIN]).context())),
-    ["next:verify-gate:urgent", "next:checks:normal"],
+    ["next:checks:normal"],
   );
 });
 
