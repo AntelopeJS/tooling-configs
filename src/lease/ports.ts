@@ -152,11 +152,15 @@ function holdsSocket(pid: string, sockets: ReadonlySet<string>): boolean {
   });
 }
 
-function linuxListenerPids(port: number): number[] {
-  const sockets = new Set([
+function listenSockets(port: number): Set<string> {
+  return new Set([
     ...listenInodes("/proc/net/tcp", port),
     ...listenInodes("/proc/net/tcp6", port),
   ]);
+}
+
+function linuxListenerPids(port: number): number[] {
+  const sockets = listenSockets(port);
   if (sockets.size === 0) return [];
   return readdirSync("/proc")
     .filter((name) => /^\d+$/u.test(name) && holdsSocket(name, sockets))
@@ -183,4 +187,16 @@ export function listenerPids(port: number): number[] {
   if (process.platform === "linux") return linuxListenerPids(port);
   if (process.platform === "darwin") return lsofListenerPids(port);
   return [];
+}
+
+/**
+ * True when process `pid` listens on `port`. Where the platform gives no way to tell, true when
+ * anything accepts on `port`.
+ */
+export async function listensOn(pid: number, port: number): Promise<boolean> {
+  if (process.platform === "linux")
+    return holdsSocket(String(pid), listenSockets(port));
+  if (process.platform === "darwin")
+    return lsofListenerPids(port).includes(pid);
+  return accepting(port);
 }

@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { accepting } from "./ports.ts";
+import { accepting, listenerPids, listensOn } from "./ports.ts";
 
 const READY_TIMEOUT_MS = 30_000;
 const KILL_WAIT_MS = 2_000;
@@ -145,6 +145,39 @@ export async function stopMongod(
   );
 }
 
+async function holder(port: number): Promise<string> {
+  const pids = listenerPids(port);
+  if (pids.length > 0) return `, held by pid ${pids.join(", ")}`;
+  return (await accepting(port)) ? ", held by another process" : "";
+}
+
+/** The command lines of the processes this user may read. */
+function commandLines(): string[] {
+  if (process.platform === "linux")
+    return readdirSync("/proc")
+      .filter((name) => /^\d+$/u.test(name))
+      .map((name) => commandLine(Number(name)));
+  try {
+    return execFileSync("ps", ["-axo", "command="], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).split("\n");
+  } catch {
+    return [];
+  }
+}
+
+function starting(dbpath: string): boolean {
+  const argument = `--dbpath ${dbpath} `;
+  return commandLines().some((line) => line.includes(argument));
+}
+
+/**
+ * Waits until the lease's own mongod serves: the pid in `mongod.lock`, whose command line names the
+ * dbpath, listens on `port`. A foreign listener on `port` never counts. Gives up once the mongod
+ * this call started has exited and no process runs mongod on the dbpath: a second mongod on the
+ * same dbpath can exit before the first has written its pid, so two runs at once wait for the first.
+ */
 async function ready(
   port: number,
   paths: MongodPaths,
@@ -152,18 +185,20 @@ async function ready(
 ): Promise<void> {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (await accepting(port)) return;
-    if (exited() && mongodPid(paths.dbpath) === undefined) break;
+    const pid = mongodPid(paths.dbpath);
+    if (pid !== undefined && (await listensOn(pid, port))) return;
+    if (exited() && pid === undefined && !starting(paths.dbpath)) break;
     await sleep(POLL_MS);
   }
   throw new Error(
-    `antelopejs-lease: mongod did not answer on port ${port}; see ${paths.log}`,
+    `antelopejs-lease: mongod did not answer on port ${port}${await holder(port)}; see ${paths.log}`,
   );
 }
 
 /**
- * Makes sure a mongod serves `paths.dbpath` on `port`, starting one detached when none does. Two
- * callers at once are safe: mongod locks its dbpath, so the second exits and both wait for the first.
+ * Makes sure the lease's own mongod serves `paths.dbpath` on `port`, starting one detached when none
+ * does. Two callers at once are safe: mongod locks its dbpath, so the second exits and both wait
+ * for the first.
  */
 export async function ensureMongod(
   port: number,
