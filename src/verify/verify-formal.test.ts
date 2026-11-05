@@ -166,7 +166,7 @@ test("a rule the base broke that the check no longer reports at all fails instea
   );
 });
 
-test("a seeded behaviour change that breaks a rule fails, whatever the base reported", (t) => {
+test("an injected behaviour change that breaks a rule fails, whatever the base reported", (t) => {
   const { root, tmp, run } = formalRepo(t, {
     "src/math.js": ADD.replace("a + b", "a - b"),
   });

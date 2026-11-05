@@ -124,20 +124,14 @@ function featureProblems(
   for (const doc of feature.docs)
     if (!existsSync(join(workspace.root, doc)))
       problems.push(`${feature.file}: docs path ${doc} does not exist`);
-  if (
-    !existsSync(join(workspace.skill, "seeded-breaks", `${feature.name}.patch`))
-  )
-    problems.push(
-      `${feature.file}: seeded-breaks/${feature.name}.patch is missing`,
-    );
   return problems;
 }
 
 /**
  * Checks the repo-owned layer against the repository: a smoke feature
  * exists, every user-facing file is covered, every feature names known
- * journeys, docs pages that exist and a seeded break, every config journey is
- * used, and every applicable door kind has a seeded door. One line per problem.
+ * journeys and docs pages that exist, and every config journey is used. One
+ * line per problem.
  */
 export function checkMap(workspace: Workspace, builtins: string[]): string[] {
   const features = readFeatures(workspace);
@@ -159,43 +153,6 @@ export function checkMap(workspace: Workspace, builtins: string[]): string[] {
       problems.push(
         `verify.config.ts journey ${journey} is in no feature file`,
       );
-  for (const [kind, rule] of Object.entries(workspace.config.doors))
-    if (
-      rule &&
-      !existsSync(join(workspace.skill, "seeded-doors", `${kind}.patch`))
-    )
-      problems.push(
-        `seeded-doors/${kind}.patch is missing: the ${kind} door applies to this repository`,
-      );
-  problems.push(...containmentProblems(workspace, features));
-  return problems;
-}
-
-/** A Data or Format door is contained only by a journey, so each rule names at least one, as a registered `feature/journey`. */
-function containmentProblems(
-  workspace: Workspace,
-  features: Feature[],
-): string[] {
-  const problems: string[] = [];
-  for (const kind of ["data", "format"] as const) {
-    const rule = workspace.config.doors[kind];
-    if (!rule) continue;
-    if (rule.containments.length === 0)
-      problems.push(
-        `doors.${kind} names no containments journey: a ${kind} door row could never pass`,
-      );
-    for (const containment of rule.containments) {
-      const [name, journey] = containment.split("/");
-      if (
-        !features.some(
-          (entry) => entry.name === name && entry.journeys.includes(journey),
-        )
-      )
-        problems.push(
-          `doors.${kind} containment ${containment} is not a journey a feature registers`,
-        );
-    }
-  }
   return problems;
 }
 

@@ -14,7 +14,6 @@ import {
   verify,
   verifyRepo,
 } from "./helpers/verify-repo.ts";
-import { judgeSeeded } from "./seeded.ts";
 
 const SKILL = ".agents/skills/verify-module";
 
@@ -32,7 +31,7 @@ function journey(id: string, code: number, expected = 0): string {
 function config(extra = ""): string {
   return `import { exitIs } from ${JSON.stringify(CHECKS)};
 export default {
-  doors: ${PUBLISH_DOORS.replace("data: null", `data: { globs: ["src/store.ts"], funnels: [], containments: ["store/kept"], why: "deletes rows" }`)},
+  doors: ${PUBLISH_DOORS.replace("data: null", `data: { globs: ["src/store.ts"], funnels: [], why: "deletes rows" }`)},
   journeys: {
     ${journey("ok", 0)},
     ${journey("bad", 3)},
@@ -284,7 +283,7 @@ test("a NOT VERIFIED journey outside the diff's features is listed and downgrade
   );
 });
 
-test("a flagged door needs a row or a reasoned false positive, and a Data row needs its containment journey passing", (t) => {
+test("a flagged door needs a row or a reasoned false positive, and a listed Data row passes without naming a journey", (t) => {
   const { root, tmp } = runRepo(t);
   put(root, "src/store.ts", "export const store = 2;\n");
   const run = newRun(root, tmp);
@@ -301,15 +300,9 @@ test("a flagged door needs a row or a reasoned false positive, and a Data row ne
     location: "src/store.ts",
     irreversible: "rows deleted",
     containment: "dry run",
-    containmentJourney: "store/kept",
   };
-  judgement(run, { ...JUDGED, doors: { rows: [row] } });
-  const uncontained = verify(root, tmp, ["verdict", run, "--pr", "7"]);
-  assert.match(
-    uncontained.stdout,
-    /data door at src\/store\.ts: containment journey store\/kept did not pass in this run/,
-  );
   assert.equal(verify(root, tmp, ["journey", run, "store", "kept"]).status, 0);
+  judgement(run, { ...JUDGED, doors: { rows: [row] } });
   const contained = verify(root, tmp, ["verdict", run, "--pr", "7"]);
   assert.equal(contained.status, 0, contained.stdout);
   assert.match(
@@ -341,57 +334,4 @@ test("clean keeps the evidence and run.json and removes the scratch folders", (t
     "0\n",
   );
   assert.equal(evidence(run, "../run.json").containers.length, 0);
-});
-
-function result(
-  journey: string,
-  status: "PASS" | "FAIL" | "NOT VERIFIED",
-  failing: boolean,
-) {
-  const checks = [{ name: "check", pass: !failing, detail: "" }];
-  return {
-    feature: "f",
-    journey,
-    title: "",
-    entryPoint: "",
-    status,
-    steps: [{ name: "s", folder: "", checks }],
-    error: null,
-    notVerified: status === "NOT VERIFIED" ? "the service went away" : null,
-    folder: "",
-  };
-}
-
-test("a seeded break counts only through a journey that passes in the control and fails a check with the patch", () => {
-  const control = {
-    run: "c",
-    output: "",
-    results: [
-      result("a", "PASS", false),
-      result("b", "FAIL", true),
-      result("c", "PASS", false),
-    ],
-  };
-  const seeded = {
-    run: "s",
-    output: "",
-    results: [
-      result("a", "PASS", false),
-      result("b", "FAIL", true),
-      result("c", "FAIL", false),
-    ],
-  };
-  const missed = judgeSeeded("f", control, seeded);
-  assert.equal(missed.outcome, "MISSED");
-  assert.deepEqual(missed.failingInControl, ["b"]);
-  assert.deepEqual(missed.harnessErrors, ["c"]);
-  seeded.results[0] = result("a", "FAIL", true);
-  const caught = judgeSeeded("f", control, seeded);
-  assert.equal(caught.outcome, "CAUGHT");
-  assert.deepEqual(caught.caughtBy, ["a"]);
-  seeded.results[0] = result("a", "NOT VERIFIED", true);
-  const unreached = judgeSeeded("f", control, seeded);
-  assert.equal(unreached.outcome, "NOT VERIFIED");
-  assert.deepEqual(unreached.caughtBy, []);
-  assert.deepEqual(unreached.notVerified.seeded, ["a (the service went away)"]);
 });

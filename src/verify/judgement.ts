@@ -15,7 +15,6 @@ interface DoorRow {
   location: string;
   irreversible: string;
   containment: string;
-  containmentJourney: string;
 }
 
 /** A file the door path rules flag that the verifier judged is not a door, with why. */
@@ -92,7 +91,6 @@ function parseRows(doors: JsonObject): DoorRow[] {
     return {
       ...parsed,
       kind: doorKind(text(row, "kind"), `doors.rows[${index}].kind`),
-      containmentJourney: text(row, "containmentJourney"),
     };
   });
 }

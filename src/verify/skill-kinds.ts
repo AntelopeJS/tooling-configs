@@ -14,7 +14,7 @@ export interface KindText {
 
 const INTERFACE: KindText = {
   description:
-    "Drive this AntelopeJS interface the way a module author does: pack it, load it in `ajs project dev` next to a stub provider wired through ImplementInterface and a consumer, call every declared function through core, and check the minor-bump rule against the published version. Use to prove a change to the interface works before merge, to verify a PR, or to check that a seeded break is caught.",
+    "Drive this AntelopeJS interface the way a module author does: pack it, load it in `ajs project dev` next to a stub provider wired through ImplementInterface and a consumer, call every declared function through core, and check the minor-bump rule against the published version. Use to prove a change to the interface works before merge, or to verify a PR.",
   title: "Verify interface",
   user: "The user of an interface is a module author: one module implements it, others import it and call its functions through core.",
   launch:
@@ -34,13 +34,12 @@ const INTERFACE: KindText = {
   gotchas: [
     "A function the consumer awaits forever, such as a getter no provider resolved, fails after 15 seconds with a `Timeout` value.",
     "`minor-bump` needs the npm registry. Without it the journey is not verified, never passed.",
-    "A containment journey of a Data or Format door must check what that door's seeded patch changes, for example the arguments the stub provider logged. `containments` reports one that still passes with its door as `MISSED`.",
   ],
 };
 
 const MODULE: KindText = {
   description:
-    "Drive this AntelopeJS implementation module the way an app developer does: install it as `local` in a fixture project, run its backing services in Docker on free ports, call its interfaces from a consumer module and read stored state back with the service's native client. Use to prove a change to the module works before merge, to verify a PR, or to check that a seeded break is caught.",
+    "Drive this AntelopeJS implementation module the way an app developer does: install it as `local` in a fixture project, run its backing services in Docker on free ports, call its interfaces from a consumer module and read stored state back with the service's native client. Use to prove a change to the module works before merge, or to verify a PR.",
   title: "Verify module",
   user: "The user of a module is an app developer: they add it to `antelope.config.ts`, configure it, and other modules call the interfaces it implements.",
   launch:
@@ -55,13 +54,12 @@ const MODULE: KindText = {
   gotchas: [
     "Every container is the run's own. Never point a journey at a shared instance such as a developer's local database.",
     "A sandbox key missing from the environment is a NOT VERIFIED verdict, which sets status `verify` to `error`.",
-    "A containment journey of a Data or Format door must read back, through the native client, the state that door's seeded patch corrupts. `containments` reports one that still passes with its door as `MISSED`.",
   ],
 };
 
 const TEMPLATE: KindText = {
   description:
-    "Drive this AntelopeJS template the way a new user does: scaffold a project with `ajs project init` from an offline interfaces manifest, install it, run its own `pnpm run checks`, run `ajs project dev --watch` and hit its welcome page, endpoint or ready line. Use to prove a change to the template works before merge, to verify a PR, to run the release canary, or to check that a seeded break is caught.",
+    "Drive this AntelopeJS template the way a new user does: scaffold a project with `ajs project init` from an offline interfaces manifest, install it, run its own `pnpm run checks`, run `ajs project dev --watch` and hit its welcome page, endpoint or ready line. Use to prove a change to the template works before merge, to verify a PR, or to run the release canary.",
   title: "Verify template",
   user: "The user of a template is someone running `ajs project init --template`: they get a copy of the whole repository and expect it to install, pass its checks and run.",
   launch:
@@ -76,7 +74,6 @@ const TEMPLATE: KindText = {
   gotchas: [
     "`ajs` copies the whole repository, `.agents/` and `.claude/` included, so the scaffolded project carries this skill too.",
     "Every file a user gets is user-facing here, tests included; only `.agents/`, `.claude/` and `.github/` are not.",
-    "A containment journey of a Data or Format door must check the scaffolded files or endpoint that door's seeded patch changes. `containments` reports one that still passes with its door as `MISSED`.",
   ],
 };
 

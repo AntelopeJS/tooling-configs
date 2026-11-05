@@ -19,8 +19,8 @@ const OWN_SKILL = ".agents/skills/verify-repo/SKILL.md";
 const OWNED = {
   "features/x.md": "# Feature\r\nno final newline",
   "verify.config.ts": "export default { runs: 2 };\n",
-  "seeded-breaks/x.patch": "--- a\n+++ b\n",
-  "seeded-doors/data.patch": "door\u0000bytes\n",
+  "features/README.md": "# Features\n",
+  "journeys/x.bin": "journey\u0000bytes\n",
   "fixtures/f.json": '{"a":1}',
 } as const;
 
