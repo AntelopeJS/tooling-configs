@@ -37,6 +37,7 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 | bin                | `antelopejs-check-interface-ranges`                                       | Fails on interface ranges that break module startup                                                        |
 | bin                | `antelopejs-garden [--json] [--apply-pauses] [--apply] [--apply-prunes]`  | The Gardener's scans of the organization through the GitHub API and npm                                    |
 | bin                | `antelopejs-verify <command>`                                             | The harness of the shared `verify-interface`, `verify-module` and `verify-template` skills                 |
+| bin                | `antelopejs-lease run \| status \| down \| gc`                            | Ports, a mongod, logs and tmp per worktree; see [Run a DMS from a git worktree](./docs/agent-worktrees.md) |
 
 ## antelopejs-garden
 

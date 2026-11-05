@@ -22,6 +22,7 @@ export default defineConfig({
     "./src/bin/body-check.ts",
     "./src/bin/comment-proof.ts",
     "./src/bin/garden.ts",
+    "./src/bin/lease.ts",
     "./src/bin/verify.ts",
     "./src/bin/capture.ts",
   ],

@@ -29,6 +29,7 @@
     "antelopejs-checks": "./dist/bin/checks.mjs",
     "antelopejs-comment-proof": "./dist/bin/comment-proof.mjs",
     "antelopejs-garden": "./dist/bin/garden.mjs",
+    "antelopejs-lease": "./dist/bin/lease.mjs",
     "antelopejs-ratchet": "./dist/bin/ratchet.mjs",
     "antelopejs-suppressions": "./dist/bin/suppressions.mjs",
     "antelopejs-sync": "./dist/bin/sync.mjs",
