@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import type { Server } from "node:net";
 import { join } from "node:path";
 import test from "node:test";
@@ -82,6 +82,34 @@ test("a worktree recreated at the same path gets a fresh lease without the old d
   );
   assert.equal(probed.stdout.trim(), "fresh");
 });
+
+test(
+  "status keeps the lease of a worktree it cannot read and lists it as unreadable until it can (fails when a permission error reads as a deleted worktree and the sweep deletes a live checkout's lease)",
+  {
+    skip:
+      process.getuid?.() === 0 && "root reads a directory whatever its mode",
+  },
+  async (t) => {
+    const root = scratch(t);
+    const worktree = gitInit(join(root, "parent", "w"));
+    const env = externalEnv(join(root, ".home"));
+    const printed = await leasedEnv(worktree, env);
+    chmodSync(join(root, "parent"), 0o000);
+    let hidden;
+    try {
+      hidden = await statusRows(root, env);
+    } finally {
+      chmodSync(join(root, "parent"), 0o755);
+    }
+    assert.deepEqual(
+      hidden.map((row) => row.state),
+      ["unreadable:EACCES"],
+    );
+    assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), true);
+    const [again] = await statusRows(root, env);
+    assert.equal(again?.state, "live");
+  },
+);
 
 test("a deleted worktree whose api port still listens stays reserved as orphaned, naming the listener, until the port closes (fails when the sweep frees a block whose servers still run)", async (t) => {
   const root = scratch(t);

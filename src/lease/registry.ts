@@ -49,12 +49,25 @@ export interface Worktree {
 type StaleReason = "missing" | "recreated";
 
 /**
+ * What a stat of a worktree's `.git` entry found. `gone` is only ENOENT or ENOTDIR, a path that no
+ * longer exists. Any other error, such as EACCES under a parent with mode 000, is `unreadable`, with
+ * its error code: the checkout may still exist, so its lease is kept.
+ */
+type GitProbe =
+  | { readonly kind: "present"; readonly identity: GitIdentity }
+  | { readonly kind: "gone" }
+  | { readonly kind: "unreadable"; readonly code: string };
+
+/**
  * Where a lease stands. `orphaned` is a stale lease whose api or web port still accepts: its block
  * stays reserved and nothing is killed. `claiming` is a directory with no record yet: a claim in
- * progress, or a crash leftover. `foreign` is a record this version cannot read.
+ * progress, or a crash leftover. `foreign` is a record this version cannot read. `unreadable` is a
+ * lease whose worktree cannot be checked, such as one under a directory this user cannot read: it
+ * is kept and its ports stay reserved.
  */
 export type LeaseState =
   | { readonly kind: "live" }
+  | { readonly kind: "unreadable"; readonly code: string }
   | { readonly kind: "stale"; readonly reason: StaleReason }
   | { readonly kind: "orphaned"; readonly reason: StaleReason }
   | { readonly kind: "claiming" }
@@ -62,8 +75,8 @@ export type LeaseState =
 
 /** What the filesystem and the network say about a lease right now. */
 export interface LeaseFacts {
-  /** The `.git` entry now at the record's worktree path; `undefined` when there is none. */
-  readonly git: GitIdentity | undefined;
+  /** The `.git` entry now at the record's worktree path. */
+  readonly git: GitProbe;
   /** Whether the api or web port accepts connections. */
   readonly serving: boolean;
 }
@@ -106,18 +119,26 @@ export function leaseState(
 ): LeaseState {
   if (parsed === undefined) return { kind: "claiming" };
   if (parsed.kind === "foreign") return { kind: "foreign" };
-  const reason = staleReason(parsed.record, facts.git);
+  if (facts.git.kind === "unreadable")
+    return { kind: "unreadable", code: facts.git.code };
+  const git = facts.git.kind === "present" ? facts.git.identity : undefined;
+  const reason = staleReason(parsed.record, git);
   if (reason === undefined) return { kind: "live" };
   return { kind: facts.serving ? "orphaned" : "stale", reason };
 }
 
-/** The identity of the `.git` entry in `worktree`; `undefined` when there is none. */
-function gitIdentity(worktree: string): GitIdentity | undefined {
+function probeGit(worktree: string): GitProbe {
   try {
-    const stat = statSync(join(worktree, ".git"));
-    return { inode: stat.ino, birth: stat.birthtimeMs };
-  } catch {
-    return undefined;
+    const stat = statSync(join(worktree, ".git"), { throwIfNoEntry: false });
+    if (stat === undefined) return { kind: "gone" };
+    return {
+      kind: "present",
+      identity: { inode: stat.ino, birth: stat.birthtimeMs },
+    };
+  } catch (error) {
+    const code =
+      error instanceof Error && "code" in error ? String(error.code) : "";
+    return { kind: "unreadable", code: code || "unknown" };
   }
 }
 
@@ -134,10 +155,10 @@ export function locateWorktree(cwd: string): Worktree {
     throw new Error(`antelopejs-lease: ${cwd} is not inside a git worktree`);
   }
   const path = realpathSync(top);
-  const git = gitIdentity(path);
-  if (git === undefined)
+  const git = probeGit(path);
+  if (git.kind !== "present")
     throw new Error(`antelopejs-lease: ${path} has no .git entry`);
-  return { path, id: leaseId(path), git };
+  return { path, id: leaseId(path), git: git.identity };
 }
 
 export function mongodPaths(dir: string): MongodPaths {
@@ -204,10 +225,10 @@ async function serving(record: LeaseRecord): Promise<boolean> {
 async function observe(entry: Entry): Promise<Observed> {
   const record =
     entry.parsed?.kind === "current" ? entry.parsed.record : undefined;
-  const facts =
+  const facts: LeaseFacts =
     record === undefined
-      ? { git: undefined, serving: false }
-      : { git: gitIdentity(record.worktree), serving: await serving(record) };
+      ? { git: { kind: "gone" }, serving: false }
+      : { git: probeGit(record.worktree), serving: await serving(record) };
   return { entry, state: leaseState(entry.parsed, facts) };
 }
 

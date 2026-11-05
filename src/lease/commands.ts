@@ -91,6 +91,7 @@ export async function run(
 }
 
 function stateLabel(state: LeaseState): string {
+  if (state.kind === "unreadable") return `${state.kind}:${state.code}`;
   return state.kind === "stale" || state.kind === "orphaned"
     ? `${state.kind}:${state.reason}`
     : state.kind;

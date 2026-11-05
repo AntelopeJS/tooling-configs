@@ -14,7 +14,7 @@ Run each command from inside your worktree. Each step is one shell command, and 
    pnpm exec antelopejs-lease status
    ```
 
-   `status` prints one line per lease with its id, state, api, web and mongo ports, the pid of its mongod, and its worktree. It prints nothing when there is no lease. Pass `--json` to read it from a tool. If a line names your worktree, its DMS may still run. Check it with `dms-dev.sh status`, as in step 4, before you start a second one.
+   `status` prints one line per lease with its id, state, api, web and mongo ports, the pid of its mongod, and its worktree. It prints nothing when there is no lease. Pass `--json` to read it from a tool. A lease whose worktree this user cannot read, for example under a directory with mode 000, shows `unreadable:<error code>` and is kept: only a worktree whose path is gone, or that holds a new checkout, counts as deleted. If a line names your worktree, its DMS may still run. Check it with `dms-dev.sh status`, as in step 4, before you start a second one.
 
 2. Start the DMS through `run --`.
 
