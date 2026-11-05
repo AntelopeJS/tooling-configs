@@ -222,7 +222,7 @@ When every rule count is zero and `oversizeFiles` is empty, the ratchet is retir
 
 ### Suppression budget
 
-`guardrails.suppressions.json` caps the suppressions in authored code files. It is separate from the ratchet and permanent: it stays when its counts reach zero and when the ratchet is retired.
+`guardrails.suppressions.json` caps the suppressions in authored code files. It is separate from the ratchet and permanent: it stays when its counts reach zero and when the ratchet is retired. No command deletes it, and nothing should. An all-zero budget is the tightest cap, not an empty file: every ceiling is 0. Without the file, `antelopejs-suppressions` and `sync:check` fail, and the pull request base check treats the next sync as a first adoption, so it would record every ceiling again at whatever counts exist then.
 
 ```json
 {
