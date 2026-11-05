@@ -42,12 +42,10 @@ export interface ChecksOptions {
 
 async function runSteps(
   root: string,
+  manifest: ReturnType<typeof parseManifest>,
   steps: string[],
   signal: AbortSignal | undefined,
 ): Promise<string[]> {
-  const manifest = parseManifest(
-    readFileSync(join(root, "package.json"), "utf8"),
-  );
   const manager = packageManager(manifest);
   const failures: string[] = [];
   for (const step of steps) {
@@ -94,6 +92,9 @@ export async function runChecks(root: string, options: ChecksOptions = {}) {
   );
   const steps = present.filter((step) => !requested.includes(step));
   const skipped = present.length - steps.length;
+  const manifest = parseManifest(
+    readFileSync(join(root, "package.json"), "utf8"),
+  );
   const plan: ServicesPlan =
     services && steps.includes("test")
       ? await planServices(root)
@@ -108,11 +109,16 @@ export async function runChecks(root: string, options: ChecksOptions = {}) {
     plan.kind === "start"
       ? await startServices(root, signal)
       : { failure: "", owned: false };
-  const failures = started.failure
-    ? [`[services]\n${started.failure}`]
-    : await runSteps(root, steps, signal);
+  let failures: string[] = [];
+  let stopped = "";
+  try {
+    failures = started.failure
+      ? [`[services]\n${started.failure}`]
+      : await runSteps(root, manifest, steps, signal);
+  } finally {
+    if (started.owned) stopped = await stopServices(root);
+  }
   const passed = started.failure ? 0 : steps.length - failures.length;
-  const stopped = started.owned ? await stopServices(root) : "";
   if (stopped) failures.push(`[services]\n${stopped}`);
   const interrupted = signal?.aborted ?? false;
   return {

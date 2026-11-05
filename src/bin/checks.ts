@@ -18,7 +18,8 @@ runCliAsync(async () => {
   const controller = new AbortController();
   let exitCode = 1;
   for (const [name, code] of SIGNAL_EXIT)
-    process.once(name, () => {
+    process.on(name, () => {
+      if (controller.signal.aborted) return;
       exitCode = code;
       controller.abort(name);
     });

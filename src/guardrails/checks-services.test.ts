@@ -225,6 +225,55 @@ test("an interrupt while the services start stops compose at once and removes th
   );
 });
 
+test("checks read package.json before starting the services, so a broken manifest starts nothing", (t) => {
+  const root = servicesRepo(t, UNREACHABLE_COMPOSE);
+  put(root, "package.json", '{"scripts": {},}');
+  const result = bin(root, "checks", [], dockerEnv(t, root));
+  assert.equal(result.status, 1);
+  assert.deepEqual(logLines(root), []);
+});
+
+test("a second interrupt does not cut the teardown short", async (t) => {
+  const root = servicesRepo(
+    t,
+    UNREACHABLE_COMPOSE,
+    "node -e \"require('node:fs').appendFileSync('calls.log', 'step test\\n');process.on('SIGTERM', () => setTimeout(() => process.exit(1), 1000));setInterval(() => {}, 1000)\"",
+  );
+  const result = await runBin(root, [], dockerEnv(t, root), (child) => {
+    const timer = setInterval(() => {
+      if (!logLines(root).includes("step test")) return;
+      clearInterval(timer);
+      child.kill("SIGINT");
+      setTimeout(() => child.kill("SIGINT"), 200);
+    }, 50);
+  });
+  assert.equal(result.status, 130, result.stdout);
+  assert.equal(
+    logLines(root).at(-1),
+    "docker compose -f .github/compose.yml down -v",
+  );
+});
+
+test("compose runs under a project named after the repository, not the shared .github default", (t) => {
+  const root = servicesRepo(t, UNREACHABLE_COMPOSE);
+  const env = dockerEnv(t, root);
+  put(
+    env.PATH.split(delimiter)[0] ?? "",
+    "docker",
+    '#!/bin/sh\necho "project $COMPOSE_PROJECT_NAME" >> "$CALLS_LOG"\n',
+  );
+  const result = bin(root, "checks", [], { ...env, COMPOSE_PROJECT_NAME: "" });
+  assert.equal(result.status, 0, result.stdout);
+  const projects = new Set(
+    logLines(root).filter((line) => line.startsWith("project ")),
+  );
+  assert.equal(projects.size, 1);
+  assert.match(
+    [...projects][0] ?? "",
+    /^project antelope-guardrails-[a-z0-9_-]+-[0-9a-f]{8}$/,
+  );
+});
+
 test("checks leave services alone when every published port already answers", async (t) => {
   let port = 47017;
   let server = await claimPort(port, "127.0.0.1");

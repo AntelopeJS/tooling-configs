@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { isMap, isScalar, isSeq, parseDocument } from "yaml";
 
@@ -47,6 +48,22 @@ export function publishedPorts(text: string): number[] | undefined {
   return ports;
 }
 
+/**
+ * The compose project of a run: `COMPOSE_PROJECT_NAME` when set, else one derived from the repository root. Compose
+ * would otherwise name every repository's project `github` after the compose file's directory, so a run could adopt
+ * or remove another checkout's containers.
+ */
+function projectName(root: string): string {
+  const fromEnv = process.env.COMPOSE_PROJECT_NAME;
+  if (fromEnv) return fromEnv;
+  const slug = basename(root)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^[^a-z0-9]+/, "");
+  const digest = createHash("sha256").update(root).digest("hex").slice(0, 8);
+  return `${slug || "repo"}-${digest}`;
+}
+
 async function compose(
   root: string,
   args: string[],
@@ -55,7 +72,11 @@ async function compose(
   const result = await runCommand(
     "docker",
     ["compose", "-f", COMPOSE_FILE, ...args],
-    { cwd: root, signal },
+    {
+      cwd: root,
+      env: { ...process.env, COMPOSE_PROJECT_NAME: projectName(root) },
+      signal,
+    },
   );
   if (result.status === 0) return { failure: "", output: result.output };
   const outcome =
