@@ -11,6 +11,7 @@ import {
   read,
   testRepo,
 } from "./helpers/test-repo.ts";
+import { toolingVersions } from "./package.ts";
 
 /** Sized like dms `.agents/probes/backend-boundaries.cjs`, a probe the repository wrote and keeps at 65394 bytes. */
 const probe = (extra = 0) => "x".repeat(MAX_FILE_BYTES + 1 + extra);
@@ -67,7 +68,7 @@ test("ratchet --update records the oversize agent files once, for a repository r
   const update = bin(root, "ratchet", ["--update"]);
   assert.equal(update.status, 0, update.stderr);
   assert.deepEqual(readCeilings(root), {
-    pack: "0.2.18",
+    pack: toolingVersions().pack,
     rules: {},
     oversizeFiles: { ".agents/probes/backend-boundaries.cjs": 20_001 },
   });
@@ -93,7 +94,7 @@ test("ratchet --update records the oversize agent files once, for a repository r
   put(root, ".agents/probes/backend-boundaries.cjs", probe());
   put(root, ".agents/probes/second.cjs", probe());
   assert.equal(bin(root, "ratchet", ["--update"]).status, 1);
-  assert.match(read(root, "guardrails.ratchet.json"), /"pack": "0\.2\.18"/);
+  assert.equal(readCeilings(root).pack, toolingVersions().pack);
 });
 
 test("verifier R1: an adopting branch records the oversize agent files that existed at the base and no new or grown one", (t) => {

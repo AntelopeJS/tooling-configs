@@ -14,6 +14,7 @@ import {
   read,
   testRepo,
 } from "./helpers/test-repo.ts";
+import { toolingVersions } from "./package.ts";
 
 const TSGOLINT = fileURLToPath(
   new URL(
@@ -87,7 +88,7 @@ test("#69 upgrade: ratchet --update records the counts of the rules the pack ena
   });
   const update = ratchet(root, "--update");
   assert.deepEqual(readCeilings(root), {
-    pack: "0.2.18",
+    pack: toolingVersions().pack,
     rules: { [UNSAFE_ASSIGNMENT]: 2, [UNSAFE_RETURN]: 1 },
     oversizeFiles: {},
   });
@@ -97,7 +98,12 @@ test("#69 upgrade: ratchet --update records the counts of the rules the pack ena
     /Adopted typescript\/no-unsafe-assignment: 2, enabled by the pack in 0\.2\.17\./,
   );
   const recorded = read(root, "guardrails.ratchet.json");
-  assert.match(recorded, /^\{\n {2}"pack": "0\.2\.18",\n {2}"rules": \{/);
+  assert.match(
+    recorded,
+    new RegExp(
+      `^\\{\\n {2}"pack": "${toolingVersions().pack.replaceAll(".", "\\.")}",\\n {2}"rules": \\{`,
+    ),
+  );
   const again = ratchet(root, "--update");
   assert.equal(again.status, 0, again.stderr);
   assert.doesNotMatch(again.stdout, /Adopted/);
@@ -163,7 +169,7 @@ test("a pack-new rule fixed to 0 and later regressed is not adopted again, becau
   );
   assert.equal(ratchet(root, "--update").status, 0);
   assert.deepEqual(readCeilings(root), {
-    pack: "0.2.18",
+    pack: toolingVersions().pack,
     rules: { [UNSAFE_RETURN]: 1 },
     oversizeFiles: {},
   });
@@ -188,7 +194,9 @@ test("a pack-new rule fixed to 0 and later regressed is not adopted again, becau
   );
   assert.match(
     ratchet(root, "--base", "HEAD").stderr,
-    /guardrails\.ratchet\.json: adds typescript\/no-unsafe-assignment, which the pack enabled in 0\.2\.17, not after this repository's 0\.2\.18\./,
+    new RegExp(
+      `guardrails\\.ratchet\\.json: adds typescript/no-unsafe-assignment, which the pack enabled in 0\\.2\\.17, not after this repository's ${toolingVersions().pack.replaceAll(".", "\\.")}\\.`,
+    ),
   );
 });
 
@@ -224,7 +232,7 @@ test("a ratchet file without a recorded release predates the registry, and the u
   const root = upgradedRepo(t, { rules: {}, oversizeFiles: {} });
   assert.equal(ratchet(root, "--update").status, 0);
   assert.deepEqual(readCeilings(root), {
-    pack: "0.2.18",
+    pack: toolingVersions().pack,
     rules: { [UNSAFE_ASSIGNMENT]: 2, [UNSAFE_RETURN]: 1 },
     oversizeFiles: {},
   });
@@ -245,7 +253,7 @@ test("a clean repository gets a ratchet file holding only the pack-new rules, an
     /Created guardrails\.ratchet\.json for the rules the pack newly enabled\. Run antelopejs-sync\./,
   );
   assert.deepEqual(readCeilings(root), {
-    pack: "0.2.18",
+    pack: toolingVersions().pack,
     rules: { [UNSAFE_ASSIGNMENT]: 2, [UNSAFE_RETURN]: 1 },
     oversizeFiles: {},
   });
