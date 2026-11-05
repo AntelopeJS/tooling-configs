@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.2.19
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.18...v0.2.19)
+
+### 🚀 Enhancements
+
+- **garden:** Prune stale branches and enforce delete_branch_on_merge ([#169](https://github.com/AntelopeJS/tooling-configs/pull/169))
+- **lease:** Lease ports, Mongo and run dirs per git worktree ([#173](https://github.com/AntelopeJS/tooling-configs/pull/173))
+- **sync:** Pass test-job: true from the generated CI caller ([#174](https://github.com/AntelopeJS/tooling-configs/pull/174))
+
+### 🔥 Performance
+
+- **checks:** Run tests beside the other checks, in balanced shards ([#172](https://github.com/AntelopeJS/tooling-configs/pull/172))
+
+### 🩹 Fixes
+
+- **sync:** Check the template agent layer only in the template source ([#170](https://github.com/AntelopeJS/tooling-configs/pull/170))
+
+### 📖 Documentation
+
+- **verify:** Record the browser driver choice ([#171](https://github.com/AntelopeJS/tooling-configs/pull/171))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.2.18
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.17...v0.2.18)
