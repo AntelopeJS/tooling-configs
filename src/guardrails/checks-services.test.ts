@@ -78,6 +78,7 @@ function dockerEnv(t: TestContext, root: string, extra = {}) {
   return {
     PATH: `${fakeDockerPath(t)}${delimiter}${process.env.PATH ?? ""}`,
     CALLS_LOG: join(root, "calls.log"),
+    GITHUB_ACTIONS: "",
     ...extra,
   };
 }
@@ -140,6 +141,18 @@ test("--no-services runs the steps without calling Docker", (t) => {
   assert.deepEqual(logLines(root), ["step test"]);
 });
 
+test("checks on GitHub Actions leave the services to the workflow that started them", (t) => {
+  const root = servicesRepo(t, UNREACHABLE_COMPOSE);
+  const result = bin(
+    root,
+    "checks",
+    [],
+    dockerEnv(t, root, { GITHUB_ACTIONS: "true" }),
+  );
+  assert.equal(result.status, 0, result.stdout);
+  assert.deepEqual(logLines(root), ["step test"]);
+});
+
 test("checks without a compose file never call Docker", (t) => {
   const root = servicesRepo(t, undefined);
   const result = bin(root, "checks", [], dockerEnv(t, root));
@@ -163,7 +176,10 @@ function pathWithoutDocker(t: TestContext): string {
 
 test("checks fail at once, naming the compose file, when Docker is missing", (t) => {
   const root = servicesRepo(t, UNREACHABLE_COMPOSE);
-  const result = bin(root, "checks", [], { PATH: pathWithoutDocker(t) });
+  const result = bin(root, "checks", [], {
+    PATH: pathWithoutDocker(t),
+    GITHUB_ACTIONS: "",
+  });
   assert.equal(result.status, 1);
   assert.match(
     result.stdout,

@@ -25,7 +25,7 @@ runCliAsync(async () => {
     });
   const result = await runChecks(repositoryRoot(), {
     skipSetting: process.env[CHECKS_SKIP_ENV],
-    services: !values["no-services"],
+    services: !values["no-services"] && process.env.GITHUB_ACTIONS !== "true",
     signal: controller.signal,
   });
   process.stdout.write(result.output);
