@@ -84,6 +84,7 @@ jobs:
     uses: ${CI_NODE_REF}
     with:
       renovate-sync: false
+      test-job: true
   renovate-sync:
     permissions:
       contents: write

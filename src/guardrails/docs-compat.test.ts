@@ -132,6 +132,7 @@ const DOCS_INPUTS = `      renovate-sync: false
         gone/docs
       extra-commands: |
         pnpm --dir packages/a check
+      test-job: true
 `;
 
 function workspace(t: TestContext): string {
@@ -157,7 +158,10 @@ function workspace(t: TestContext): string {
   put(
     root,
     ".github/workflows/ci.yml",
-    CI_CALLER.replace("      renovate-sync: false\n", DOCS_INPUTS),
+    CI_CALLER.replace(
+      "      renovate-sync: false\n      test-job: true\n",
+      DOCS_INPUTS,
+    ),
   );
   put(
     root,
@@ -301,6 +305,7 @@ test("sync writes the block of every qualifying workspace package, lists every p
   const workflow = read(root, ".github/workflows/ci.yml");
   assert.deepEqual(parseDocument(workflow).toJS().jobs.ci.with, {
     "renovate-sync": false,
+    "test-job": true,
     "docs-typescript-project": "packages/a/tsconfig.json",
     "docs-files": DOCS_FILES,
     "extra-commands": "pnpm --dir packages/a check\n",

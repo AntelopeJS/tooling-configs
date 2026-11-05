@@ -46,6 +46,7 @@ jobs:
     uses: ${CI_NODE_REF}
     with:
       renovate-sync: false
+      test-job: true
   ${RENOVATE_SYNC_JOB_ID}:
     if: >-
       github.event_name == 'pull_request'
@@ -232,6 +233,15 @@ function skipRenovateSync(document: Document, job: YAMLMap): boolean {
   return true;
 }
 
+function addTestJob(document: Document, job: YAMLMap): boolean {
+  const inputs = job.get("with", true);
+  if (isMap(inputs)) {
+    if (inputs.has("test-job")) return false;
+    inputs.set("test-job", true);
+  } else job.set("with", document.createNode({ "test-job": true }));
+  return true;
+}
+
 function lines(text: string): string[] {
   return text
     .split("\n")
@@ -340,6 +350,8 @@ function assertNoClash(
  * Keeps the shared CI caller on the job id `ci` with no `name`, so the shared workflow reports `ci / checks`,
  * dispatchable and read-only, with the Renovate sync it would otherwise run turned off. The write permissions the sync
  * needs to push and dispatch the caller live on a separate job calling ci-renovate-sync.yml, which is added when missing.
+ * A caller without a `test-job` input gets `test-job: true`, which runs the tests in their own job; an explicit value
+ * is left as the repository set it.
  * No `uses:` ref is ever rewritten. A workflow with no caller job is repository-specific CI and is left as it is.
  * When `docsFiles` computes paths, every caller's `docs-files` input lists them first, then keeps its hand-listed paths
  * that still exist, so sync never drops coverage.
@@ -378,6 +390,7 @@ export function ciWorkflow(
   }
   changed = grant(document, pair.value, { contents: "read" }) || changed;
   changed = skipRenovateSync(document, pair.value) || changed;
+  changed = addTestJob(document, pair.value) || changed;
   changed = ensureSyncJob(document, jobs, syncCallers) || changed;
   if (!hasDispatch(document)) {
     addDispatch(document);

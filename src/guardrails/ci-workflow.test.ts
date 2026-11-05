@@ -139,7 +139,7 @@ test("renaming the caller to ci also rewrites needs.<old-id> in if, env and run 
 });
 
 test("a conformant caller is returned byte for byte, comments and extra jobs included", () => {
-  const text = `# keep me\nname: ci\non: [push, workflow_dispatch]\njobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      docs-files: README.md # docs\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n  deploy:\n    needs: ci\n    runs-on: ubuntu-latest\n    steps: []\n`;
+  const text = `# keep me\nname: ci\non: [push, workflow_dispatch]\njobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: true\n      docs-files: README.md # docs\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n  deploy:\n    needs: ci\n    runs-on: ubuntu-latest\n    steps: []\n`;
   assert.equal(rewrite(text), text);
   assert.equal(rewrite(CI_CALLER), CI_CALLER);
 });
@@ -147,7 +147,10 @@ test("a conformant caller is returned byte for byte, comments and extra jobs inc
 test("the canonical caller keeps the job ci read-only and gives only the renovate-sync job the write grants", () => {
   const parsed = jobs(CI_CALLER);
   assert.deepEqual(parsed.ci.permissions, { contents: "read" });
-  assert.deepEqual(parsed.ci.with, { "renovate-sync": false });
+  assert.deepEqual(parsed.ci.with, {
+    "renovate-sync": false,
+    "test-job": true,
+  });
   assert.deepEqual(parsed["renovate-sync"].permissions, {
     contents: "write",
     actions: "write",
@@ -162,7 +165,10 @@ test("an old-shape caller with write grants is rewritten to the new shape and th
   const rewritten = rewrite(WRITE_GRANTED_CALLER);
   const parsed = jobs(rewritten);
   assert.deepEqual(parsed.ci.permissions, { contents: "read" });
-  assert.deepEqual(parsed.ci.with, { "renovate-sync": false });
+  assert.deepEqual(parsed.ci.with, {
+    "renovate-sync": false,
+    "test-job": true,
+  });
   assert.equal(parsed.ci.uses, CI_NODE_REF);
   assert.deepEqual(parsed["renovate-sync"], jobs(CI_CALLER)["renovate-sync"]);
   assert.equal(rewrite(rewritten), rewritten);
@@ -177,6 +183,7 @@ test("rewriting keeps the other inputs, comments, other jobs and the pinned refs
   assert.deepEqual(parsed.ci.with, {
     "docs-files": "README.md",
     "renovate-sync": false,
+    "test-job": true,
   });
   assert.deepEqual(parsed.ci.permissions, { contents: "read" });
   assert.deepEqual(parsed.deploy, {
@@ -187,6 +194,22 @@ test("rewriting keeps the other inputs, comments, other jobs and the pinned refs
   assert.match(rewritten, /^# keep me\n/);
   assert.match(rewritten, /# pinned/);
   assert.equal(rewrite(rewritten), rewritten);
+});
+
+test("a caller without the test-job input gets test-job: true, with or without a with block, and the rewrite is idempotent", () => {
+  const bare = `on: workflow_dispatch\njobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n`;
+  const withOther = `${bare}    with:\n      docs-files: README.md\n`;
+  for (const text of [bare, withOther]) {
+    const rewritten = rewrite(text);
+    assert.equal(jobs(rewritten).ci.with?.["test-job"], true);
+    assert.equal(rewrite(rewritten), rewritten);
+  }
+  assert.equal(jobs(rewrite(withOther)).ci.with?.["docs-files"], "README.md");
+});
+
+test("a caller that sets test-job itself keeps its value, so a repository can opt out", () => {
+  const optOut = `on: workflow_dispatch\njobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: false\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n`;
+  assert.equal(rewrite(optOut), optOut);
 });
 
 test("an existing renovate-sync caller keeps its ref, id and condition and only has its grants set", () => {
@@ -257,6 +280,7 @@ test("a renamed caller still gets a renovate-sync job and keeps its dependents",
   assert.deepEqual(parsed.ci.with, {
     "docs-files": "README.md",
     "renovate-sync": false,
+    "test-job": true,
   });
 });
 
