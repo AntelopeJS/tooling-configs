@@ -7,7 +7,7 @@ import { ago } from "./helpers/builders.ts";
 import { FakeApi } from "./helpers/fake-api.ts";
 import type { JsonValue } from "./json.ts";
 import { garden } from "./run.ts";
-import type { CheckResult } from "./types.ts";
+import { found, type CheckResult } from "./types.ts";
 
 const DAY_HOURS = 24;
 const REPO = "AntelopeJS/mongodb";
@@ -237,4 +237,26 @@ test("a refused deletion is reported and the remaining prunes still run", async 
       reason: `mongodb a-old: DELETE /repos/${REPO}/git/refs/heads/a-old: HTTP 422`,
     },
   ]);
+});
+
+test("a branch that gains an open PR after the scan is not deleted, because prunes are re-read before deleting", async () => {
+  const api = world([{ name: "feat", days: 40 }]);
+  const later = {
+    id: "later",
+    async run() {
+      open(api, [{ number: 30, head: "feat" }]);
+      return found([]);
+    },
+  };
+  const outcome = await garden(api, {
+    applyPauses: false,
+    applyPrunes: true,
+    checks: [staleBranches, later],
+  });
+  assert.deepEqual(
+    outcome.report.findings.map(({ subject }) => subject),
+    ["branches"],
+  );
+  assert.deepEqual(outcome.report.prunes, []);
+  assert.deepEqual(api.writes, []);
 });

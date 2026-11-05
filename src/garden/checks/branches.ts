@@ -18,8 +18,8 @@ interface BranchFacts {
   defaultBranch: string;
   /** Open pull requests of the repository, from any head. */
   open: readonly PullRequest[];
-  /** Closed and merged pull requests whose head is this branch of this repository. */
-  closed: readonly PullRequest[];
+  /** Closed and merged pull requests whose head is this branch of this repository, read only past the keep rules. */
+  closed: () => Promise<readonly PullRequest[]>;
   /** Tip commit time, read only when the earlier rules did not decide. */
   tipTime: () => Promise<number>;
   now: number;
@@ -45,7 +45,7 @@ async function classify(facts: BranchFacts): Promise<Verdict> {
   if (branch.name === defaultBranch || branch.name === "next")
     return { kind: "keep" };
   if (branch.protected || hasOpenPull(facts)) return { kind: "keep" };
-  const done = closed.find((pull) => pull.headSha === branch.sha);
+  const done = (await closed()).find((pull) => pull.headSha === branch.sha);
   if (done !== undefined)
     return {
       kind: "prune",
@@ -72,10 +72,7 @@ async function prunable(
       branch,
       defaultBranch: repo.defaultBranch,
       open,
-      closed:
-        branch.name === repo.defaultBranch || branch.name === "next"
-          ? []
-          : await context.closedPulls(repo, branch.name),
+      closed: () => context.closedPulls(repo, branch.name),
       tipTime: () => context.commitTime(repo, branch.sha),
       now,
       repo: repo.name,
@@ -111,20 +108,29 @@ export const staleBranches: Check = {
   },
 };
 
-/** The deletions behind each stale-branches finding; a repository whose read failed has no finding and is never pruned. */
+/** The deletions behind each stale-branches finding, re-read from the API given so a branch that gained an open PR or a commit since the scan is kept; a repository whose read failed is never pruned. */
 export async function plannedPrunes(
-  context: GardenContext,
+  api: GardenApi,
   findings: readonly Finding[],
-): Promise<Prune[]> {
+): Promise<{ prunes: Prune[]; failed: string[] }> {
+  const fresh = new GardenContext(api);
   const flagged = new Set(
     findings
       .filter((entry) => entry.check === CHECK)
       .map((entry) => entry.repo),
   );
   const prunes: Prune[] = [];
-  for (const repo of await context.scope())
-    if (flagged.has(repo.name)) prunes.push(...(await prunable(context, repo)));
-  return prunes;
+  const failed: string[] = [];
+  for (const repo of await fresh.scope())
+    if (flagged.has(repo.name))
+      await prunable(fresh, repo).then(
+        (found) => prunes.push(...found),
+        (error: unknown) =>
+          failed.push(
+            `${repo.name}: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+      );
+  return { prunes, failed };
 }
 
 function refPath(name: string): string {

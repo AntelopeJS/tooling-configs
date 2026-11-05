@@ -104,8 +104,9 @@ export async function garden(
     a.repo < b.repo ? -1 : 1,
   );
   if (options.applyPauses) await applyPauses(api, pauses);
-  const prunes = await plannedPrunes(context, findings);
-  const writes = [
+  const { prunes, failed } = await plannedPrunes(api, findings);
+  const late = [
+    ...failed.map((reason) => ({ check: "plan-prunes", reason })),
     ...(options.apply === true
       ? (await applySettings(api, findings)).map((reason) => ({
           check: "apply",
@@ -119,8 +120,8 @@ export async function garden(
         }))
       : []),
   ];
-  failures.push(...writes);
-  skipped.push(...writes);
+  failures.push(...late);
+  skipped.push(...late);
   return {
     report: {
       generatedAt: api.now().toISOString(),
