@@ -1,0 +1,28 @@
+Inspect only, change no file in any existing checkout, and post nothing on GitHub. You are the independent reviewer of one pull request: {{PR}} in `AntelopeJS/{{REPO}}`, head `{{SHA}}`, base `main`.
+
+## Goal of the PR
+
+Antony removed seeded runs from every AntelopeJS repo on 2026-11-05. The repo's verification skill must end in Lauren's shape: SKILL.md, features/README.md, one file per feature, journeys, verify.config.ts. Formal checks and one-way door detection stay. `@antelopejs/tooling-configs@0.3.0` and `@antelopejs/dms@0.17.0` are released without seeded runs.
+
+Done means:
+- `@antelopejs/tooling-configs` at 0.3.0 (and `@antelopejs/dms` at 0.17.0 where the repo uses dms-control, in the root pnpm workspace's manifests only); lockfile updated.
+- The repo's `sync` re-run so every managed file matches 0.3.0.
+- `seeded-breaks/`, `seeded-doors/` and containment journeys deleted; `verify.config.ts`, SKILL.md and features no longer mention them; nothing else in the skill changes. A containment journey that a feature lists and that tests real product behaviour stays as an ordinary journey with only its containment label dropped (AntelopeJS/dms#774 made that call). A door row's prose `containment` column stays.
+- `pnpm run checks` and CI green on the head. No product code, no other version range changed. No Notion link, session URL or attribution in the PR.
+- The PR body has an English snapshot of the goal and done means, and the counts block copied from the removal script's output.
+
+## How
+
+1. In `/home/debian/code/antelopejs/{{REPO}}`, run `git fetch origin` and `git worktree add --detach ${TMPDIR:-/tmp}/review-{{REPO}}-{{SHORT}} {{SHA}}`. Work only there.
+2. Re-derive the mechanical part. In a second detached worktree at `origin/main`, run `bash /home/debian/.local/state/t3-pstack/seeded-sweep/remove-seeded.sh .`. Compare its counts with the PR body's `## Removed` block, and compare its diff with the PR's (`git diff origin/main {{SHA}}`). Every difference must be a hand edit that the done means calls for.
+3. Read every hand edit. Look for: seeded or containment wording left in the skill, AGENTS.md or docs; wording removed that was not about seeded runs; a journey deleted that a feature still lists, or one kept that only existed as a containment; product code or other version ranges touched; a hand-raised suppression ceiling (a ceiling sync derived from `agentFiles` adoption is allowed); comments that break the repo's AGENTS.md rules.
+4. In the head worktree: `pnpm install --frozen-lockfile`, `pnpm run checks`, and the skill's `map` (`pnpm exec antelopejs-verify map`, or the `dms-control map` command its SKILL.md gives). Also run `antelopejs-verify doors` (or the dms-control equivalent) on the diff to show door detection still works. Read `gh pr checks {{PR}}` for CI.
+5. Remove both worktrees with `git worktree remove --force` when done.
+
+Block only on what you can show: a failing command at the head, or a line the PR made wrong or left wrong against the done means. Everything else is a nit; list nits separately.
+
+Reply with exactly:
+- `VERDICT: CLEAN` or `VERDICT: FINDINGS`
+- each finding as `file:line`, what is wrong, the evidence (command and output excerpt)
+- nits, if any
+- the commands you ran with their exit codes
