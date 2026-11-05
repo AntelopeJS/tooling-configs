@@ -23,8 +23,6 @@ export interface Verdict {
   reasons: string[];
 }
 
-const CONTAINED_KINDS = new Set(["data", "format"]);
-
 /** The GitHub `owner/repo` of the origin remote. */
 function originRepository(root: string): string {
   const url = git(root, ["remote", "get-url", "origin"]);
@@ -78,7 +76,6 @@ function journeyRows(
   const reasons: string[] = [];
   const notVerified: string[] = [];
   const outsideNotVerified: string[] = [];
-  const byJourney = new Map<string, JourneyResult>();
   for (const feature of plan.run) {
     const results = readResults(state, feature) ?? [];
     const registered = featureJourneys(workspace, feature) ?? [];
@@ -91,7 +88,6 @@ function journeyRows(
         reasons.push(
           `${feature}/${result.journey} is not a registered journey`,
         );
-      byJourney.set(`${feature}/${result.journey}`, result);
       if (result.status === "FAIL")
         reasons.push(`${feature}/${result.journey} failed`);
       if (result.status === "NOT VERIFIED")
@@ -113,30 +109,15 @@ function journeyRows(
         journeyRow(`${feature} (outside the diff's features)`, result, link),
       );
     }
-  return { rows, reasons, notVerified, outsideNotVerified, byJourney };
+  return { rows, reasons, notVerified, outsideNotVerified };
 }
 
 function doorReasons(
   workspace: Workspace,
   judgement: Judgement,
-  results: Map<string, JourneyResult>,
   plan: Plan,
 ): string[] {
   const reasons: string[] = [];
-  for (const row of judgement.doors.filter((door) =>
-    CONTAINED_KINDS.has(door.kind),
-  )) {
-    const allowed = workspace.config.doors[row.kind]?.containments ?? [];
-    const journey = results.get(row.containmentJourney);
-    if (!allowed.includes(row.containmentJourney))
-      reasons.push(
-        `${row.kind} door at ${row.location} names ${row.containmentJourney || "no journey"}; its containment must be one of ${allowed.join(", ") || "the kind's containments in verify.config.ts, which lists none"}`,
-      );
-    else if (journey?.status !== "PASS")
-      reasons.push(
-        `${row.kind} door at ${row.location}: containment journey ${row.containmentJourney} did not pass in this run`,
-      );
-  }
   for (const door of flaggedDoors(workspace, plan.changed))
     for (const file of door.files) {
       const listed = judgement.doors.some(
@@ -166,7 +147,7 @@ function doorsSection(judgement: Judgement): string[] {
     "|---|---|---|---|",
     ...judgement.doors.map(
       (door) =>
-        `| ${door.kind} | \`${door.location}\` | ${door.irreversible} | ${door.containment}${door.containmentJourney ? ` (journey \`${door.containmentJourney}\`)` : ""} |`,
+        `| ${door.kind} | \`${door.location}\` | ${door.irreversible} | ${door.containment} |`,
     ),
   ];
 }
@@ -264,7 +245,7 @@ export function renderVerdict(
     ...journeys.reasons,
     ...plan.unmapped.map((file) => `unmapped surface ${file}`),
     ...docsReasons(judgement, plan),
-    ...doorReasons(workspace, judgement, journeys.byJourney, plan),
+    ...doorReasons(workspace, judgement, plan),
     ...formal.reasons,
   );
   const notVerified = [

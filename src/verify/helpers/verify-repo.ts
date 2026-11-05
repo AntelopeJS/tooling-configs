@@ -21,7 +21,7 @@ export const PUBLISH_DOORS = `{
     contract: null,
     outbound: null,
     exposure: null,
-    publish: { globs: ["package.json"], funnels: [], containments: [], why: "the package name" },
+    publish: { globs: ["package.json"], funnels: [], why: "the package name" },
   }`;
 
 /** A module repository with an origin on GitHub, a synced verify-module skill and the given repo-owned files. */

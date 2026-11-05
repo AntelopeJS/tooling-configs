@@ -9,14 +9,12 @@ export type DoorKind =
   | "exposure"
   | "publish";
 
-/** Path rules for one door kind: the globs, the declared funnel modules and the journeys that contain it. */
+/** Path rules for one door kind: the globs and the declared funnel modules. */
 export interface DoorRule {
   /** Repository paths whose change opens a door of this kind, on top of the pack's defaults for the repo kind. */
   globs: string[];
   /** The only modules allowed to make this kind's calls (outbound clients, raw deletes); also path rules. */
   funnels: string[];
-  /** Journeys, as `feature/journey`, whose pass contains a Data or Format door of this kind. */
-  containments: string[];
   /** Why these paths are doors in this repository. */
   why: string;
 }
@@ -187,7 +185,7 @@ export interface JourneyContext {
    * Ends the journey as not verified, for example when provider sandbox keys
    * are missing or something the journey depends on outside the harness's
    * services and apps stopped answering. An environment failure is never a
-   * failing check: `seeded` counts only failing checks as catches.
+   * failing check.
    */
   notVerified(reason: string): never;
   service(name: string): ServiceEndpoint;

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +12,7 @@ import { skillText } from "./skills.ts";
 const SKILL = ".agents/skills/verify-module";
 
 const DOORS = `{
-    data: { globs: ["src/store/**"], funnels: ["src/store/delete.ts"], containments: ["core/own"], why: "rows" },
+    data: { globs: ["src/store/**"], funnels: ["src/store/delete.ts"], why: "rows" },
     format: null,
     contract: null,
     outbound: null,
@@ -32,10 +31,6 @@ function mapRepo(t: TestContext, extra: Record<string, string> = {}) {
     [`${SKILL}/verify.config.ts`]: `export default { doors: ${DOORS}, journeys: { own: { title: "", entryPoint: "", async run() {} } } };\n`,
     [`${SKILL}/features/smoke.md`]: feature([], ["module-dev"]),
     [`${SKILL}/features/core.md`]: feature(["src/**"], ["module-dev", "own"]),
-    [`${SKILL}/seeded-breaks/smoke.patch`]: "patch\n",
-    [`${SKILL}/seeded-breaks/core.patch`]: "patch\n",
-    [`${SKILL}/seeded-doors/data.patch`]:
-      "--- a/src/store/delete.ts\n+++ b/src/store/delete.ts\n",
     ...extra,
   });
   return { root, tmp };
@@ -51,8 +46,6 @@ test("map is silent on a complete map and names every gap of an incomplete one",
     `${SKILL}/features/core.md`,
     feature(["src/index.ts"], ["module-dev", "ghost"], ["docs/missing.md"]),
   );
-  rmSync(join(root, SKILL, "seeded-doors/data.patch"));
-  rmSync(join(root, SKILL, "seeded-breaks/core.patch"));
   commit(root);
   const gaps = verify(root, tmp, ["map"]);
   assert.equal(gaps.status, 1);
@@ -62,10 +55,7 @@ test("map is silent on a complete map and names every gap of an incomplete one",
       "unmapped: src/store/delete.ts matches no feature glob",
       ".agents/skills/verify-module/features/core.md: docs path docs/missing.md does not exist",
       ".agents/skills/verify-module/features/core.md: journey ghost is neither built in nor in verify.config.ts journeys",
-      ".agents/skills/verify-module/features/core.md: seeded-breaks/core.patch is missing",
-      "seeded-doors/data.patch is missing: the data door applies to this repository",
       "verify.config.ts journey own is in no feature file",
-      "doors.data containment core/own is not a journey a feature registers",
     ].sort(),
   );
 });
@@ -92,7 +82,7 @@ test("plan runs smoke plus every touched feature and fails on an unmapped user-f
   ]);
 });
 
-test("doors flags a declared funnel, adds no default glob for a kind set to null, and seeded-doors reports a patch it does not flag", (t) => {
+test("doors flags a declared funnel, adds no default glob for a kind set to null", (t) => {
   const { root, tmp } = mapRepo(t);
   put(root, "src/store/delete.ts", "export const drop = 2;\n");
   put(
@@ -106,18 +96,6 @@ test("doors flags a declared funnel, adds no default glob for a kind set to null
     doors.stdout,
     "One-way-door: data\n  data: src/store/delete.ts\n",
   );
-  assert.equal(
-    verify(root, tmp, ["seeded-doors"]).stdout,
-    "FLAGGED data (path rules flag: data)\n",
-  );
-  put(
-    root,
-    `${SKILL}/seeded-doors/data.patch`,
-    "--- a/README.md\n+++ b/README.md\n",
-  );
-  const missed = verify(root, tmp, ["seeded-doors"]);
-  assert.equal(missed.status, 1);
-  assert.equal(missed.stdout, "MISSED data (path rules flag: nothing)\n");
 });
 
 test("the bin names the missing repo-owned layer instead of running without it", (t) => {
@@ -145,7 +123,20 @@ test("every shell block of every shared skill is one antelopejs-verify command p
       new RegExp(`^---\\nname: verify-${kind}\\ndescription: "`),
     );
     const lines = commandBlocks(text).flat();
-    assert.ok(lines.length >= 10, `${kind} shows its commands`);
+    assert.deepEqual(
+      [...new Set(lines.map((line) => line.split(" ")[3]))].sort(),
+      [
+        "clean",
+        "doctor",
+        "journey",
+        "map",
+        "new",
+        "plan",
+        "publish",
+        "verdict",
+      ],
+      `${kind} shows its commands`,
+    );
     for (const line of lines)
       assert.match(
         line,
@@ -153,19 +144,4 @@ test("every shell block of every shared skill is one antelopejs-verify command p
         `${kind}: ${line}`,
       );
   }
-});
-
-test("seeded fails with the failing setup command and its output, and leaves no scratch worktree behind", (t) => {
-  const { root, tmp } = mapRepo(t);
-  const seeded = verify(root, tmp, ["seeded", "core"]);
-  assert.equal(seeded.status, 1);
-  assert.match(
-    seeded.stderr,
-    /^pnpm install --frozen-lockfile --prefer-offline --ignore-scripts exited 1 in .*\n[\s\S]*configured to use npm/,
-  );
-  const worktrees = execFileSync("git", ["worktree", "list", "--porcelain"], {
-    cwd: root,
-    encoding: "utf8",
-  });
-  assert.equal(worktrees.match(/^worktree /gm)?.length, 1, worktrees);
 });

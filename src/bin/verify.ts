@@ -5,7 +5,6 @@ import { parseArgs } from "node:util";
 
 import { runCliAsync } from "../guardrails/cli.ts";
 import { repositoryRoot } from "../guardrails/files.ts";
-import { runContainments } from "../verify/containments.ts";
 import { doorLine, flaggedDoors, patchFiles } from "../verify/doors.ts";
 import {
   formalGate,
@@ -23,7 +22,6 @@ import { clean, createRun, doctor } from "../verify/lifecycle.ts";
 import { checkMap, planFor } from "../verify/map.ts";
 import { postComment, pushEvidence, setStatus } from "../verify/publish.ts";
 import { knownJourneys, runFeature } from "../verify/runner.ts";
-import { checkSeededDoors, runSeededBreaks } from "../verify/seeded.ts";
 import { renderVerdict } from "../verify/verdict.ts";
 import { loadRun, openWorkspace, type Workspace } from "../verify/workspace.ts";
 
@@ -36,9 +34,6 @@ const USAGE = `Usage: antelopejs-verify <command>
   journey <run> <feature> [ids...]   run a feature's journeys and record evidence
   formal <run> [--all]               run the formal checks that cover the diff and gate them on changed behaviour
   doors [patch] [--base <ref>]       print the One-way-door line for a patch, or for the diff
-  seeded <feature...> [--base <ref>] run each feature unpatched and with its seeded break
-  seeded-doors                       check every seeded door is flagged with its kind
-  containments [--base <ref>]        check every Data and Format containment passes unpatched and fails with its seeded door
   clean <run>                        stop what the run started, keep only the evidence
   verdict <run> --pr <n>             render evidence/verdict.md from the results and evidence/judgement.json
   publish <run> --pr <n>             push the evidence to verify-evidence, comment the verdict, set status verify
@@ -127,74 +122,6 @@ function printDoors(workspace: Workspace, files: string[]): number {
   return 0;
 }
 
-function runSeeded(
-  workspace: Workspace,
-  features: string[],
-  baseRef: string,
-): number {
-  const results = runSeededBreaks(
-    workspace,
-    process.argv[1],
-    features,
-    baseRef,
-  );
-  for (const result of results) {
-    print(
-      `${result.outcome} ${result.feature} by ${result.caughtBy.join(", ") || "no journey"} (evidence ${result.run}/evidence/${result.feature}, control ${result.controlRun}/evidence/${result.feature})`,
-    );
-    if (result.failingInControl.length > 0)
-      print(
-        `    failing without the patch, not counted: ${result.failingInControl.join(", ")}`,
-      );
-    if (result.notVerified.control.length > 0)
-      print(
-        `    not verified without the patch, not counted: ${result.notVerified.control.join(", ")}`,
-      );
-    if (result.notVerified.seeded.length > 0)
-      print(
-        `    not verified with the patch, not counted: ${result.notVerified.seeded.join(", ")}`,
-      );
-    if (result.harnessErrors.length > 0)
-      print(
-        `    failed without a failing check (harness error), not counted: ${result.harnessErrors.join(", ")}`,
-      );
-    print(result.output.replace(/^/gm, "    "));
-  }
-  return results.every((result) => result.outcome === "CAUGHT") ? 0 : 1;
-}
-
-function runSeededDoors(workspace: Workspace): number {
-  const doors = checkSeededDoors(workspace);
-  for (const door of doors)
-    print(
-      `${door.flagged ? "FLAGGED" : "MISSED"} ${door.kind} (path rules flag: ${door.kinds.join(", ") || "nothing"})`,
-    );
-  return doors.every((door) => door.flagged) ? 0 : 1;
-}
-
-function runContainmentCheck(workspace: Workspace, baseRef: string): number {
-  const results = runContainments(workspace, process.argv[1], baseRef);
-  for (const result of results) {
-    print(
-      `${result.outcome} ${result.kind} ${result.containment}: ${result.detail}${result.run ? ` (evidence ${result.run}, control ${result.controlRun})` : ""}`,
-    );
-  }
-  return results.every((result) => result.outcome === "CONTAINED") ? 0 : 1;
-}
-
-const PROOF_COMMANDS = new Set(["seeded", "seeded-doors", "containments"]);
-
-function proofCommand(
-  workspace: Workspace,
-  command: string,
-  features: string[],
-  baseRef: string,
-): number {
-  if (command === "seeded") return runSeeded(workspace, features, baseRef);
-  if (command === "seeded-doors") return runSeededDoors(workspace);
-  return runContainmentCheck(workspace, baseRef);
-}
-
 function judge(
   workspace: Workspace,
   command: "verdict" | "publish",
@@ -262,8 +189,6 @@ async function main(argv: string[]): Promise<number> {
       workspace,
       rest[0] ? patchFiles(rest[0]) : planFor(workspace, values.base).changed,
     );
-  else if (PROOF_COMMANDS.has(command))
-    return proofCommand(workspace, command, rest, values.base);
   else if (command === "clean")
     for (const line of clean(loadRun(rest[0]))) print(line);
   else if (command === "verdict" || command === "publish")

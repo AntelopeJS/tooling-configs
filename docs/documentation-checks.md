@@ -341,7 +341,7 @@ Each failure names the file and, where it has one, the line.
 
 The style has one Vale rule per checked unslop rule (`Unslop07.yml` for rule 7), plus two rules that belong to the AntelopeJS standard and not to the skill: `Names.yml` requires `AntelopeJS` and `DMS` spelled that way, and `Procedure.yml` bans "simply", "easy", "easily", "quickly" and "please". Every rule is a warning, and `vale.ini` reports warnings and above. Vale skips code spans and fences. `vale.ini` also skips the YAML props block under an MDC component such as `::block-playground{...}`, from the component line to the closing `---`; the component's body prose is still checked.
 
-`actions/docs/vale.test.mjs` runs a Vale binary over a seeded sentence for each rule and over clean prose. `actions/docs/install-vale.sh <directory>` downloads the pinned Vale release, checks its SHA-256 and prints the binary path. The tests read it from `VALE_BIN`, or from `PATH`. They skip when Vale is missing, except in CI, where a missing Vale fails them.
+`actions/docs/vale.test.mjs` runs a Vale binary over a sentence that breaks each rule and over clean prose. `actions/docs/install-vale.sh <directory>` downloads the pinned Vale release, checks its SHA-256 and prints the binary path. The tests read it from `VALE_BIN`, or from `PATH`. They skip when Vale is missing, except in CI, where a missing Vale fails them.
 
 ## Capture screenshots
 

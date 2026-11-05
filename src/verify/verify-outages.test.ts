@@ -157,7 +157,7 @@ const JOURNEYS = `
       },
     },`;
 
-function config(dead: string, extra = ""): string {
+function config(dead: string): string {
   return `import { writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 const DEAD = ${JSON.stringify(dead)};
@@ -165,18 +165,14 @@ export default {
   doors: ${PUBLISH_DOORS},
   setup: [["node", "-e", "0"]],
   services: { cache: { image: "redis:7", port: 6379, ready: ["redis-cli", "ping"] } },
-  journeys: {${JOURNEYS}${extra}
+  journeys: {${JOURNEYS}
   },
 };
 `;
 }
 
 /** A module repository whose fake Docker reports a container gone once its name is a file in `dead`, and whose fake core serves PORT. */
-function outageRepo(
-  t: TestContext,
-  extra = "",
-  files: Record<string, string> = {},
-) {
+function outageRepo(t: TestContext) {
   const tmp = mkdtempSync(join(tmpdir(), "verify-outages-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   const dead = join(tmp, "dead");
@@ -186,7 +182,7 @@ function outageRepo(
     "package.json": '{"name":"demo","type":"module","version":"1.0.0"}\n',
     "pnpm-lock.yaml": LOCK,
     "src/store.ts": "export const store = 1;\n",
-    [`${SKILL}/verify.config.ts`]: config(dead, extra),
+    [`${SKILL}/verify.config.ts`]: config(dead),
     [`${SKILL}/features/smoke.md`]: feature([], ["service-up"]),
     [`${SKILL}/features/services.md`]: feature(
       ["src/**"],
@@ -205,7 +201,6 @@ function outageRepo(
         "transient-miss",
       ],
     ),
-    ...files,
   });
   put(
     root,
@@ -280,53 +275,4 @@ test("a product crash by SIGABRT, a product double bind and a logged EADDRINUSE 
   assert.equal(statuses["double-bind"], "FAIL");
   assert.equal(statuses.mention, "FAIL");
   assert.equal(statuses["transient-miss"], "FAIL");
-});
-
-const NOOP_PATCH = `--- /dev/null
-+++ b/src/outage.txt
-@@ -0,0 +1 @@
-+the patched run loses its service
-`;
-
-const BREAK_PATCH = `--- a/src/store.ts
-+++ b/src/store.ts
-@@ -1 +1 @@
--export const store = 1;
-+export const store = 2;
-`;
-
-const SEEDED_JOURNEYS = `
-    "reads": {
-      title: "reads the store while the service answers",
-      entryPoint: "redis-cli",
-      async run(context) {
-        if (existsSync(join(context.repo, "src/outage.txt"))) writeFileSync(join(DEAD, context.service("cache").container), "");
-        const answer = await context.native("ping", "cache", ["redis-cli", "ping"]);
-        const store = await context.command("read store", process.execPath, ["-e", "process.stdout.write(require('node:fs').readFileSync('src/store.ts', 'utf8'))"], { cwd: context.repo });
-        context.expect(store.folder, [
-          { name: "the native client answers", pass: answer.stdout.includes("pong"), detail: answer.stderr },
-          { name: "the store holds 1", pass: store.stdout.includes("store = 1"), detail: store.stdout },
-        ]);
-      },
-    },`;
-
-test("seeded counts a break caught only by a product check, and reports a run whose service went away as NOT VERIFIED", (t) => {
-  const { root, tmp, env } = outageRepo(t, SEEDED_JOURNEYS, {
-    [`${SKILL}/features/outage.md`]: feature(["src/**"], ["reads"]),
-    [`${SKILL}/features/store.md`]: feature(["src/**"], ["reads"]),
-    [`${SKILL}/seeded-breaks/outage.patch`]: NOOP_PATCH,
-    [`${SKILL}/seeded-breaks/store.patch`]: BREAK_PATCH,
-  });
-  const result = verify(root, tmp, ["seeded", "outage", "store"], env);
-  assert.equal(result.status, 1, result.stdout + result.stderr);
-  assert.match(
-    result.stdout,
-    /^NOT VERIFIED outage by no journey \(evidence /m,
-    result.stdout,
-  );
-  assert.match(
-    result.stdout,
-    /^ {4}not verified with the patch, not counted: reads \(the service cache no longer passes its readiness command: /m,
-  );
-  assert.match(result.stdout, /^CAUGHT store by reads \(evidence /m);
 });
