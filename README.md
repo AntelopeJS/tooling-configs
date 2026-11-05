@@ -56,6 +56,8 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 
 Every deterministic step of a verification is an `antelopejs-verify` command: `map`, `plan`, `new`, `doctor`, `journey`, `formal`, `doors`, `seeded`, `seeded-doors`, `clean`, `verdict` and `publish`. The synced `SKILL.md` documents each one for the agent that verifies.
 
+The verify skills drive a browser with `playwright-core`. [Browser driver for the verify skills](./docs/browser-driver.md) records why, with the measured speed, CPU and memory.
+
 ## Install
 
 Node.js 24, or at least 22.18: oxlint reads `oxlint.config.ts` and loads JS plugins by executing TypeScript.
