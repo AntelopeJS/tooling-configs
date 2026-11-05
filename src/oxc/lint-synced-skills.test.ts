@@ -124,6 +124,7 @@ function syncedConsumer() {
   const plan = planVerify(root, {
     flag: "interface",
     manifest: { antelopeJs: { kind: "interface" } },
+    profile: "full",
   });
   applyVerifyActions(root, plan.actions);
   write(".agents/skills/verify-interface/verify.config.ts", VERIFY_CONFIG);

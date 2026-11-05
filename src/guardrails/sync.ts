@@ -57,7 +57,10 @@ import {
 import { backendBoundaryArtifacts } from "./backend-boundary.ts";
 import { checkEntryOnlyConfiguration } from "./entry-only.ts";
 import { planDocs, type DocsPlan } from "./docs-compat.ts";
-import { planDocsSkills } from "./docs-skills.ts";
+import {
+  inScaffoldExcludedPath,
+  planWritingSkills,
+} from "./template-agent-layer.ts";
 import {
   applyVerifyActions,
   planVerify,
@@ -390,7 +393,10 @@ function repositoryContext(
         : "",
     packageName: manifest.name ?? "",
     managesCi: current.has(CI_PATH) || !hasChecksWorkflow(root),
-    verificationSkill,
+    verificationSkill:
+      profile === "template" && inScaffoldExcludedPath(verificationSkill)
+        ? undefined
+        : verificationSkill,
     glossary: ["GLOSSARY.md", "docs/GLOSSARY.md"].find((file) =>
       existsSync(join(root, file)),
     ),
@@ -428,21 +434,11 @@ function repositoryNotices(root: string, context: RepoContext): string[] {
   return notices;
 }
 
-/** The writing skills belong to the agent layer, which the template profile syncs only in the template source. */
-function planWritingSkills(
-  root: string,
-  profile: AgentsBlockContext["profile"],
-  kind: ReturnType<typeof planVerify>["kind"],
-): ReturnType<typeof planDocsSkills> {
-  if (profile === "template" && kind !== "template")
-    return { actions: [], errors: [] };
-  return planDocsSkills(root);
-}
-
 /**
  * Measures debt only on first adoption, before sync has written the sync:check script; retired repositories stay retired.
  * Under the template profile the agent layer, `verify-template` and the writing skills, is synced only in the template source,
- * marked by `.agents/skills/verify-template/SKILL.md` or chosen with `--verify template`, because a scaffold ships without it.
+ * marked by `.agents/skills/verify-template/SKILL.md` or chosen with `--verify template`, because a scaffold ships without it,
+ * and the AGENTS.md block, which a scaffold keeps, links no skill under it.
  */
 export function syncRepository(
   root: string,
@@ -455,7 +451,11 @@ export function syncRepository(
   const profile = options.profile ?? "full";
   const { current, modes } = repositorySnapshot(root);
   const manifest = parseManifest(current.get("package.json") ?? "{}");
-  const verify = planVerify(root, { flag: options.verify, manifest });
+  const verify = planVerify(root, {
+    flag: options.verify,
+    manifest,
+    profile,
+  });
   const writing = planWritingSkills(root, profile, verify.kind);
   const actions = [...verify.actions, ...writing.actions];
   const context = repositoryContext(

@@ -21,6 +21,7 @@ import {
   type VerifyKind,
 } from "../verify/kinds.ts";
 import { syncedFiles } from "../verify/skills.ts";
+import type { AgentsBlockContext } from "./agents-block.ts";
 import type { Manifest } from "./package.ts";
 
 /** What `--verify` accepts: a shared kind, or `custom` for a repository that owns its verification skill. */
@@ -40,7 +41,7 @@ export type VerifyAction =
 /** The resolved verification kind and the changes that bring the synced layer in line with it. */
 export interface VerifyPlan {
   kind: VerifyChoice | undefined;
-  /** The skill AGENTS.md points at, relative to the repository root; never `verify-template`, which scaffolds do not get while they keep AGENTS.md. */
+  /** The skill AGENTS.md points at, relative to the repository root. */
   verificationSkill: string | undefined;
   actions: VerifyAction[];
   errors: string[];
@@ -92,6 +93,7 @@ function resolveKind(
   root: string,
   flag: VerifyChoice | undefined,
   manifest: Manifest,
+  profile: AgentsBlockContext["profile"],
 ): VerifyResolution {
   const errors: string[] = [];
   if (flag === "custom" && ownVerificationSkill(root) === undefined)
@@ -112,6 +114,7 @@ function resolveKind(
   if (synced.length === 1) return { kind: synced[0], errors };
   if (ownVerificationSkill(root) !== undefined)
     return { kind: "custom", errors };
+  if (profile === "template") return { kind: undefined, errors };
   return { kind: inferKind(manifest), errors };
 }
 
@@ -185,13 +188,23 @@ function planStaleKinds(
 
 /**
  * Resolves the repository's verification kind and plans the synced layer; the repo-owned files are never touched.
- * The template kind is never inferred: only the template source keeps `verify-template`, and a project scaffolded from it has none.
+ * The template profile infers no kind: a shared skill lives under `.agents`, which a project scaffolded from the template does not get,
+ * so it is synced only where it already exists, as `verify-template` does in the template source, or where `--verify` asks for it.
  */
 export function planVerify(
   root: string,
-  options: { flag: VerifyChoice | undefined; manifest: Manifest },
+  options: {
+    flag: VerifyChoice | undefined;
+    manifest: Manifest;
+    profile: AgentsBlockContext["profile"];
+  },
 ): VerifyPlan {
-  const { kind, errors } = resolveKind(root, options.flag, options.manifest);
+  const { kind, errors } = resolveKind(
+    root,
+    options.flag,
+    options.manifest,
+    options.profile,
+  );
   const shared = kind !== undefined && kind !== "custom" ? kind : undefined;
   const wanted = shared
     ? planSharedKind(root, shared)
@@ -202,12 +215,7 @@ export function planVerify(
       : planStaleKinds(root, shared);
   return {
     kind,
-    verificationSkill:
-      shared === "template"
-        ? undefined
-        : shared
-          ? skillPath(shared)
-          : ownVerificationSkill(root),
+    verificationSkill: shared ? skillPath(shared) : ownVerificationSkill(root),
     actions: [...wanted.actions, ...stale.actions],
     errors: [...errors, ...wanted.errors],
     notes: stale.notes,
