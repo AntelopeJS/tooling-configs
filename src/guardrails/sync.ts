@@ -57,7 +57,10 @@ import {
 import { backendBoundaryArtifacts } from "./backend-boundary.ts";
 import { checkEntryOnlyConfiguration } from "./entry-only.ts";
 import { planDocs, type DocsPlan } from "./docs-compat.ts";
-import { planDocsSkills } from "./docs-skills.ts";
+import {
+  inScaffoldExcludedPath,
+  planWritingSkills,
+} from "./template-agent-layer.ts";
 import {
   applyVerifyActions,
   planVerify,
@@ -390,7 +393,10 @@ function repositoryContext(
         : "",
     packageName: manifest.name ?? "",
     managesCi: current.has(CI_PATH) || !hasChecksWorkflow(root),
-    verificationSkill,
+    verificationSkill:
+      profile === "template" && inScaffoldExcludedPath(verificationSkill)
+        ? undefined
+        : verificationSkill,
     glossary: ["GLOSSARY.md", "docs/GLOSSARY.md"].find((file) =>
       existsSync(join(root, file)),
     ),
@@ -428,7 +434,12 @@ function repositoryNotices(root: string, context: RepoContext): string[] {
   return notices;
 }
 
-/** Measures debt only on first adoption, before sync has written the sync:check script; retired repositories stay retired. */
+/**
+ * Measures debt only on first adoption, before sync has written the sync:check script; retired repositories stay retired.
+ * Under the template profile the agent layer, `verify-template` and the writing skills, is synced only in the template source,
+ * marked by its `.agents/skills/verify-template` folder or chosen with `--verify template`, because a scaffold ships without it,
+ * and the AGENTS.md block, which a scaffold keeps, links no skill under it.
+ */
 export function syncRepository(
   root: string,
   options: {
@@ -445,7 +456,7 @@ export function syncRepository(
     manifest,
     profile,
   });
-  const writing = planDocsSkills(root);
+  const writing = planWritingSkills(root, profile, verify.kind);
   const actions = [...verify.actions, ...writing.actions];
   const context = repositoryContext(
     root,

@@ -11,7 +11,7 @@ import {
 } from "../verify/kinds.ts";
 import { skillText, syncedFiles } from "../verify/skills.ts";
 import type { Manifest } from "./package.ts";
-import { bin, put, read, testRepo } from "./helpers/test-repo.ts";
+import { bin, linkOxlint, put, read, testRepo } from "./helpers/test-repo.ts";
 
 const TEMPLATE = ["--profile", "template"];
 const IN_SYNC = "Guardrails are in sync.\n";
@@ -234,16 +234,17 @@ test("--verify custom fails without an own skill and keeps a shared layer, which
   assert.match(check.stderr, /verify-<repo>/);
 });
 
-test("the template profile infers the template kind", (t) => {
+test("--verify template writes the template agent layer, which AGENTS.md leaves unnamed because scaffolds keep AGENTS.md without it", (t) => {
   const root = testRepo(t);
-  const result = bin(root, "sync", TEMPLATE);
+  const result = bin(root, "sync", [...TEMPLATE, "--verify", "template"]);
   assert.equal(result.status, 0, result.stderr);
-  assert.doesNotMatch(result.stdout, /No verification skill/);
   assert.equal(read(root, skillPath("template")), skillText("template"));
   assert.equal(
     read(root, `${claudeLink("template")}/SKILL.md`),
     skillText("template"),
   );
+  assert.equal(existsSync(join(root, ".agents/skills/unslop/SKILL.md")), true);
+  assert.doesNotMatch(read(root, "AGENTS.md"), /verify-template/);
 });
 
 test("antelopeJs.implements infers module and antelopeJs.kind wins over it", (t) => {
@@ -288,17 +289,14 @@ test("without a signal sync writes nothing and stays quiet, whatever the package
   assert.equal(check.stdout, IN_SYNC);
 });
 
-test("an own verification skill beats the template profile and the package kind, and sync writes no shared layer", (t) => {
+test("an own verification skill beats the package kind under the template profile, sync writes no shared layer, and AGENTS.md leaves the skill a scaffold lacks unlinked", (t) => {
   const root = testRepo(t);
   withPackage(root, { antelopeJs: { kind: "module" } });
   put(root, OWN_SKILL, "Own verification skill.\n");
   const result = bin(root, "sync", TEMPLATE);
   assert.equal(result.status, 0, result.stderr);
   for (const kind of VERIFY_KINDS) assert.equal(hasLayer(root, kind), false);
-  assert.match(
-    read(root, "AGENTS.md"),
-    /\.agents\/skills\/verify-repo\/SKILL\.md/,
-  );
+  assert.doesNotMatch(read(root, "AGENTS.md"), /verify-repo/);
   const check = bin(root, "sync", [...TEMPLATE, "--check"]);
   assert.equal(check.status, 0, check.stderr);
   assert.equal(check.stdout, IN_SYNC);
@@ -367,13 +365,20 @@ test("a real file or folder at the link path is an error and nothing is written"
   }
 });
 
-test("the AGENTS.md block names the shared skill on the first sync", (t) => {
-  const root = syncedRepo(t, "module");
+test("the AGENTS.md block names the shared skill on the first full sync", (t) => {
+  const root = testRepo(t);
+  linkOxlint(root);
+  put(
+    root,
+    "oxlint.config.ts",
+    'import type {} from "@antelopejs/tooling-configs/oxc/lint";\nexport default {};\n',
+  );
+  assert.equal(bin(root, "sync", ["--verify", "module"]).status, 0);
   assert.match(
     read(root, "AGENTS.md"),
     /\[`\.agents\/skills\/verify-module\/SKILL\.md`\]\(\.agents\/skills\/verify-module\/SKILL\.md\)/,
   );
-  const check = bin(root, "sync", [...TEMPLATE, "--check"]);
+  const check = bin(root, "sync", ["--check"]);
   assert.equal(check.status, 0, check.stderr);
   assert.equal(check.stdout, IN_SYNC);
 });

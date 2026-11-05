@@ -75,11 +75,7 @@ function ownVerificationSkill(root: string): string | undefined {
   return undefined;
 }
 
-function inferKind(
-  manifest: Manifest,
-  profile: AgentsBlockContext["profile"],
-): VerifyKind | undefined {
-  if (profile === "template") return "template";
+function inferKind(manifest: Manifest): VerifyKind | undefined {
   const declared = manifest.antelopeJs;
   if (declared?.kind === "interface" || declared?.kind === "module")
     return declared.kind;
@@ -118,7 +114,14 @@ function resolveKind(
   if (synced.length === 1) return { kind: synced[0], errors };
   if (ownVerificationSkill(root) !== undefined)
     return { kind: "custom", errors };
-  return { kind: inferKind(manifest, profile), errors };
+  if (profile === "template")
+    return {
+      kind: existsSync(join(root, skillFolder("template")))
+        ? "template"
+        : undefined,
+      errors,
+    };
+  return { kind: inferKind(manifest), errors };
 }
 
 function readIfPresent(root: string, path: string): string | undefined {
@@ -189,7 +192,11 @@ function planStaleKinds(
   return { actions, notes };
 }
 
-/** Resolves the repository's verification kind and plans the synced layer; the repo-owned files are never touched. */
+/**
+ * Resolves the repository's verification kind and plans the synced layer; the repo-owned files are never touched.
+ * The template profile infers no kind: a shared skill lives under `.agents`, which a project scaffolded from the template does not get,
+ * so it is synced only where it already exists, as `verify-template` does in the template source, or where `--verify` asks for it.
+ */
 export function planVerify(
   root: string,
   options: {
