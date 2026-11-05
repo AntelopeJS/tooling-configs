@@ -44,7 +44,10 @@ function fakeDockerPath(t: TestContext): string {
     [
       "#!/bin/sh",
       'echo "docker $*" >> "$CALLS_LOG"',
-      'case "$*" in *" up "*) exit "${FAKE_UP_EXIT:-0}";; esac',
+      'case "$*" in',
+      '  *" ps "*) printf "%s" "${FAKE_PS_OUTPUT:-}";;',
+      '  *" up "*) [ -n "${FAKE_UP_SLEEP:-}" ] && sleep "$FAKE_UP_SLEEP"; exit "${FAKE_UP_EXIT:-0}";;',
+      "esac",
       "",
     ].join("\n"),
   );
@@ -86,6 +89,7 @@ test("checks start the compose services before the steps and remove them after",
   assert.equal(result.stdout, "Checks: 8 passed, 0 failed.\n");
   assert.deepEqual(logLines(root), [
     "docker compose -f .github/compose.yml version",
+    "docker compose -f .github/compose.yml ps --all --quiet",
     "docker compose -f .github/compose.yml up -d --wait",
     "step test",
     "docker compose -f .github/compose.yml down -v",
@@ -143,15 +147,23 @@ test("checks without a compose file never call Docker", (t) => {
   assert.deepEqual(logLines(root), ["step test"]);
 });
 
+function pathWithoutDocker(t: TestContext): string {
+  const directory = mkdtempSync(join(tmpdir(), "antelope-no-docker-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  for (const tool of ["git", "sh", "npm"])
+    symlinkSync(
+      execFileSync("sh", ["-c", `command -v ${tool}`], {
+        encoding: "utf8",
+      }).trim(),
+      join(directory, tool),
+    );
+  symlinkSync(process.execPath, join(directory, "node"));
+  return directory;
+}
+
 test("checks fail at once, naming the compose file, when Docker is missing", (t) => {
   const root = servicesRepo(t, UNREACHABLE_COMPOSE);
-  const gitOnly = mkdtempSync(join(tmpdir(), "antelope-no-docker-"));
-  t.after(() => rmSync(gitOnly, { recursive: true, force: true }));
-  symlinkSync(
-    execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim(),
-    join(gitOnly, "git"),
-  );
-  const result = bin(root, "checks", [], { PATH: gitOnly });
+  const result = bin(root, "checks", [], { PATH: pathWithoutDocker(t) });
   assert.equal(result.status, 1);
   assert.match(
     result.stdout,
@@ -160,6 +172,57 @@ test("checks fail at once, naming the compose file, when Docker is missing", (t)
   assert.match(result.stdout, /--no-services/);
   assert.match(result.stdout, /Checks: 0 passed, 1 failed\./);
   assert.deepEqual(logLines(root), []);
+});
+
+test("checks skipping the test step neither need nor start the services", (t) => {
+  const root = servicesRepo(t, UNREACHABLE_COMPOSE);
+  const result = bin(root, "checks", [], {
+    PATH: pathWithoutDocker(t),
+    ANTELOPEJS_CHECKS_SKIP: "test",
+  });
+  assert.equal(result.status, 0, result.stdout);
+  assert.equal(result.stdout, "Checks: 7 passed, 0 failed, 1 skipped.\n");
+});
+
+test("checks keep a stack whose containers existed before the run", (t) => {
+  const root = servicesRepo(t, UNREACHABLE_COMPOSE);
+  const result = bin(
+    root,
+    "checks",
+    [],
+    dockerEnv(t, root, { FAKE_PS_OUTPUT: "f00d\n" }),
+  );
+  assert.equal(result.status, 0, result.stdout);
+  assert.ok(logLines(root).includes("step test"));
+  assert.ok(
+    !logLines(root).includes("docker compose -f .github/compose.yml down -v"),
+  );
+});
+
+test("an interrupt while the services start stops compose at once and removes them", async (t) => {
+  const root = servicesRepo(t, UNREACHABLE_COMPOSE);
+  const begun = Date.now();
+  const result = await runBin(
+    root,
+    [],
+    dockerEnv(t, root, { FAKE_UP_SLEEP: "30" }),
+    (child) => {
+      const timer = setInterval(() => {
+        if (!logLines(root).some((line) => line.endsWith("up -d --wait")))
+          return;
+        clearInterval(timer);
+        child.kill("SIGTERM");
+      }, 50);
+    },
+  );
+  assert.equal(result.status, 143, result.stdout);
+  assert.ok(Date.now() - begun < 15000, "stopped before compose finished");
+  assert.match(result.stdout, /Checks interrupted by SIGTERM\./);
+  assert.ok(!logLines(root).includes("step test"));
+  assert.equal(
+    logLines(root).at(-1),
+    "docker compose -f .github/compose.yml down -v",
+  );
 });
 
 test("checks leave services alone when every published port already answers", async (t) => {

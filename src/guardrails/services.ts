@@ -1,10 +1,10 @@
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { isMap, isScalar, isSeq, parseDocument } from "yaml";
 
 import { accepting } from "../lease/ports.ts";
+import { runCommand } from "./run-command.ts";
 
 /** The compose file the shared CI starts through its `services-compose-file` input, relative to the repository root. */
 const COMPOSE_FILE = ".github/compose.yml";
@@ -47,27 +47,25 @@ export function publishedPorts(text: string): number[] | undefined {
   return ports;
 }
 
-function compose(root: string, args: string[]) {
-  return spawnSync("docker", ["compose", "-f", COMPOSE_FILE, ...args], {
-    cwd: root,
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-  });
-}
-
-function failureText(
+async function compose(
+  root: string,
   args: string[],
-  result: ReturnType<typeof compose>,
-): string {
-  const outcome = result.error
-    ? result.error.message
-    : `exited with ${result.signal ?? `status ${result.status}`}`;
-  return `${result.stdout ?? ""}${result.stderr ?? ""}docker compose -f ${COMPOSE_FILE} ${args.join(" ")}: ${outcome}\n`;
-}
-
-function composeFailure(root: string, args: string[]): string {
-  const result = compose(root, args);
-  return result.status === 0 ? "" : failureText(args, result);
+  signal?: AbortSignal,
+): Promise<{ failure: string; output: string }> {
+  const result = await runCommand(
+    "docker",
+    ["compose", "-f", COMPOSE_FILE, ...args],
+    { cwd: root, signal },
+  );
+  if (result.status === 0) return { failure: "", output: result.output };
+  const outcome =
+    result.status === null
+      ? "did not finish"
+      : `exited with status ${result.status}`;
+  return {
+    failure: `${result.output}docker compose -f ${COMPOSE_FILE} ${args.join(" ")}: ${outcome}\n`,
+    output: result.output,
+  };
 }
 
 /**
@@ -80,20 +78,31 @@ export async function planServices(root: string): Promise<ServicesPlan> {
   const ports = publishedPorts(readFileSync(join(root, COMPOSE_FILE), "utf8"));
   if (ports && (await Promise.all(ports.map(accepting))).every(Boolean))
     return { kind: "none" };
-  const probe = composeFailure(root, ["version"]);
-  if (!probe) return { kind: "start" };
+  const probe = await compose(root, ["version"]);
+  if (!probe.failure) return { kind: "start" };
   return {
     kind: "unavailable",
-    output: `Docker Compose is not available, so the services in ${COMPOSE_FILE} cannot start and the tests that need them would hang. Start Docker, start the services yourself, or pass --no-services.\n${probe}`,
+    output: `Docker Compose is not available, so the services in ${COMPOSE_FILE} cannot start and the tests that need them would hang. Start Docker, start the services yourself, or pass --no-services.\n${probe.failure}`,
   };
 }
 
-/** Runs `docker compose up -d --wait` on the compose file; returns the failure output, empty on success. */
-export function startServices(root: string): string {
-  return composeFailure(root, ["up", "-d", "--wait"]);
+/**
+ * Runs `docker compose up -d --wait` on the compose file, stopping it when `signal` aborts. `failure` is empty on
+ * success; `owned` is true when the project had no container before, so the run may remove it afterwards without
+ * taking a stack the developer started.
+ */
+export async function startServices(
+  root: string,
+  signal?: AbortSignal,
+): Promise<{ failure: string; owned: boolean }> {
+  const before = await compose(root, ["ps", "--all", "--quiet"], signal);
+  if (before.failure) return { failure: before.failure, owned: false };
+  const owned = before.output.trim() === "";
+  const up = await compose(root, ["up", "-d", "--wait"], signal);
+  return { failure: up.failure, owned };
 }
 
 /** Runs `docker compose down -v` on the compose file; returns the failure output, empty on success. */
-export function stopServices(root: string): string {
-  return composeFailure(root, ["down", "-v"]);
+export async function stopServices(root: string): Promise<string> {
+  return (await compose(root, ["down", "-v"])).failure;
 }
