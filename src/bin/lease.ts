@@ -2,11 +2,12 @@
 import { parseArgs } from "node:util";
 
 import { runCliAsync } from "../guardrails/cli.ts";
-import { run, status, statusTable } from "../lease/commands.ts";
+import { down, gc, run, status, statusTable } from "../lease/commands.ts";
 import { isServerRole } from "../lease/env.ts";
 
 const USAGE =
-  "usage: antelopejs-lease run [--as api|web] -- <command...> | status [--json]";
+  "usage: antelopejs-lease run [--as api|web] -- <command...> | status [--json] | down [--force] | gc [--idle <days>]";
+const DEFAULT_IDLE_DAYS = 14;
 
 function usage(problem: string): Error {
   return new Error(`antelopejs-lease: ${problem}\n${USAGE}`);
@@ -32,6 +33,25 @@ async function statusVerb(args: string[]): Promise<number> {
   return 0;
 }
 
+async function downVerb(args: string[]): Promise<number> {
+  const { values } = parseArgs({
+    args,
+    options: { force: { type: "boolean" } },
+  });
+  await down(process.env, values.force === true);
+  return 0;
+}
+
+async function gcVerb(args: string[]): Promise<number> {
+  const { values } = parseArgs({ args, options: { idle: { type: "string" } } });
+  const days =
+    values.idle === undefined ? DEFAULT_IDLE_DAYS : Number(values.idle);
+  if (!Number.isFinite(days) || days < 0)
+    throw usage(`--idle takes a number of days, not ${values.idle}`);
+  await gc(process.env, days);
+  return 0;
+}
+
 await runCliAsync(async () => {
   const argv = process.argv.slice(2);
   const split = argv.indexOf("--");
@@ -40,6 +60,8 @@ await runCliAsync(async () => {
   if (verb === "run") return runVerb(args, command);
   if (command.length > 0) throw usage(`${verb} takes no command`);
   if (verb === "status") return statusVerb(args);
+  if (verb === "down") return downVerb(args);
+  if (verb === "gc") return gcVerb(args);
   throw usage(
     verb === undefined ? "missing command" : `unknown command ${verb}`,
   );

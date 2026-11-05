@@ -98,6 +98,36 @@ test("a deleted worktree whose api port still listens stays reserved as orphaned
   assert.deepEqual(await statusRows(root, env), []);
 });
 
+test("down refuses while the api port listens and tears the lease down once forced (fails when down deletes data under running servers)", async (t) => {
+  const root = scratch(t);
+  const worktree = gitInit(join(root, "w"));
+  const env = externalEnv(join(root, ".home"));
+  const printed = await leasedEnv(worktree, env);
+  const dir = String(printed.ANTELOPEJS_LEASE_DIR);
+  await listen(t, Number(printed.DMS_BACK_PORT));
+  const refused = await lease(["down"], worktree, env);
+  assert.equal(refused.code, 1);
+  assert.equal(existsSync(dir), true);
+  const forced = await lease(["down", "--force"], worktree, env);
+  assert.equal(forced.code, 0, forced.stderr);
+  assert.equal(existsSync(dir), false);
+});
+
+test("gc removes a crash leftover at once and an idle lease only past --idle (fails when gc skips leftovers or ignores the idle age)", async (t) => {
+  const root = scratch(t);
+  const home = join(root, ".home");
+  const worktree = gitInit(join(root, "w"));
+  const env = externalEnv(home);
+  const printed = await leasedEnv(worktree, env);
+  const leftover = join(home, "0123456789");
+  mkdirSync(leftover);
+  assert.equal((await lease(["gc"], root, env)).code, 0);
+  assert.equal(existsSync(leftover), false);
+  assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), true);
+  assert.equal((await lease(["gc", "--idle", "0"], root, env)).code, 0);
+  assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), false);
+});
+
 test("status prints nothing when no lease exists (fails when it prints a bare header)", async (t) => {
   const root = scratch(t);
   const outcome = await lease(["status"], root, externalEnv(join(root, "h")));

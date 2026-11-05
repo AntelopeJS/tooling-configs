@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import type { Lease } from "./env.ts";
-import { stopMongod, type MongodPaths } from "./mongo.ts";
+import { mongodPid, stopMongod, type MongodPaths } from "./mongo.ts";
 import {
   accepting,
   bindable,
@@ -69,7 +69,7 @@ export interface LeaseFacts {
 }
 
 /** One lease directory and what it held when read. */
-interface Entry {
+export interface Entry {
   readonly id: LeaseId;
   readonly dir: string;
   readonly parsed: ParsedRecord | undefined;
@@ -79,6 +79,14 @@ interface Entry {
 export interface Observed {
   readonly entry: Entry;
   readonly state: LeaseState;
+}
+
+/** Which leases a sweep removes beside stale ones. */
+export interface SweepPolicy {
+  /** Remove directories with no record. Safe only under the lock, where no claim is in progress. */
+  readonly leftovers: boolean;
+  /** Remove live leases with no mongod and no listening port, untouched since this epoch time. */
+  readonly idleBefore?: number;
 }
 
 function staleReason(
@@ -169,7 +177,7 @@ function readParsed(dir: string): ParsedRecord | undefined {
 }
 
 /** Every lease directory under `home`. */
-function readEntries(home: string): Entry[] {
+export function readEntries(home: string): Entry[] {
   let names: string[];
   try {
     names = readdirSync(home);
@@ -204,17 +212,40 @@ async function observe(entry: Entry): Promise<Observed> {
 }
 
 /** Kills the lease's mongod, then deletes its directory. Call under the lock. */
-async function removeLease(dir: string): Promise<void> {
+export async function removeLease(dir: string): Promise<void> {
   await stopMongod(mongodPaths(dir).dbpath, 0);
   rmSync(dir, { recursive: true, force: true });
 }
 
-/** Removes stale leases and returns the others, observed. Call under the lock. */
-export async function sweep(home: string): Promise<Observed[]> {
+async function quiet(record: LeaseRecord, dir: string): Promise<boolean> {
+  if (mongodPid(mongodPaths(dir).dbpath) !== undefined) return false;
+  for (const port of Object.values(record.ports))
+    if (await accepting(port)) return false;
+  return true;
+}
+
+async function removable(
+  observed: Observed,
+  policy: SweepPolicy,
+): Promise<boolean> {
+  const { entry, state } = observed;
+  if (state.kind === "stale") return true;
+  if (state.kind === "claiming") return policy.leftovers;
+  if (state.kind !== "live" || policy.idleBefore === undefined) return false;
+  if (entry.parsed?.kind !== "current") return false;
+  if (statSync(entry.dir).mtimeMs >= policy.idleBefore) return false;
+  return quiet(entry.parsed.record, entry.dir);
+}
+
+/** Removes the leases `policy` allows and returns the others, observed. Call under the lock. */
+export async function sweep(
+  home: string,
+  policy: SweepPolicy,
+): Promise<Observed[]> {
   const kept: Observed[] = [];
   for (const entry of readEntries(home)) {
     const observed = await observe(entry);
-    if (observed.state.kind === "stale") await removeLease(entry.dir);
+    if (await removable(observed, policy)) await removeLease(entry.dir);
     else kept.push(observed);
   }
   return kept;
@@ -228,7 +259,7 @@ function writeRecord(dir: string, record: LeaseRecord): void {
 }
 
 /** The error for a lease directory whose record this version cannot read. */
-function foreignRecord(dir: string): Error {
+export function foreignRecord(dir: string): Error {
   return new Error(
     `antelopejs-lease: ${join(dir, RECORD_FILE)} was written by another antelopejs-lease version; run that version, or remove the directory once nothing uses it`,
   );
@@ -273,7 +304,7 @@ export function openLease(
   mongo: MongoMode,
 ): Promise<Lease> {
   return withRegistryLock(async () => {
-    const kept = await sweep(home);
+    const kept = await sweep(home, { leftovers: false });
     const own = kept.find(
       (observed) =>
         observed.entry.id === worktree.id && observed.state.kind !== "claiming",

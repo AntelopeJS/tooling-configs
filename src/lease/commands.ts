@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { constants } from "node:os";
 
 import { leaseEnv, type ServerRole } from "./env.ts";
-import { ensureMongod, mongodPid } from "./mongo.ts";
+import { ensureMongod, mongodPid, stopMongod } from "./mongo.ts";
 import { accepting, listenerPids } from "./ports.ts";
 import {
   isRole,
@@ -12,15 +12,20 @@ import {
   type Role,
 } from "./protocol.ts";
 import {
+  foreignRecord,
   locateWorktree,
   mongodPaths,
   openLease,
+  readEntries,
+  removeLease,
   sweep,
   withRegistryLock,
   type LeaseState,
   type Observed,
 } from "./registry.ts";
 
+const DOWN_GRACE_MS = 10_000;
+const DAY_MS = 86_400_000;
 const FORWARDED: readonly NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 const ROLES = Object.keys(PORT_ROLES).filter(isRole);
 
@@ -120,7 +125,7 @@ async function report(observed: Observed): Promise<LeaseReport> {
 /** Every lease on the machine after sweeping stale ones. */
 export async function status(env: NodeJS.ProcessEnv): Promise<LeaseReport[]> {
   const home = leaseHome(env);
-  const kept = await withRegistryLock(() => sweep(home));
+  const kept = await withRegistryLock(() => sweep(home, { leftovers: false }));
   return Promise.all(kept.map(report));
 }
 
@@ -156,4 +161,47 @@ export function statusTable(rows: readonly LeaseReport[]): string {
     )
     .map((line) => `${line}\n`)
     .join("");
+}
+
+/**
+ * Tears down this worktree's lease: stops its mongod and deletes its data, logs and tmp. Refuses
+ * while its api or web port accepts, unless `force`. Does nothing when there is no lease.
+ */
+export async function down(
+  env: NodeJS.ProcessEnv,
+  force: boolean,
+): Promise<void> {
+  const worktree = locateWorktree(process.cwd());
+  const entry = readEntries(leaseHome(env)).find(
+    (candidate) => candidate.id === worktree.id,
+  );
+  if (entry === undefined) return;
+  if (entry.parsed?.kind === "foreign") throw foreignRecord(entry.dir);
+  const ports =
+    entry.parsed?.kind === "current" ? entry.parsed.record.ports : undefined;
+  if (ports !== undefined && !force) {
+    const busy = [];
+    for (const port of [ports.api, ports.web])
+      if (await accepting(port)) busy.push(port);
+    if (busy.length > 0)
+      throw new Error(
+        `antelopejs-lease: port ${busy.join(" and ")} of this lease still listens; stop the servers first (for dms-dev.sh: antelopejs-lease run -- bash <path to dms-dev.sh> stop), or pass --force`,
+      );
+  }
+  await stopMongod(mongodPaths(entry.dir).dbpath, DOWN_GRACE_MS);
+  await withRegistryLock(() => removeLease(entry.dir));
+}
+
+/**
+ * Removes every lease left behind machine-wide: stale leases, directories with no record, and
+ * leases with no mongod and no listening port that no `run` touched for `idleDays`.
+ */
+export async function gc(
+  env: NodeJS.ProcessEnv,
+  idleDays: number,
+): Promise<void> {
+  const idleBefore = Date.now() - idleDays * DAY_MS;
+  await withRegistryLock(() =>
+    sweep(leaseHome(env), { leftovers: true, idleBefore }),
+  );
 }

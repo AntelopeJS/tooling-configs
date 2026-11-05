@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
   envFor,
   gitInit,
+  lease,
   leasedEnv,
   scratch,
   statusRows,
@@ -24,7 +26,7 @@ function alive(pid: number): boolean {
 }
 
 test(
-  "run starts one mongod per lease and reuses it on the next run (fails when run skips mongod or restarts it on every run)",
+  "run starts one mongod per lease and reuses it, and down stops it and deletes the lease (fails when run skips mongod or restarts it on every run, or down leaves it running or its data behind)",
   {
     skip:
       binary === undefined &&
@@ -46,5 +48,10 @@ test(
     await leasedEnv(worktree, env);
     const [again] = await statusRows(worktree, env);
     assert.equal(again?.mongod, pid);
+    const outcome = await lease(["down"], worktree, env);
+    assert.equal(outcome.code, 0, outcome.stderr);
+    assert.equal(alive(pid), false);
+    assert.equal(await accepting(port), false);
+    assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), false);
   },
 );

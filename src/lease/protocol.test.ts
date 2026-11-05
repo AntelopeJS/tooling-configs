@@ -47,7 +47,7 @@ test("a v1 lease.json written by any version, with fields this one does not know
   assert.equal(printed.DMS_INSPECT_PORT, "29004");
 });
 
-test("a record of an unknown version keeps its ports and survives the sweep of status (fails when an older version deletes or reuses a newer version's lease)", async (t) => {
+test("a record of an unknown version keeps its ports and survives gc (fails when an older version deletes or reuses a newer version's lease)", async (t) => {
   const root = scratch(t);
   const home = join(root, ".home");
   const worktree = gitInit(join(root, "w"));
@@ -59,7 +59,7 @@ test("a record of an unknown version keeps its ports and survives the sweep of s
     JSON.stringify({ version: 2, ports: { api: first, web: first + 1 } }),
   );
   const env = externalEnv(home);
-  assert.equal((await lease(["status"], root, env)).code, 0);
+  assert.equal((await lease(["gc", "--idle", "0"], root, env)).code, 0);
   assert.equal(existsSync(join(foreign, "lease.json")), true);
   const api = Number((await leasedEnv(worktree, env)).DMS_BACK_PORT);
   assert.ok(
