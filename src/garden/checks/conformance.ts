@@ -9,8 +9,9 @@ import {
   ciNodeCallers,
   ciRenovateSyncCallers,
 } from "../../guardrails/workflow.ts";
+import type { GardenApi } from "../api.ts";
 import { perRepo, type Check } from "../check.ts";
-import { GardenContext, type GardenRepo } from "../context.ts";
+import { GardenContext, ORG, type GardenRepo } from "../context.ts";
 import { tooling } from "../npm.ts";
 import { finding, found, type CheckResult, type Finding } from "../types.ts";
 
@@ -224,6 +225,36 @@ async function cleanRatchet(
   ];
 }
 
+const BRANCH_CLEANUP = "delete-branch-on-merge";
+
+async function branchCleanup(
+  context: GardenContext,
+  repo: GardenRepo,
+): Promise<Finding[]> {
+  return (await context.deletesBranchOnMerge(repo))
+    ? []
+    : [
+        problem(
+          repo,
+          BRANCH_CLEANUP,
+          "delete_branch_on_merge is off, so merged head branches stay behind.",
+          "delete_branch_on_merge is on; antelopejs-garden --apply turns it on.",
+        ),
+      ];
+}
+
+/** Turns `delete_branch_on_merge` on for each repository a finding reports it off on, and writes nothing else. */
+export async function applySettings(
+  api: GardenApi,
+  findings: readonly Finding[],
+): Promise<void> {
+  for (const entry of findings)
+    if (entry.check === CHECK && entry.subject === BRANCH_CLEANUP)
+      await api.send("PATCH", `/repos/${ORG}/${entry.repo}`, {
+        delete_branch_on_merge: true,
+      });
+}
+
 async function scan(
   context: GardenContext,
   repo: GardenRepo,
@@ -234,6 +265,7 @@ async function scan(
     ...(await toolingVersion(context, repo)),
     ...(await checksStatus(context, repo)),
     ...(await cleanRatchet(context, repo)),
+    ...(await branchCleanup(context, repo)),
   ];
 }
 

@@ -2,6 +2,7 @@ import {
   child,
   children,
   flag,
+  isObject,
   list,
   num,
   object,
@@ -44,6 +45,20 @@ export interface PullRequest {
   author: string;
   createdAt: number;
   url: string;
+  /** Branch name the pull request merges from. */
+  head: string;
+  /** `owner/name` of the repository holding the head branch; undefined once a fork is deleted. */
+  headRepo: string | undefined;
+  headSha: string;
+  /** Branch name the pull request merges into. */
+  base: string;
+  merged: boolean;
+}
+
+export interface Branch {
+  name: string;
+  protected: boolean;
+  sha: string;
 }
 
 export interface Alert {
@@ -109,12 +124,27 @@ export function checkRuns(value: JsonValue): CheckRun[] {
 
 export function pullRequest(value: JsonValue): PullRequest {
   const source = object(value, "pull request");
+  const head = child(source, "head");
   return {
     number: num(source, "number"),
     title: str(source, "title"),
     author: optStr(child(source, "user"), "login") ?? "",
     createdAt: time(source, "created_at"),
     url: str(source, "html_url"),
+    head: optStr(head, "ref") ?? "",
+    headRepo: isObject(head.repo) ? optStr(head.repo, "full_name") : undefined,
+    headSha: optStr(head, "sha") ?? "",
+    base: optStr(child(source, "base"), "ref") ?? "",
+    merged: optStr(source, "merged_at") !== undefined,
+  };
+}
+
+export function branch(value: JsonValue): Branch {
+  const source = object(value, "branch");
+  return {
+    name: str(source, "name"),
+    protected: flag(source, "protected"),
+    sha: str(child(source, "commit"), "sha"),
   };
 }
 

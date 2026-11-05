@@ -16,7 +16,7 @@ export const NOW = new Date("2026-10-28T20:00:00Z");
 export interface WriteCall {
   method: WriteMethod;
   path: string;
-  body: JsonValue;
+  body?: JsonValue;
 }
 
 export interface RepoSpec {
@@ -167,9 +167,11 @@ export class FakeApi implements GardenApi {
   async send(
     method: WriteMethod,
     path: string,
-    body: JsonValue,
+    body?: JsonValue,
   ): Promise<void> {
-    this.writes.push({ method, path, body });
+    this.writes.push(
+      body === undefined ? { method, path } : { method, path, body },
+    );
   }
 
   async npm(name: string): Promise<JsonValue | undefined> {

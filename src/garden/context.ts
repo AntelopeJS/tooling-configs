@@ -2,6 +2,7 @@ import { ApiError, type GardenApi } from "./api.ts";
 import {
   alert,
   artifacts,
+  branch,
   checkRuns,
   logins,
   orgRepo,
@@ -10,6 +11,7 @@ import {
   workflowRun,
   type Alert,
   type Artifact,
+  type Branch,
   type CheckRun,
   type OrgRepo,
   type PackageJson,
@@ -17,11 +19,14 @@ import {
   type WorkflowRun,
 } from "./decode.ts";
 import {
+  child,
   children,
+  flag,
   list,
   object,
   optStr,
   str,
+  time,
   type JsonObject,
   type JsonValue,
 } from "./json.ts";
@@ -122,6 +127,10 @@ export class GardenContext {
   private readonly packuments = new Memo<JsonValue | undefined>();
   private readonly removals = new Memo<boolean>();
   private readonly searches = new Memo<Set<string>>();
+  private readonly branchLists = new Memo<Branch[]>();
+  private readonly closed = new Memo<PullRequest[]>();
+  private readonly commitTimes = new Memo<number>();
+  private readonly cleanups = new Memo<boolean>();
 
   constructor(api: GardenApi) {
     this.api = api;
@@ -269,6 +278,55 @@ export class GardenContext {
         pullRequest,
       ),
     );
+  }
+
+  /** Every branch of the repository, protected ones flagged. */
+  branchList(repo: GardenRepo): Promise<Branch[]> {
+    return this.branchLists.get(repo.name, async () =>
+      (await this.api.pages(`/repos/${ORG}/${repo.name}/branches`)).map(branch),
+    );
+  }
+
+  /** Closed and merged pull requests whose head is the branch of this repository, not a fork's namesake. */
+  closedPulls(repo: GardenRepo, name: string): Promise<PullRequest[]> {
+    return this.closed.get(`${repo.name}:${name}`, async () =>
+      (
+        await this.api.pages(
+          `/repos/${ORG}/${repo.name}/pulls?state=closed&head=${ORG}:${encodeURIComponent(name)}`,
+        )
+      )
+        .map(pullRequest)
+        .filter(
+          (pull) =>
+            pull.head === name && pull.headRepo === `${ORG}/${repo.name}`,
+        ),
+    );
+  }
+
+  /** When the commit was committed, in milliseconds. */
+  commitTime(repo: GardenRepo, sha: string): Promise<number> {
+    return this.commitTimes.get(`${repo.name}:${sha}`, async () => {
+      const body = object(
+        await this.api.json(`/repos/${ORG}/${repo.name}/commits/${sha}`),
+        "commit",
+      );
+      return time(child(child(body, "commit"), "committer"), "date");
+    });
+  }
+
+  /** Whether GitHub deletes a pull request's head branch once it merges. */
+  deletesBranchOnMerge(repo: GardenRepo): Promise<boolean> {
+    return this.cleanups.get(repo.name, async () => {
+      const body = object(
+        await this.api.json(`/repos/${ORG}/${repo.name}`),
+        "repository",
+      );
+      if (!Object.hasOwn(body, "delete_branch_on_merge"))
+        throw new Error(
+          "delete_branch_on_merge is not readable; the token needs admin access",
+        );
+      return flag(body, "delete_branch_on_merge");
+    });
   }
 
   /** Open alerts, or undefined when Dependabot alerts are disabled for the repository. */

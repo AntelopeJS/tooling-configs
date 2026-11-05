@@ -2,7 +2,12 @@ import type { GardenApi } from "./api.ts";
 import { aiApps, orbSecrets } from "./checks/apps.ts";
 import { linkRot, mutation } from "./checks/artifacts.ts";
 import { ciDuration, redBranch } from "./checks/ci-health.ts";
-import { conformance } from "./checks/conformance.ts";
+import {
+  applyPrunes,
+  plannedPrunes,
+  staleBranches,
+} from "./checks/branches.ts";
+import { applySettings, conformance } from "./checks/conformance.ts";
 import {
   governanceDrift,
   nextGovernance,
@@ -41,6 +46,7 @@ const CHECKS: readonly Check[] = [
   webBuild,
   linkRot,
   captureScenes,
+  staleBranches,
 ];
 
 export interface Outcome {
@@ -53,10 +59,19 @@ function compare(a: { key: string }, b: { key: string }): number {
   return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
 }
 
-/** Runs every check, plans the pauses and applies them only when asked. */
+export interface GardenOptions {
+  applyPauses: boolean;
+  /** Turns `delete_branch_on_merge` on where conformance reports it off. */
+  apply?: boolean;
+  /** Deletes the branches the stale-branches check lists. */
+  applyPrunes?: boolean;
+  checks?: readonly Check[];
+}
+
+/** Runs every check, plans the pauses and prunes, and applies each only when asked. */
 export async function garden(
   api: GardenApi,
-  options: { applyPauses: boolean; checks?: readonly Check[] },
+  options: GardenOptions,
 ): Promise<Outcome> {
   const context = new GardenContext(api);
   const found: Finding[] = [];
@@ -84,11 +99,15 @@ export async function garden(
     a.repo < b.repo ? -1 : 1,
   );
   if (options.applyPauses) await applyPauses(api, pauses);
+  const prunes = await plannedPrunes(context, findings);
+  if (options.apply === true) await applySettings(api, findings);
+  if (options.applyPrunes === true) await applyPrunes(api, prunes);
   return {
     report: {
       generatedAt: api.now().toISOString(),
       findings,
       pauses,
+      prunes,
       skipped: skipped.sort((a, b) => (a.check < b.check ? -1 : 1)),
     },
     failures,
