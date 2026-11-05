@@ -91,3 +91,18 @@ test("without ANTELOPEJS_LEASE_HOME the registry is ~/.antelopejs/leases (fails 
     true,
   );
 });
+
+test("a relative ANTELOPEJS_LEASE_HOME is refused before any lease opens (fails when the value resolves against each cwd, which splits the registry by subdirectory and hands commands a relative TMPDIR)", async (t) => {
+  const root = scratch(t);
+  const worktree = gitInit(join(root, "w"));
+  const env = envFor("rel", { DMS_MONGO_URL: "mongodb://127.0.0.1:1" });
+  for (const args of [["run", "--", "true"], ["status"], ["down"], ["gc"]]) {
+    const outcome = await lease(args, worktree, env);
+    assert.equal(outcome.code, 1, args.join(" "));
+    assert.match(
+      outcome.stderr,
+      /ANTELOPEJS_LEASE_HOME must be an absolute path, not rel/u,
+    );
+  }
+  assert.equal(existsSync(join(worktree, "rel")), false);
+});

@@ -96,7 +96,7 @@ Run each command from inside your worktree. Each step is one shell command, and 
 
 To use a Mongo server you run yourself, set `DMS_MONGO_URL` before `run`. `run` then starts no mongod, and `MONGO_DATABASE` still gives each worktree its own database on that server. A mongod the lease started before keeps running for the servers that still use it, and `status` shows its pid. `down` stops it.
 
-The lease directory is `~/.antelopejs/leases/<lease id>/`. It holds `lease.json`, the mongod data in `mongo/`, the logs in `logs/` with `mongod.log` beside the two server logs, `tmp/`, and `runs/` with one empty file per `run`, named by its pid, that `gc` reads to keep the lease of a running command. The tests set `ANTELOPEJS_LEASE_HOME` to move the whole registry.
+The lease directory is `~/.antelopejs/leases/<lease id>/`. It holds `lease.json`, the mongod data in `mongo/`, the logs in `logs/` with `mongod.log` beside the two server logs, `tmp/`, and `runs/` with one empty file per `run`, named by its pid, that `gc` reads to keep the lease of a running command. The tests set `ANTELOPEJS_LEASE_HOME` to an absolute path to move the whole registry.
 
 ## Why the ports sit between 20010 and 29999
 
@@ -136,4 +136,5 @@ A lock on 127.0.0.1:20000 keeps two callers from choosing at the same moment. A 
 | `mongod <pid> was still running 2 s after SIGKILL`                 | Check the process with `ps -p <pid>`. Retry once it is gone.                                                                                                                                                                                                |
 | `port <port> of this lease still listens`                          | Stop the servers with `dms-dev.sh stop` through `run --`, as in step 5. Then rerun `down`. To tear down anyway, pass `--force`.                                                                                                                             |
 | `cannot run <command>`                                             | The command after `--` was not found. Check its name and your `PATH`.                                                                                                                                                                                       |
+| `ANTELOPEJS_LEASE_HOME must be an absolute path`                   | Set it to an absolute path, or unset it to use `~/.antelopejs/leases`.                                                                                                                                                                                      |
 | Any message followed by a `usage:` line                            | Fix the arguments. The `usage:` line lists the valid forms.                                                                                                                                                                                                 |

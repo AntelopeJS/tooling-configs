@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import {
   child,
@@ -74,9 +74,19 @@ export type ParsedRecord =
   | { readonly kind: "current"; readonly record: LeaseRecord }
   | { readonly kind: "foreign"; readonly reserved: readonly number[] };
 
-/** `ANTELOPEJS_LEASE_HOME`, else `~/.antelopejs/leases`: one registry for every repository of the user. */
+/**
+ * `ANTELOPEJS_LEASE_HOME`, else `~/.antelopejs/leases`: one registry for every repository of the
+ * user. A relative `ANTELOPEJS_LEASE_HOME` throws, since each working directory would resolve it to
+ * another registry.
+ */
 export function leaseHome(env: NodeJS.ProcessEnv): string {
-  return env.ANTELOPEJS_LEASE_HOME || join(homedir(), ".antelopejs", "leases");
+  const home = env.ANTELOPEJS_LEASE_HOME;
+  if (!home) return join(homedir(), ".antelopejs", "leases");
+  if (!isAbsolute(home))
+    throw new Error(
+      `antelopejs-lease: ANTELOPEJS_LEASE_HOME must be an absolute path, not ${home}`,
+    );
+  return home;
 }
 
 export function isLeaseId(value: string): value is LeaseId {
