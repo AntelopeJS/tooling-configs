@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.3.0
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.19...v0.3.0)
+
+### 🚀 Enhancements
+
+- **verify:** ⚠️  Remove the seeded, seeded-doors and containments commands ([#176](https://github.com/AntelopeJS/tooling-configs/pull/176))
+
+### 🩹 Fixes
+
+- **garden:** Stop requiring a verify-gate check ([#175](https://github.com/AntelopeJS/tooling-configs/pull/175))
+
+### 🤖 CI
+
+- **release:** Accept an exact release version ([#177](https://github.com/AntelopeJS/tooling-configs/pull/177))
+
+#### ⚠️ Breaking Changes
+
+- **verify:** ⚠️  Remove the seeded, seeded-doors and containments commands ([#176](https://github.com/AntelopeJS/tooling-configs/pull/176))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.2.19
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.18...v0.2.19)
