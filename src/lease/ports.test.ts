@@ -9,7 +9,7 @@ import {
   claimPort,
   closeServer,
 } from "./ports.ts";
-import { leaseId } from "./protocol.ts";
+import { leaseId, type LeaseId } from "./protocol.ts";
 
 const KERNEL_EPHEMERAL_START = 32768;
 const DENIED = [24678, 27017, 27018, 27019];
@@ -76,8 +76,26 @@ test("a foreign listener on a non-api port of the first candidate block moves th
   );
 });
 
-test("the first candidate block depends on the user id, so two users' worktrees at one path start on different blocks (fails when the first block comes from the lease id alone, and two registries hand out the same unbound block)", () => {
-  const id = leaseId("/srv/shared/dms");
-  const firsts = [0, 501, 1000, 1001].map((uid) => candidateBases(id, uid)[0]);
-  assert.equal(new Set(firsts).size, firsts.length, `got ${firsts.join(", ")}`);
+/** The largest number of the uids 0 to 999 that share a first block with the uid `offset` above them, over every offset from 1 to 1000, and that offset. */
+function worstUidOffset(id: LeaseId): { offset: number; shared: number } {
+  const firsts = Array.from(
+    { length: 2000 },
+    (_, uid) => candidateBases(id, uid)[0],
+  );
+  let worst = { offset: 0, shared: 0 };
+  for (let offset = 1; offset <= 1000; offset += 1) {
+    const shared = firsts
+      .slice(0, 1000)
+      .filter((first, uid) => first === firsts[uid + offset]).length;
+    if (shared > worst.shared) worst = { offset, shared };
+  }
+  return worst;
+}
+
+test("the first candidate block comes from the lease id and the user id together, so no distance between two uids makes their users share it at one path more than 1 time in 100 (fails when the first block comes from the lease id alone, or from the id's hash plus the uid, which wraps so that uids 999 apart always share it)", () => {
+  const worst = worstUidOffset(leaseId("/srv/shared/dms"));
+  assert.ok(
+    worst.shared <= 10,
+    `${worst.shared} of 1000 uid pairs ${worst.offset} apart share a first block`,
+  );
 });
