@@ -65,7 +65,7 @@ The spread over the 7 rounds of the second run, as min to max wall time in milli
 | B2       | n/a         | 1704 to 3087      | n/a            | 777 to 1359    |
 | C        | 408 to 1073 | 1445 to 3191      | 613 to 1797    | 2839 to 6145   |
 
-The two runs differ in absolute time. Cores 8 to 15 were about 37% busy during the first run and about 94% busy during the second, because the machine is shared. Absolute times drift by 1.3 to 2 times between the runs. The ratios between variants held. The cold-start ratio against `pw-chrome157` moved the most, from 3.4 to 2.1, because short Playwright runs react most to a busy machine. Its direction did not change.
+The two runs differ in absolute time. Cores 8 to 15 were about 37% busy during the first run and about 94% busy during the second, because the machine is shared. Absolute times drift by 1.2 to 2.2 times between the runs. The ratios between variants held. The cold-start ratio against `pw-chrome157` moved the most, from 3.4 to 2.1, because short Playwright runs react most to a busy machine. Its direction did not change.
 
 | Ratio of medians, agent-browser to Playwright  | Run 1 | Run 2 |
 | ---------------------------------------------- | ----- | ----- |
@@ -77,7 +77,7 @@ The two runs differ in absolute time. Cores 8 to 15 were about 37% busy during t
 
 ## Why Playwright
 
-**Cold start.** A verify run starts a fresh browser. Playwright on its headless shell takes 532 ms and 711 ms of CPU. agent-browser takes 1792 ms and 1768 ms. With no driver at all, Chrome 157 needs 667 ms to launch, load the page and exit, so most of the gap comes from the browser agent-browser launches. Its Chrome runs 17 processes, against 11 for Playwright on the same Chrome. Two launch-flag attempts, `--no-startup-window` and `--disable-extensions`, did not shorten it. The cause of the extra second is not isolated.
+**Cold start.** A verify run starts a fresh browser. Playwright on its headless shell takes 532 ms and 711 ms of CPU. agent-browser takes 1792 ms and 1768 ms. With no driver at all, Chrome 157 needs 667 ms to launch, load the page and exit, so most of the gap comes from the browser agent-browser launches. Its Chrome runs 17 processes, against 11 for Playwright on the same Chrome. Two launch-flag attempts, `--no-startup-window` and `--disable-extensions`, shortened it by 4 to 7% in the second run, inside overlapping spreads, and not at all in a later rerun. The cause of the extra second is not isolated.
 
 **Memory.** An idle resident browser holds 228 MiB PSS in 7 processes under Playwright and 405 MiB in 17 under agent-browser. Part of that is the browser, because agent-browser ships full Chrome and Playwright a headless shell. With the same Chrome 157, Playwright is still lower, at 389 MiB against 498 MiB PSS in scenario B.
 
@@ -93,7 +93,7 @@ A command on a running browser takes 4.5 ms and 3.6 ms of CPU under agent-browse
 
 The cause is how `dms-control` calls Playwright, not Playwright. Each action starts a Node process that makes one HTTP request to the resident server. The benchmark's client costs 58 to 94 ms per action for that, before any browser work. agent-browser is a native binary that talks to its daemon over a Unix socket. The same 20 steps in one Playwright script, launch and close included, take 954 to 1702 ms (`pw-shell`).
 
-The verify skill speed-up work can remove that cost with a thinner path from the agent to the resident server. Two options are several actions per request, or a client that is not Node. Either is cheaper than adding a second driver. Two limits on this number apply. The benchmark client is thinner than the real one, so the real per-action cost is at least what was measured. And `perform()` writes a full-page screenshot after every action. A full-page screenshot of the 200-row page takes 236 to 344 ms on every variant, so real sessions are dominated by screenshots and the driver gap shrinks.
+The verify skill speed-up work can remove that cost with a thinner path from the agent to the resident server. Two options are several actions per request, or a client that is not Node. Either is cheaper than adding a second driver. Two limits on this number apply. The benchmark client is thinner than the real one, so the real per-action cost is at least what was measured. And `perform()` writes a full-page screenshot after every action. A full-page screenshot of the 200-row page takes 357 to 498 ms on every variant in the second run, so real sessions are dominated by screenshots and the driver gap shrinks.
 
 ## When to revisit
 
