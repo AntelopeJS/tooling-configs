@@ -23,10 +23,15 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    env:
+      SHARD_RULES: |
+        ^src/guardrails/api-diff(-(runtime|test-entries)|\.test)|^src/verify/
+        ^src/guardrails/api-diff-(added|errors|compiler|order|resolution)|^src/formal/
+        ^src/guardrails/(api-diff-(exports|au)|staged-ratchet|sync-safety|verify-skill)|^src/oxc/
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -35,7 +40,23 @@ jobs:
           node-version: "24"
           cache: pnpm
       - run: pnpm install
-      - run: node --test --test-shard=${{ matrix.shard }}/3 "src/**/*.test.ts"
+      - env:
+          SHARD: ${{ matrix.shard }}
+          TOTAL: ${{ strategy.job-total }}
+        run: |
+          files=$(find src -name '*.test.ts' | sort | awk -v shard="$SHARD" -v total="$TOTAL" '
+            BEGIN {
+              n = split(ENVIRON["SHARD_RULES"], rule, "\n")
+              if (rule[n] == "") n--
+              if (n != total - 1) { print "SHARD_RULES has " n " rules for " total " shards" > "/dev/stderr"; exit 1 }
+            }
+            {
+              owner = total
+              for (i = 1; i <= n; i++) if ($0 ~ rule[i]) { owner = i; break }
+              if (owner == shard) print
+            }')
+          test -n "$files" || { echo "shard $SHARD runs no test file" >&2; exit 1; }
+          node --test $files
 
   checks:
     if: always()
