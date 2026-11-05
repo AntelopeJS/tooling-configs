@@ -2,9 +2,10 @@ import { type ChildProcess, spawn } from "node:child_process";
 
 const KILL_GRACE_MS = 5000;
 
-/** How a command ended: its exit status (`null` when a signal or a spawn error ended it) and its combined output. */
+/** How a command ended: its exit status (`null` when a signal or a spawn error ended it), its stdout, and stdout and stderr combined. */
 export interface CommandResult {
   status: number | null;
+  stdout: string;
   output: string;
 }
 
@@ -37,7 +38,11 @@ export function runCommand(
       stdio: ["ignore", "pipe", "pipe"],
     });
     const chunks: Buffer[] = [];
-    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    const stdout: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => {
+      chunks.push(chunk);
+      stdout.push(chunk);
+    });
     child.stderr.on("data", (chunk: Buffer) => chunks.push(chunk));
     const interrupt = () => {
       stopGroup(child, "SIGTERM");
@@ -47,13 +52,14 @@ export function runCommand(
     else signal?.addEventListener("abort", interrupt, { once: true });
     child.once("error", (error) => {
       signal?.removeEventListener("abort", interrupt);
-      resolve({ status: null, output: `${error.message}\n` });
+      resolve({ status: null, stdout: "", output: `${error.message}\n` });
     });
     child.once("close", (code, killed) => {
       signal?.removeEventListener("abort", interrupt);
       const text = Buffer.concat(chunks).toString("utf8");
       resolve({
         status: code,
+        stdout: Buffer.concat(stdout).toString("utf8"),
         output: `${text}${killed ? `Terminated by ${killed}\n` : ""}`,
       });
     });

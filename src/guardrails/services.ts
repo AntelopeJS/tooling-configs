@@ -49,43 +49,47 @@ export function publishedPorts(text: string): number[] | undefined {
 }
 
 /**
- * The compose project of a run: `COMPOSE_PROJECT_NAME` when set, else one derived from the repository root. Compose
- * would otherwise name every repository's project `github` after the compose file's directory, so a run could adopt
- * or remove another checkout's containers.
+ * The environment compose runs in. A project named by `COMPOSE_PROJECT_NAME` or by the compose file's own `name:` is
+ * kept; otherwise the project is named after the repository root, since compose would name every repository's project
+ * `github` after the compose file's directory and a run could adopt or remove another checkout's containers.
  */
-function projectName(root: string): string {
-  const fromEnv = process.env.COMPOSE_PROJECT_NAME;
-  if (fromEnv) return fromEnv;
+function composeEnv(root: string): NodeJS.ProcessEnv {
+  if (process.env.COMPOSE_PROJECT_NAME) return process.env;
+  if (parseDocument(readFileSync(join(root, COMPOSE_FILE), "utf8")).has("name"))
+    return process.env;
   const slug = basename(root)
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^[^a-z0-9]+/, "");
   const digest = createHash("sha256").update(root).digest("hex").slice(0, 8);
-  return `${slug || "repo"}-${digest}`;
+  return {
+    ...process.env,
+    COMPOSE_PROJECT_NAME: `${slug || "repo"}-${digest}`,
+  };
 }
 
 async function compose(
   root: string,
   args: string[],
   signal?: AbortSignal,
-): Promise<{ failure: string; output: string }> {
+): Promise<{ failure: string; stdout: string }> {
   const result = await runCommand(
     "docker",
     ["compose", "-f", COMPOSE_FILE, ...args],
     {
       cwd: root,
-      env: { ...process.env, COMPOSE_PROJECT_NAME: projectName(root) },
+      env: composeEnv(root),
       signal,
     },
   );
-  if (result.status === 0) return { failure: "", output: result.output };
+  if (result.status === 0) return { failure: "", stdout: result.stdout };
   const outcome =
     result.status === null
       ? "did not finish"
       : `exited with status ${result.status}`;
   return {
     failure: `${result.output}docker compose -f ${COMPOSE_FILE} ${args.join(" ")}: ${outcome}\n`,
-    output: result.output,
+    stdout: result.stdout,
   };
 }
 
@@ -118,7 +122,7 @@ export async function startServices(
 ): Promise<{ failure: string; owned: boolean }> {
   const before = await compose(root, ["ps", "--all", "--quiet"], signal);
   if (before.failure) return { failure: before.failure, owned: false };
-  const owned = before.output.trim() === "";
+  const owned = before.stdout.trim() === "";
   const up = await compose(root, ["up", "-d", "--wait"], signal);
   return { failure: up.failure, owned };
 }

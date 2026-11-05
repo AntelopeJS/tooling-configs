@@ -45,7 +45,7 @@ function fakeDockerPath(t: TestContext): string {
       "#!/bin/sh",
       'echo "docker $*" >> "$CALLS_LOG"',
       'case "$*" in',
-      '  *" ps "*) printf "%s" "${FAKE_PS_OUTPUT:-}";;',
+      '  *" ps "*) echo "compose warning" >&2; printf "%s" "${FAKE_PS_OUTPUT:-}";;',
       '  *" up "*) [ -n "${FAKE_UP_SLEEP:-}" ] && sleep "$FAKE_UP_SLEEP"; exit "${FAKE_UP_EXIT:-0}";;',
       "esac",
       "",
@@ -287,6 +287,22 @@ test("compose runs under a project named after the repository, not the shared .g
   assert.match(
     [...projects][0] ?? "",
     /^project antelope-guardrails-[a-z0-9_-]+-[0-9a-f]{8}$/,
+  );
+});
+
+test("a compose file's own project name is kept", (t) => {
+  const root = servicesRepo(t, `name: mine\n${UNREACHABLE_COMPOSE}`);
+  const env = dockerEnv(t, root);
+  put(
+    env.PATH.split(delimiter)[0] ?? "",
+    "docker",
+    '#!/bin/sh\necho "project ${COMPOSE_PROJECT_NAME:-from-file}" >> "$CALLS_LOG"\n',
+  );
+  const result = bin(root, "checks", [], { ...env, COMPOSE_PROJECT_NAME: "" });
+  assert.equal(result.status, 0, result.stdout);
+  assert.deepEqual(
+    [...new Set(logLines(root).filter((line) => line.startsWith("project ")))],
+    ["project from-file"],
   );
 });
 
