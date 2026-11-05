@@ -14,7 +14,7 @@ Run each command from inside your worktree. Each step is one shell command, and 
    pnpm exec antelopejs-lease status
    ```
 
-   `status` prints one line per lease with its id, state, api, web and mongo ports, the pid of its mongod, and its worktree. It prints nothing when there is no lease. Pass `--json` to read it from a tool. A lease whose worktree this user cannot read, for example under a directory with mode 000, shows `unreadable:<error code>` and is kept: only a worktree whose path is gone, or that holds a new checkout, counts as deleted. If a line names your worktree, its DMS may still run. Check it with `dms-dev.sh status`, as in step 4, before you start a second one.
+   `status` prints one line per lease with its id, state, api, web and mongo ports, the pid of its mongod, and its worktree. The MONGOD column shows `external` only when the lease last ran with `DMS_MONGO_URL` and no mongod of its own runs. It prints nothing when there is no lease. Pass `--json` to read it from a tool. A lease whose worktree this user cannot read, for example under a directory with mode 000, shows `unreadable:<error code>` and is kept: only a worktree whose path is gone, or that holds a new checkout, counts as deleted. If a line names your worktree, its DMS may still run. Check it with `dms-dev.sh status`, as in step 4, before you start a second one.
 
 2. Start the DMS through `run --`.
 
@@ -94,7 +94,7 @@ Run each command from inside your worktree. Each step is one shell command, and 
 | `TMPDIR`               | `<lease dir>/tmp`                                                         |
 | `PORT`                 | Removed. With `--as api` or `--as web`, the api or web port               |
 
-To use a Mongo server you run yourself, set `DMS_MONGO_URL` before `run`. `run` then starts no mongod, and `MONGO_DATABASE` still gives each worktree its own database on that server.
+To use a Mongo server you run yourself, set `DMS_MONGO_URL` before `run`. `run` then starts no mongod, and `MONGO_DATABASE` still gives each worktree its own database on that server. A mongod the lease started before keeps running for the servers that still use it, and `status` shows its pid. `down` stops it.
 
 The lease directory is `~/.antelopejs/leases/<lease id>/`. It holds `lease.json`, the mongod data in `mongo/`, the logs in `logs/` with `mongod.log` beside the two server logs, `tmp/`, and `runs/` with one empty file per `run`, named by its pid, that `gc` reads to keep the lease of a running command. The tests set `ANTELOPEJS_LEASE_HOME` to move the whole registry.
 

@@ -119,9 +119,10 @@ export async function status(env: NodeJS.ProcessEnv): Promise<LeaseReport[]> {
   return Promise.all(kept.map(report));
 }
 
+/** A running mongod shows its pid in every mode, so a lease switched to `DMS_MONGO_URL` hides none. */
 function mongodCell(row: LeaseReport): string {
-  if (row.record?.mongo === "external") return "external";
-  return row.mongod === null ? "-" : String(row.mongod);
+  if (row.mongod !== null) return String(row.mongod);
+  return row.record?.mongo === "external" ? "external" : "-";
 }
 
 /** `status` as an aligned table, one lease per line; empty when there is no lease. */
