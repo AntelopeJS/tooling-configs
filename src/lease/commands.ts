@@ -1,4 +1,5 @@
 import { leaseEnv, type ServerRole } from "./env.ts";
+import { launch } from "./exec.ts";
 import { ensureMongod, mongodPid, stopMongod } from "./mongo.ts";
 import { accepting, listenerPids } from "./ports.ts";
 import {
@@ -24,8 +25,6 @@ import {
 
 const DOWN_GRACE_MS = 10_000;
 const DAY_MS = 86_400_000;
-const IGNORED_BY_NODE: readonly NodeJS.Signals[] = ["SIGPIPE", "SIGXFSZ"];
-const EXEC = `command -v "$1" >/dev/null 2>&1 || { printf 'antelopejs-lease: cannot run %s: not found\\n' "$1" >&2; exit 127; }; exec "$@"`;
 const ROLES = Object.keys(PORT_ROLES).filter(isRole);
 
 /** One lease as `status` reports it. */
@@ -43,30 +42,15 @@ export interface LeaseReport {
 }
 
 /**
- * Replaces this process with `command`. The command keeps this pid and is the only process, so a
- * signal from a terminal, a process-group kill or `kill <pid>` reaches it once, and its exit
- * status, 128 plus the signal included, is the caller's. `/bin/sh` finds the command on `PATH`.
- * Node ignores SIGPIPE and SIGXFSZ, and an ignored signal stays ignored across `execve`, so both
- * get a handler first, which `execve` resets to the default.
- */
-function execute(command: readonly string[], env: NodeJS.ProcessEnv): never {
-  if (process.execve === undefined)
-    throw new Error(
-      "antelopejs-lease: run needs process.execve, from Node 22.15 on Linux or macOS",
-    );
-  for (const signal of IGNORED_BY_NODE) process.on(signal, () => undefined);
-  return process.execve("/bin/sh", ["sh", "-c", EXEC, "sh", ...command], env);
-}
-
-/**
  * Opens this worktree's lease, makes sure its mongod runs unless `DMS_MONGO_URL` names another
- * server, and replaces this process with `command` under the lease's environment.
+ * server, and replaces this process with `command` under the lease's environment. Answers 127 or
+ * 126, as a shell does, only when the command is not found or cannot run.
  */
 export async function run(
   command: readonly string[],
   as: ServerRole | undefined,
   env: NodeJS.ProcessEnv,
-): Promise<never> {
+): Promise<number> {
   const worktree = locateWorktree(process.cwd());
   const lease = await openLease(
     leaseHome(env),
@@ -76,7 +60,7 @@ export async function run(
   markRun(lease.dir, process.pid);
   if (lease.record.mongo === "owned")
     await ensureMongod(lease.record.ports.mongo, mongodPaths(lease.dir), env);
-  return execute(command, leaseEnv(lease, env, as));
+  return launch(command, leaseEnv(lease, env, as));
 }
 
 function stateLabel(state: LeaseState): string {
