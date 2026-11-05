@@ -14,6 +14,7 @@ import type { TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { ANTELOPE_STYLE } from "../../oxc/fmt.ts";
+import { CHECKS_SKIP_ENV } from "../checks.ts";
 
 export const PACKAGE_ROOT = fileURLToPath(
   new URL("../../../", import.meta.url),
@@ -93,14 +94,18 @@ export function usePreset(root: string, typeAware = false): void {
   );
 }
 
-/** Runs a bin from source as CI would, without the CI run's own pull request base, plus `env`. */
+/** Runs a bin from source as CI would, without the caller's pull request base or checks skip, plus `env`. */
 export function bin(
   root: string,
   name: string,
   args: string[] = [],
   env: Record<string, string> = {},
 ) {
-  const { GITHUB_BASE_REF: _base, ...inherited } = process.env;
+  const {
+    GITHUB_BASE_REF: _base,
+    [CHECKS_SKIP_ENV]: _skip,
+    ...inherited
+  } = process.env;
   return spawnSync(
     process.execPath,
     [join(PACKAGE_ROOT, "src/bin", `${name}.ts`), ...args],

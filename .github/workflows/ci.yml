@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  checks:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,6 +18,60 @@ jobs:
           cache: pnpm
       - run: pnpm install
       - run: pnpm run checks
+        env:
+          ANTELOPEJS_CHECKS_SKIP: test
+
+  test:
+    runs-on: ubuntu-latest
+    env:
+      SHARD_RULES: |
+        ^src/guardrails/api-diff(-(runtime|test-entries)|\.test)|^src/verify/
+        ^src/guardrails/api-diff-(added|errors|compiler|order|resolution)|^src/formal/
+        ^src/guardrails/(api-diff-(exports|au)|staged-ratchet|sync-safety|verify-skill)|^src/oxc/
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install
+      - env:
+          SHARD: ${{ matrix.shard }}
+          TOTAL: ${{ strategy.job-total }}
+        run: |
+          files=$(find src -name '*.test.ts' | sort | awk -v shard="$SHARD" -v total="$TOTAL" '
+            BEGIN {
+              n = split(ENVIRON["SHARD_RULES"], rule, "\n")
+              if (rule[n] == "") n--
+              if (n != total - 1) { print "SHARD_RULES has " n " rules for " total " shards" > "/dev/stderr"; exit 1 }
+            }
+            {
+              owner = total
+              for (i = 1; i <= n; i++) if ($0 ~ rule[i]) { owner = i; break }
+              if (owner == shard) print
+            }')
+          test -n "$files" || { echo "shard $SHARD runs no test file" >&2; exit 1; }
+          if odd=$(printf '%s\n' "$files" | grep -E '[][*?{}\\[:space:]]'); then
+            echo "node --test reads each path as a glob; rename these test files: $odd" >&2
+            exit 1
+          fi
+          mapfile -t list <<< "$files"
+          node --test "${list[@]}"
+
+  checks:
+    if: always()
+    needs: [verify, test]
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "$VERIFY" = success && test "$TEST" = success
+        env:
+          VERIFY: ${{ needs.verify.result }}
+          TEST: ${{ needs.test.result }}
 
   docs:
     runs-on: ubuntu-latest
