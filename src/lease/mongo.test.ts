@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
@@ -16,10 +17,14 @@ import { accepting } from "./ports.ts";
 
 const binary = findMongod(process.env);
 
+/** True while `pid` runs. A zombie has exited: it holds no port and no file. */
 function alive(pid: number): boolean {
   try {
-    process.kill(pid, 0);
-    return true;
+    const state = execFileSync("ps", ["-o", "stat=", "-p", String(pid)], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return !state.trim().startsWith("Z");
   } catch {
     return false;
   }

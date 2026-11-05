@@ -71,6 +71,7 @@ export function findMongod(env: NodeJS.ProcessEnv): string | undefined {
   );
 }
 
+/** The command line of `pid`, empty once the process has exited, a zombie included. */
 function commandLine(pid: number): string {
   try {
     if (process.platform === "linux")
@@ -97,18 +98,22 @@ export function mongodPid(dbpath: string): number | undefined {
   }
   const pid = Number(text);
   if (!Number.isInteger(pid) || pid <= 0) return undefined;
-  return commandLine(pid).includes(dbpath) ? pid : undefined;
+  return serves(pid, dbpath) ? pid : undefined;
 }
 
+function serves(pid: number, dbpath: string): boolean {
+  return commandLine(pid).includes(dbpath);
+}
+
+/** Waits for the process itself: mongod empties `mongod.lock` before it exits. */
 async function untilGone(
   pid: number,
   dbpath: string,
   ms: number,
 ): Promise<boolean> {
   const deadline = Date.now() + ms;
-  while (mongodPid(dbpath) === pid && Date.now() < deadline)
-    await sleep(POLL_MS);
-  return mongodPid(dbpath) !== pid;
+  while (serves(pid, dbpath) && Date.now() < deadline) await sleep(POLL_MS);
+  return !serves(pid, dbpath);
 }
 
 function signal(pid: number, name: NodeJS.Signals): void {
