@@ -7,10 +7,12 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   envFor,
+  firstLine,
   gitInit,
   lease,
   leasedEnv,
   scratch,
+  startLease,
   statusRows,
 } from "./helpers/cli.ts";
 import { findMongod } from "./mongo.ts";
@@ -28,6 +30,18 @@ function alive(pid: number): boolean {
     return !state.trim().startsWith("Z");
   } catch {
     return false;
+  }
+}
+
+/** The `ps` field `column` of `pid`; `undefined` once the process table has no entry for it. */
+function psField(pid: number, column: "ppid" | "stat"): string | undefined {
+  try {
+    return execFileSync("ps", ["-o", `${column}=`, "-p", String(pid)], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return undefined;
   }
 }
 
@@ -127,5 +141,45 @@ test(
       outcomes.map((outcome) => outcome.stderr).join(""),
     );
     assert.notEqual(pid, undefined);
+  },
+);
+
+test(
+  "mongod is never a child of the command run becomes, and down leaves no entry of it in the process table (fails when run spawns mongod itself and then execs the command, which inherits mongod as a child that stays a zombie after down until the command exits)",
+  {
+    skip:
+      binary === undefined &&
+      "no mongod on PATH, in MONGOMS_SYSTEM_BINARY or in ~/.cache/mongodb-binaries",
+  },
+  async (t) => {
+    const root = scratch(t);
+    const worktree = gitInit(join(root, "w"));
+    const env = envFor(join(root, ".home"));
+    const command = startLease(
+      [
+        "run",
+        "--",
+        process.execPath,
+        "-e",
+        'console.log("ready"); setInterval(() => {}, 1000)',
+      ],
+      worktree,
+      env,
+    );
+    t.after(() => command.child.kill("SIGKILL"));
+    assert.equal(await firstLine(command), "ready");
+    const [row] = await statusRows(worktree, env);
+    const pid = row?.mongod;
+    if (pid === undefined) assert.fail("status shows no mongod for the lease");
+    t.after(() => {
+      if (alive(pid)) process.kill(pid, "SIGKILL");
+    });
+    assert.notEqual(psField(pid, "ppid"), String(command.child.pid));
+    const outcome = await lease(["down"], worktree, env);
+    assert.equal(outcome.code, 0, outcome.stderr);
+    const deadline = Date.now() + 5_000;
+    while (psField(pid, "stat") !== undefined && Date.now() < deadline)
+      await sleep(50);
+    assert.equal(psField(pid, "stat"), undefined);
   },
 );

@@ -173,10 +173,11 @@ function starting(dbpath: string): boolean {
 }
 
 /**
- * Waits until the lease's own mongod serves: the pid in `mongod.lock`, whose command line names the
- * dbpath, listens on `port`. A foreign listener on `port` never counts. Gives up once the mongod
- * this call started has exited and no process runs mongod on the dbpath: a second mongod on the
- * same dbpath can exit before the first has written its pid, so two runs at once wait for the first.
+ * Waits until the mongod this call started with `--fork` has exited and the lease's own mongod
+ * serves: the pid in `mongod.lock`, whose command line names the dbpath, listens on `port`. A
+ * foreign listener on `port` never counts. Gives up once no process runs mongod on the dbpath: a
+ * second mongod on the same dbpath can exit before the first has written its pid, so two runs at
+ * once wait for the first.
  */
 async function ready(
   port: number,
@@ -185,9 +186,11 @@ async function ready(
 ): Promise<void> {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    const pid = mongodPid(paths.dbpath);
-    if (pid !== undefined && (await listensOn(pid, port))) return;
-    if (exited() && pid === undefined && !starting(paths.dbpath)) break;
+    if (exited()) {
+      const pid = mongodPid(paths.dbpath);
+      if (pid !== undefined && (await listensOn(pid, port))) return;
+      if (pid === undefined && !starting(paths.dbpath)) break;
+    }
     await sleep(POLL_MS);
   }
   throw new Error(
@@ -196,8 +199,10 @@ async function ready(
 }
 
 /**
- * Makes sure the lease's own mongod serves `paths.dbpath` on `port`, starting one detached when none
- * does. Two callers at once are safe: mongod locks its dbpath, so the second exits and both wait
+ * Makes sure the lease's own mongod serves `paths.dbpath` on `port`, starting one when none does.
+ * With `--fork`, mongod daemonizes itself, and the process this call starts exits once the server
+ * accepts connections. The server is never a child of this process, nor of the command `run`
+ * becomes, which would keep it as a zombie after `down`. Two callers at once are safe: mongod locks its dbpath, so the second exits and both wait
  * for the first.
  */
 export async function ensureMongod(
@@ -206,7 +211,7 @@ export async function ensureMongod(
   env: NodeJS.ProcessEnv,
 ): Promise<void> {
   if (mongodPid(paths.dbpath) !== undefined)
-    return ready(port, paths, () => false);
+    return ready(port, paths, () => true);
   const binary = findMongod(env);
   if (binary === undefined)
     throw new Error(
@@ -226,6 +231,7 @@ export async function ensureMongod(
       "--logappend",
       "--wiredTigerCacheSizeGB",
       "0.25",
+      "--fork",
     ],
     { detached: true, stdio: "ignore" },
   );
