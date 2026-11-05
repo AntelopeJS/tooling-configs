@@ -56,7 +56,12 @@ jobs:
               if (owner == shard) print
             }')
           test -n "$files" || { echo "shard $SHARD runs no test file" >&2; exit 1; }
-          node --test $files
+          if odd=$(printf '%s\n' "$files" | grep -E '[][*?{}[:space:]]'); then
+            echo "node --test reads each path as a glob; rename these test files: $odd" >&2
+            exit 1
+          fi
+          mapfile -t list <<< "$files"
+          node --test "${list[@]}"
 
   checks:
     if: always()
