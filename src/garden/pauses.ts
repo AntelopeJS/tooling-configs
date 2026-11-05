@@ -46,15 +46,23 @@ export async function plannedPauses(
   return pauses;
 }
 
-/** Writes the one repository variable and nothing else. */
+/** Writes the one repository variable and nothing else; a refused write does not stop the rest and is returned. */
 export async function applyPauses(
   api: GardenApi,
   pauses: readonly Pause[],
-): Promise<void> {
+): Promise<string[]> {
+  const failed: string[] = [];
   for (const pause of pauses)
-    await api.send(
-      "PATCH",
-      `/repos/${ORG}/${pause.repo}/actions/variables/${AUTOMERGE}`,
-      { name: AUTOMERGE, value: pause.to },
-    );
+    await api
+      .send(
+        "PATCH",
+        `/repos/${ORG}/${pause.repo}/actions/variables/${AUTOMERGE}`,
+        { name: AUTOMERGE, value: pause.to },
+      )
+      .catch((error: unknown) => {
+        failed.push(
+          `${pause.repo}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+  return failed;
 }

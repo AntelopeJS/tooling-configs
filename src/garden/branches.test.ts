@@ -260,3 +260,33 @@ test("a branch that gains an open PR after the scan is not deleted, because prun
   assert.deepEqual(outcome.report.prunes, []);
   assert.deepEqual(api.writes, []);
 });
+
+test("an organization listing that fails when prunes are re-read keeps the report, deletes nothing and is a failure", async () => {
+  const api = world([{ name: "old", days: 90 }]);
+  const later = {
+    id: "later",
+    async run() {
+      api.route(
+        "/orgs/AntelopeJS/repos",
+        new ApiError(500, "GET repos: HTTP 500"),
+      );
+      return found([]);
+    },
+  };
+  const outcome = await garden(api, {
+    applyPauses: false,
+    applyPrunes: true,
+    checks: [staleBranches, later],
+  });
+  assert.deepEqual(
+    outcome.report.findings.map(({ subject }) => subject),
+    ["branches"],
+  );
+  assert.deepEqual(api.writes, []);
+  assert.deepEqual(outcome.failures, [
+    {
+      check: "plan-prunes",
+      reason: "organization listing: GET repos: HTTP 500",
+    },
+  ]);
+});

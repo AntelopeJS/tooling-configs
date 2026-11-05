@@ -121,7 +121,13 @@ export async function plannedPrunes(
   );
   const prunes: Prune[] = [];
   const failed: string[] = [];
-  for (const repo of await fresh.scope())
+  const scope = await fresh.scope().catch((error: unknown) => {
+    failed.push(
+      `organization listing: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return [];
+  });
+  for (const repo of scope)
     if (flagged.has(repo.name))
       await prunable(fresh, repo).then(
         (found) => prunes.push(...found),

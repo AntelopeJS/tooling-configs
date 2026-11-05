@@ -192,3 +192,20 @@ test("a full run with the pause flag performs exactly the planned write and no o
     value: "shadow",
   });
 });
+
+test("a refused pause write is a failure and does not lose the report", async () => {
+  const api = governed("on");
+  api.refuse("/repos/AntelopeJS/mongodb/actions/variables/NEXT_AUTOMERGE", 403);
+  const outcome = await garden(api, {
+    applyPauses: true,
+    checks: [{ id: "next-governance", run: async () => found(DRIFT) }],
+  });
+  assert.equal(outcome.report.pauses.length, 1);
+  assert.deepEqual(outcome.failures, [
+    {
+      check: "apply-pauses",
+      reason:
+        "mongodb: PATCH /repos/AntelopeJS/mongodb/actions/variables/NEXT_AUTOMERGE: HTTP 403",
+    },
+  ]);
+});
