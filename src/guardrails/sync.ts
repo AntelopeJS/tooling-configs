@@ -437,7 +437,7 @@ function repositoryNotices(root: string, context: RepoContext): string[] {
 /**
  * Measures debt only on first adoption, before sync has written the sync:check script; retired repositories stay retired.
  * Under the template profile the agent layer, `verify-template` and the writing skills, is synced only in the template source,
- * marked by `.agents/skills/verify-template/SKILL.md` or chosen with `--verify template`, because a scaffold ships without it,
+ * marked by its `.agents/skills/verify-template` folder or chosen with `--verify template`, because a scaffold ships without it,
  * and the AGENTS.md block, which a scaffold keeps, links no skill under it.
  */
 export function syncRepository(

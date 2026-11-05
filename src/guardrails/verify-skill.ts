@@ -114,7 +114,13 @@ function resolveKind(
   if (synced.length === 1) return { kind: synced[0], errors };
   if (ownVerificationSkill(root) !== undefined)
     return { kind: "custom", errors };
-  if (profile === "template") return { kind: undefined, errors };
+  if (profile === "template")
+    return {
+      kind: existsSync(join(root, skillFolder("template")))
+        ? "template"
+        : undefined,
+      errors,
+    };
   return { kind: inferKind(manifest), errors };
 }
 

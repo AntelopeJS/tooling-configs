@@ -61,3 +61,14 @@ test("the full profile still links verify-template from AGENTS.md, since only te
     /\[`\.agents\/skills\/verify-template\/SKILL\.md`\]/,
   );
 });
+
+test("the template source still fails the check when its verify-template SKILL.md alone is deleted", (t) => {
+  const root = templateSource(t);
+  rmSync(join(root, ".agents/skills/verify-template/SKILL.md"));
+  const check = bin(root, "sync", [...TEMPLATE, "--check"]);
+  assert.equal(check.status, 1);
+  assert.equal(
+    check.stdout,
+    "Drift: .agents/skills/verify-template/SKILL.md; run antelopejs-sync\n",
+  );
+});
