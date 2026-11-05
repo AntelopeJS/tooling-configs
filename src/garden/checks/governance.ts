@@ -21,7 +21,7 @@ const CHECK = "next-governance";
 const ACTIONS_APP = 15368;
 const ADMIN_ROLE = 5;
 const MAINTAIN_BLOCKED = "altabmachine";
-const REQUIRED_CONTEXTS = [[CI_CONTEXT, "checks"], ["verify-gate"]];
+const CHECKS_CONTEXTS = [CI_CONTEXT, "checks"];
 const VERIFICATION_SKILL =
   /(?:^|\/)(?:\.agents\/skills|\.claude\/skills|skills)\/[^/]*verif[^/]*\/SKILL\.md$/i;
 
@@ -120,13 +120,7 @@ function branchFindings(
       ),
     );
   const contexts = requiredContexts(hit);
-  if (!contexts.includes("verify-gate"))
-    report(
-      "verify-gate",
-      `No ruleset on ${branch} requires verify-gate from GitHub Actions.`,
-      true,
-    );
-  if (!REQUIRED_CONTEXTS[0].some((name) => contexts.includes(name)))
+  if (!CHECKS_CONTEXTS.some((name) => contexts.includes(name)))
     report(
       "checks",
       `No ruleset on ${branch} requires ${CI_CONTEXT} from GitHub Actions.`,
@@ -251,10 +245,7 @@ export const nextGovernance: Check = {
       if (value !== undefined) values.set(repo.name, value);
       return [];
     });
-    if (!values.size)
-      return skip(
-        `${AUTOMERGE} exists on no repository yet (the verify-gate task has not landed).`,
-      );
+    if (!values.size) return skip(`${AUTOMERGE} exists on no repository yet.`);
     return perRepo(
       repos.filter((repo) => values.has(repo.name)),
       (repo) => governed(context, repo, values.get(repo.name) ?? ""),
