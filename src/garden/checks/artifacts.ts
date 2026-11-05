@@ -1,14 +1,6 @@
 import type { Check } from "../check.ts";
 import { GardenContext, ORG } from "../context.ts";
-import {
-  children,
-  list,
-  object,
-  optStr,
-  parseJson,
-  str,
-  type JsonObject,
-} from "../json.ts";
+import { list, object, parseJson, str, type JsonObject } from "../json.ts";
 import { firstZipEntry } from "../zip.ts";
 import { finding, found, skip, type Finding } from "../types.ts";
 
@@ -26,56 +18,6 @@ async function latestReport(
   );
   return object(parseJson(firstZipEntry(archive)), name);
 }
-
-function survivors(
-  report: JsonObject,
-): { file: string; survived: number; total: number }[] {
-  const files = object(report.files ?? {}, "files");
-  return Object.keys(files).map((file) => {
-    const mutants = children(object(files[file], file), "mutants");
-    return {
-      file,
-      survived: mutants.filter(
-        (mutant) => optStr(mutant, "status") === "Survived",
-      ).length,
-      total: mutants.length,
-    };
-  });
-}
-
-export const mutation: Check = {
-  id: "mutation",
-  async run(context) {
-    if (
-      !(await context.exists(WORKFLOWS_REPO, ".github/workflows/mutation.yml"))
-    )
-      return skip("AntelopeJS/.github has no mutation.yml yet");
-    const repos = (await context.scope()).filter(
-      (repo) => repo.tier === "N1" || repo.tier === "N2",
-    );
-    const findings: Finding[] = [];
-    let reports = 0;
-    for (const repo of repos) {
-      const report = await latestReport(context, repo.name, "mutation-report");
-      if (report === undefined) continue;
-      reports++;
-      for (const { file, survived, total } of survivors(report))
-        if (survived > 0)
-          findings.push(
-            finding(
-              { repo: repo.name, check: "mutation", subject: file },
-              `${survived} of ${total} mutants survive in ${file}.`,
-              `Tests kill the surviving mutants of ${file}, or Stryker ignores them with a reason.`,
-            ),
-          );
-    }
-    return reports
-      ? found(findings)
-      : skip(
-          "no mutation-report artifact exists in any N1 or N2 repository yet",
-        );
-  },
-};
 
 export const linkRot: Check = {
   id: "link-rot",

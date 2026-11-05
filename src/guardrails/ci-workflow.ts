@@ -15,7 +15,6 @@ import {
 import { staleNeeds } from "./workflow-needs.ts";
 
 export const CI_PATH = ".github/workflows/ci.yml";
-export const MUTATION_PATH = ".github/workflows/mutation.yml";
 export const CI_JOB_ID = "ci";
 /** The status context GitHub derives from the caller job id and the shared workflow's `checks` job. */
 export const CI_CONTEXT = `${CI_JOB_ID} / checks`;
@@ -24,7 +23,6 @@ export const CI_NODE_REF =
   "AntelopeJS/.github/.github/workflows/ci-node.yml@v1";
 export const CI_RENOVATE_SYNC_REF =
   "AntelopeJS/.github/.github/workflows/ci-renovate-sync.yml@v1";
-const MUTATION_REF = "AntelopeJS/.github/.github/workflows/mutation.yml@v1";
 
 export const CI_CALLER = `name: ci
 
@@ -59,32 +57,6 @@ jobs:
 `;
 
 const PRINT_WIDTH = 80;
-
-const WEEK_MINUTES = 7 * 24 * 60;
-
-/** Spreads the weekly runs of different repositories over the week so they do not queue together. */
-export function mutationCaller(packageName: string): string {
-  let slot = 0;
-  for (const character of packageName)
-    slot = (slot * 31 + character.charCodeAt(0)) % WEEK_MINUTES;
-  const day = Math.floor(slot / 1440) % 7;
-  const minute = slot % 60;
-  const hour = Math.floor((slot % 1440) / 60);
-  return `name: mutation
-
-on:
-  schedule:
-    - cron: "${minute} ${hour} * * ${day}"
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  mutation:
-    uses: ${MUTATION_REF}
-`;
-}
 
 function flatSequence(seq: YAMLSeq): string | undefined {
   const items: string[] = [];
