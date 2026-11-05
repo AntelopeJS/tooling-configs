@@ -428,7 +428,22 @@ function repositoryNotices(root: string, context: RepoContext): string[] {
   return notices;
 }
 
-/** Measures debt only on first adoption, before sync has written the sync:check script; retired repositories stay retired. */
+/** The writing skills belong to the agent layer, which the template profile syncs only in the template source. */
+function planWritingSkills(
+  root: string,
+  profile: AgentsBlockContext["profile"],
+  kind: ReturnType<typeof planVerify>["kind"],
+): ReturnType<typeof planDocsSkills> {
+  if (profile === "template" && kind !== "template")
+    return { actions: [], errors: [] };
+  return planDocsSkills(root);
+}
+
+/**
+ * Measures debt only on first adoption, before sync has written the sync:check script; retired repositories stay retired.
+ * Under the template profile the agent layer, `verify-template` and the writing skills, is synced only in the template source,
+ * marked by `.agents/skills/verify-template/SKILL.md` or chosen with `--verify template`, because a scaffold ships without it.
+ */
 export function syncRepository(
   root: string,
   options: {
@@ -440,12 +455,8 @@ export function syncRepository(
   const profile = options.profile ?? "full";
   const { current, modes } = repositorySnapshot(root);
   const manifest = parseManifest(current.get("package.json") ?? "{}");
-  const verify = planVerify(root, {
-    flag: options.verify,
-    manifest,
-    profile,
-  });
-  const writing = planDocsSkills(root);
+  const verify = planVerify(root, { flag: options.verify, manifest });
+  const writing = planWritingSkills(root, profile, verify.kind);
   const actions = [...verify.actions, ...writing.actions];
   const context = repositoryContext(
     root,

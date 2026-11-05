@@ -234,16 +234,17 @@ test("--verify custom fails without an own skill and keeps a shared layer, which
   assert.match(check.stderr, /verify-<repo>/);
 });
 
-test("the template profile infers the template kind", (t) => {
+test("--verify template writes the template agent layer, which AGENTS.md leaves unnamed because scaffolds keep AGENTS.md without it", (t) => {
   const root = testRepo(t);
-  const result = bin(root, "sync", TEMPLATE);
+  const result = bin(root, "sync", [...TEMPLATE, "--verify", "template"]);
   assert.equal(result.status, 0, result.stderr);
-  assert.doesNotMatch(result.stdout, /No verification skill/);
   assert.equal(read(root, skillPath("template")), skillText("template"));
   assert.equal(
     read(root, `${claudeLink("template")}/SKILL.md`),
     skillText("template"),
   );
+  assert.equal(existsSync(join(root, ".agents/skills/unslop/SKILL.md")), true);
+  assert.doesNotMatch(read(root, "AGENTS.md"), /verify-template/);
 });
 
 test("antelopeJs.implements infers module and antelopeJs.kind wins over it", (t) => {
