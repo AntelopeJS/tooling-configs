@@ -100,14 +100,14 @@ export async function garden(
   const findings = [
     ...new Map(found.map((entry) => [entry.key, entry])).values(),
   ].sort(compare);
-  const pauses = (await plannedPauses(context, findings)).sort((a, b) =>
-    a.repo < b.repo ? -1 : 1,
-  );
+  const planned = await plannedPauses(context, findings);
+  const pauses = planned.pauses.sort((a, b) => (a.repo < b.repo ? -1 : 1));
   const pauseFailures = options.applyPauses
     ? await applyPauses(api, pauses)
     : [];
   const { prunes, failed } = await plannedPrunes(api, findings);
   const late = [
+    ...planned.failed.map((reason) => ({ check: "plan-pauses", reason })),
     ...pauseFailures.map((reason) => ({ check: "apply-pauses", reason })),
     ...failed.map((reason) => ({ check: "plan-prunes", reason })),
     ...(options.apply === true

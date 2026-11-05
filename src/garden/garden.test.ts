@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { ApiError } from "./api.ts";
 import { PartialFailure, type Check } from "./check.ts";
 import { applyPauses, plannedPauses } from "./pauses.ts";
 import { run } from "./helpers/builders.ts";
@@ -129,7 +130,7 @@ const RATCHET = [
 ];
 
 test("governance drift and a returning ratchet file pause only a repository where auto-merge is on", async () => {
-  const on = await plannedPauses(governed("on").context(), [
+  const { pauses: on } = await plannedPauses(governed("on").context(), [
     ...DRIFT,
     ...RATCHET,
   ]);
@@ -143,8 +144,14 @@ test("governance drift and a returning ratchet file pause only a repository wher
     },
   ]);
   for (const value of ["off", "shadow"])
-    assert.deepEqual(await plannedPauses(governed(value).context(), DRIFT), []);
-  assert.deepEqual(await plannedPauses(governed("on").context(), []), []);
+    assert.deepEqual(
+      (await plannedPauses(governed(value).context(), DRIFT)).pauses,
+      [],
+    );
+  assert.deepEqual(
+    (await plannedPauses(governed("on").context(), [])).pauses,
+    [],
+  );
 });
 
 test("checks red on next after a merge pauses a repository, a red main does not", async () => {
@@ -153,16 +160,18 @@ test("checks red on next after a merge pauses a repository, a red main does not"
     run(1, "success", 5),
   ]);
   assert.deepEqual(
-    (await plannedPauses(redNext.context(), [])).map(({ reason }) => reason),
+    (await plannedPauses(redNext.context(), [])).pauses.map(
+      ({ reason }) => reason,
+    ),
     ["checks is red on next after a merge"],
   );
   const redMain = governed("on").ci("mongodb", [run(2, "failure", 1)]);
-  assert.deepEqual(await plannedPauses(redMain.context(), []), []);
+  assert.deepEqual((await plannedPauses(redMain.context(), [])).pauses, []);
 });
 
 test("--apply-pauses writes the NEXT_AUTOMERGE variable of the paused repository and nothing else, never the value on", async () => {
   const api = governed("on");
-  const planned = await plannedPauses(api.context(), DRIFT);
+  const { pauses: planned } = await plannedPauses(api.context(), DRIFT);
   const dry = await garden(api, {
     applyPauses: false,
     checks: [{ id: "next-governance", run: async () => found(DRIFT) }],
@@ -207,5 +216,24 @@ test("a refused pause write is a failure and does not lose the report", async ()
       reason:
         "mongodb: PATCH /repos/AntelopeJS/mongodb/actions/variables/NEXT_AUTOMERGE: HTTP 403",
     },
+  ]);
+});
+
+test("an unreadable pause input is a failure for that repository and the report survives", async () => {
+  const api = governed("on").route(
+    "/repos/AntelopeJS/mongodb/actions/variables/NEXT_AUTOMERGE",
+    new ApiError(500, "GET variable: HTTP 500"),
+  );
+  const outcome = await garden(api, {
+    applyPauses: true,
+    checks: [{ id: "next-governance", run: async () => found(DRIFT) }],
+  });
+  assert.deepEqual(
+    outcome.report.findings.map(({ check }) => check),
+    DRIFT.map(({ check }) => check),
+  );
+  assert.deepEqual(outcome.report.pauses, []);
+  assert.deepEqual(outcome.failures, [
+    { check: "plan-pauses", reason: "mongodb: GET variable: HTTP 500" },
   ]);
 });
