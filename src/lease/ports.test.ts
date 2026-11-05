@@ -75,3 +75,9 @@ test("a foreign listener on a non-api port of the first candidate block moves th
     `api ${api} is in block ${first}`,
   );
 });
+
+test("the first candidate block depends on the user id, so two users' worktrees at one path start on different blocks (fails when the first block comes from the lease id alone, and two registries hand out the same unbound block)", () => {
+  const id = leaseId("/srv/shared/dms");
+  const firsts = [0, 501, 1000, 1001].map((uid) => candidateBases(id, uid)[0]);
+  assert.equal(new Set(firsts).size, firsts.length, `got ${firsts.join(", ")}`);
+});

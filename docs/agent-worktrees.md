@@ -96,7 +96,7 @@ Run each command from inside your worktree. Each step is one shell command, and 
 
 To use a Mongo server you run yourself, set `DMS_MONGO_URL` before `run`. `run` then starts no mongod, and `MONGO_DATABASE` still gives each worktree its own database on that server. A mongod the lease started before keeps running for the servers that still use it, and `status` shows its pid. `down` stops it.
 
-The lease directory is `~/.antelopejs/leases/<lease id>/`. It holds `lease.json`, the mongod data in `mongo/`, the logs in `logs/` with `mongod.log` beside the two server logs, `tmp/`, and `runs/` with one empty file per `run`, named by its pid, that `gc` reads to keep the lease of a running command. The tests set `ANTELOPEJS_LEASE_HOME` to an absolute path to move the whole registry.
+The lease directory is `~/.antelopejs/leases/<lease id>/`. It holds `lease.json`, the mongod data in `mongo/`, the logs in `logs/` with `mongod.log` beside the two server logs, `tmp/`, and `runs/` with one empty file per `run`, named by its pid, that `gc` reads to keep the lease of a running command.
 
 ## Why the ports sit between 20010 and 29999
 
@@ -112,9 +112,15 @@ Each lease owns a block of ten ports in the band from 20010 to 29999. The offset
 
 The kernel picks ephemeral ports from 32768 to 60999 on Linux and from 49152 up on macOS. It hands out such a port to every `bind` on port 0 and to every outgoing connection. Another process can take a port in that range between the moment a tool picks it and the moment a server binds it. That race is what makes tools that bind port 0, such as dms-control, collide under load. No process gets a port below 32768 unless it asks for that number, so the band avoids the race.
 
-The first block a lease tries comes from its id, so two worktrees rarely start on the same block, and a worktree usually gets its old block back after `down`. The tool skips a block that holds 24678, the Vite HMR default, or 27017 to 27019, where a system mongod listens. It also skips a block when any of its ten ports fails to bind, and it stores the ports it chose in `lease.json`. A foreign listener moves a lease only when the lease is first created. Every later `run` keeps the recorded ports, so the servers, the database and the URLs of a worktree stay where they were. If another process takes a leased port in the meantime, `run` fails and names that process rather than moving the lease.
+The first block a lease tries comes from its id and your user id, so two worktrees rarely start on the same block, and a worktree usually gets its old block back after `down`. The tool skips a block that holds 24678, the Vite HMR default, or 27017 to 27019, where a system mongod listens. It also skips a block when any of its ten ports fails to bind, and it stores the ports it chose in `lease.json`. A foreign listener moves a lease only when the lease is first created. Every later `run` keeps the recorded ports, so the servers, the database and the URLs of a worktree stay where they were. If another process takes the mongo port of the lease in the meantime, `run` fails and names that process rather than moving the lease.
 
 A lock on 127.0.0.1:20000 keeps two callers from choosing at the same moment. A caller listens on that port while it reads and writes the registry, and the kernel closes the port when the caller exits, after a crash too. No stale lock can remain.
+
+## Leases are coordinated per user
+
+Each user has one registry, `~/.antelopejs/leases`, and every command reads and writes only that one. The lock on 127.0.0.1:20000 is machine-wide, but the records are not. A lease never sees the leases of another user, nor those of a registry that `ANTELOPEJS_LEASE_HOME` moves to another absolute path. That variable exists for the tests. Leave it unset for real work.
+
+Two things still keep registries apart. The first block a lease tries is offset by the numeric user id, so the worktrees of two users at the same path start on different blocks. And the bind probe skips every block in which a process of any user holds a port when the lease is created. Once the mongod of a lease runs, it holds the mongo port, so no other registry gets that block. The probe cannot see a block that another registry chose and whose ports nothing holds yet, as with a lease that uses `DMS_MONGO_URL` before its servers start. Two registries can hand out that block twice, and the server that binds second falls back to another port or fails.
 
 ## What stays shared on purpose
 

@@ -13,13 +13,18 @@ const CONNECT_TIMEOUT_MS = 1_000;
 const LISTEN_STATE = "0A";
 
 /**
- * The block bases a lease tries, in order: from a block picked by the id's hash, forward and around
- * the band. The band [20010, 30000) sits below the kernel's ephemeral range (32768 and up on Linux,
- * 49152 and up on macOS), so no `bind(:0)` caller races for these ports. Blocks holding the Vite HMR
- * default (24678) or a system mongod (27017 to 27019) are skipped.
+ * The block bases a lease tries, in order: from a block picked by the id's hash offset by `uid`,
+ * forward and around the band. Each user keeps a registry of its own, so the offset starts two
+ * users' worktrees at one path on different blocks. The band [20010, 30000) sits below the kernel's
+ * ephemeral range (32768 and up on Linux, 49152 and up on macOS), so no `bind(:0)` caller races for
+ * these ports. Blocks holding the Vite HMR default (24678) or a system mongod (27017 to 27019) are
+ * skipped.
  */
-export function candidateBases(id: LeaseId): number[] {
-  const first = Number.parseInt(id.slice(0, 8), 16) % BLOCK_COUNT;
+export function candidateBases(
+  id: LeaseId,
+  uid: number = process.getuid?.() ?? 0,
+): number[] {
+  const first = (Number.parseInt(id.slice(0, 8), 16) + uid) % BLOCK_COUNT;
   return Array.from(
     { length: BLOCK_COUNT },
     (_, step) => BAND_START + ((first + step) % BLOCK_COUNT) * BLOCK_SIZE,
