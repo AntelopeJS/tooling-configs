@@ -35,11 +35,13 @@ Run each command from inside your worktree. Each step is one shell command, and 
 
 3. Find your URLs.
 
+   The backend URL is the one the backend records in `<project>/.antelope/dev.json` when it starts. `dms-dev.sh start` prints the same URL on its `backend ready on` line. The dashboard URL is `DMS_CLIENT_BASE_URL`:
+
    ```sh
-   pnpm exec antelopejs-lease run -- printenv DMS_API_BASE_URL DMS_CLIENT_BASE_URL
+   pnpm exec antelopejs-lease run -- printenv DMS_CLIENT_BASE_URL
    ```
 
-   `DMS_API_BASE_URL` is the backend and `DMS_CLIENT_BASE_URL` is the dashboard. The API and WEB columns of `status` show the same ports.
+   The backend binds the leased api port, `DMS_BACK_PORT`, only when its `antelope.config.ts` reads `PORT`. Most DMS repositories hard-code port 5010 there instead. Their worktrees still start side by side, because a backend whose port is taken falls back to the next free port and records it in `dev.json`. `ajs dms dev` finds the backend through that file, so `run` never sets `DMS_API_BASE_URL`. The API and WEB columns of `status` show the leased ports, not the port a fallback picked.
 
 4. Verify through the same prefix, so that your checks reach the servers, the database and the logs of this worktree.
 
@@ -74,7 +76,7 @@ Run each command from inside your worktree. Each step is one shell command, and 
 
 ## Variables that `run` sets
 
-`run` passes its own environment to the command without `PORT`, and adds these variables.
+`run` passes its own environment to the command without `PORT`, and adds these variables. It does not set `DMS_API_BASE_URL`, because `ajs dms dev` would read it before `.antelope/dev.json` and miss a backend that fell back to another port.
 
 | Variable               | Value                                                                     |
 | ---------------------- | ------------------------------------------------------------------------- |
@@ -84,7 +86,6 @@ Run each command from inside your worktree. Each step is one shell command, and 
 | `DMS_FRONT_PORT`       | The web port                                                              |
 | `DMS_INSPECT_PORT`     | The Node inspector port                                                   |
 | `DMS_SMTP_PORT`        | The SMTP port                                                             |
-| `DMS_API_BASE_URL`     | `http://localhost:<api port>`                                             |
 | `DMS_CLIENT_BASE_URL`  | `http://localhost:<web port>`                                             |
 | `MONGO_URL`            | `mongodb://127.0.0.1:<mongo port>`, or `DMS_MONGO_URL` when it is set     |
 | `MONGO_DATABASE`       | `dms_<lease id>`                                                          |
