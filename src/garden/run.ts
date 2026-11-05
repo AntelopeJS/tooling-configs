@@ -2,7 +2,16 @@ import type { GardenApi } from "./api.ts";
 import { aiApps, orbSecrets } from "./checks/apps.ts";
 import { linkRot, mutation } from "./checks/artifacts.ts";
 import { ciDuration, redBranch } from "./checks/ci-health.ts";
-import { conformance } from "./checks/conformance.ts";
+import {
+  applyPrunes,
+  plannedPrunes,
+  staleBranches,
+} from "./checks/branches.ts";
+import {
+  applySettings,
+  conformance,
+  deleteBranchOnMerge,
+} from "./checks/conformance.ts";
 import {
   governanceDrift,
   nextGovernance,
@@ -23,6 +32,7 @@ import type { Finding, Report, Skipped } from "./types.ts";
 
 const CHECKS: readonly Check[] = [
   conformance,
+  deleteBranchOnMerge,
   redBranch,
   ciDuration,
   advisories,
@@ -41,6 +51,7 @@ const CHECKS: readonly Check[] = [
   webBuild,
   linkRot,
   captureScenes,
+  staleBranches,
 ];
 
 export interface Outcome {
@@ -53,10 +64,19 @@ function compare(a: { key: string }, b: { key: string }): number {
   return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
 }
 
-/** Runs every check, plans the pauses and applies them only when asked. */
+export interface GardenOptions {
+  applyPauses: boolean;
+  /** Turns `delete_branch_on_merge` on where conformance reports it off. */
+  apply?: boolean;
+  /** Deletes the branches the stale-branches check lists. */
+  applyPrunes?: boolean;
+  checks?: readonly Check[];
+}
+
+/** Runs every check, plans the pauses and prunes, and applies each only when asked. */
 export async function garden(
   api: GardenApi,
-  options: { applyPauses: boolean; checks?: readonly Check[] },
+  options: GardenOptions,
 ): Promise<Outcome> {
   const context = new GardenContext(api);
   const found: Finding[] = [];
@@ -80,15 +100,37 @@ export async function garden(
   const findings = [
     ...new Map(found.map((entry) => [entry.key, entry])).values(),
   ].sort(compare);
-  const pauses = (await plannedPauses(context, findings)).sort((a, b) =>
-    a.repo < b.repo ? -1 : 1,
-  );
-  if (options.applyPauses) await applyPauses(api, pauses);
+  const planned = await plannedPauses(context, findings);
+  const pauses = planned.pauses.sort((a, b) => (a.repo < b.repo ? -1 : 1));
+  const pauseFailures = options.applyPauses
+    ? await applyPauses(api, pauses)
+    : [];
+  const { prunes, failed } = await plannedPrunes(api, findings);
+  const late = [
+    ...planned.failed.map((reason) => ({ check: "plan-pauses", reason })),
+    ...pauseFailures.map((reason) => ({ check: "apply-pauses", reason })),
+    ...failed.map((reason) => ({ check: "plan-prunes", reason })),
+    ...(options.apply === true
+      ? (await applySettings(api, findings)).map((reason) => ({
+          check: "apply",
+          reason,
+        }))
+      : []),
+    ...(options.applyPrunes === true
+      ? (await applyPrunes(api, prunes)).map((reason) => ({
+          check: "apply-prunes",
+          reason,
+        }))
+      : []),
+  ];
+  failures.push(...late);
+  skipped.push(...late);
   return {
     report: {
       generatedAt: api.now().toISOString(),
       findings,
       pauses,
+      prunes,
       skipped: skipped.sort((a, b) => (a.check < b.check ? -1 : 1)),
     },
     failures,

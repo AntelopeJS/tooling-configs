@@ -10,10 +10,14 @@ await runCliAsync(async () => {
     options: {
       json: { type: "boolean" },
       "apply-pauses": { type: "boolean" },
+      apply: { type: "boolean" },
+      "apply-prunes": { type: "boolean" },
     },
   });
   const outcome = await garden(createApi(ghToken()), {
     applyPauses: values["apply-pauses"] === true,
+    apply: values.apply === true,
+    applyPrunes: values["apply-prunes"] === true,
   });
   if (values.json)
     process.stdout.write(`${JSON.stringify(outcome.report, null, 2)}\n`);

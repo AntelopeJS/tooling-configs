@@ -9,8 +9,9 @@ import {
   ciNodeCallers,
   ciRenovateSyncCallers,
 } from "../../guardrails/workflow.ts";
+import type { GardenApi } from "../api.ts";
 import { perRepo, type Check } from "../check.ts";
-import { GardenContext, type GardenRepo } from "../context.ts";
+import { GardenContext, ORG, type GardenRepo } from "../context.ts";
 import { tooling } from "../npm.ts";
 import { finding, found, type CheckResult, type Finding } from "../types.ts";
 
@@ -222,6 +223,54 @@ async function cleanRatchet(
       `${GUARDRAILS_RATCHET} is deleted again.`,
     ),
   ];
+}
+
+const BRANCH_CLEANUP = "delete-branch-on-merge";
+
+async function branchCleanup(
+  context: GardenContext,
+  repo: GardenRepo,
+): Promise<Finding[]> {
+  return (await context.deletesBranchOnMerge(repo))
+    ? []
+    : [
+        problem(
+          repo,
+          BRANCH_CLEANUP,
+          "delete_branch_on_merge is off, so merged head branches stay behind.",
+          "delete_branch_on_merge is on; antelopejs-garden --apply turns it on.",
+        ),
+      ];
+}
+
+/** Reported as a conformance finding, but read apart so a token that cannot see merge settings hides no other finding. */
+export const deleteBranchOnMerge: Check = {
+  id: BRANCH_CLEANUP,
+  async run(context) {
+    return perRepo(await context.scope(), (repo) =>
+      branchCleanup(context, repo),
+    );
+  },
+};
+
+/** Turns `delete_branch_on_merge` on for each repository a finding reports it off on, and writes nothing else; returns the writes that failed. */
+export async function applySettings(
+  api: GardenApi,
+  findings: readonly Finding[],
+): Promise<string[]> {
+  const failed: string[] = [];
+  for (const entry of findings)
+    if (entry.check === CHECK && entry.subject === BRANCH_CLEANUP)
+      await api
+        .send("PATCH", `/repos/${ORG}/${entry.repo}`, {
+          delete_branch_on_merge: true,
+        })
+        .catch((error: unknown) => {
+          failed.push(
+            `${entry.repo}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+  return failed;
 }
 
 async function scan(

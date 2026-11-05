@@ -33,7 +33,7 @@ export interface RegistryFile {
   content: string;
 }
 
-export type WriteMethod = "PATCH" | "POST" | "PUT";
+export type WriteMethod = "DELETE" | "PATCH" | "POST" | "PUT";
 
 /** Everything the Gardener touches outside its own process. Tests replace it with recorded answers. */
 export interface GardenApi {
@@ -41,7 +41,7 @@ export interface GardenApi {
   pages(path: string, key?: string): Promise<JsonValue[]>;
   text(path: string): Promise<string>;
   bytes(path: string): Promise<Uint8Array>;
-  send(method: WriteMethod, path: string, body: JsonValue): Promise<void>;
+  send(method: WriteMethod, path: string, body?: JsonValue): Promise<void>;
   npm(name: string): Promise<JsonValue | undefined>;
   contentLength(url: string): Promise<number | undefined>;
   registryDiffers(files: RegistryFile[]): Promise<boolean>;
@@ -200,11 +200,16 @@ export function createApi(token: string): GardenApi {
       return new Uint8Array(await (await get(path)).arrayBuffer());
     },
     async send(method, path, body) {
-      const response = await request(`${GITHUB}${path}`, {
-        method,
-        body: JSON.stringify(body),
-        headers: { "Content-Type": "application/json" },
-      });
+      const response = await request(
+        `${GITHUB}${path}`,
+        body === undefined
+          ? { method }
+          : {
+              method,
+              body: JSON.stringify(body),
+              headers: { "Content-Type": "application/json" },
+            },
+      );
       if (!response.ok)
         throw new ApiError(
           response.status,

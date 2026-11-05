@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { conformance } from "./checks/conformance.ts";
+import { conformance, deleteBranchOnMerge } from "./checks/conformance.ts";
+import { garden } from "./run.ts";
 import { ApiError } from "./api.ts";
 import { CALLER, LOCK, checkRun, pull, run } from "./helpers/builders.ts";
 import { FakeApi, fixture } from "./helpers/fake-api.ts";
@@ -260,4 +261,76 @@ test("a repository whose reads fail does not hide the findings of the others", a
     new ApiError(500, "boom"),
   );
   await assert.rejects(conformance.run(api.context()), /redis: boom/);
+});
+
+test("delete_branch_on_merge off is a conformance finding, and unreadable fails without hiding the repository's other findings", async () => {
+  const off = conformant(world()).route("/repos/AntelopeJS/mongodb", {
+    delete_branch_on_merge: false,
+  });
+  assert.deepEqual(subjects(await deleteBranchOnMerge.run(off.context())), [
+    "delete-branch-on-merge",
+  ]);
+  const on = conformant(world()).route("/repos/AntelopeJS/mongodb", {
+    delete_branch_on_merge: true,
+  });
+  assert.deepEqual(subjects(await deleteBranchOnMerge.run(on.context())), []);
+  const hidden = conformant(world())
+    .repo("mongodb", {
+      ".github/workflows/ci.yml": CALLER,
+      "package.json": PACKAGE,
+      "pnpm-lock.yaml": LOCK("0.2.7"),
+    })
+    .route("/repos/AntelopeJS/mongodb", {});
+  const outcome = await garden(hidden, {
+    applyPauses: false,
+    checks: [conformance, deleteBranchOnMerge],
+  });
+  assert.deepEqual(
+    outcome.report.findings.map(({ check, subject }) => `${check} ${subject}`),
+    ["conformance renovate-config"],
+  );
+  assert.match(
+    outcome.failures.map(({ reason }) => reason).join(),
+    /delete_branch_on_merge is not readable/,
+  );
+});
+
+test("--apply turns delete_branch_on_merge on where it is off, writes nothing for other findings or without the flag, and reports a failed write", async () => {
+  const setup = (body: { delete_branch_on_merge: boolean }) =>
+    conformant(world())
+      .repo("mongodb", {
+        ".github/workflows/ci.yml": CALLER,
+        "package.json": PACKAGE,
+        "pnpm-lock.yaml": LOCK("0.2.7"),
+      })
+      .route("/repos/AntelopeJS/mongodb", body);
+  const checks = [conformance, deleteBranchOnMerge];
+  const dry = setup({ delete_branch_on_merge: false });
+  await garden(dry, { applyPauses: false, checks });
+  assert.deepEqual(dry.writes, []);
+  const wet = setup({ delete_branch_on_merge: false });
+  await garden(wet, { applyPauses: false, apply: true, checks });
+  assert.deepEqual(wet.writes, [
+    {
+      method: "PATCH",
+      path: "/repos/AntelopeJS/mongodb",
+      body: { delete_branch_on_merge: true },
+    },
+  ]);
+  const on = setup({ delete_branch_on_merge: true });
+  await garden(on, { applyPauses: false, apply: true, checks });
+  assert.deepEqual(on.writes, []);
+  const refused = setup({ delete_branch_on_merge: false });
+  refused.refuse("/repos/AntelopeJS/mongodb", 422);
+  const outcome = await garden(refused, {
+    applyPauses: false,
+    apply: true,
+    checks,
+  });
+  assert.deepEqual(outcome.failures, [
+    {
+      check: "apply",
+      reason: "mongodb: PATCH /repos/AntelopeJS/mongodb: HTTP 422",
+    },
+  ]);
 });

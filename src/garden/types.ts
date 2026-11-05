@@ -17,6 +17,13 @@ export interface Pause {
   reason: string;
 }
 
+/** A branch ref `--apply-prunes` deletes. */
+export interface Prune {
+  repo: string;
+  branch: string;
+  reason: string;
+}
+
 export interface Skipped {
   check: string;
   reason: string;
@@ -26,6 +33,7 @@ export interface Report {
   generatedAt: string;
   findings: Finding[];
   pauses: Pause[];
+  prunes: Prune[];
   skipped: Skipped[];
 }
 
