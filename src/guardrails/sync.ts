@@ -34,7 +34,7 @@ import {
   type PackageManager,
 } from "./package.ts";
 import { recordedRelease } from "./adoption.ts";
-import { RENOVATE_CONFIGS, RENOVATE_JSON, RENOVATE_PATH } from "./renovate.ts";
+import { renovateArtifacts } from "./renovate.ts";
 import { measureBaseline } from "./ratchet.ts";
 import { adoptedBudget, SUPPRESSIONS_FILE } from "./suppression-budget.ts";
 import {
@@ -76,8 +76,6 @@ export interface RepoContext extends AgentsBlockContext {
   managesCi: boolean;
   /** The docs-compat READMEs and caller `docs-files` lines, planned under the full profile only. */
   docs: DocsPlan | undefined;
-  /** Whether a Renovate config other than `renovate.json` exists, so sync writes none. */
-  renovateElsewhere: boolean;
 }
 
 interface ArtifactContent {
@@ -181,11 +179,6 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
     }),
   },
   {
-    path: RENOVATE_PATH,
-    profiles: ["full", "template"],
-    desired: (current) => ({ content: current ?? RENOVATE_JSON, notes: [] }),
-  },
-  {
     path: ".nvmrc",
     profiles: ["full"],
     desired: () => ({ content: "24\n", notes: [] }),
@@ -259,7 +252,6 @@ function planSync(
     if (!artifact.profiles.includes(context.profile)) continue;
     if (artifact.path === CEILINGS_FILE && !context.ratchet) continue;
     if (artifact.path === CI_PATH && !context.managesCi) continue;
-    if (artifact.path === RENOVATE_PATH && context.renovateElsewhere) continue;
     try {
       const { content, notes } = artifact.desired(
         current.get(artifact.path),
@@ -398,9 +390,6 @@ function repositoryContext(
       profile === "full" && current.has("package.json")
         ? planDocs(root, manager)
         : undefined,
-    renovateElsewhere: RENOVATE_CONFIGS.some(
-      (file) => file !== RENOVATE_PATH && existsSync(join(root, file)),
-    ),
   };
 }
 
@@ -461,8 +450,15 @@ export function syncRepository(
     profile,
     verify.verificationSkill,
   );
-  const boundaries = backendBoundaryArtifacts(root);
-  let plan = [...planSync(current, modes, context), ...boundaries];
+  const standalone = [
+    ...backendBoundaryArtifacts(root),
+    ...renovateArtifacts(
+      root,
+      manifest,
+      profile === "full" || verify.kind === "template",
+    ),
+  ];
+  let plan = [...planSync(current, modes, context), ...standalone];
   const errors = plan
     .filter((artifact) => artifact.kind === "error")
     .map(({ message }) => message);
@@ -490,7 +486,7 @@ export function syncRepository(
       ...baseline,
       pack: recordedRelease(undefined),
     });
-    plan = [...planSync(current, modes, context), ...boundaries];
+    plan = [...planSync(current, modes, context), ...standalone];
   }
   const writes = plan.filter(
     (artifact) => artifact.kind === "write" || artifact.kind === "migrated",

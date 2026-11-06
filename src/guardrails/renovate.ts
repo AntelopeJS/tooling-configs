@@ -1,22 +1,74 @@
-/** The Renovate config file sync writes when a repository has none. */
-export const RENOVATE_PATH = "renovate.json";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
-/** The repository config files Renovate reads, `renovate.json` first. */
+import type { Manifest } from "./package.ts";
+import type { PlannedArtifact } from "./sync.ts";
+
+/** The Renovate config file sync writes when a repository has none. */
+const RENOVATE_PATH = "renovate.json";
+
+/** The repository config files Renovate reads, in its lookup order, so the first one present is the one it uses. */
 export const RENOVATE_CONFIGS = [
   RENOVATE_PATH,
   "renovate.json5",
   ".github/renovate.json",
   ".github/renovate.json5",
+  ".gitlab/renovate.json",
+  ".gitlab/renovate.json5",
+  ".gitea/renovate.json",
+  ".gitea/renovate.json5",
+  ".forgejo/renovate.json",
+  ".forgejo/renovate.json5",
   ".renovaterc",
   ".renovaterc.json",
+  ".renovaterc.json5",
 ] as const;
+
+const PRESET = "github>AntelopeJS/.github:renovate.json5";
 
 /** Matches a config that extends the AntelopeJS shared Renovate preset. */
 export const RENOVATE_PRESET = /github>AntelopeJS\/\.github(?::|\/)/;
 
-/** The `renovate.json` sync writes, already in oxfmt's JSON style. */
-export const RENOVATE_JSON = `{
+const RENOVATE_JSON = `{
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>AntelopeJS/.github:renovate.json5"]
+  "extends": ["${PRESET}"]
 }
 `;
+
+/**
+ * Writes `renovate.json` when the repository has no Renovate config, keeps an existing one byte for byte,
+ * and fails one that does not extend the AntelopeJS preset, since rewriting it would drop the repository's settings.
+ * `managed` is false for a project scaffolded from a template, whose Renovate setup is its own.
+ */
+export function renovateArtifacts(
+  root: string,
+  manifest: Manifest,
+  managed: boolean,
+): PlannedArtifact[] {
+  if (!managed) return [];
+  const file = RENOVATE_CONFIGS.find((path) => existsSync(join(root, path)));
+  const path = file ?? "package.json";
+  const text =
+    file === undefined
+      ? manifest.renovate === undefined
+        ? undefined
+        : JSON.stringify(manifest.renovate)
+      : readFileSync(join(root, file), "utf8");
+  if (text === undefined)
+    return [
+      {
+        kind: "write",
+        path: RENOVATE_PATH,
+        content: RENOVATE_JSON,
+        mode: undefined,
+      },
+    ];
+  if (RENOVATE_PRESET.test(text)) return [{ kind: "unchanged", path }];
+  return [
+    {
+      kind: "error",
+      path,
+      message: `${file ?? 'package.json "renovate"'}: extend "${PRESET}" in its extends, then rerun antelopejs-sync.`,
+    },
+  ];
+}
