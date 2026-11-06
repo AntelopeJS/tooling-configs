@@ -1,13 +1,25 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  rmdirSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, relative } from "node:path";
 
 import { BUILTIN_JOURNEYS } from "./builtins.ts";
 import { VerifyContext, type BuiltinJourney } from "./context.ts";
 import { readFeatures } from "./map.ts";
+import { killGroup, onInterrupt } from "./record.ts";
 import type { JourneyEnd, JourneyResult, JourneyStatus } from "./results.ts";
 import type { Journey } from "./types.ts";
-import type { RunState, Workspace } from "./workspace.ts";
+import {
+  removeTree,
+  saveRun,
+  type RunState,
+  type Workspace,
+} from "./workspace.ts";
 
 /** Every journey id a feature file may name: the kind's built-in journeys and the repo's own. */
 export function knownJourneys(
@@ -66,6 +78,25 @@ function statusOf(context: VerifyContext, failure: JourneyEnd): JourneyStatus {
   return failed || context.steps.length === 0 ? "FAIL" : "PASS";
 }
 
+/** Deletes a journey's scratch folder and HOME, and their parents once empty; the evidence stays. A folder it cannot delete is reported on stderr and left for the next prune. */
+function discard(context: VerifyContext): void {
+  for (const folder of [context.work, context.home]) {
+    try {
+      removeTree(folder);
+      for (
+        let parent = dirname(folder);
+        parent !== context.state.dir && readdirSync(parent).length === 0;
+        parent = dirname(parent)
+      )
+        rmdirSync(parent);
+    } catch (error) {
+      process.stderr.write(
+        `could not delete ${folder}: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    }
+  }
+}
+
 async function runOne(
   workspace: Workspace,
   state: RunState,
@@ -74,6 +105,31 @@ async function runOne(
   journey: BuiltinJourney | Journey,
 ): Promise<JourneyResult> {
   const context = new VerifyContext(workspace, state, feature, id);
+  const others = new Set(state.processes.map((record) => record.pid));
+  const release = onInterrupt(() => {
+    const own = state.processes.filter((record) => !others.has(record.pid));
+    for (const record of own) killGroup(record.pid);
+    discard(context);
+    state.processes = state.processes.filter((record) =>
+      others.has(record.pid),
+    );
+    saveRun(state);
+  });
+  try {
+    return await driveJourney(context, feature, id, journey);
+  } finally {
+    release();
+    discard(context);
+  }
+}
+
+async function driveJourney(
+  context: VerifyContext,
+  feature: string,
+  id: string,
+  journey: BuiltinJourney | Journey,
+): Promise<JourneyResult> {
+  const { state } = context;
   let failure: JourneyEnd = {
     error: null,
     notVerified: null,

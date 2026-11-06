@@ -1,7 +1,20 @@
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+} from "node:fs";
 import { join, relative } from "node:path";
 
-import { isObject } from "../garden/json.ts";
+import {
+  children,
+  isObject,
+  num,
+  object,
+  parseJson,
+  str,
+} from "../garden/json.ts";
 import { containerRunning, removeContainer, startServices } from "./docker.ts";
 import { installedPackage } from "./fixture.ts";
 import { linkDependencies } from "./interface.ts";
@@ -11,6 +24,8 @@ import {
   allocateRun,
   git,
   isolatedEnv,
+  removeTree,
+  RUNS_DIR,
   saveRun,
   type RunState,
   type Workspace,
@@ -88,6 +103,76 @@ async function packInterface(
   return root;
 }
 
+/** How long a run may sit untouched before the next `new` deletes it. */
+const RUN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function lastActivity(dir: string): number {
+  const file = join(dir, "run.json");
+  return statSync(existsSync(file) ? file : dir).mtimeMs;
+}
+
+/** What a stale run may still hold: the PIDs and container names it recorded. */
+interface Leftovers {
+  pids: number[];
+  containers: string[];
+}
+
+/** The leftovers a run recorded; none when its run.json is missing or unreadable. */
+function recorded(dir: string): Leftovers {
+  try {
+    const state = object(
+      parseJson(readFileSync(join(dir, "run.json"), "utf8")),
+      "run.json",
+    );
+    return {
+      pids: children(state, "processes").map((entry) => num(entry, "pid")),
+      containers: children(state, "containers").map((entry) =>
+        str(entry, "name"),
+      ),
+    };
+  } catch {
+    return { pids: [], containers: [] };
+  }
+}
+
+function entries(folder: string): string[] {
+  try {
+    return readdirSync(folder, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(folder, entry.name));
+  } catch {
+    return [];
+  }
+}
+
+function pruneRun(dir: string, now: number): void {
+  try {
+    if (now - lastActivity(dir) < RUN_TTL_MS) return;
+    const { pids, containers } = recorded(dir);
+    if (pids.some(alive)) return;
+    for (const name of containers) removeContainer(name);
+    removeTree(dir);
+  } catch (error) {
+    if (existsSync(dir))
+      process.stderr.write(
+        `could not prune ${dir}: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+  }
+}
+
+/**
+ * Deletes every run under the runs folder, of any repository, that nothing
+ * touched for seven days and whose recorded processes are all gone, with the
+ * containers it recorded. A run a command loaded since then, or one with a
+ * live process, is still in progress and stays. A run it cannot delete is
+ * reported on stderr and never stops the new run.
+ */
+function pruneRuns(): void {
+  const now = Date.now();
+  for (const repo of entries(RUNS_DIR))
+    for (const dir of entries(repo)) pruneRun(dir, now);
+}
+
 /**
  * Creates an isolated run: runs the setup (the build by default), then
  * prepares what the kind drives. An interface is packed as npm would publish
@@ -99,6 +184,7 @@ export async function createRun(
   baseRef: string,
   title: string,
 ): Promise<RunState> {
+  pruneRuns();
   const state = allocateRun(workspace, baseRef, title);
   saveRun(state);
   await runSetup(workspace, state);
@@ -234,7 +320,7 @@ export function clean(state: RunState): string[] {
   saveRun(state);
   for (const entry of readdirSync(state.dir)) {
     if (entry === "evidence" || entry === "run.json") continue;
-    rmSync(join(state.dir, entry), { recursive: true, force: true });
+    removeTree(join(state.dir, entry));
   }
   return lines;
 }

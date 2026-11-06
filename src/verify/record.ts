@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:net";
+import { constants } from "node:os";
 import { join, relative } from "node:path";
 
 import { parseJson, type JsonValue } from "../garden/json.ts";
@@ -44,32 +45,74 @@ function writeCommand(folder: string, spec: CommandSpec): void {
   );
 }
 
+const foreground = new Set<ChildProcess>();
+
+const releases = new Set<() => void>();
+
+const INTERRUPTS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"] as const;
+
+let listening = false;
+
+/** On the first interrupt, kills the process group of every foreground command, runs every registered release (one that throws is reported and the others still run), and exits with the shell's code for the signal. */
+function listenForInterrupts(): void {
+  if (listening) return;
+  listening = true;
+  for (const signal of INTERRUPTS)
+    process.once(signal, () => {
+      for (const child of foreground)
+        if (child.pid !== undefined) killOwnGroup(child.pid);
+      for (const release of releases)
+        try {
+          release();
+        } catch (error) {
+          process.stderr.write(
+            `${error instanceof Error ? error.message : String(error)}\n`,
+          );
+        }
+      process.exit(128 + constants.signals[signal]);
+    });
+}
+
+/**
+ * Until the returned function is called, an interrupt calls `release` after
+ * killing the process group of every command still running in the
+ * foreground, the processes it started included.
+ */
+export function onInterrupt(release: () => void): () => void {
+  listenForInterrupts();
+  releases.add(release);
+  return () => releases.delete(release);
+}
+
 /** Runs a command to completion and writes command.txt, stdout.txt, stderr.txt and exit-code.txt into `folder`. */
 export function runRecorded(
   folder: string,
   spec: CommandSpec,
 ): Promise<CommandResult> {
   writeCommand(folder, spec);
+  listenForInterrupts();
   return new Promise((resolve) => {
     const child = spawn(spec.program, spec.args, {
       cwd: spec.cwd,
       env: spec.env,
+      detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    foreground.add(child);
     const out: Buffer[] = [];
     const err: Buffer[] = [];
     child.stdout.on("data", (chunk: Buffer) => out.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => err.push(chunk));
-    const timer = setTimeout(
-      () => child.kill("SIGKILL"),
-      spec.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    );
+    const timer = setTimeout(() => {
+      if (child.pid !== undefined) killOwnGroup(child.pid);
+    }, spec.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     const finish = (
       code: number | null,
       signal: string | null,
       failure = "",
     ) => {
       clearTimeout(timer);
+      foreground.delete(child);
       const result: CommandResult = {
         folder,
         command: describe(spec),
@@ -131,6 +174,15 @@ export function startRecorded(
     throw new Error(`Could not start ${describe(spec)}`);
   writeFileSync(join(folder, "pid.txt"), `${child.pid}\n`);
   return { folder, child, pid: child.pid, exited };
+}
+
+/** Kills the process group a detached command leads, never a lone PID the system may have reused since the command exited. */
+function killOwnGroup(pid: number): void {
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    return;
+  }
 }
 
 /** Kills the process group of `pid`, or `pid` alone, ignoring a process already gone. */

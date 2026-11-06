@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -319,16 +319,16 @@ test("a flagged door needs a row or a reasoned false positive, and a listed Data
   assert.match(stale.stdout, /- README\.md no longer matches the behaviour/);
 });
 
-test("clean keeps the evidence and run.json and removes the scratch folders", (t) => {
+test("clean keeps the evidence and run.json and removes the scratch folders, read-only ones included", (t) => {
   const { root, tmp } = runRepo(t);
   const run = newRun(root, tmp);
   assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
-  assert.equal(existsSync(join(run, "work/smoke/ok")), true);
+  put(run, "pack/package/package.json", "{}\n");
+  chmodSync(join(run, "pack/package"), 0o555);
   const cleaned = verify(root, tmp, ["clean", run]);
   assert.equal(cleaned.status, 0, cleaned.stderr);
   assert.equal(cleaned.stdout, "");
-  assert.equal(existsSync(join(run, "work")), false);
-  assert.equal(existsSync(join(run, "homes")), false);
+  assert.equal(existsSync(join(run, "pack")), false);
   assert.equal(
     read(run, "evidence/smoke/ok/01-node-exits-0/exit-code.txt"),
     "0\n",
