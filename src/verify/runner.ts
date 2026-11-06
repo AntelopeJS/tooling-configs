@@ -4,7 +4,6 @@ import {
   readdirSync,
   readFileSync,
   rmdirSync,
-  rmSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -15,7 +14,12 @@ import { readFeatures } from "./map.ts";
 import { killGroup, onInterrupt } from "./record.ts";
 import type { JourneyEnd, JourneyResult, JourneyStatus } from "./results.ts";
 import type { Journey } from "./types.ts";
-import { saveRun, type RunState, type Workspace } from "./workspace.ts";
+import {
+  removeTree,
+  saveRun,
+  type RunState,
+  type Workspace,
+} from "./workspace.ts";
 
 /** Every journey id a feature file may name: the kind's built-in journeys and the repo's own. */
 export function knownJourneys(
@@ -78,7 +82,7 @@ function statusOf(context: VerifyContext, failure: JourneyEnd): JourneyStatus {
 function discard(context: VerifyContext): void {
   for (const folder of [context.work, context.home]) {
     try {
-      rmSync(folder, { recursive: true, force: true });
+      removeTree(folder);
       for (
         let parent = dirname(folder);
         parent !== context.state.dir && readdirSync(parent).length === 0;

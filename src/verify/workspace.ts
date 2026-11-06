@@ -1,9 +1,13 @@
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
+  rmSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -76,6 +80,22 @@ export const CACHE_DIR = join(
 
 /** The folder that holds every run, one subfolder per repository. */
 export const RUNS_DIR = join(tmpdir(), "antelopejs-verify");
+
+function makeWritable(folder: string): void {
+  chmodSync(folder, lstatSync(folder).mode | 0o700);
+  for (const entry of readdirSync(folder, { withFileTypes: true }))
+    if (entry.isDirectory()) makeWritable(join(folder, entry.name));
+}
+
+/** Deletes a folder this run wrote, including folders an install left read-only. */
+export function removeTree(folder: string): void {
+  try {
+    rmSync(folder, { recursive: true, force: true });
+  } catch {
+    makeWritable(folder);
+    rmSync(folder, { recursive: true, force: true });
+  }
+}
 
 /** Runs git in `cwd` and returns its trimmed output. */
 export function git(cwd: string, args: string[]): string {

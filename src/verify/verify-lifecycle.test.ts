@@ -35,7 +35,7 @@ setInterval(() => {}, 1000);`;
 
 const CONFIG = `import { exitIs } from ${JSON.stringify(CHECKS)};
 const install = (context) =>
-  context.command("install", process.execPath, ["-e", "const fs = require('fs'); fs.mkdirSync('node_modules/dep', { recursive: true }); fs.writeFileSync('node_modules/dep/index.js', ''); fs.writeFileSync(process.env.HOME + '/.npmrc', '')"]);
+  context.command("install", process.execPath, ["-e", "const fs = require('fs'); fs.mkdirSync('node_modules/dep', { recursive: true }); fs.writeFileSync('node_modules/dep/index.js', ''); fs.chmodSync('node_modules/dep', 0o555); fs.writeFileSync(process.env.HOME + '/.npmrc', '')"]);
 export default {
   doors: ${PUBLISH_DOORS},
   journeys: {
@@ -67,7 +67,7 @@ export default {
       title: "installs a folder it cannot delete",
       entryPoint: "node",
       async run(context) {
-        const result = await context.command("install", process.execPath, ["-e", "const fs = require('fs'); fs.mkdirSync('node_modules/locked', { recursive: true }); fs.writeFileSync('node_modules/locked/index.js', ''); fs.chmodSync('node_modules/locked', 0o555)"]);
+        const result = await context.command("install", process.execPath, ["-e", "const fs = require('fs'); fs.mkdirSync('node_modules/locked', { recursive: true }); fs.writeFileSync('node_modules/locked/index.js', ''); fs.chmodSync('..', 0o555)"]);
         context.expect(result.folder, [exitIs(result, 0)]);
       },
     },
@@ -126,7 +126,7 @@ async function until(condition: () => boolean): Promise<void> {
   }
 }
 
-test("a journey that passes or fails deletes its install and HOME and leaves only the evidence and run.json", (t) => {
+test("a journey that passes or fails deletes its install, read-only folders included, and its HOME, leaving only the evidence and run.json", (t) => {
   const { root, tmp } = lifecycleRepo(t);
   const run = newRun(root, tmp);
   const result = verify(root, tmp, ["journey", run, "smoke"]);
@@ -176,8 +176,8 @@ test("new skips a stale run it cannot delete, says so, and still creates its run
     tmp,
     "antelopejs-verify/other-repo/20200101T000000-abcdef",
   );
-  put(stale, "work/node_modules/locked/index.js", "");
-  chmodSync(join(stale, "work/node_modules/locked"), 0o555);
+  put(stale, "work/node_modules/dep/index.js", "");
+  chmodSync(join(stale, ".."), 0o555);
   const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
   utimesSync(stale, old, old);
   const created = verify(root, tmp, ["new"]);

@@ -25,6 +25,7 @@ import {
   allocateRun,
   git,
   isolatedEnv,
+  removeTree,
   RUNS_DIR,
   saveRun,
   type RunState,
@@ -151,7 +152,7 @@ function pruneRun(dir: string, now: number): void {
     const { pids, containers } = recorded(dir);
     if (pids.some(alive)) return;
     for (const name of containers) removeContainer(name);
-    rmSync(dir, { recursive: true, force: true });
+    removeTree(dir);
   } catch (error) {
     if (existsSync(dir))
       process.stderr.write(
