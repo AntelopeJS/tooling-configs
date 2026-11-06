@@ -95,12 +95,13 @@ test("an issue with a linked open pull request is dropped, and only ten are show
   );
 });
 
-test("the label decides the kind, the issue type decides without one", async () => {
+test("the label decides the kind, `enhancement` counts as a feature, and the issue type decides without a label", async () => {
   const shortlist = await triage(
     search([
       node({ number: 1, labels: ["feature"], type: "Bug" }),
       node({ number: 2, type: "Bug" }),
       node({ number: 3, type: "Task" }),
+      node({ number: 4, labels: ["enhancement"] }),
     ]),
   );
   assert.deepEqual(
@@ -108,6 +109,7 @@ test("the label decides the kind, the issue type decides without one", async () 
     [
       "AntelopeJS/dms#2 bug",
       "AntelopeJS/dms#1 feature",
+      "AntelopeJS/dms#4 feature",
       "AntelopeJS/dms#3 other",
     ],
   );
@@ -203,4 +205,26 @@ test("a GraphQL answer that carries errors throws instead of reading as no issue
       ),
   );
   await assert.rejects(triage(createGraphql("token")), /rate limited/);
+});
+
+test("a line starting with an issue reference is text, not a heading, and the cut keeps whole characters", async () => {
+  const shortlist = await triage(
+    search([
+      node({
+        number: 1,
+        labels: ["bug"],
+        body: "#42 regressed again\nmore detail",
+      }),
+      node({
+        number: 2,
+        labels: ["bug"],
+        createdAt: "2026-10-02T10:00:00Z",
+        body: `${"x".repeat(199)}😀 tail`,
+      }),
+    ]),
+  );
+  assert.deepEqual(
+    shortlist.items.map((entry) => entry.firstLine),
+    ["#42 regressed again", `${"x".repeat(199)}😀`],
+  );
 });

@@ -46,6 +46,7 @@ const SEARCH =
 
 const LIMIT = 10;
 const FIRST_LINE_LENGTH = 200;
+const HEADING = /^#{1,6}(?:\s|$)/;
 const KIND_ORDER = { bug: 0, feature: 1, other: 2 } satisfies Record<
   Kind,
   number
@@ -67,10 +68,11 @@ const QUERY = `query($q: String!, $after: String) {
   }
 }`;
 
-/** The `bug` or `feature` label decides; without either, the issue type does. */
+/** The `bug` label, or the `feature` or `enhancement` label, decides; without one, the issue type does. */
 function kind(labels: string[], type: string | undefined): Kind {
   if (labels.includes("bug")) return "bug";
-  if (labels.includes("feature")) return "feature";
+  if (labels.includes("feature") || labels.includes("enhancement"))
+    return "feature";
   if (type === "Bug") return "bug";
   if (type === "Feature") return "feature";
   return "other";
@@ -84,9 +86,11 @@ function firstLine(body: string): string {
     .map((entry) => entry.trim())
     .find(
       (entry) =>
-        entry !== "" && !entry.startsWith("#") && entry !== "_No response_",
+        entry !== "" && !HEADING.test(entry) && entry !== "_No response_",
     );
-  return (line ?? "").slice(0, FIRST_LINE_LENGTH);
+  return Array.from(line ?? "")
+    .slice(0, FIRST_LINE_LENGTH)
+    .join("");
 }
 
 function issue(value: JsonValue): Issue {

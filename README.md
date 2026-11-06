@@ -56,8 +56,8 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 
 `antelopejs-triage` lists the issues Community Triage has not looked at yet, ranked, through one GitHub GraphQL search authenticated with the token `gh` is logged in with. An issue is listed when it is open, labelled `needs-triage`, has no assignee, sits in a public, non-archived AntelopeJS repository, and no open pull request is linked to it. A linked pull request that was closed does not hide the issue.
 
-- The ranking puts bugs first, then features, then the rest, then the most 👍 reactions first, then the oldest first. The `bug` or `feature` label sets the kind, and the issue type does when neither label is there.
-- `--json` prints `{ items, notShown }`. `items` holds at most 10 `{ ref, url, kind, title, firstLine, created }`, with `ref` as `AntelopeJS/<repo>#<number>`, `kind` as `bug`, `feature` or `other`, and `created` as the `YYYY-MM-DD` date. `firstLine` is the first line of the body that is not blank, a heading, an HTML comment or `_No response_`, cut at 200 characters. `notShown` counts the listed issues past the tenth.
+- The ranking puts bugs first, then features, then the rest, then the most 👍 reactions first, then the oldest first. The `bug` label sets the kind `bug`, the `feature` or `enhancement` label sets `feature`, and the issue type does when none of them is there.
+- `--json` prints `{ items, notShown }`. `items` holds at most 10 `{ ref, url, kind, title, firstLine, created }`, with `ref` as `AntelopeJS/<repo>#<number>`, `kind` as `bug`, `feature` or `other`, and `created` as the `YYYY-MM-DD` date. `firstLine` is the first line of the body that is not blank, a Markdown heading, an HTML comment or `_No response_`, cut at 200 characters. `notShown` counts the listed issues past the tenth.
 - Without `--json` it prints one line per item and a last line with the count not shown, and nothing when no issue waits.
 
 ## Shared verification skills
