@@ -72,8 +72,8 @@ const TEMPLATE: KindText = {
 - \`template.probe\`: \`path\`, \`status\` and \`body\` for an HTTP welcome page or endpoint, or \`log\` and \`settleMs\` for a template that serves nothing.`,
   smoke: "`scaffold-dev` and `scaffold-checks`",
   gotchas: [
-    "`ajs project init` leaves out `.agents/` and `.claude/skills/`, so the scaffolded project carries neither this skill nor anything else under `.agents/`. Never expect them there.",
-    "Every file a user gets is user-facing here, tests included; only the rest of `.claude/` and `.github/` are not.",
+    "`ajs project init` leaves out `.agents/` and `.claude/skills/`, so the scaffolded project carries neither this skill nor anything else under `.agents/`. Never expect either folder there.",
+    "Every file a user gets is user-facing here, tests included; only `.github/` and `.claude/` outside `.claude/skills/` are not.",
   ],
 };
 
