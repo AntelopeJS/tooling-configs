@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { parseDocument } from "yaml";
@@ -10,9 +11,8 @@ import {
   CI_NODE_REF,
   CI_RENOVATE_SYNC_REF,
   ciWorkflow,
-  mutationCaller,
 } from "./ci-workflow.ts";
-import { MANAGED_ARTIFACTS, syncRepository } from "./sync.ts";
+import { syncRepository } from "./sync.ts";
 import {
   PACKAGE_ROOT,
   bin,
@@ -295,18 +295,7 @@ test("another job already named ci blocks the rename instead of overwriting it",
   assert.throws(() => rewrite(clash), /a job named ci already exists/);
 });
 
-test("the weekly mutation caller targets mutation.yml@v1 and each package gets a stable slot in the week", () => {
-  const text = mutationCaller("@antelopejs/mongodb");
-  assert.match(
-    text,
-    /uses: AntelopeJS\/\.github\/\.github\/workflows\/mutation\.yml@v1/,
-  );
-  assert.match(text, /cron: "\d+ \d+ \* \* [0-6]"/);
-  assert.equal(mutationCaller("@antelopejs/mongodb"), text);
-  assert.notEqual(mutationCaller("@antelopejs/redis"), text);
-});
-
-test("sync writes both callers into a repository without them, and sync --check reports a drifted caller job id", (t) => {
+test("sync writes the ci caller into a repository without it, never a mutation caller, and sync --check reports a drifted caller job id", (t) => {
   const root = testRepo(t, false);
   put(
     root,
@@ -319,10 +308,7 @@ test("sync writes both callers into a repository without them, and sync --check 
     ciNodeCallers(read(root, ".github/workflows/ci.yml")).map(({ id }) => id),
     ["ci"],
   );
-  assert.match(
-    read(root, ".github/workflows/mutation.yml"),
-    /mutation\.yml@v1/,
-  );
+  assert.equal(existsSync(join(root, ".github/workflows/mutation.yml")), false);
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
   put(root, ".github/workflows/ci.yml", LEGACY);
   commit(root);
@@ -387,14 +373,23 @@ test("the caller is dispatchable and its job holds exactly contents read, whatev
   });
 });
 
-test("the template profile syncs the caller too, and not the mutation workflow", (t) => {
+test("the template profile syncs the caller too", (t) => {
   const root = testRepo(t, false);
   const check = syncRepository(root, { check: true, profile: "template" });
   assert.equal(check.paths.includes(".github/workflows/ci.yml"), true);
-  assert.equal(check.paths.includes(".github/workflows/mutation.yml"), false);
-  assert.ok(
-    MANAGED_ARTIFACTS.some(
-      ({ path }) => path === ".github/workflows/mutation.yml",
-    ),
+});
+
+test("sync leaves an existing mutation caller alone and --check accepts it", (t) => {
+  const root = testRepo(t, false);
+  put(
+    root,
+    "guardrails.ratchet.json",
+    '{"rules":{"eslint/no-alert":1},"oversizeFiles":{}}\n',
   );
+  const caller = "name: mutation\non: workflow_dispatch\njobs: {}\n";
+  put(root, ".github/workflows/mutation.yml", caller);
+  commit(root);
+  assert.equal(bin(root, "sync").status, 0);
+  assert.equal(read(root, ".github/workflows/mutation.yml"), caller);
+  assert.equal(bin(root, "sync", ["--check"]).status, 0);
 });

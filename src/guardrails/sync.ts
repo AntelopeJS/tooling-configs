@@ -48,12 +48,7 @@ import {
   hasChecksWorkflow,
   MISSING_CHECKS_WORKFLOW,
 } from "./workflow.ts";
-import {
-  CI_PATH,
-  ciWorkflow,
-  MUTATION_PATH,
-  mutationCaller,
-} from "./ci-workflow.ts";
+import { CI_PATH, ciWorkflow } from "./ci-workflow.ts";
 import { backendBoundaryArtifacts } from "./backend-boundary.ts";
 import { checkEntryOnlyConfiguration } from "./entry-only.ts";
 import { planDocs, type DocsPlan } from "./docs-compat.ts";
@@ -76,7 +71,6 @@ export interface RepoContext extends AgentsBlockContext {
   claude: string;
   baseline: string;
   suppressionBudget: string;
-  packageName: string;
   /** Whether sync owns .github/workflows/ci.yml: it exists, or no other workflow runs the checks. */
   managesCi: boolean;
   /** The docs-compat READMEs and caller `docs-files` lines, planned under the full profile only. */
@@ -169,14 +163,6 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
         current === undefined ? [] : ciRenovateSyncCallers(current),
         context.docs,
       ),
-      notes: [],
-    }),
-  },
-  {
-    path: MUTATION_PATH,
-    profiles: ["full"],
-    desired: (_current, context) => ({
-      content: mutationCaller(context.packageName),
       notes: [],
     }),
   },
@@ -391,7 +377,6 @@ function repositoryContext(
       profile === "full"
         ? adoptedBudget(root, current.get(SUPPRESSIONS_FILE))
         : "",
-    packageName: manifest.name ?? "",
     managesCi: current.has(CI_PATH) || !hasChecksWorkflow(root),
     verificationSkill:
       profile === "template" && inScaffoldExcludedPath(verificationSkill)

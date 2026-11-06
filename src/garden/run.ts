@@ -1,6 +1,6 @@
 import type { GardenApi } from "./api.ts";
 import { aiApps, orbSecrets } from "./checks/apps.ts";
-import { linkRot, mutation } from "./checks/artifacts.ts";
+import { linkRot } from "./checks/artifacts.ts";
 import { ciDuration, redBranch } from "./checks/ci-health.ts";
 import {
   applyPrunes,
@@ -43,7 +43,6 @@ const CHECKS: readonly Check[] = [
   aiApps,
   orbSecrets,
   packageSize,
-  mutation,
   templateBehindLatest,
   templateMembership,
   staleRegistry,

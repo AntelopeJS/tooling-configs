@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { linkRot, mutation } from "./checks/artifacts.ts";
+import { linkRot } from "./checks/artifacts.ts";
 import { captureScenes, webBuild } from "./checks/pipelines.ts";
 import { run } from "./helpers/builders.ts";
 import { FakeApi, zip } from "./helpers/fake-api.ts";
@@ -34,46 +34,6 @@ function artifact(repo: string, name: string, content: string): FakeApi {
       zip(`${name}.json`, content),
     );
 }
-
-const STRYKER = JSON.stringify({
-  files: {
-    "src/a.ts": {
-      mutants: [
-        { status: "Survived" },
-        { status: "Survived" },
-        { status: "Killed" },
-      ],
-    },
-    "src/b.ts": { mutants: [{ status: "Killed" }] },
-  },
-});
-
-test("mutation is skipped until G1's workflow exists, then until one report exists", async () => {
-  const none = new FakeApi().org([{ name: "mongodb" }]);
-  assert.deepEqual(await mutation.run(none.context()), {
-    kind: "skipped",
-    reason: "AntelopeJS/.github has no mutation.yml yet",
-  });
-  const early = new FakeApi()
-    .org([{ name: "mongodb" }])
-    .route(`${WORKFLOW}/mutation.yml`, {})
-    .route("/repos/AntelopeJS/mongodb/actions/artifacts", { artifacts: [] });
-  const result = await mutation.run(early.context());
-  assert.equal(result.kind, "skipped");
-});
-
-test("one Finding per repository and source file with a surviving mutant, none for fully killed files", async () => {
-  const api = artifact("mongodb", "mutation-report", STRYKER)
-    .org([{ name: "mongodb" }, { name: "cdn", tier: "N3" }])
-    .route(`${WORKFLOW}/mutation.yml`, {});
-  assert.deepEqual(keys(await mutation.run(api.context())), [
-    "mongodb|mutation|src/a.ts",
-  ]);
-  assert.equal(
-    api.requests.some((path) => path.includes("/cdn/")),
-    false,
-  );
-});
 
 test("link rot is skipped until the artifact exists, then reports one Finding per repository and file", async () => {
   const missing = new FakeApi()
