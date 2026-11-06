@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:net";
+import { constants } from "node:os";
 import { join, relative } from "node:path";
 
 import { parseJson, type JsonValue } from "../garden/json.ts";
@@ -44,6 +45,30 @@ function writeCommand(folder: string, spec: CommandSpec): void {
   );
 }
 
+const foreground = new Set<ChildProcess>();
+
+const INTERRUPTS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+
+/**
+ * Until the returned function is called, an interrupt kills every command
+ * still running in the foreground, calls `release`, and exits with the
+ * shell's code for the signal.
+ */
+export function onInterrupt(release: () => void): () => void {
+  const listeners = INTERRUPTS.map((signal) => {
+    const listener = () => {
+      for (const child of foreground) child.kill("SIGKILL");
+      release();
+      process.exit(128 + constants.signals[signal]);
+    };
+    process.once(signal, listener);
+    return () => process.off(signal, listener);
+  });
+  return () => {
+    for (const remove of listeners) remove();
+  };
+}
+
 /** Runs a command to completion and writes command.txt, stdout.txt, stderr.txt and exit-code.txt into `folder`. */
 export function runRecorded(
   folder: string,
@@ -56,6 +81,7 @@ export function runRecorded(
       env: spec.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    foreground.add(child);
     const out: Buffer[] = [];
     const err: Buffer[] = [];
     child.stdout.on("data", (chunk: Buffer) => out.push(chunk));
@@ -70,6 +96,7 @@ export function runRecorded(
       failure = "",
     ) => {
       clearTimeout(timer);
+      foreground.delete(child);
       const result: CommandResult = {
         folder,
         command: describe(spec),

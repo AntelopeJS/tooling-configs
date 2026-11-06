@@ -1,13 +1,21 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  rmdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, relative } from "node:path";
 
 import { BUILTIN_JOURNEYS } from "./builtins.ts";
 import { VerifyContext, type BuiltinJourney } from "./context.ts";
 import { readFeatures } from "./map.ts";
+import { killGroup, onInterrupt } from "./record.ts";
 import type { JourneyEnd, JourneyResult, JourneyStatus } from "./results.ts";
 import type { Journey } from "./types.ts";
-import type { RunState, Workspace } from "./workspace.ts";
+import { saveRun, type RunState, type Workspace } from "./workspace.ts";
 
 /** Every journey id a feature file may name: the kind's built-in journeys and the repo's own. */
 export function knownJourneys(
@@ -66,6 +74,19 @@ function statusOf(context: VerifyContext, failure: JourneyEnd): JourneyStatus {
   return failed || context.steps.length === 0 ? "FAIL" : "PASS";
 }
 
+/** Deletes a journey's scratch folder and HOME, and their parents once empty; the evidence stays. */
+function discard(context: VerifyContext): void {
+  for (const folder of [context.work, context.home]) {
+    rmSync(folder, { recursive: true, force: true });
+    for (
+      let parent = dirname(folder);
+      parent !== context.state.dir && readdirSync(parent).length === 0;
+      parent = dirname(parent)
+    )
+      rmdirSync(parent);
+  }
+}
+
 async function runOne(
   workspace: Workspace,
   state: RunState,
@@ -74,6 +95,27 @@ async function runOne(
   journey: BuiltinJourney | Journey,
 ): Promise<JourneyResult> {
   const context = new VerifyContext(workspace, state, feature, id);
+  const release = onInterrupt(() => {
+    for (const record of state.processes) killGroup(record.pid);
+    state.processes = [];
+    saveRun(state);
+    discard(context);
+  });
+  try {
+    return await driveJourney(context, feature, id, journey);
+  } finally {
+    release();
+    discard(context);
+  }
+}
+
+async function driveJourney(
+  context: VerifyContext,
+  feature: string,
+  id: string,
+  journey: BuiltinJourney | Journey,
+): Promise<JourneyResult> {
+  const { state } = context;
   let failure: JourneyEnd = {
     error: null,
     notVerified: null,

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { TestContext } from "node:test";
 
@@ -79,4 +80,9 @@ export function newRun(
 /** Reads a JSON file of a run's evidence. */
 export function evidence(run: string, path: string) {
   return JSON.parse(read(run, join("evidence", path)));
+}
+
+/** The entries left at the top of a run folder, sorted. */
+export function runEntries(run: string): string[] {
+  return readdirSync(run).sort();
 }

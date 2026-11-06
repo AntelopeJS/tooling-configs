@@ -323,12 +323,11 @@ test("clean keeps the evidence and run.json and removes the scratch folders", (t
   const { root, tmp } = runRepo(t);
   const run = newRun(root, tmp);
   assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
-  assert.equal(existsSync(join(run, "work/smoke/ok")), true);
+  put(run, "pack/package/package.json", "{}\n");
   const cleaned = verify(root, tmp, ["clean", run]);
   assert.equal(cleaned.status, 0, cleaned.stderr);
   assert.equal(cleaned.stdout, "");
-  assert.equal(existsSync(join(run, "work")), false);
-  assert.equal(existsSync(join(run, "homes")), false);
+  assert.equal(existsSync(join(run, "pack")), false);
   assert.equal(
     read(run, "evidence/smoke/ok/01-node-exits-0/exit-code.txt"),
     "0\n",

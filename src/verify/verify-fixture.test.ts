@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { read } from "../guardrails/helpers/test-repo.ts";
 import {
   evidence,
   feature,
@@ -49,10 +50,10 @@ test("a journey that writes the fixture project twice gets two separate projects
   assert.equal(journey.status, 0, journey.stdout + journey.stderr);
   const [result] = evidence(run, "smoke/feature.json");
   assert.equal(result.status, "PASS");
+  const tree = read(run, "evidence/smoke/twice/03-projects/tree.txt");
   for (const project of ["project", "fixture-2/project"])
-    assert.equal(
-      existsSync(join(run, "work/smoke/twice", project, "antelope.config.ts")),
-      true,
-      project,
+    assert.match(
+      tree,
+      new RegExp(`^${project}/antelope\\.config\\.ts \\d+$`, "m"),
     );
 });

@@ -1,6 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -68,6 +74,9 @@ export const CACHE_DIR = join(
   "antelopejs-verify",
 );
 
+/** The folder that holds every run, one subfolder per repository. */
+export const RUNS_DIR = join(tmpdir(), "antelopejs-verify");
+
 /** Runs git in `cwd` and returns its trimmed output. */
 export function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, {
@@ -116,13 +125,15 @@ function stateFile(dir: string): string {
   return join(dir, "run.json");
 }
 
-/** Reads a run created by `new`, failing with the reason when it is missing. */
+/** Reads a run created by `new`, failing with the reason when it is missing, and marks it active by touching run.json. */
 export function loadRun(dir: string): RunState {
   const file = stateFile(resolve(dir));
   if (!existsSync(file))
     throw new Error(
       `No run at ${dir}: run.json is missing. Create one with \`new\`.`,
     );
+  const now = new Date();
+  utimesSync(file, now, now);
   const state: RunState = JSON.parse(readFileSync(file, "utf8"));
   return state;
 }
@@ -139,7 +150,7 @@ export function allocateRun(
   title: string,
 ): RunState {
   const id = `${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}-${randomBytes(3).toString("hex")}`;
-  const dir = join(tmpdir(), "antelopejs-verify", workspace.name, id);
+  const dir = join(RUNS_DIR, workspace.name, id);
   const evidence = join(dir, "evidence");
   mkdirSync(evidence, { recursive: true });
   return {
