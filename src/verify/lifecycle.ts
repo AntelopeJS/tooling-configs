@@ -135,28 +135,42 @@ function recorded(dir: string): Leftovers {
   }
 }
 
+function entries(folder: string): string[] {
+  try {
+    return readdirSync(folder, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(folder, entry.name));
+  } catch {
+    return [];
+  }
+}
+
+function pruneRun(dir: string, now: number): void {
+  try {
+    if (now - lastActivity(dir) < RUN_TTL_MS) return;
+    const { pids, containers } = recorded(dir);
+    if (pids.some(alive)) return;
+    for (const name of containers) removeContainer(name);
+    rmSync(dir, { recursive: true, force: true });
+  } catch (error) {
+    if (existsSync(dir))
+      process.stderr.write(
+        `could not prune ${dir}: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+  }
+}
+
 /**
  * Deletes every run under the runs folder, of any repository, that nothing
  * touched for seven days and whose recorded processes are all gone, with the
  * containers it recorded. A run a command loaded since then, or one with a
- * live process, is still in progress and stays.
+ * live process, is still in progress and stays. A run it cannot delete is
+ * reported on stderr and never stops the new run.
  */
 function pruneRuns(): void {
   const now = Date.now();
-  if (!existsSync(RUNS_DIR)) return;
-  for (const repo of readdirSync(RUNS_DIR, { withFileTypes: true })) {
-    if (!repo.isDirectory()) continue;
-    for (const run of readdirSync(join(RUNS_DIR, repo.name), {
-      withFileTypes: true,
-    })) {
-      const dir = join(RUNS_DIR, repo.name, run.name);
-      if (!run.isDirectory() || now - lastActivity(dir) < RUN_TTL_MS) continue;
-      const { pids, containers } = recorded(dir);
-      if (pids.some(alive)) continue;
-      for (const name of containers) removeContainer(name);
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }
+  for (const repo of entries(RUNS_DIR))
+    for (const dir of entries(repo)) pruneRun(dir, now);
 }
 
 /**

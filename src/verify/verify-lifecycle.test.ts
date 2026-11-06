@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   rmSync,
@@ -14,6 +15,7 @@ import test, { type TestContext } from "node:test";
 import { PACKAGE_ROOT, put, read } from "../guardrails/helpers/test-repo.ts";
 import {
   CHECKS,
+  evidence,
   feature,
   newRun,
   PUBLISH_DOORS,
@@ -23,6 +25,13 @@ import {
 } from "./helpers/verify-repo.ts";
 
 const SKILL = ".agents/skills/verify-module";
+
+/** Starts a writer that keeps recreating HOME, records the writer's PID in `started`, and never exits. */
+const HANG = `const writer = require("child_process").spawn(process.execPath, ["-e", ${JSON.stringify(
+  'const fs = require("fs"); setInterval(() => { fs.mkdirSync(process.env.HOME, { recursive: true }); fs.writeFileSync(process.env.HOME + "/late", ""); }, 20)',
+)}], { stdio: "ignore" });
+require("fs").writeFileSync("started", String(writer.pid));
+setInterval(() => {}, 1000);`;
 
 const CONFIG = `import { exitIs } from ${JSON.stringify(CHECKS)};
 const install = (context) =>
@@ -51,7 +60,15 @@ export default {
       entryPoint: "node",
       async run(context) {
         await install(context);
-        await context.command("hang", process.execPath, ["-e", "require('fs').writeFileSync('started', String(process.pid)); setInterval(() => {}, 1000)"]);
+        await context.command("hang", process.execPath, ["-e", ${JSON.stringify(HANG)}]);
+      },
+    },
+    locked: {
+      title: "installs a folder it cannot delete",
+      entryPoint: "node",
+      async run(context) {
+        const result = await context.command("install", process.execPath, ["-e", "const fs = require('fs'); fs.mkdirSync('node_modules/locked', { recursive: true }); fs.writeFileSync('node_modules/locked/index.js', ''); fs.chmodSync('node_modules/locked', 0o555)"]);
+        context.expect(result.folder, [exitIs(result, 0)]);
       },
     },
   },
@@ -60,12 +77,16 @@ export default {
 
 function lifecycleRepo(t: TestContext) {
   const tmp = mkdtempSync(join(tmpdir(), "verify-lifecycle-"));
-  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  t.after(() => {
+    execFileSync("chmod", ["-R", "u+w", tmp]);
+    rmSync(tmp, { recursive: true, force: true });
+  });
   const root = verifyRepo(t, {
     "README.md": "# Demo\n",
     [`${SKILL}/verify.config.ts`]: CONFIG,
     [`${SKILL}/features/smoke.md`]: feature([], ["passes", "fails"]),
     [`${SKILL}/features/stuck.md`]: feature(["src/**"], ["hangs"]),
+    [`${SKILL}/features/locked.md`]: feature(["src/**"], ["locked"]),
   });
   return { root, tmp };
 }
@@ -77,6 +98,24 @@ function alive(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+/** Records a live process in the run's run.json, as another journey's app would be, and returns its PID. */
+function recordSleeper(t: TestContext, run: string): number {
+  const sleeper = spawn(process.execPath, [
+    "-e",
+    "setInterval(() => {}, 1000)",
+  ]);
+  t.after(() => sleeper.kill("SIGKILL"));
+  const state = JSON.parse(read(run, "run.json"));
+  writeFileSync(
+    join(run, "run.json"),
+    JSON.stringify({
+      ...state,
+      processes: [{ name: "app", pid: sleeper.pid }],
+    }),
+  );
+  return Number(sleeper.pid);
 }
 
 async function until(condition: () => boolean): Promise<void> {
@@ -99,9 +138,10 @@ test("a journey that passes or fails deletes its install and HOME and leaves onl
   );
 });
 
-test("an interrupted journey stops its commands, deletes its install and HOME, and exits with the signal's code", async (t) => {
+test("an interrupted journey stops its commands and what they started, spares another journey's processes, deletes its install and HOME, and exits with the signal's code", async (t) => {
   const { root, tmp } = lifecycleRepo(t);
   const run = newRun(root, tmp);
+  const other = recordSleeper(t, run);
   const started = join(run, "work/stuck/hangs/started");
   const child = spawn(
     process.execPath,
@@ -116,7 +156,34 @@ test("an interrupted journey stops its commands, deletes its install and HOME, a
   child.kill("SIGTERM");
   assert.equal(await exited, 143);
   await until(() => !alive(hang));
+  await new Promise((resolve) => setTimeout(resolve, 200));
   assert.deepEqual(runEntries(run), ["evidence", "run.json"]);
+  assert.equal(alive(other), true);
+});
+
+test("a journey whose install cannot be deleted still records its result and names the folder it left", (t) => {
+  const { root, tmp } = lifecycleRepo(t);
+  const run = newRun(root, tmp);
+  const result = verify(root, tmp, ["journey", run, "locked"]);
+  assert.equal(result.stdout, "PASS locked/locked\n");
+  assert.match(result.stderr, /could not delete .*work\/locked\/locked/);
+  assert.equal(evidence(run, "locked/feature.json")[0].status, "PASS");
+});
+
+test("new skips a stale run it cannot delete, says so, and still creates its run", (t) => {
+  const { root, tmp } = lifecycleRepo(t);
+  const stale = join(
+    tmp,
+    "antelopejs-verify/other-repo/20200101T000000-abcdef",
+  );
+  put(stale, "work/node_modules/locked/index.js", "");
+  chmodSync(join(stale, "work/node_modules/locked"), 0o555);
+  const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+  utimesSync(stale, old, old);
+  const created = verify(root, tmp, ["new"]);
+  assert.equal(created.status, 0, created.stderr);
+  assert.match(created.stderr, /could not prune .*20200101T000000-abcdef/);
+  assert.equal(existsSync(created.stdout.trim()), true);
 });
 
 test("new deletes runs untouched for 7 days, of any repository, and keeps recent runs and runs with a live process", async (t) => {
@@ -129,19 +196,7 @@ test("new deletes runs untouched for 7 days, of any repository, and keeps recent
     "antelopejs-verify/other-repo/20200101T000000-abcdef",
   );
   put(other, "work/app/node_modules/dep/index.js", "");
-  const sleeper = spawn(process.execPath, [
-    "-e",
-    "setInterval(() => {}, 1000)",
-  ]);
-  t.after(() => sleeper.kill("SIGKILL"));
-  const state = JSON.parse(read(busy, "run.json"));
-  writeFileSync(
-    join(busy, "run.json"),
-    JSON.stringify({
-      ...state,
-      processes: [{ name: "app", pid: sleeper.pid }],
-    }),
-  );
+  recordSleeper(t, busy);
   const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
   for (const file of [join(stale, "run.json"), join(busy, "run.json"), other])
     utimesSync(file, old, old);

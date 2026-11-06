@@ -47,26 +47,34 @@ function writeCommand(folder: string, spec: CommandSpec): void {
 
 const foreground = new Set<ChildProcess>();
 
+const releases = new Set<() => void>();
+
 const INTERRUPTS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 
+let listening = false;
+
+/** On the first interrupt, kills the process group of every foreground command, runs every registered release, and exits with the shell's code for the signal. */
+function listenForInterrupts(): void {
+  if (listening) return;
+  listening = true;
+  for (const signal of INTERRUPTS)
+    process.once(signal, () => {
+      for (const child of foreground)
+        if (child.pid !== undefined) killGroup(child.pid);
+      for (const release of releases) release();
+      process.exit(128 + constants.signals[signal]);
+    });
+}
+
 /**
- * Until the returned function is called, an interrupt kills every command
- * still running in the foreground, calls `release`, and exits with the
- * shell's code for the signal.
+ * Until the returned function is called, an interrupt calls `release` after
+ * killing the process group of every command still running in the
+ * foreground, the processes it started included.
  */
 export function onInterrupt(release: () => void): () => void {
-  const listeners = INTERRUPTS.map((signal) => {
-    const listener = () => {
-      for (const child of foreground) child.kill("SIGKILL");
-      release();
-      process.exit(128 + constants.signals[signal]);
-    };
-    process.once(signal, listener);
-    return () => process.off(signal, listener);
-  });
-  return () => {
-    for (const remove of listeners) remove();
-  };
+  listenForInterrupts();
+  releases.add(release);
+  return () => releases.delete(release);
 }
 
 /** Runs a command to completion and writes command.txt, stdout.txt, stderr.txt and exit-code.txt into `folder`. */
@@ -75,10 +83,12 @@ export function runRecorded(
   spec: CommandSpec,
 ): Promise<CommandResult> {
   writeCommand(folder, spec);
+  listenForInterrupts();
   return new Promise((resolve) => {
     const child = spawn(spec.program, spec.args, {
       cwd: spec.cwd,
       env: spec.env,
+      detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
     foreground.add(child);

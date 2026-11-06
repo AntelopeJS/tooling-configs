@@ -74,16 +74,22 @@ function statusOf(context: VerifyContext, failure: JourneyEnd): JourneyStatus {
   return failed || context.steps.length === 0 ? "FAIL" : "PASS";
 }
 
-/** Deletes a journey's scratch folder and HOME, and their parents once empty; the evidence stays. */
+/** Deletes a journey's scratch folder and HOME, and their parents once empty; the evidence stays. A folder it cannot delete is reported on stderr and left for the next prune. */
 function discard(context: VerifyContext): void {
   for (const folder of [context.work, context.home]) {
-    rmSync(folder, { recursive: true, force: true });
-    for (
-      let parent = dirname(folder);
-      parent !== context.state.dir && readdirSync(parent).length === 0;
-      parent = dirname(parent)
-    )
-      rmdirSync(parent);
+    try {
+      rmSync(folder, { recursive: true, force: true });
+      for (
+        let parent = dirname(folder);
+        parent !== context.state.dir && readdirSync(parent).length === 0;
+        parent = dirname(parent)
+      )
+        rmdirSync(parent);
+    } catch (error) {
+      process.stderr.write(
+        `could not delete ${folder}: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    }
   }
 }
 
@@ -95,9 +101,13 @@ async function runOne(
   journey: BuiltinJourney | Journey,
 ): Promise<JourneyResult> {
   const context = new VerifyContext(workspace, state, feature, id);
+  const others = new Set(state.processes.map((record) => record.pid));
   const release = onInterrupt(() => {
-    for (const record of state.processes) killGroup(record.pid);
-    state.processes = [];
+    const own = state.processes.filter((record) => !others.has(record.pid));
+    for (const record of own) killGroup(record.pid);
+    state.processes = state.processes.filter((record) =>
+      others.has(record.pid),
+    );
     saveRun(state);
     discard(context);
   });
