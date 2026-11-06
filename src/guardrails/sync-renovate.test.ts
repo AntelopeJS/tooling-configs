@@ -6,7 +6,7 @@ import test from "node:test";
 import { syncRepository } from "./sync.ts";
 import { bin, linkOxlint, put, read, testRepo } from "./helpers/test-repo.ts";
 
-/** Renovate's config lookup order on GitHub, kept literal so a path dropped from the pack's list fails here. */
+/** Renovate's config lookup order, kept literal so a path dropped from the pack's list fails here. */
 const RENOVATE_CONFIGS = [
   "renovate.json",
   "renovate.jsonc",
@@ -14,6 +14,9 @@ const RENOVATE_CONFIGS = [
   ".github/renovate.json",
   ".github/renovate.jsonc",
   ".github/renovate.json5",
+  ".gitlab/renovate.json",
+  ".gitlab/renovate.jsonc",
+  ".gitlab/renovate.json5",
   ".renovaterc",
   ".renovaterc.json",
   ".renovaterc.jsonc",
@@ -105,4 +108,16 @@ test("a renovate key in package.json counts as the config", (t) => {
     `package.json "renovate": extend "${PRESET}" in its extends, then rerun antelopejs-sync.`,
   ]);
   assert.equal(existsSync(join(root, "renovate.json")), false);
+});
+
+test("a falsy renovate key in package.json counts as no config, as Renovate reads it", (t) => {
+  const root = testRepo(t);
+  put(
+    root,
+    "package.json",
+    `${JSON.stringify({ name: "x", type: "module", packageManager: "npm@11.0.0", renovate: null })}\n`,
+  );
+  const result = syncRepository(root, TEMPLATE_SOURCE);
+  assert.deepEqual(result.errors, []);
+  assert.ok(result.paths.includes("renovate.json"));
 });

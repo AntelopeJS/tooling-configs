@@ -7,7 +7,7 @@ import type { PlannedArtifact } from "./sync.ts";
 /** The Renovate config file sync writes when a repository has none. */
 const RENOVATE_PATH = "renovate.json";
 
-/** The config files Renovate reads on GitHub, in its lookup order (`getConfigFileNames` in its `lib/config/app-strings.ts`), before the `renovate` key of `package.json`. */
+/** The config files Renovate's `detectConfigFile` reads, in its lookup order (`getConfigFileNames()` in its `lib/config/app-strings.ts`, called without a platform), before the `renovate` key of `package.json`. */
 export const RENOVATE_CONFIGS = [
   RENOVATE_PATH,
   "renovate.jsonc",
@@ -15,6 +15,9 @@ export const RENOVATE_CONFIGS = [
   ".github/renovate.json",
   ".github/renovate.jsonc",
   ".github/renovate.json5",
+  ".gitlab/renovate.json",
+  ".gitlab/renovate.jsonc",
+  ".gitlab/renovate.json5",
   ".renovaterc",
   ".renovaterc.json",
   ".renovaterc.jsonc",
@@ -47,9 +50,9 @@ export function renovateArtifacts(
   const path = file ?? "package.json";
   const text =
     file === undefined
-      ? manifest.renovate === undefined || manifest.renovate === null
-        ? undefined
-        : JSON.stringify(manifest.renovate)
+      ? manifest.renovate
+        ? JSON.stringify(manifest.renovate)
+        : undefined
       : readFileSync(join(root, file), "utf8");
   if (text === undefined)
     return [
