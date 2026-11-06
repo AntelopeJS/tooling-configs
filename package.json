@@ -33,6 +33,7 @@
     "antelopejs-ratchet": "./dist/bin/ratchet.mjs",
     "antelopejs-suppressions": "./dist/bin/suppressions.mjs",
     "antelopejs-sync": "./dist/bin/sync.mjs",
+    "antelopejs-triage": "./dist/bin/triage.mjs",
     "antelopejs-verify": "./dist/bin/verify.mjs"
   },
   "files": [
