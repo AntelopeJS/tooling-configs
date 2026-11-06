@@ -19,6 +19,8 @@ export interface Manifest {
     implements?: string[];
     docs?: { standard?: boolean };
   };
+  /** Renovate's deprecated in-manifest config, read when no config file exists. */
+  renovate?: unknown;
 }
 
 export type PackageManager = "pnpm" | "npm" | "yarn" | "bun";

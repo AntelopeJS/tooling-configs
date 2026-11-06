@@ -34,6 +34,7 @@ import {
   type PackageManager,
 } from "./package.ts";
 import { recordedRelease } from "./adoption.ts";
+import { renovateArtifacts } from "./renovate.ts";
 import { measureBaseline } from "./ratchet.ts";
 import { adoptedBudget, SUPPRESSIONS_FILE } from "./suppression-budget.ts";
 import {
@@ -449,8 +450,15 @@ export function syncRepository(
     profile,
     verify.verificationSkill,
   );
-  const boundaries = backendBoundaryArtifacts(root);
-  let plan = [...planSync(current, modes, context), ...boundaries];
+  const standalone = [
+    ...backendBoundaryArtifacts(root),
+    ...renovateArtifacts(
+      root,
+      manifest,
+      profile === "full" || verify.kind === "template",
+    ),
+  ];
+  let plan = [...planSync(current, modes, context), ...standalone];
   const errors = plan
     .filter((artifact) => artifact.kind === "error")
     .map(({ message }) => message);
@@ -478,7 +486,7 @@ export function syncRepository(
       ...baseline,
       pack: recordedRelease(undefined),
     });
-    plan = [...planSync(current, modes, context), ...boundaries];
+    plan = [...planSync(current, modes, context), ...standalone];
   }
   const writes = plan.filter(
     (artifact) => artifact.kind === "write" || artifact.kind === "migrated",

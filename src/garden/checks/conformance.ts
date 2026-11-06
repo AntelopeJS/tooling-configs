@@ -9,6 +9,10 @@ import {
   ciNodeCallers,
   ciRenovateSyncCallers,
 } from "../../guardrails/workflow.ts";
+import {
+  RENOVATE_CONFIGS,
+  RENOVATE_PRESET,
+} from "../../guardrails/renovate.ts";
 import type { GardenApi } from "../api.ts";
 import { perRepo, type Check } from "../check.ts";
 import { GardenContext, ORG, type GardenRepo } from "../context.ts";
@@ -17,15 +21,6 @@ import { finding, found, type CheckResult, type Finding } from "../types.ts";
 
 const CHECK = "conformance";
 const DAY = 24 * 60 * 60 * 1000;
-const RENOVATE_CONFIGS = [
-  "renovate.json",
-  "renovate.json5",
-  ".github/renovate.json",
-  ".github/renovate.json5",
-  ".renovaterc",
-  ".renovaterc.json",
-];
-const RENOVATE_PRESET = /github>AntelopeJS\/\.github(?::|\/)/;
 const MEND_EXEMPT = new Set(["k8s-gitops-infra"]);
 
 function problem(
