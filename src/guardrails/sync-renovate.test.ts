@@ -6,20 +6,17 @@ import test from "node:test";
 import { syncRepository } from "./sync.ts";
 import { bin, linkOxlint, put, read, testRepo } from "./helpers/test-repo.ts";
 
-/** Renovate's own config lookup order, kept literal so a path dropped from the pack's list fails here. */
+/** Renovate's config lookup order on GitHub, kept literal so a path dropped from the pack's list fails here. */
 const RENOVATE_CONFIGS = [
   "renovate.json",
+  "renovate.jsonc",
   "renovate.json5",
   ".github/renovate.json",
+  ".github/renovate.jsonc",
   ".github/renovate.json5",
-  ".gitlab/renovate.json",
-  ".gitlab/renovate.json5",
-  ".gitea/renovate.json",
-  ".gitea/renovate.json5",
-  ".forgejo/renovate.json",
-  ".forgejo/renovate.json5",
   ".renovaterc",
   ".renovaterc.json",
+  ".renovaterc.jsonc",
   ".renovaterc.json5",
 ];
 const PRESET = "github>AntelopeJS/.github:renovate.json5";
@@ -103,7 +100,7 @@ test("a renovate key in package.json counts as the config", (t) => {
     "package.json",
     `${JSON.stringify({ name: "x", type: "module", packageManager: "npm@11.0.0", renovate: { extends: ["config:recommended"] } })}\n`,
   );
-  const result = syncRepository(root, { ...TEMPLATE_SOURCE, check: true });
+  const result = syncRepository(root, TEMPLATE_SOURCE);
   assert.deepEqual(result.errors, [
     `package.json "renovate": extend "${PRESET}" in its extends, then rerun antelopejs-sync.`,
   ]);
