@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.3.3
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.2...v0.3.3)
+
+### 🚀 Enhancements
+
+- **sync:** Write and check renovate.json extending the AntelopeJS preset ([#184](https://github.com/AntelopeJS/tooling-configs/pull/184))
+
+### 🤖 CI
+
+- Report the gate as ci / checks ([#183](https://github.com/AntelopeJS/tooling-configs/pull/183))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.3.2
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.1...v0.3.2)
