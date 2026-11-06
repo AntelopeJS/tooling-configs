@@ -223,7 +223,7 @@ test("sync keeps AGENTS prose once when AGENTS.md links to CLAUDE.md", (t) => {
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
 });
 
-test("template profile manages presets, AGENTS and the checks scripts, and appends without replacing handwritten content", (t) => {
+test("template profile manages presets, AGENTS, renovate.json and the checks scripts, and appends without replacing handwritten content", (t) => {
   const root = testRepo(t);
   const originalPackage = read(root, "package.json");
   put(root, "AGENTS.md", "Handwritten without a final newline.");
@@ -239,6 +239,7 @@ test("template profile manages presets, AGENTS and the checks scripts, and appen
     "knip.config.ts",
     "oxlint.config.ts",
     "package.json",
+    "renovate.json",
   ]);
   assert.deepEqual(parseManifest(read(root, "package.json")), {
     ...parseManifest(originalPackage),
