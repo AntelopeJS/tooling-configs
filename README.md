@@ -36,6 +36,7 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 | bin                | `antelopejs-body-check <body.md \| -> [--head <sha>] [--base <sha>]`      | Checks a PR body's proof and findings blocks against HEAD; `--findings` prints the findings block          |
 | bin                | `antelopejs-check-interface-ranges`                                       | Fails on interface ranges that break module startup                                                        |
 | bin                | `antelopejs-garden [--json] [--apply-pauses] [--apply] [--apply-prunes]`  | The Gardener's scans of the organization through the GitHub API and npm                                    |
+| bin                | `antelopejs-triage [--json]`                                              | Community Triage's ranked shortlist of untriaged issues                                                    |
 | bin                | `antelopejs-verify <command>`                                             | The harness of the shared `verify-interface`, `verify-module` and `verify-template` skills                 |
 | bin                | `antelopejs-lease run \| status \| down \| gc`                            | Ports, a mongod, logs and tmp per worktree; see [Run a DMS from a git worktree](./docs/agent-worktrees.md) |
 
@@ -50,6 +51,14 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 - The `stale-branches` check lists, in one finding per repository, the branches other than the default, `next` and protected ones that head a merged or closed pull request at their current commit, or have no open pull request and no commit for 30 days. A branch that heads or receives an open pull request is never listed. `prunes` holds one `{ repo, branch, reason }` per listed branch, and `--apply-prunes` deletes exactly those refs.
 
 Both profiles of `antelopejs-sync` keep the shared CI caller on the job id `ci`, so the check is reported as `ci / checks`. The `ci` job is read-only (`contents: read`) and passes `renovate-sync: false` and `test-job: true`, which runs the tests in their own job (sync adds `test-job: true` to a caller that does not set it and keeps a value the caller set); the `contents: write` and `actions: write` grants that let the Renovate sync push its commit and dispatch the caller live on a separate `renovate-sync` job calling `ci-renovate-sync.yml`, which sync adds when it is missing and never re-pins. Under the full profile it also sets the `docs-files` input of every ci-node caller to the existing `README.md` and `docs` of the root and of each workspace package that is not private, then keeps the caller's other listed paths that still exist. Renaming a caller to `ci` also rewrites `needs:` lists and `needs.<old-id>` reads in expressions, and sync (and `--check`) fails a caller in which a job needs a job that does not exist or reads `needs.<id>` of a job missing from its own `needs:`, since GitHub evaluates that read to null and a gate like `needs.checks.result == 'skipped'` then never fails.
+
+## antelopejs-triage
+
+`antelopejs-triage` lists the issues Community Triage has not looked at yet, ranked, through one GitHub GraphQL search authenticated with the token `gh` is logged in with. An issue is listed when it is open, labelled `needs-triage`, has no assignee, sits in a public, non-archived AntelopeJS repository, and no open pull request is linked to it. A linked pull request that was closed does not hide the issue.
+
+- The ranking puts bugs first, then features, then the rest, then the most 👍 reactions first, then the oldest first. The `bug` label sets the kind `bug`, the `feature` or `enhancement` label sets `feature`, and the issue type does when none of them is there.
+- `--json` prints `{ items, notShown }`. `items` holds at most 10 `{ ref, url, kind, title, firstLine, created }`, with `ref` as `AntelopeJS/<repo>#<number>`, `kind` as `bug`, `feature` or `other`, and `created` as the `YYYY-MM-DD` date. `firstLine` is the first line of the body that is not blank, a Markdown heading, an HTML comment or `_No response_`, cut at 200 characters. `notShown` counts the listed issues past the tenth.
+- Without `--json` it prints one line per item and a last line with the count not shown, and nothing when no issue waits.
 
 ## Shared verification skills
 

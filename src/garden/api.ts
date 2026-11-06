@@ -10,7 +10,13 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { isObject, isString, parseJson, type JsonValue } from "./json.ts";
+import {
+  isObject,
+  isString,
+  parseJson,
+  type JsonObject,
+  type JsonValue,
+} from "./json.ts";
 
 /** A GitHub or npm answer that is not a success. */
 export class ApiError extends Error {
@@ -133,41 +139,83 @@ function registryCheck(files: RegistryFile[]): boolean {
   }
 }
 
-/** Authenticates with the token `gh` is logged in with and with no other credential. */
-export function createApi(token: string): GardenApi {
-  const headers = {
+function githubHeaders(token: string) {
+  return {
     Authorization: `Bearer ${token}`,
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": "antelopejs-garden",
   };
+}
 
-  async function request(
-    url: string,
-    init: {
-      method?: string;
-      headers?: { [name: string]: string };
-      body?: string;
-    },
-  ): Promise<Response> {
-    for (let attempt = 1; ; attempt++) {
-      const response = await fetch(url, {
-        ...init,
-        headers: { ...headers, ...init.headers },
-      });
-      const retryAfter = Number(response.headers.get("retry-after") ?? 0);
-      const limited =
-        response.status === 429 ||
-        (response.status === 403 && retryAfter > 0) ||
-        response.status >= 502;
-      if (!limited || attempt === MAX_ATTEMPTS) return response;
-      await pause(Math.max(retryAfter, attempt) * 1000);
-    }
+interface RequestInit {
+  method?: string;
+  headers?: { [name: string]: string };
+  body?: string;
+}
+
+/** Retries a rate-limited or gateway answer up to four times and returns the last answer. */
+async function request(
+  headers: { [name: string]: string },
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  for (let attempt = 1; ; attempt++) {
+    const response = await fetch(url, {
+      ...init,
+      headers: { ...headers, ...init.headers },
+    });
+    const retryAfter = Number(response.headers.get("retry-after") ?? 0);
+    const limited =
+      response.status === 429 ||
+      (response.status === 403 && retryAfter > 0) ||
+      response.status >= 502;
+    if (!limited || attempt === MAX_ATTEMPTS) return response;
+    await pause(Math.max(retryAfter, attempt) * 1000);
   }
+}
+
+/** Runs one GitHub GraphQL query and returns its `data`. */
+export type Graphql = (
+  query: string,
+  variables: JsonObject,
+) => Promise<JsonValue>;
+
+/** A GraphQL client authenticated like {@link createApi}; an answer that carries `errors` throws. */
+export function createGraphql(token: string): Graphql {
+  const headers = githubHeaders(token);
+  return async (query, variables) => {
+    const response = await request(headers, `${GITHUB}/graphql`, {
+      method: "POST",
+      body: JSON.stringify({ query, variables }),
+      headers: { "Content-Type": "application/json" },
+    });
+    const text = await response.text();
+    if (!response.ok)
+      throw new ApiError(
+        response.status,
+        `POST /graphql: HTTP ${response.status} ${text.slice(0, 200)}`,
+      );
+    const body = parseJson(text);
+    if (!isObject(body))
+      throw new ApiError(response.status, "POST /graphql: not an object");
+    const errors = Object.hasOwn(body, "errors") ? body.errors : null;
+    if (Array.isArray(errors) && errors.length > 0)
+      throw new ApiError(
+        response.status,
+        `POST /graphql: ${JSON.stringify(errors).slice(0, 200)}`,
+      );
+    return Object.hasOwn(body, "data") ? body.data : null;
+  };
+}
+
+/** Authenticates with the token `gh` is logged in with and with no other credential. */
+export function createApi(token: string): GardenApi {
+  const headers = githubHeaders(token);
 
   async function get(path: string, accept?: string): Promise<Response> {
     const url = path.startsWith("http") ? path : `${GITHUB}${path}`;
-    const response = await request(url, {
+    const response = await request(headers, url, {
       headers: accept ? { Accept: accept } : {},
     });
     if (!response.ok)
@@ -201,6 +249,7 @@ export function createApi(token: string): GardenApi {
     },
     async send(method, path, body) {
       const response = await request(
+        headers,
         `${GITHUB}${path}`,
         body === undefined
           ? { method }
