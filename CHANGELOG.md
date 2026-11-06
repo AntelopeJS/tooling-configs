@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.1
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.0...v0.3.1)
+
+### 🏡 Chore
+
+- **sync:** Stop writing the weekly mutation caller ([#178](https://github.com/AntelopeJS/tooling-configs/pull/178))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.3.0
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.2.19...v0.3.0)
