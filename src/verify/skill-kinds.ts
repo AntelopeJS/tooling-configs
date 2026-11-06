@@ -61,7 +61,7 @@ const TEMPLATE: KindText = {
   description:
     "Drive this AntelopeJS template the way a new user does: scaffold a project with `ajs project init` from an offline interfaces manifest, install it, run its own `pnpm run checks`, run `ajs project dev --watch` and hit its welcome page, endpoint or ready line. Use to prove a change to the template works before merge, to verify a PR, or to run the release canary.",
   title: "Verify template",
-  user: "The user of a template is someone running `ajs project init --template`: they get a copy of the whole repository and expect it to install, pass its checks and run.",
+  user: "The user of a template is someone running `ajs project init --template`: they get a copy of the repository without `.agents/` and `.claude/skills/` and expect it to install, pass its checks and run.",
   launch:
     "`new` copies the working tree, uncommitted changes included, into a local git repository, and lists it in an offline interfaces manifest (`templates`, or `projectTemplates` when `template.project` is set) under `template.name`. Journeys point `ajs config set git` at it, so no step reaches GitHub. Every `services` entry of `verify.config.ts` then starts in its own Docker container on a free loopback port, as for a module.",
   builtins: `- \`scaffold-dev\`: \`ajs project init <app> --template <name> --pm pnpm --git-init\`, \`pnpm install --frozen-lockfile\`, then \`ajs project dev --watch\` with \`PORT\` set until \`template.probe\` answers: a path and status on that port, or a \`log\` line followed by \`settleMs\` of still running. Ctrl+C must exit 130.
@@ -72,8 +72,8 @@ const TEMPLATE: KindText = {
 - \`template.probe\`: \`path\`, \`status\` and \`body\` for an HTTP welcome page or endpoint, or \`log\` and \`settleMs\` for a template that serves nothing.`,
   smoke: "`scaffold-dev` and `scaffold-checks`",
   gotchas: [
-    "`ajs` copies the whole repository, `.agents/` and `.claude/` included, so the scaffolded project carries this skill too.",
-    "Every file a user gets is user-facing here, tests included; only `.agents/`, `.claude/` and `.github/` are not.",
+    "`ajs project init` leaves out `.agents/` and `.claude/skills/`, so the scaffolded project carries neither this skill nor anything else under `.agents/`. Never expect either folder there.",
+    "Every file a user gets is user-facing here, tests included; only `.github/` and `.claude/` outside `.claude/skills/` are not.",
   ],
 };
 
