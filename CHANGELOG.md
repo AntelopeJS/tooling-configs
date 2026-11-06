@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.3.2
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.1...v0.3.2)
+
+### 🚀 Enhancements
+
+- **checks:** Start the .github/compose.yml services for local runs ([#179](https://github.com/AntelopeJS/tooling-configs/pull/179))
+- **triage:** Rank untriaged community issues with antelopejs-triage ([#182](https://github.com/AntelopeJS/tooling-configs/pull/182))
+
+### 🩹 Fixes
+
+- **verify:** State that scaffolds ship without the agent layer in verify-template ([#181](https://github.com/AntelopeJS/tooling-configs/pull/181))
+- **verify:** Delete each journey's install when it ends and prune stale runs ([#180](https://github.com/AntelopeJS/tooling-configs/pull/180))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.3.1
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.0...v0.3.1)
