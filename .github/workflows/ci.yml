@@ -64,6 +64,7 @@ jobs:
           node --test "${list[@]}"
 
   checks:
+    name: ci / checks
     if: always()
     needs: [verify, test]
     runs-on: ubuntu-latest
@@ -72,6 +73,16 @@ jobs:
         env:
           VERIFY: ${{ needs.verify.result }}
           TEST: ${{ needs.test.result }}
+
+  legacy-checks:
+    name: checks
+    if: always()
+    needs: [checks]
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "$CHECKS" = success
+        env:
+          CHECKS: ${{ needs.checks.result }}
 
   docs:
     runs-on: ubuntu-latest
