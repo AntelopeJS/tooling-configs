@@ -49,11 +49,11 @@ const foreground = new Set<ChildProcess>();
 
 const releases = new Set<() => void>();
 
-const INTERRUPTS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+const INTERRUPTS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"] as const;
 
 let listening = false;
 
-/** On the first interrupt, kills the process group of every foreground command, runs every registered release, and exits with the shell's code for the signal. */
+/** On the first interrupt, kills the process group of every foreground command, runs every registered release (one that throws is reported and the others still run), and exits with the shell's code for the signal. */
 function listenForInterrupts(): void {
   if (listening) return;
   listening = true;
@@ -61,7 +61,14 @@ function listenForInterrupts(): void {
     process.once(signal, () => {
       for (const child of foreground)
         if (child.pid !== undefined) killGroup(child.pid);
-      for (const release of releases) release();
+      for (const release of releases)
+        try {
+          release();
+        } catch (error) {
+          process.stderr.write(
+            `${error instanceof Error ? error.message : String(error)}\n`,
+          );
+        }
       process.exit(128 + constants.signals[signal]);
     });
 }
@@ -96,10 +103,9 @@ export function runRecorded(
     const err: Buffer[] = [];
     child.stdout.on("data", (chunk: Buffer) => out.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => err.push(chunk));
-    const timer = setTimeout(
-      () => child.kill("SIGKILL"),
-      spec.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    );
+    const timer = setTimeout(() => {
+      if (child.pid !== undefined) killGroup(child.pid);
+    }, spec.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     const finish = (
       code: number | null,
       signal: string | null,

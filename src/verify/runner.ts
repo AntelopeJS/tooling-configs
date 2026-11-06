@@ -109,11 +109,11 @@ async function runOne(
   const release = onInterrupt(() => {
     const own = state.processes.filter((record) => !others.has(record.pid));
     for (const record of own) killGroup(record.pid);
+    discard(context);
     state.processes = state.processes.filter((record) =>
       others.has(record.pid),
     );
     saveRun(state);
-    discard(context);
   });
   try {
     return await driveJourney(context, feature, id, journey);

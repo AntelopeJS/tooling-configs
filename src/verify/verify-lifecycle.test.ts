@@ -33,6 +33,9 @@ const HANG = `const writer = require("child_process").spawn(process.execPath, ["
 require("fs").writeFileSync("started", String(writer.pid));
 setInterval(() => {}, 1000);`;
 
+/** Starts a child that holds the command's output open for a minute. */
+const SLOW = `require("child_process").spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "inherit" }); setTimeout(() => {}, 60000);`;
+
 const CONFIG = `import { exitIs } from ${JSON.stringify(CHECKS)};
 const install = (context) =>
   context.command("install", process.execPath, ["-e", "const fs = require('fs'); fs.mkdirSync('node_modules/dep', { recursive: true }); fs.writeFileSync('node_modules/dep/index.js', ''); fs.chmodSync('node_modules/dep', 0o555); fs.writeFileSync(process.env.HOME + '/.npmrc', '')"]);
@@ -63,6 +66,14 @@ export default {
         await context.command("hang", process.execPath, ["-e", ${JSON.stringify(HANG)}]);
       },
     },
+    slow: {
+      title: "runs a command past its timeout",
+      entryPoint: "node",
+      async run(context) {
+        const result = await context.command("sleep", process.execPath, ["-e", ${JSON.stringify(SLOW)}], { timeoutMs: 500 });
+        context.expect(result.folder, [exitIs(result, 0)]);
+      },
+    },
     locked: {
       title: "installs a folder it cannot delete",
       entryPoint: "node",
@@ -86,9 +97,18 @@ function lifecycleRepo(t: TestContext) {
     [`${SKILL}/verify.config.ts`]: CONFIG,
     [`${SKILL}/features/smoke.md`]: feature([], ["passes", "fails"]),
     [`${SKILL}/features/stuck.md`]: feature(["src/**"], ["hangs"]),
+    [`${SKILL}/features/slow.md`]: feature(["src/**"], ["slow"]),
     [`${SKILL}/features/locked.md`]: feature(["src/**"], ["locked"]),
   });
   return { root, tmp };
+}
+
+function stop(pid: number): void {
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    return;
+  }
 }
 
 function alive(pid: number): boolean {
@@ -138,27 +158,43 @@ test("a journey that passes or fails deletes its install, read-only folders incl
   );
 });
 
-test("an interrupted journey stops its commands and what they started, spares another journey's processes, deletes its install and HOME, and exits with the signal's code", async (t) => {
+for (const [signal, code] of [
+  ["SIGTERM", 143],
+  ["SIGQUIT", 131],
+] as const)
+  test(`a journey interrupted by ${signal} stops its commands and what they started, spares another journey's processes, deletes its install and HOME even when run.json cannot be written, and exits ${code}`, async (t) => {
+    const { root, tmp } = lifecycleRepo(t);
+    const run = newRun(root, tmp);
+    const other = recordSleeper(t, run);
+    const started = join(run, "work/stuck/hangs/started");
+    const child = spawn(
+      process.execPath,
+      [join(PACKAGE_ROOT, "src/bin/verify.ts"), "journey", run, "stuck"],
+      { cwd: root, env: { ...process.env, CI: "1", TMPDIR: tmp } },
+    );
+    const exited = new Promise<number | null>((resolve) =>
+      child.on("exit", (exit) => resolve(exit)),
+    );
+    await until(() => existsSync(started));
+    const hang = Number(read(run, "work/stuck/hangs/started"));
+    t.after(() => stop(hang));
+    chmodSync(join(run, "run.json"), 0o444);
+    child.kill(signal);
+    assert.equal(await exited, code);
+    await until(() => !alive(hang));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.deepEqual(runEntries(run), ["evidence", "run.json"]);
+    assert.equal(alive(other), true);
+  });
+
+test("a command that outlives its timeout is killed with what it started, and the journey ends", (t) => {
   const { root, tmp } = lifecycleRepo(t);
   const run = newRun(root, tmp);
-  const other = recordSleeper(t, run);
-  const started = join(run, "work/stuck/hangs/started");
-  const child = spawn(
-    process.execPath,
-    [join(PACKAGE_ROOT, "src/bin/verify.ts"), "journey", run, "stuck"],
-    { cwd: root, env: { ...process.env, CI: "1", TMPDIR: tmp } },
-  );
-  const exited = new Promise<number | null>((resolve) =>
-    child.on("exit", (code) => resolve(code)),
-  );
-  await until(() => existsSync(started));
-  const hang = Number(read(run, "work/stuck/hangs/started"));
-  child.kill("SIGTERM");
-  assert.equal(await exited, 143);
-  await until(() => !alive(hang));
-  await new Promise((resolve) => setTimeout(resolve, 200));
+  const began = Date.now();
+  const result = verify(root, tmp, ["journey", run, "slow"]);
+  assert.match(result.stdout, /^FAIL slow\/slow\n/);
+  assert.ok(Date.now() - began < 20_000, "the journey ended near the timeout");
   assert.deepEqual(runEntries(run), ["evidence", "run.json"]);
-  assert.equal(alive(other), true);
 });
 
 test("a journey whose install cannot be deleted still records its result and names the folder it left", (t) => {

@@ -3,7 +3,6 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  rmSync,
   statSync,
 } from "node:fs";
 import { join, relative } from "node:path";
@@ -321,7 +320,7 @@ export function clean(state: RunState): string[] {
   saveRun(state);
   for (const entry of readdirSync(state.dir)) {
     if (entry === "evidence" || entry === "run.json") continue;
-    rmSync(join(state.dir, entry), { recursive: true, force: true });
+    removeTree(join(state.dir, entry));
   }
   return lines;
 }
