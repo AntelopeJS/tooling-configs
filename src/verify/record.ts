@@ -60,7 +60,7 @@ function listenForInterrupts(): void {
   for (const signal of INTERRUPTS)
     process.once(signal, () => {
       for (const child of foreground)
-        if (child.pid !== undefined) killGroup(child.pid);
+        if (child.pid !== undefined) killOwnGroup(child.pid);
       for (const release of releases)
         try {
           release();
@@ -104,7 +104,7 @@ export function runRecorded(
     child.stdout.on("data", (chunk: Buffer) => out.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => err.push(chunk));
     const timer = setTimeout(() => {
-      if (child.pid !== undefined) killGroup(child.pid);
+      if (child.pid !== undefined) killOwnGroup(child.pid);
     }, spec.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     const finish = (
       code: number | null,
@@ -174,6 +174,15 @@ export function startRecorded(
     throw new Error(`Could not start ${describe(spec)}`);
   writeFileSync(join(folder, "pid.txt"), `${child.pid}\n`);
   return { folder, child, pid: child.pid, exited };
+}
+
+/** Kills the process group a detached command leads, never a lone PID the system may have reused since the command exited. */
+function killOwnGroup(pid: number): void {
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    return;
+  }
 }
 
 /** Kills the process group of `pid`, or `pid` alone, ignoring a process already gone. */
