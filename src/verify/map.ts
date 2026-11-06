@@ -25,7 +25,7 @@ const DEFAULT_USER_FACING = {
 
 const VERIFICATION_LAYER = [".agents/**", ".claude/**", ".github/**"];
 
-/** Tests are user-facing in a template, whose whole tree is what `ajs` copies. */
+/** Tests are user-facing in a template, since `ajs` copies its whole tree except `.agents/` and `.claude/skills/`. */
 const NOT_USER_FACING = {
   interface: [
     "**/*.test.ts",
