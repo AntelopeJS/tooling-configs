@@ -133,6 +133,17 @@ test("a module's interfaces and antelope lock are shared, where a list of root m
   });
 });
 
+test("a single-interface module's src/interface is shared too, where a default naming only src/interfaces runs smoke alone on its interface change", (t) => {
+  const { root, tmp } = mapRepo(t, SPLIT);
+  put(root, "src/interface/index.ts", "export const api = 2;\n");
+  const plan = JSON.parse(verify(root, tmp, ["plan"]).stdout);
+  assert.deepEqual(plan.run, ["smoke", "core", "store"]);
+  assert.deepEqual(plan.full, {
+    reason: "shared",
+    files: ["src/interface/index.ts"],
+  });
+});
+
 test("a diff touching only a covered source file plans that feature and smoke, never the rest, where an always-full plan runs every feature", (t) => {
   const { root, tmp } = mapRepo(t, SPLIT);
   put(root, "src/index.ts", "export const one = 2;\n");
