@@ -2,31 +2,8 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 
 import { parseManifest } from "./package.ts";
-import { syncRepository } from "./sync.ts";
+import { findingsFor } from "./helpers/coverage-repo.ts";
 import { bin, commit, put, read, testRepo } from "./helpers/test-repo.ts";
-
-function findingsFor(
-  t: TestContext,
-  scripts: Record<string, string>,
-  configs: Record<string, string> = {},
-): string[] {
-  const root = testRepo(t);
-  put(
-    root,
-    "package.json",
-    JSON.stringify({
-      name: "coverage-test",
-      type: "module",
-      packageManager: "pnpm@10.0.0",
-      scripts,
-    }),
-  );
-  for (const [path, content] of Object.entries(configs))
-    put(root, path, content);
-  return syncRepository(root, { check: true })
-    .advisories.filter((line) => line.startsWith("Note: "))
-    .map((line) => line.slice("Note: ".length));
-}
 
 const FULL = { typecheck: "tsc --noEmit" };
 
