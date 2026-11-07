@@ -43,18 +43,14 @@ const SHARED_BY_ALL = [
   "pnpm-workspace.yaml",
   "tsconfig.json",
   "tsconfig.*.json",
+  "antelope-lock/**",
 ];
 
 /** The files whose change can break any feature, so a diff touching one runs them all. */
 export const DEFAULT_SHARED = {
   interface: SHARED_BY_ALL,
-  module: SHARED_BY_ALL,
-  template: [
-    ...SHARED_BY_ALL,
-    "antelope-lock/**",
-    "antelope.config.*",
-    "antelope.json",
-  ],
+  module: [...SHARED_BY_ALL, "src/interfaces/**"],
+  template: [...SHARED_BY_ALL, "antelope.config.*", "antelope.json"],
 };
 
 function frontmatterLists(text: string): Map<string, string[]> {
@@ -254,17 +250,17 @@ export function planFor(
       userFacing(workspace, file) && featuresOf(file, features).length === 0,
   );
   const touchedNames = new Set(touched.map((entry) => entry.feature));
-  const docs = [
-    ...new Set(
-      features
-        .filter((feature) => touchedNames.has(feature.name))
-        .flatMap((feature) => feature.docs),
-    ),
-  ];
   const full = fullReason(workspace, changed, all);
   const planned = full
     ? features.map((feature) => feature.name)
     : [...touchedNames];
+  const docs = [
+    ...new Set(
+      features
+        .filter((feature) => planned.includes(feature.name))
+        .flatMap((feature) => feature.docs),
+    ),
+  ];
   const run = [
     SMOKE_FEATURE,
     ...planned.filter((name) => name !== SMOKE_FEATURE),

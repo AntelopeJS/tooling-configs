@@ -236,7 +236,7 @@ test("a run created with new --all makes the verdict require every feature's jou
   assert.equal(passed.status, 0, passed.stderr);
   assert.match(
     passed.stdout,
-    /### Touched features\n- none\n- smoke: runs on every verdict\n- Every feature ran: the run was created with `--all`, before a release\.\n/,
+    /### Touched features\n- none\n- smoke: runs on every verdict\n- Every feature must run: the run was created with `--all`, before a release\.\n/,
   );
 });
 
@@ -283,7 +283,7 @@ test("a shared-file diff makes the verdict require every feature and lists the s
   assert.equal(passed.status, 0, passed.stderr);
   assert.match(
     passed.stdout,
-    /- Every feature ran: the diff changes shared files `package\.json`\.\n/,
+    /- Every feature must run: the diff changes shared files `package\.json`\.\n/,
   );
 });
 

@@ -114,6 +114,22 @@ test("a diff touching only package.json plans every feature and names the shared
   assert.deepEqual(plan.run, ["smoke", "core", "store"]);
   assert.deepEqual(plan.full, { reason: "shared", files: ["package.json"] });
   assert.deepEqual(plan.touched, []);
+  assert.deepEqual(plan.docs, ["README.md"]);
+});
+
+test("a module's interfaces and antelope lock are shared, where a list of root manifests alone runs one feature on an interface change", (t) => {
+  const { root, tmp } = mapRepo(t, SPLIT);
+  put(root, "src/interfaces/demo/beta/index.ts", "export {};\n");
+  put(root, "antelope-lock/demo@1.0.0/pnpm-lock.yaml", "lockfileVersion: 9\n");
+  const plan = JSON.parse(verify(root, tmp, ["plan"]).stdout);
+  assert.deepEqual(plan.run, ["smoke", "core", "store"]);
+  assert.deepEqual(plan.full, {
+    reason: "shared",
+    files: [
+      "antelope-lock/demo@1.0.0/pnpm-lock.yaml",
+      "src/interfaces/demo/beta/index.ts",
+    ],
+  });
 });
 
 test("a diff touching only a covered source file plans that feature and smoke, never the rest, where an always-full plan runs every feature", (t) => {

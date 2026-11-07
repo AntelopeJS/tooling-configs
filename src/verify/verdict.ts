@@ -203,8 +203,8 @@ function docsReasons(judgement: Judgement, plan: Plan): string[] {
 
 function fullLine(full: FullReason): string {
   return full.reason === "all"
-    ? "Every feature ran: the run was created with `--all`, before a release."
-    : `Every feature ran: the diff changes shared files ${full.files.map((file) => `\`${file}\``).join(", ")}.`;
+    ? "Every feature must run: the run was created with `--all`, before a release."
+    : `Every feature must run: the diff changes shared files ${full.files.map((file) => `\`${file}\``).join(", ")}.`;
 }
 
 function resultOf(
