@@ -50,9 +50,14 @@ function referencedIds(job: YAMLMap): string[] {
 /**
  * Lists every `needs:` entry naming no job and every `needs.<id>` or `needs['<id>']` read in a job's `if:` or `${{ }}`
  * expressions whose id is not in that job's `needs:`. GitHub evaluates such a read to null, so a gate condition like
- * `needs.checks.result == 'skipped'` silently stops failing once the job it named was renamed.
+ * `needs.checks.result == 'skipped'` silently stops failing once the job it named was renamed. `removed` lists job ids
+ * the caller just deleted, so a `needs:` on one gets a message that says it was removed, not renamed.
  */
-export function staleNeeds(document: Document, path: string): string[] {
+export function staleNeeds(
+  document: Document,
+  path: string,
+  removed: readonly string[] = [],
+): string[] {
   const jobs = document.get("jobs", true);
   if (!isMap(jobs)) return [];
   const ids = new Set(
@@ -66,7 +71,9 @@ export function staleNeeds(document: Document, path: string): string[] {
     for (const id of needed)
       if (!ids.has(id))
         problems.push(
-          `${path}: job ${name} needs ${id}, but no job ${id} exists. Replace it with the job id it was renamed to (the ci-node.yml caller is ci), then rerun antelopejs-sync --check.`,
+          removed.includes(id)
+            ? `${path}: job ${name} needs ${id}, but sync removes the job ${id} because it only re-aggregates ci, which already reports ci / checks. Replace ${id} with ci in the needs: of ${name}, then rerun antelopejs-sync.`
+            : `${path}: job ${name} needs ${id}, but no job ${id} exists. Replace it with the job id it was renamed to (the ci-node.yml caller is ci), then rerun antelopejs-sync --check.`,
         );
     const listed = `[${needed.join(", ")}]`;
     for (const id of new Set(referencedIds(job)))
