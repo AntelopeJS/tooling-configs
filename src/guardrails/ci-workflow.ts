@@ -209,13 +209,51 @@ function skipRenovateSync(document: Document, job: YAMLMap): boolean {
   return true;
 }
 
-function addTestJob(document: Document, job: YAMLMap): boolean {
+function setTestJob(
+  document: Document,
+  job: YAMLMap,
+  placeholderTests: boolean,
+): boolean {
   const inputs = job.get("with", true);
   if (isMap(inputs)) {
-    if (inputs.has("test-job")) return false;
-    inputs.set("test-job", true);
-  } else job.set("with", document.createNode({ "test-job": true }));
+    if (!inputs.has("test-job")) {
+      inputs.set("test-job", !placeholderTests);
+      return true;
+    }
+    if (!placeholderTests || inputs.get("test-job") === false) return false;
+    inputs.set("test-job", false);
+    return true;
+  }
+  job.set("with", document.createNode({ "test-job": !placeholderTests }));
   return true;
+}
+
+/** The caller sync writes into a repository without one, its test job off when the `test` script is a placeholder. */
+function newCaller(placeholderTests: boolean): string {
+  return placeholderTests
+    ? CI_CALLER.replace("test-job: true", "test-job: false")
+    : CI_CALLER;
+}
+
+/**
+ * Whether a `test` script only stands in for tests: made only of `echo` and
+ * `exit 0` commands, such as `echo 'No tests defined'`. A missing script is
+ * not a placeholder, since the shared test job may run tests another way. Such a
+ * repository gets `test-job: false`, since a test job would only spend runner
+ * time printing it.
+ */
+export function placeholderTestScript(script: string | undefined): boolean {
+  if (script === undefined) return false;
+  const commands = script
+    .split(/&&|\|\||;/)
+    .map((command) => command.trim())
+    .filter(Boolean);
+  return (
+    commands.length > 0 &&
+    commands.every(
+      (command) => /^echo(\s|$)/.test(command) || /^exit\s+0$/.test(command),
+    )
+  );
 }
 
 function lines(text: string): string[] {
@@ -341,8 +379,9 @@ function dropRedundantAggregator(
  * Keeps the shared CI caller on the job id `ci` with no `name`, so the shared workflow reports `ci / checks`,
  * dispatchable and read-only, with the Renovate sync it would otherwise run turned off. The write permissions the sync
  * needs to push and dispatch the caller live on a separate job calling ci-renovate-sync.yml, which is added when missing.
- * A caller without a `test-job` input gets `test-job: true`, which runs the tests in their own job; an explicit value
- * is left as the repository set it.
+ * A caller without a `test-job` input gets `test-job: true`, which runs the tests in their own job, or `false` when
+ * `placeholderTests` says the `test` script only stands in for tests; that case also turns an existing `true` off. Any
+ * other explicit value is left as the repository set it.
  * A `checks` job that only re-aggregates the caller (`needs: [ci]`, steps that `exit` on `needs` results) is removed
  * when the workflow has no other job besides the caller and the Renovate sync, since the shared workflow already
  * reports `ci / checks` and each `needs` hop adds to the critical path. A gate that also covers repository-specific
@@ -356,8 +395,9 @@ export function ciWorkflow(
   callers: { id: string; named: boolean }[],
   syncCallers: { id: string }[],
   docsFiles?: DocsFilesPlan,
+  placeholderTests = false,
 ): string {
-  if (current === undefined) return CI_CALLER;
+  if (current === undefined) return newCaller(placeholderTests);
   if (!callers.length) return current;
   const document = parseDocument(current);
   if (document.errors.length)
@@ -385,7 +425,7 @@ export function ciWorkflow(
   }
   changed = grant(document, pair.value, { contents: "read" }) || changed;
   changed = skipRenovateSync(document, pair.value) || changed;
-  changed = addTestJob(document, pair.value) || changed;
+  changed = setTestJob(document, pair.value, placeholderTests) || changed;
   changed = ensureSyncJob(document, jobs, syncCallers) || changed;
   const removed = dropRedundantAggregator(jobs, syncCallers);
   changed = removed.length > 0 || changed;
