@@ -1,11 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import {
-  type PackageManager,
-  packageManager,
-  parseManifest,
-} from "./package.ts";
+import { packageManager, parseManifest } from "./package.ts";
 import { CEILINGS_FILE } from "./ceilings.ts";
 import { runCommand } from "./run-command.ts";
 import {
@@ -14,12 +10,8 @@ import {
   startServices,
   stopServices,
 } from "./services.ts";
-import {
-  checkLockfiles,
-  typecheckLayers,
-  verifyLayers,
-  verifyLockfiles,
-} from "./verify-layers.ts";
+import { typecheckLayers, verifyLayers } from "./verify-layers.ts";
+import { checkLockfiles, verifyInstallFolders } from "./verify-lockfiles.ts";
 
 const CHECK_STEPS = [
   "typecheck",
@@ -38,23 +30,16 @@ const CHECK_STEPS = [
 /** Steps `antelopejs-checks` runs itself, no package.json script behind them: each returns what failed, empty when it passed. */
 const OWN_STEPS = new Map<
   string,
-  (
-    root: string,
-    manager: PackageManager,
-    signal: AbortSignal | undefined,
-  ) => Promise<string>
+  (root: string, signal: AbortSignal | undefined) => Promise<string>
 >([
   ["verify:types", typecheckLayers],
-  [
-    "verify:lockfiles",
-    (root, _manager, signal) => checkLockfiles(root, signal),
-  ],
+  ["verify:lockfiles", (root) => Promise.resolve(checkLockfiles(root))],
 ]);
 
 function hasWork(root: string, step: string): boolean {
   if (step === "ratchet") return existsSync(join(root, CEILINGS_FILE));
   if (step === "verify:types") return verifyLayers(root).length > 0;
-  if (step === "verify:lockfiles") return verifyLockfiles(root).length > 0;
+  if (step === "verify:lockfiles") return verifyInstallFolders(root).length > 0;
   return true;
 }
 
@@ -89,7 +74,7 @@ async function runSteps(
     if (signal?.aborted) return [];
     const own = OWN_STEPS.get(step);
     if (own) {
-      const failure = await own(root, manager, signal);
+      const failure = await own(root, signal);
       return failure ? [`[${step}]\n${failure}`] : [];
     }
     if (!manifest.scripts?.[step])

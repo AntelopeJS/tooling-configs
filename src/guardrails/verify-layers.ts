@@ -1,40 +1,36 @@
-import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { join, relative, resolve, sep } from "node:path";
 
-import { execCommand, type PackageManager } from "./package.ts";
 import { runCommand } from "./run-command.ts";
 
 const SKILLS_FOLDER = ".agents/skills";
 const LAYER_PREFIX = "verify-";
+const TSCONFIG = "tsconfig.json";
 
-/** The folder a repository's playground lives in; verify installs a fixture project from it. */
-const PLAYGROUND = "playground";
+/** Folders of a layer that are not the layer's own code: verify builds its playground with the playground's own tsconfig. */
+const NOT_LAYER_CODE = new Set(["node_modules", "dist"]);
+const LAYER_PLAYGROUND = "playground";
 
-const PNPM_OUTDATED = "ERR_PNPM_OUTDATED_LOCKFILE";
-const NPM_OUT_OF_SYNC = "can only install packages when your package.json";
-
-/** The lockfile names `antelopejs-checks` can replay, each with the package manager that owns it. */
-const LOCKFILES = {
-  "pnpm-lock.yaml": "pnpm",
-  "package-lock.json": "npm",
-} as const;
-
-type LockfileName = keyof typeof LOCKFILES;
-
-/** A lockfile verify installs from: the folder holding it, relative to the repository root, and its file name. */
-export interface Lockfile {
-  folder: string;
-  file: LockfileName;
-}
-
-interface RunContext {
-  root: string;
-  signal: AbortSignal | undefined;
-}
-
-function isLockfileName(name: string): name is LockfileName {
-  return Object.hasOwn(LOCKFILES, name);
-}
+/**
+ * Options the generated config sets over the layer's: nothing is emitted or cached, so no `.tsbuildinfo` is written, and the
+ * declaration checks of a file that is never emitted are not run.
+ */
+const NO_OUTPUT = {
+  noEmit: true,
+  incremental: false,
+  composite: false,
+  declaration: false,
+  declarationMap: false,
+  emitDeclarationOnly: false,
+};
 
 /** The verify layers of a repository, relative to its root: each `.agents/skills/verify-*` folder that holds a `tsconfig.json` or a `verify.config.ts`. */
 export function verifyLayers(root: string): string[] {
@@ -45,7 +41,7 @@ export function verifyLayers(root: string): string[] {
       (entry) =>
         entry.isDirectory() &&
         entry.name.startsWith(LAYER_PREFIX) &&
-        ["tsconfig.json", "verify.config.ts"].some((file) =>
+        [TSCONFIG, "verify.config.ts"].some((file) =>
           existsSync(join(skills, entry.name, file)),
         ),
     )
@@ -53,117 +49,89 @@ export function verifyLayers(root: string): string[] {
     .sort();
 }
 
-function lockfilesIn(root: string, folder: string, deep: boolean): Lockfile[] {
-  const found: Lockfile[] = [];
-  const entries = existsSync(join(root, folder))
-    ? readdirSync(join(root, folder), { withFileTypes: true })
-    : [];
-  for (const entry of entries) {
-    if (entry.isFile() && isLockfileName(entry.name))
-      found.push({ folder, file: entry.name });
-    else if (deep && entry.isDirectory() && entry.name !== "node_modules")
-      found.push(...lockfilesIn(root, `${folder}/${entry.name}`, deep));
+/** Whether a file the layer's tsconfig includes is the layer's own code, not its playground, a dependency or a build output. */
+function isLayerCode(layer: string, file: string): boolean {
+  const segments = relative(layer, file).split(sep);
+  return (
+    segments[0] !== LAYER_PLAYGROUND &&
+    !segments.some((segment) => NOT_LAYER_CODE.has(segment))
+  );
+}
+
+/** The repository's own `tsc` entry, run with Node so no shell parses its path. */
+function compilerOf(root: string): string | undefined {
+  try {
+    return createRequire(join(root, "package.json")).resolve(
+      "typescript/bin/tsc",
+    );
+  } catch {
+    return undefined;
   }
-  return found;
-}
-
-/** Every lockfile verify installs from, when a layer exists: each one inside a layer, and the one in the root `playground` folder. */
-export function verifyLockfiles(root: string): Lockfile[] {
-  const layers = verifyLayers(root);
-  if (layers.length === 0) return [];
-  return [
-    ...layers.flatMap((layer) => lockfilesIn(root, layer, true)),
-    ...lockfilesIn(root, PLAYGROUND, false),
-  ];
-}
-
-function execArguments(manager: PackageManager): [string, string[]] {
-  const [command, ...rest] = execCommand(manager).split(" ");
-  return [command, rest];
 }
 
 async function typecheckLayer(
-  context: RunContext,
-  manager: PackageManager,
+  root: string,
+  compiler: string,
   layer: string,
+  signal: AbortSignal | undefined,
 ): Promise<string> {
-  if (!existsSync(join(context.root, layer, "tsconfig.json")))
-    return `${layer}: has a verify.config.ts and no tsconfig.json. Run antelopejs-sync, or add a tsconfig.json that includes its TypeScript files.\n`;
-  const [command, prefix] = execArguments(manager);
-  const result = await runCommand(
-    command,
-    [...prefix, "tsc", "--noEmit", "-p", `${layer}/tsconfig.json`],
-    {
-      cwd: context.root,
-      env: { ...process.env, CI: "1" },
-      signal: context.signal,
-    },
+  const configPath = join(root, layer, TSCONFIG);
+  if (!existsSync(configPath))
+    return `${layer}: has a verify.config.ts and no tsconfig.json. Add a tsconfig.json that includes its TypeScript files; antelopejs-sync writes one for the shared kinds.\n`;
+  const ts = (await import("typescript")).default;
+  const parsed = ts.getParsedCommandLineOfConfigFile(configPath, undefined, {
+    ...ts.sys,
+    onUnRecoverableConfigFileDiagnostic: () => undefined,
+  });
+  if (parsed === undefined) return `${layer}/${TSCONFIG}: could not read it.\n`;
+  const files = parsed.fileNames.filter((file) =>
+    isLayerCode(join(root, layer), resolve(file)),
   );
-  return result.status === 0 ? "" : result.output;
+  if (files.length === 0) return "";
+  const folder = mkdtempSync(join(tmpdir(), "antelopejs-verify-types-"));
+  try {
+    const generated = join(folder, TSCONFIG);
+    writeFileSync(
+      generated,
+      JSON.stringify({
+        extends: configPath,
+        compilerOptions: {
+          ...NO_OUTPUT,
+          typeRoots: ts.getEffectiveTypeRoots(parsed.options, ts.sys),
+        },
+        files,
+        include: [],
+      }),
+    );
+    const result = await runCommand(
+      process.execPath,
+      [compiler, "-p", generated, "--pretty", "false"],
+      { cwd: root, env: { ...process.env, CI: "1" }, signal, shell: false },
+    );
+    return result.status === 0 ? "" : result.output;
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
 }
 
 /**
- * Type-checks each verify layer with the repository's own TypeScript, `tsc --noEmit -p <layer>/tsconfig.json`, since the root
- * tsconfig cannot include a layer: its `rootDir` is usually `src`. Returns the compiler output of the layers that fail, empty when all pass.
+ * Type-checks the own code of each verify layer with the repository's own TypeScript. The files are those the layer's
+ * `tsconfig.json` includes, minus its `playground` folder, which verify compiles with the playground's own config after
+ * installing it, and any `node_modules` or `dist` folder. A config generated in the system temp folder extends the layer's,
+ * lists those files, and turns off emit, incremental builds and declaration checks, so nothing is written in the repository
+ * and no package is fetched. Returns the compiler output of the layers that fail, empty when all pass.
  */
 export async function typecheckLayers(
   root: string,
-  manager: PackageManager,
   signal?: AbortSignal,
 ): Promise<string> {
+  const layers = verifyLayers(root);
+  if (layers.length === 0) return "";
+  const compiler = compilerOf(root);
+  if (compiler === undefined)
+    return "TypeScript is not installed in the repository root: run the package manager's install first.\n";
   const outputs = await Promise.all(
-    verifyLayers(root).map((layer) =>
-      typecheckLayer({ root, signal }, manager, layer),
-    ),
-  );
-  return outputs.join("");
-}
-
-async function checkLockfile(
-  context: RunContext,
-  { folder, file }: Lockfile,
-): Promise<string> {
-  const manager = LOCKFILES[file];
-  const args =
-    manager === "pnpm"
-      ? [
-          "install",
-          "--dir",
-          join(context.root, folder),
-          "--ignore-workspace",
-          "--frozen-lockfile",
-          "--lockfile-only",
-          "--ignore-scripts",
-        ]
-      : ["ci", "--dry-run", "--ignore-scripts", "--no-audit", "--no-fund"];
-  const result = await runCommand(manager, args, {
-    cwd: manager === "pnpm" ? context.root : join(context.root, folder),
-    env: { ...process.env, CI: "1" },
-    signal: context.signal,
-  });
-  if (result.status === 0) return "";
-  if (manager === "pnpm")
-    return result.output.includes(PNPM_OUTDATED)
-      ? `${folder}/${file} does not match ${folder}/package.json: run \`pnpm install --dir ${folder} --ignore-workspace --lockfile-only\`.\n`
-      : `${folder}: pnpm could not check ${file}.\n${result.output}`;
-  return result.output.includes(NPM_OUT_OF_SYNC)
-    ? `${folder}/${file} does not match ${folder}/package.json: run \`npm install --package-lock-only --prefix ${folder}\`.\n${result.output}`
-    : `${folder}: npm could not check ${file}.\n${result.output}`;
-}
-
-/**
- * Replays a frozen, lockfile-only install in every folder verify installs from: `pnpm install --frozen-lockfile --lockfile-only`
- * for a `pnpm-lock.yaml` and `npm ci --dry-run` for a `package-lock.json`. Neither writes a file or fetches a package.
- * Returns what failed, empty when every lockfile matches its `package.json`.
- */
-export async function checkLockfiles(
-  root: string,
-  signal?: AbortSignal,
-): Promise<string> {
-  const outputs = await Promise.all(
-    verifyLockfiles(root).map((lockfile) =>
-      checkLockfile({ root, signal }, lockfile),
-    ),
+    layers.map((layer) => typecheckLayer(root, compiler, layer, signal)),
   );
   return outputs.join("");
 }

@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
-import { symlinkSync } from "node:fs";
+import { existsSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
 import { skillFolder } from "../verify/kinds.ts";
 import { syncedFiles } from "../verify/skills.ts";
-import { PACKAGE_ROOT, bin, put, read, testRepo } from "./helpers/test-repo.ts";
+import { PACKAGE_ROOT, bin, put, testRepo } from "./helpers/test-repo.ts";
+import {
+  NO_DEPENDENCIES,
+  folderStamp,
+  npmLock,
+  pnpmLock,
+} from "./helpers/lockfiles.ts";
 
 const BASE_STEPS = [
   "typecheck",
@@ -20,38 +26,15 @@ const BASE_STEPS = [
 const LAYER = skillFolder("interface");
 const CLEAN_SOURCE = "export const answer: number = 42;\n";
 const BROKEN_SOURCE = 'export const answer: number = "forty-two";\n';
-const NO_DEPENDENCIES = JSON.stringify({
-  name: "fixture",
-  version: "1.0.0",
-  private: true,
-});
-const WITH_DEPENDENCY = JSON.stringify({
-  name: "fixture",
-  version: "1.0.0",
-  private: true,
-  dependencies: { "left-pad": "^1.3.0" },
-});
-const PNPM_LOCK_WITHOUT_DEPENDENCIES =
-  "lockfileVersion: '9.0'\n\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\n\nimporters:\n\n  .: {}\n";
-const NPM_LOCK_WITH_DEPENDENCY = JSON.stringify({
-  name: "fixture",
-  version: "1.0.0",
-  lockfileVersion: 3,
-  requires: true,
-  packages: {
-    "": {
-      name: "fixture",
-      version: "1.0.0",
-      dependencies: { "left-pad": "^1.3.0" },
-    },
-    "node_modules/left-pad": {
-      version: "1.3.0",
-      resolved: "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
-      integrity:
-        "sha512-XI5MPzVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQGinBN9yTQT3bFlCBy/aVx2HrNcqQGsdot8ghrjyrvMCoEA==",
-    },
-  },
-});
+const LEFT_PAD = { "left-pad": "^1.3.0" };
+/** An environment in which every registry, proxy and package manager download is unreachable. */
+const OFFLINE = {
+  npm_config_registry: "http://127.0.0.1:9/",
+  NPM_CONFIG_REGISTRY: "http://127.0.0.1:9/",
+  HTTP_PROXY: "http://127.0.0.1:9",
+  HTTPS_PROXY: "http://127.0.0.1:9",
+  COREPACK_NPM_REGISTRY: "http://127.0.0.1:9/",
+};
 
 function checksRepo(t: TestContext): string {
   const root = testRepo(t);
@@ -83,6 +66,9 @@ function checksRepo(t: TestContext): string {
         rootDir: "src",
         strict: true,
         noEmit: true,
+        incremental: true,
+        tsBuildInfoFile: "./.cache/root.tsbuildinfo",
+        declaration: true,
         types: [],
       },
       include: ["src"],
@@ -92,15 +78,11 @@ function checksRepo(t: TestContext): string {
   return root;
 }
 
-function withLayer(root: string, source: string): void {
+function layerRepo(t: TestContext, source: string): string {
+  const root = checksRepo(t);
   for (const { path, content } of syncedFiles("interface"))
     if (path.endsWith("tsconfig.json")) put(root, path, content);
   put(root, `${LAYER}/verify.config.ts`, source);
-}
-
-function layerRepo(t: TestContext, source: string): string {
-  const root = checksRepo(t);
-  withLayer(root, source);
   return root;
 }
 
@@ -108,7 +90,12 @@ function run(root: string, env: Record<string, string> = {}) {
   return bin(root, "checks", ["--no-services"], env);
 }
 
-test("a verify layer with a type error fails the run under its own step and prints the compiler error", (t) => {
+/** Runs the checks with the layer type-check skipped, so the lockfile tests do not pay for a compiler run. */
+function lockfiles(root: string, env: Record<string, string> = {}) {
+  return run(root, { ...env, ANTELOPEJS_CHECKS_SKIP: "verify:types" });
+}
+
+test("a layer type error fails under verify:types with the compiler error, caught by an implementation that compiles nothing", (t) => {
   const result = run(layerRepo(t, BROKEN_SOURCE));
   assert.equal(result.status, 1, result.stdout);
   assert.match(
@@ -118,23 +105,26 @@ test("a verify layer with a type error fails the run under its own step and prin
   assert.match(result.stdout, /Checks: 8 passed, 1 failed\.\n$/);
 });
 
-test("a clean verify layer passes silently and counts as one more passed step", (t) => {
-  const result = run(layerRepo(t, CLEAN_SOURCE));
+test("a clean layer passes and writes nothing, caught by an implementation that keeps the root's incremental build or writes its config in the layer", (t) => {
+  const root = layerRepo(t, CLEAN_SOURCE);
+  const before = folderStamp(join(root, LAYER), "verify.config.ts");
+  const result = run(root);
+  assert.equal(result.status, 0, result.stdout);
+  assert.equal(result.stdout, "Checks: 9 passed, 0 failed.\n");
+  assert.deepEqual(folderStamp(join(root, LAYER), "verify.config.ts"), before);
+  assert.equal(existsSync(join(root, ".cache")), false);
+});
+
+test("a type error in the layer's playground, dist or node_modules is ignored, caught by an implementation that checks every file the layer tsconfig includes", (t) => {
+  const root = layerRepo(t, CLEAN_SOURCE);
+  put(root, `${LAYER}/playground/src/index.ts`, BROKEN_SOURCE);
+  put(root, `${LAYER}/journeys/dist/built.ts`, BROKEN_SOURCE);
+  const result = run(root);
   assert.equal(result.status, 0, result.stdout);
   assert.equal(result.stdout, "Checks: 9 passed, 0 failed.\n");
 });
 
-test("a repository without a verify layer runs and counts exactly the steps it did before", (t) => {
-  const root = checksRepo(t);
-  put(root, ".agents/skills/unslop/SKILL.md", "---\nname: unslop\n---\n");
-  put(root, "playground/package.json", NO_DEPENDENCIES);
-  put(root, "playground/pnpm-lock.yaml", "not a lockfile: [\n");
-  const result = run(root);
-  assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 8 passed, 0 failed.\n");
-});
-
-test("a type error in a layer file other than verify.config.ts fails too", (t) => {
+test("a type error in a layer file other than verify.config.ts fails, caught by an implementation that checks only verify.config.ts", (t) => {
   const root = layerRepo(t, CLEAN_SOURCE);
   put(root, `${LAYER}/journeys/broken.ts`, BROKEN_SOURCE);
   const result = run(root);
@@ -142,18 +132,27 @@ test("a type error in a layer file other than verify.config.ts fails too", (t) =
   assert.match(result.stdout, /journeys\/broken\.ts\(1,14\): error TS2322/);
 });
 
-test("a layer with a verify.config.ts and no tsconfig.json fails and names the fix", (t) => {
+test("a layer whose code imports Node APIs type-checks against the repository's @types/node, caught by a generated config that loses the layer's type roots", (t) => {
+  const root = layerRepo(
+    t,
+    'import { join } from "node:path";\n\nexport const path: string = join("a", "b");\n',
+  );
+  const result = run(root);
+  assert.equal(result.status, 0, result.stdout);
+});
+
+test("a layer with a verify.config.ts and no tsconfig.json fails and names the fix, caught by an implementation that skips it", (t) => {
   const root = checksRepo(t);
   put(root, `${LAYER}/verify.config.ts`, CLEAN_SOURCE);
   const result = run(root);
   assert.equal(result.status, 1, result.stdout);
   assert.match(
     result.stdout,
-    /\[verify:types\]\n\.agents\/skills\/verify-interface: has a verify\.config\.ts and no tsconfig\.json\. Run antelopejs-sync/,
+    /\[verify:types\]\n\.agents\/skills\/verify-interface: has a verify\.config\.ts and no tsconfig\.json\./,
   );
 });
 
-test("each layer is checked on its own, so one broken layer fails among clean ones", (t) => {
+test("each layer is checked on its own, caught by an implementation that reports one layer's errors under another", (t) => {
   const root = layerRepo(t, CLEAN_SOURCE);
   const other = skillFolder("module");
   for (const { path, content } of syncedFiles("module"))
@@ -165,10 +164,28 @@ test("each layer is checked on its own, so one broken layer fails among clean on
   assert.doesNotMatch(result.stdout, /verify-interface/);
 });
 
-test("ANTELOPEJS_CHECKS_SKIP names verify:types and verify:lockfiles, and a skipped step is not run", (t) => {
+test("a repository without a verify layer runs exactly the steps it did before, caught by an implementation that checks a root playground on its own", (t) => {
+  const root = checksRepo(t);
+  put(root, ".agents/skills/unslop/SKILL.md", "---\nname: unslop\n---\n");
+  put(
+    root,
+    "playground/package.json",
+    JSON.stringify({ ...NO_DEPENDENCIES, dependencies: LEFT_PAD }),
+  );
+  put(root, "playground/pnpm-lock.yaml", "not a lockfile: [\n");
+  const result = run(root);
+  assert.equal(result.status, 0, result.stdout);
+  assert.equal(result.stdout, "Checks: 8 passed, 0 failed.\n");
+});
+
+test("ANTELOPEJS_CHECKS_SKIP names verify:types and verify:lockfiles, caught by an implementation that runs a skipped step", (t) => {
   const root = layerRepo(t, BROKEN_SOURCE);
-  put(root, `${LAYER}/package.json`, WITH_DEPENDENCY);
-  put(root, `${LAYER}/pnpm-lock.yaml`, PNPM_LOCK_WITHOUT_DEPENDENCIES);
+  put(
+    root,
+    `${LAYER}/package.json`,
+    JSON.stringify({ ...NO_DEPENDENCIES, dependencies: LEFT_PAD }),
+  );
+  put(root, `${LAYER}/pnpm-lock.yaml`, pnpmLock({ ".": {} }));
   const result = run(root, {
     ANTELOPEJS_CHECKS_SKIP: "verify:types,verify:lockfiles",
   });
@@ -176,100 +193,44 @@ test("ANTELOPEJS_CHECKS_SKIP names verify:types and verify:lockfiles, and a skip
   assert.equal(result.stdout, "Checks: 8 passed, 0 failed, 2 skipped.\n");
 });
 
-/** Runs the checks with the layer type-check skipped, so the lockfile tests do not pay for a compiler run. */
-function lockfiles(root: string, env: Record<string, string> = {}) {
-  return run(root, { ...env, ANTELOPEJS_CHECKS_SKIP: "verify:types" });
-}
-
-test("a stale pnpm lockfile in a verify layer fails, names the fix and is left unchanged", (t) => {
-  const root = layerRepo(t, CLEAN_SOURCE);
-  put(root, `${LAYER}/package.json`, WITH_DEPENDENCY);
-  put(root, `${LAYER}/pnpm-lock.yaml`, PNPM_LOCK_WITHOUT_DEPENDENCIES);
-  const result = lockfiles(root);
-  assert.equal(result.status, 1, result.stdout);
-  assert.match(
-    result.stdout,
-    /\[verify:lockfiles\]\n\.agents\/skills\/verify-interface\/pnpm-lock\.yaml does not match \.agents\/skills\/verify-interface\/package\.json: run `pnpm install --dir \.agents\/skills\/verify-interface --ignore-workspace --lockfile-only`\./,
-  );
-  assert.equal(
-    read(root, `${LAYER}/pnpm-lock.yaml`),
-    PNPM_LOCK_WITHOUT_DEPENDENCIES,
-  );
-  assert.match(result.stdout, /Checks: 8 passed, 1 failed, 1 skipped\.\n$/);
-});
-
-test("a matching pnpm lockfile in a verify layer passes", (t) => {
-  const root = layerRepo(t, CLEAN_SOURCE);
-  put(root, `${LAYER}/package.json`, NO_DEPENDENCIES);
-  put(root, `${LAYER}/pnpm-lock.yaml`, PNPM_LOCK_WITHOUT_DEPENDENCIES);
-  const result = lockfiles(root);
-  assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 9 passed, 0 failed, 1 skipped.\n");
-});
-
-test("a stale lockfile in a nested folder of the layer, like its playground, fails", (t) => {
-  const root = layerRepo(t, CLEAN_SOURCE);
-  put(root, `${LAYER}/playground/package.json`, WITH_DEPENDENCY);
-  put(
-    root,
-    `${LAYER}/playground/pnpm-lock.yaml`,
-    PNPM_LOCK_WITHOUT_DEPENDENCIES,
-  );
-  const result = lockfiles(root);
-  assert.equal(result.status, 1, result.stdout);
-  assert.match(
-    result.stdout,
-    /\[verify:lockfiles\]\n\.agents\/skills\/verify-interface\/playground\/pnpm-lock\.yaml does not match/,
-  );
-});
-
-test("a stale lockfile in the root playground fails when a verify layer exists", (t) => {
-  const root = layerRepo(t, CLEAN_SOURCE);
-  put(root, "playground/package.json", WITH_DEPENDENCY);
-  put(root, "playground/pnpm-lock.yaml", PNPM_LOCK_WITHOUT_DEPENDENCIES);
-  const result = lockfiles(root);
-  assert.equal(result.status, 1, result.stdout);
-  assert.match(
-    result.stdout,
-    /\[verify:lockfiles\]\nplayground\/pnpm-lock\.yaml does not match playground\/package\.json/,
-  );
-});
-
-test("a stale lockfile of the root package does not fail: only folders verify installs from are replayed", (t) => {
-  const root = layerRepo(t, CLEAN_SOURCE);
-  put(root, "package-lock.json", "{}");
-  put(root, "pnpm-lock.yaml", "broken: [\n");
-  const result = lockfiles(root);
-  assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 8 passed, 0 failed, 1 skipped.\n");
-});
-
-test("a package-lock.json in a verify layer is replayed with npm and passes when it matches", (t) => {
-  const root = layerRepo(t, CLEAN_SOURCE);
-  put(root, `${LAYER}/package.json`, WITH_DEPENDENCY);
-  put(root, `${LAYER}/package-lock.json`, NPM_LOCK_WITH_DEPENDENCY);
-  const result = lockfiles(root, { npm_config_offline: "true" });
-  assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 9 passed, 0 failed, 1 skipped.\n");
-});
-
-test("a stale package-lock.json in a verify layer fails", (t) => {
+test("a stale layer lockfile fails under verify:lockfiles and names the dependency and the fix, caught by an implementation that never compares", (t) => {
   const root = layerRepo(t, CLEAN_SOURCE);
   put(
     root,
     `${LAYER}/package.json`,
-    JSON.stringify({
-      name: "fixture",
-      version: "1.0.0",
-      private: true,
-      dependencies: { "left-pad": "^2.0.0" },
-    }),
+    JSON.stringify({ ...NO_DEPENDENCIES, dependencies: LEFT_PAD }),
   );
-  put(root, `${LAYER}/package-lock.json`, NPM_LOCK_WITH_DEPENDENCY);
-  const result = lockfiles(root, { npm_config_offline: "true" });
+  put(root, `${LAYER}/pnpm-lock.yaml`, pnpmLock({ ".": {} }));
+  const result = lockfiles(root);
   assert.equal(result.status, 1, result.stdout);
   assert.match(
     result.stdout,
-    /\[verify:lockfiles\]\n\.agents\/skills\/verify-interface/,
+    /\[verify:lockfiles\]\n\.agents\/skills\/verify-interface\/pnpm-lock\.yaml does not match \.agents\/skills\/verify-interface\/package\.json: run `pnpm install --dir \.agents\/skills\/verify-interface --ignore-workspace --lockfile-only`\.\n {2}importer "\." dependencies "left-pad": the manifests ask for "\^1\.3\.0", the lockfile has none\.\n/,
   );
+  assert.match(result.stdout, /Checks: 8 passed, 1 failed, 1 skipped\.\n$/);
 });
+
+for (const [manager, file, lock] of [
+  ["pnpm", "pnpm-lock.yaml", pnpmLock({ ".": { dependencies: LEFT_PAD } })],
+  ["npm", "package-lock.json", npmLock({ dependencies: LEFT_PAD })],
+] as const)
+  test(`a matching ${manager} lockfile passes with every registry unreachable and leaves its folder untouched, caught by an implementation that runs ${manager} or rewrites the lockfile`, (t) => {
+    const root = layerRepo(t, CLEAN_SOURCE);
+    const folder = join(root, `${LAYER}/playground`);
+    put(
+      root,
+      `${LAYER}/playground/package.json`,
+      JSON.stringify({
+        ...NO_DEPENDENCIES,
+        packageManager: `${manager}@10.0.0`,
+        dependencies: LEFT_PAD,
+      }),
+    );
+    put(root, `${LAYER}/playground/${file}`, lock);
+    const before = folderStamp(folder, file);
+    const result = lockfiles(root, OFFLINE);
+    assert.equal(result.status, 0, result.stdout);
+    assert.equal(result.stdout, "Checks: 9 passed, 0 failed, 1 skipped.\n");
+    assert.deepEqual(folderStamp(folder, file), before);
+    assert.equal(before.nodeModules, false);
+  });

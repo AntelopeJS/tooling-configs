@@ -21,19 +21,31 @@ function stopGroup(child: ChildProcess, signal: NodeJS.Signals): void {
 
 /**
  * Runs `command` in its own process group and collects stdout and stderr together. When `signal` aborts, the group
- * gets SIGTERM, then SIGKILL after a grace period, so a step's own children stop with it.
+ * gets SIGTERM, then SIGKILL after a grace period, so a step's own children stop with it. On Windows the command runs
+ * through a shell, so `npm` and `pnpm` resolve to their `.cmd` shims, unless `shell` is `false`: pass that for an
+ * executable path and arguments that a shell must not split, such as paths with spaces.
  */
 export function runCommand(
   command: string,
   args: string[],
-  options: { cwd: string; env?: NodeJS.ProcessEnv; signal?: AbortSignal },
+  options: {
+    cwd: string;
+    env?: NodeJS.ProcessEnv;
+    signal?: AbortSignal;
+    shell?: boolean;
+  },
 ): Promise<CommandResult> {
-  const { cwd, env = process.env, signal } = options;
+  const {
+    cwd,
+    env = process.env,
+    signal,
+    shell = process.platform === "win32",
+  } = options;
   return new Promise((resolve) => {
     const child = spawn(command, args, {
       cwd,
       env,
-      shell: process.platform === "win32",
+      shell,
       detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],
     });
