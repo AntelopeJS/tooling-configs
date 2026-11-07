@@ -76,7 +76,10 @@ export function assignShards(
   return shards;
 }
 
-/** The files shard `shard` of `total` runs, or an error when a path would break `node --test` or the shard is empty. */
+/**
+ * The files shard `shard` of `total` runs, heaviest first because `node --test` starts files in argument order and a
+ * heavy file started last runs alone at the tail. Throws when a path would break `node --test` or the shard is empty.
+ */
 export function shardFiles(
   files: readonly string[],
   weights: TestWeights,
@@ -97,5 +100,5 @@ export function shardFiles(
     );
   const mine = assignShards(files, weights, total)[shard - 1]!;
   if (!mine.length) throw new Error(`shard ${shard} runs no test file`);
-  return mine.toSorted();
+  return mine;
 }
