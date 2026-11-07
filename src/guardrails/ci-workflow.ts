@@ -12,6 +12,10 @@ import {
   type YAMLMap,
 } from "yaml";
 
+import {
+  hasRedundantAggregator,
+  LEGACY_AGGREGATOR_ID,
+} from "./ci-aggregator.ts";
 import { staleNeeds } from "./workflow-needs.ts";
 
 export const CI_PATH = ".github/workflows/ci.yml";
@@ -318,12 +322,31 @@ function assertNoClash(
   );
 }
 
+function dropRedundantAggregator(
+  jobs: YAMLMap,
+  syncCallers: { id: string }[],
+): string[] {
+  const keep = new Set([
+    CI_JOB_ID,
+    ...(syncCallers.length
+      ? syncCallers.map(({ id }) => id)
+      : [RENOVATE_SYNC_JOB_ID]),
+  ]);
+  if (!hasRedundantAggregator(jobs, CI_JOB_ID, keep)) return [];
+  jobs.delete(LEGACY_AGGREGATOR_ID);
+  return [LEGACY_AGGREGATOR_ID];
+}
+
 /**
  * Keeps the shared CI caller on the job id `ci` with no `name`, so the shared workflow reports `ci / checks`,
  * dispatchable and read-only, with the Renovate sync it would otherwise run turned off. The write permissions the sync
  * needs to push and dispatch the caller live on a separate job calling ci-renovate-sync.yml, which is added when missing.
  * A caller without a `test-job` input gets `test-job: true`, which runs the tests in their own job; an explicit value
  * is left as the repository set it.
+ * A `checks` job that only re-aggregates the caller (`needs: [ci]`, steps that `exit` on `needs` results) is removed
+ * when the workflow has no other job besides the caller and the Renovate sync, since the shared workflow already
+ * reports `ci / checks` and each `needs` hop adds to the critical path. A gate that also covers repository-specific
+ * jobs is kept.
  * No `uses:` ref is ever rewritten. A workflow with no caller job is repository-specific CI and is left as it is.
  * When `docsFiles` computes paths, every caller's `docs-files` input lists them first, then keeps its hand-listed paths
  * that still exist, so sync never drops coverage.
@@ -364,11 +387,13 @@ export function ciWorkflow(
   changed = skipRenovateSync(document, pair.value) || changed;
   changed = addTestJob(document, pair.value) || changed;
   changed = ensureSyncJob(document, jobs, syncCallers) || changed;
+  const removed = dropRedundantAggregator(jobs, syncCallers);
+  changed = removed.length > 0 || changed;
   if (!hasDispatch(document)) {
     addDispatch(document);
     changed = true;
   }
-  const stale = staleNeeds(document, CI_PATH);
+  const stale = staleNeeds(document, CI_PATH, removed);
   if (stale.length) throw new Error(stale.join("\n"));
   if (!changed) return current;
   blockOverflowingFlow(document);
