@@ -41,6 +41,7 @@ export interface FormalCheck {
   files?: string[];
   /** Runs from the repository root; exits 0 while every finding breaks as recorded. */
   command: string[];
+  /** The first capture group names a rule the output reports as broken, and an optional group named `states` gives its counterexample length; a covered behaviour change keeps the base's findings as known only when every one has the same length at HEAD as on the base. Without `violation`, a non-zero exit is the one rule `property` broken. */
   violation: RegExp | null;
   /** The first capture group names a rule the output reports as holding; a base finding counts as fixed only when HEAD reports it so. Without `passing` and `violation`, a zero exit is the one rule `property` holding. */
   passing?: RegExp | null;

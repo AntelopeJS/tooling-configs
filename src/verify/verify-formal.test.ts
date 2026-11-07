@@ -31,6 +31,14 @@ if (Object.is(add(-0, -0), -0)) console.log("finding NegativeZero");
 else console.log("holds NegativeZero");
 `;
 
+/** A model-like check that prints each finding with its counterexample length, read from the covered code. */
+const LENGTH_CHECK = `import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+const math = await import(pathToFileURL(join(process.cwd(), "src/math.js")).href);
+for (const length of math.steps ?? [3]) console.log(\`finding NegativeZero: \${length} states\`);
+if (math.extra) console.log("finding Extra: 2 states");
+`;
+
 /** The same check after a rewrite that no longer reports the NegativeZero rule at all. */
 const CHECK_WITHOUT_RULE = CHECK.replace(/if \(Object\.is[\s\S]*$/, "");
 
@@ -42,7 +50,7 @@ const CONFIG = `export default {
       covers: ["src/math.js", "src/ops.js", "src/typed.ts"],
       files: [".agents/skills/formal-add/**"],
       command: ["node", ".agents/skills/formal-add/check.mjs"],
-      violation: /^(?:finding|BROKEN) (\\w+)/gm,
+      violation: /^(?:finding|BROKEN) (\\w+)(?:: (?<states>\\d+) states)?/gm,
       passing: /^holds (\\w+)/gm,
     },
   ],
@@ -52,7 +60,7 @@ const CONFIG = `export default {
 function formalRepo(
   t: TestContext,
   head: Record<string, string>,
-  check = CHECK,
+  base: Record<string, string> = {},
 ) {
   const tmp = mkdtempSync(join(tmpdir(), "verify-runs-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -62,10 +70,11 @@ function formalRepo(
     "src/ops.js": OPS,
     "src/typed.ts":
       "export const total = [1, 2, 3].reduce((sum, n) => sum + n, 0);\n",
-    ".agents/skills/formal-add/check.mjs": check,
+    ".agents/skills/formal-add/check.mjs": CHECK,
     [`${SKILL}/verify.config.ts`]: CONFIG,
     [`${SKILL}/features/smoke.md`]: feature([], ["module-dev"]),
     [`${SKILL}/features/math.md`]: feature(["src/**"], ["module-dev"]),
+    ...base,
   });
   for (const [path, content] of Object.entries(head)) put(root, path, content);
   commit(root);
@@ -278,7 +287,7 @@ test("a formal check's time covers its head and base runs and shows in the verdi
   const { root, tmp, run } = formalRepo(
     t,
     { ".agents/skills/formal-add/check.mjs": CHECK },
-    slowBase,
+    { ".agents/skills/formal-add/check.mjs": slowBase },
   );
   const formal = verify(root, tmp, ["formal", run]);
   assert.equal(formal.status, 0, formal.stdout + formal.stderr);
@@ -294,5 +303,70 @@ test("a formal check's time covers its head and base runs and shows in the verdi
   assert.match(
     judged(root, tmp, run),
     /\| formal formal-add \| not measured \|\n/,
+  );
+});
+
+function lengthRepo(t: TestContext, math: string) {
+  return formalRepo(
+    t,
+    { "src/math.js": math },
+    { ".agents/skills/formal-add/check.mjs": LENGTH_CHECK },
+  );
+}
+
+test("a changed behaviour that breaks the same findings as the base with the same counterexample lengths passes as known", (t) => {
+  const { root, tmp, run } = lengthRepo(t, ADD.replace("a + b", "b + a"));
+  const formal = verify(root, tmp, ["formal", run]);
+  assert.equal(formal.status, 0, formal.stdout + formal.stderr);
+  assert.equal(
+    formal.stdout,
+    "PASS formal-add: covered behaviour changed (emit), same known findings as base: NegativeZero\n",
+  );
+  assert.doesNotMatch(judged(root, tmp, run), /- formal check formal-add/);
+});
+
+test("a changed behaviour that breaks one more rule than the base fails, though the base's findings keep their lengths", (t) => {
+  const { root, tmp, run } = lengthRepo(
+    t,
+    `${ADD}export const extra = true;\n`,
+  );
+  const formal = verify(root, tmp, ["formal", run]);
+  assert.equal(formal.status, 1);
+  assert.equal(
+    formal.stdout,
+    "FAIL formal-add: covered behaviour changed (emit), violated NegativeZero, Extra\n",
+  );
+});
+
+test("a changed behaviour whose finding has another counterexample length than on the base fails", (t) => {
+  const { root, tmp, run } = lengthRepo(t, `${ADD}export const steps = [4];\n`);
+  const formal = verify(root, tmp, ["formal", run]);
+  assert.equal(formal.status, 1);
+  assert.equal(
+    formal.stdout,
+    "FAIL formal-add: covered behaviour changed (emit), violated NegativeZero\n",
+  );
+});
+
+test("a changed behaviour whose finding prints two different counterexample lengths fails", (t) => {
+  const { root, tmp, run } = lengthRepo(
+    t,
+    `${ADD}export const steps = [3, 4];\n`,
+  );
+  const formal = verify(root, tmp, ["formal", run]);
+  assert.equal(formal.status, 1);
+  assert.equal(
+    formal.stdout,
+    "FAIL formal-add: covered behaviour changed (emit), violated NegativeZero\n",
+  );
+});
+
+test("a changed behaviour that drops a finding the base broke fails through missing, not as a known finding", (t) => {
+  const { root, tmp, run } = lengthRepo(t, `${ADD}export const steps = [];\n`);
+  const formal = verify(root, tmp, ["formal", run]);
+  assert.equal(formal.status, 1);
+  assert.equal(
+    formal.stdout,
+    "FAIL formal-add: rules the base broke are absent at HEAD: NegativeZero\n",
   );
 });

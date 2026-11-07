@@ -14,11 +14,15 @@ import { operatorEnv, type RunState, type Workspace } from "./workspace.ts";
 
 const OUTPUT_LIMIT = 64 * 1024 * 1024;
 
+/** Each violated rule whose counterexample length the output gave once and unambiguously, as a number of states. */
+type Lengths = Readonly<Record<string, number>>;
+
 /** The rules a run of the check reported as broken and as holding. */
 interface Rules {
   exitCode: number | null;
   violated: string[];
   passing: string[];
+  lengths: Lengths;
 }
 
 /** What the check reported on the base, when the covered behaviour or the check changed. */
@@ -35,6 +39,7 @@ export interface FormalResult {
   exitCode: number | null;
   violated: string[];
   passing?: string[];
+  lengths?: Lengths;
   folder: string;
   commits?: Commits;
   behaviour?: BehaviourChange;
@@ -96,11 +101,29 @@ function passingRules(
   return !check.violation && exitCode === 0 ? ["property"] : [];
 }
 
+function counterexampleLengths(check: FormalCheck, output: string): Lengths {
+  if (!check.violation) return {};
+  const seen = new Map<string, number | null>();
+  for (const match of output.matchAll(check.violation)) {
+    const states = match.groups?.states;
+    const length = states === undefined ? null : Number(states);
+    const rule = match[1];
+    seen.set(rule, seen.has(rule) && seen.get(rule) !== length ? null : length);
+  }
+  return Object.fromEntries(
+    [...seen].filter(
+      (entry): entry is [string, number] =>
+        entry[1] !== null && Number.isSafeInteger(entry[1]),
+    ),
+  );
+}
+
 function rulesOf(check: FormalCheck, run: SpawnSyncReturns<string>): Rules {
   return {
     exitCode: run.status,
     violated: violatedRules(check, run.status, run.stdout ?? ""),
     passing: passingRules(check, run.status, run.stdout ?? ""),
+    lengths: counterexampleLengths(check, run.stdout ?? ""),
   };
 }
 
@@ -169,7 +192,8 @@ function gateFields(
 
 /**
  * Runs one formal check from the repository root and writes its command,
- * output, exit code and violated rules under `evidence/formal/<name>/`.
+ * output, exit code, violated rules and their counterexample lengths under
+ * `evidence/formal/<name>/`.
  * When the check covers the diff (`diff` given), it also records whether the
  * diff changed the covered code's behaviour. When it did, or when the diff
  * changed the check's own `files`, it runs the check on the base: `fixed`
@@ -193,6 +217,7 @@ export function runFormalCheck(
     exitCode: run.status,
     violated: head.violated,
     passing: head.passing,
+    lengths: head.lengths,
     folder: relative(state.evidence, folder),
   };
   if (diff !== null)
@@ -209,13 +234,37 @@ export function runFormalCheck(
   return result;
 }
 
+function lengthOf(lengths: Lengths | undefined, rule: string) {
+  return lengths !== undefined && Object.hasOwn(lengths, rule)
+    ? lengths[rule]
+    : undefined;
+}
+
+function sameFindingsAsBase(result: FormalResult): boolean {
+  const { base } = result;
+  if (!base || base.exitCode !== 0) return false;
+  const atHead = new Set(result.violated);
+  return (
+    atHead.size === base.violated.length &&
+    base.violated.every((rule) => atHead.has(rule)) &&
+    result.violated.every((rule) => {
+      const length = lengthOf(result.lengths, rule);
+      return length !== undefined && length === lengthOf(base.lengths, rule);
+    })
+  );
+}
+
 /**
  * How a formal check's result weighs on a verdict whose diff it covers. A
  * non-zero exit (a tool error, or a check that no longer matches its record)
- * fails. Recorded findings fail only when the diff changed the covered code's
- * behaviour; otherwise they are reported as known. A rule the base broke and
- * HEAD reports passing is reported as fixed; one HEAD does not report at all
- * fails.
+ * fails, so every violated rule of a result that reaches the rest of the gate
+ * is a recorded finding. A rule the base broke that HEAD does not report at
+ * all fails. Recorded findings are known when the diff left the covered
+ * code's behaviour unchanged. When it changed them, they are known only when
+ * the base run exited 0 and broke exactly the same rules, each with the same
+ * counterexample length at HEAD as on the base; any other set, a changed
+ * length, or a length either run did not report fails. A rule the base broke
+ * and HEAD reports passing is reported as fixed.
  */
 export function formalGate(result: FormalResult): FormalGate {
   if (result.exitCode !== 0) {
@@ -249,6 +298,11 @@ export function formalGate(result: FormalResult): FormalGate {
     return {
       fails: false,
       outcome: `covered behaviour changed (${how}), no violated rule${fixed}`,
+    };
+  if (sameFindingsAsBase(result))
+    return {
+      fails: false,
+      outcome: `covered behaviour changed (${how}), same known findings as base: ${result.violated.join(", ")}`,
     };
   return {
     fails: true,
