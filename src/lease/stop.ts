@@ -1,7 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { listenerPids } from "./ports.ts";
-import { identify, type ProcessIdentity } from "./procs.ts";
+import { assertSignallable, identify, type ProcessIdentity } from "./procs.ts";
 import type { Ports } from "./protocol.ts";
 import type { RecordedRun } from "./registry.ts";
 
@@ -80,6 +80,7 @@ function discover(
  * its group is empty.
  */
 function alive(target: Target): boolean {
+  assertSignallable(target.pid);
   const leader = identify(target.pid);
   if (leader !== undefined) return leader.start === target.start;
   if (!target.group) return false;
@@ -92,6 +93,7 @@ function alive(target: Target): boolean {
 }
 
 function signal(target: Target, name: NodeJS.Signals): void {
+  assertSignallable(target.pid);
   if (!alive(target)) return;
   try {
     process.kill(target.group ? -target.pid : target.pid, name);

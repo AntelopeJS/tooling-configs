@@ -5,6 +5,7 @@ import { delimiter, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { accepting, listenerPids, listensOn } from "./ports.ts";
+import { assertSignallable } from "./procs.ts";
 
 const READY_TIMEOUT_MS = 30_000;
 const KILL_WAIT_MS = 2_000;
@@ -117,6 +118,7 @@ async function untilGone(
 }
 
 function signal(pid: number, name: NodeJS.Signals): void {
+  assertSignallable(pid);
   try {
     process.kill(pid, name);
   } catch {

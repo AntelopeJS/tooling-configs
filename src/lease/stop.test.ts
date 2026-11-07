@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
+import { assertSignallable } from "./procs.ts";
 import {
   externalEnv,
   gitInit,
@@ -133,4 +134,10 @@ test("down --stop prints nothing when nothing runs, with a lease or without one 
   const idle = await lease(["down", "--stop"], worktree, env);
   assert.deepEqual([idle.code, idle.stdout], [0, ""]);
   assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), false);
+});
+
+test("every lease signal refuses a pid that is not an integer above 1, so kill(-1), kill(0) or init can never be reached; a guard that only checks for a number lets -1 kill every process of the user", () => {
+  for (const pid of [-1, 0, 1, Number.NaN, 1.5, Number(undefined)])
+    assert.throws(() => assertSignallable(pid), /refusing to signal pid/);
+  assert.doesNotThrow(() => assertSignallable(process.pid));
 });

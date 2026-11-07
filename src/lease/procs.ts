@@ -67,3 +67,12 @@ export function identify(pid: number): ProcessIdentity | undefined {
   }
   return undefined;
 }
+
+/**
+ * Throws unless `pid` is an integer above 1. `process.kill` reads 0 as the caller's own process group, a negative number
+ * as a group or, for -1, every process this user owns, and 1 is init, so none of them may reach a signal.
+ */
+export function assertSignallable(pid: number): void {
+  if (!Number.isInteger(pid) || pid <= 1)
+    throw new Error(`antelopejs-lease: refusing to signal pid ${String(pid)}`);
+}
