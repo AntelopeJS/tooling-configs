@@ -193,3 +193,18 @@ test("sync --check reports a repo still carrying the redundant checks job, and s
   commit(root);
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
 });
+
+test("a repository job named renovate-sync beside a sync caller on another id counts as a job of the repository's own, so checks is kept", () => {
+  const before = `${HEAD.replace("  renovate-sync:\n", "  sync:\n")}  renovate-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - run: pnpm run renovate:check
+${AGGREGATOR}`;
+  assert.ok(jobIds(rewrite(before)).includes("checks"));
+});
+
+test("a checks job holding an anchor another job aliases is kept instead of leaving a dangling alias", () => {
+  const [ci, sync] = HEAD.split("  renovate-sync:\n");
+  const before = `${ci}${AGGREGATOR.replace("timeout-minutes: 5", "timeout-minutes: &short 5")}  renovate-sync:\n${sync}    timeout-minutes: *short\n`;
+  assert.ok(jobIds(rewrite(before)).includes("checks"));
+});

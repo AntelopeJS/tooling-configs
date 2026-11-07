@@ -328,8 +328,9 @@ function dropRedundantAggregator(
 ): string[] {
   const keep = new Set([
     CI_JOB_ID,
-    RENOVATE_SYNC_JOB_ID,
-    ...syncCallers.map(({ id }) => id),
+    ...(syncCallers.length
+      ? syncCallers.map(({ id }) => id)
+      : [RENOVATE_SYNC_JOB_ID]),
   ]);
   if (!hasRedundantAggregator(jobs, CI_JOB_ID, keep)) return [];
   jobs.delete(LEGACY_AGGREGATOR_ID);

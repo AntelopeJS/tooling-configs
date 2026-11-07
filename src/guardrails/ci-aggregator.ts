@@ -1,4 +1,4 @@
-import { isMap, isScalar, isSeq, type YAMLMap } from "yaml";
+import { isMap, isScalar, isSeq, visit, type YAMLMap } from "yaml";
 
 /** The caller-level gate job older callers carry next to the shared workflow, which already reports `ci / checks`. */
 export const LEGACY_AGGREGATOR_ID = "checks";
@@ -68,9 +68,23 @@ function gatesOnNeedsResults(job: YAMLMap): boolean {
   );
 }
 
+/** Whether any node of the job declares an anchor, which another job's alias could point into. */
+function holdsAnchor(job: YAMLMap): boolean {
+  let found = false;
+  visit(job, (_key, node) => {
+    if ((isScalar(node) || isMap(node) || isSeq(node)) && node.anchor) {
+      found = true;
+      return visit.BREAK;
+    }
+    return undefined;
+  });
+  return found;
+}
+
 /**
  * Whether `jobs` holds a `checks` job that only re-aggregates the caller: it needs exactly `callerId`, has no `uses`,
- * and each of its steps is a plain `exit` guarded by a condition on `needs` results. It is also the only job besides
+ * holds no anchor another job could alias, and each of its steps is a plain `exit` guarded by a condition on `needs`
+ * results. It is also the only job besides
  * `keep`, so a repository with its own jobs keeps a gate that covers them.
  */
 export function hasRedundantAggregator(
@@ -81,6 +95,7 @@ export function hasRedundantAggregator(
   const aggregator = jobs.get(LEGACY_AGGREGATOR_ID, true);
   return (
     isMap(aggregator) &&
+    !holdsAnchor(aggregator) &&
     onlyKeys(aggregator, JOB_KEYS) &&
     needsOnly(aggregator, callerId) &&
     gatesOnNeedsResults(aggregator) &&
