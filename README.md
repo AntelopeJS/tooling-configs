@@ -83,7 +83,7 @@ The tools are optional peer dependencies, so add only the ones a repository uses
 | Tool                    | Packages to add                                                                  |
 | ----------------------- | -------------------------------------------------------------------------------- |
 | oxlint                  | `oxlint@1.81.0`, plus `oxlint-tsgolint` for the type-aware rules (on by default) |
-| oxfmt                   | `oxfmt@^0.66.0`                                                                  |
+| oxfmt                   | `oxfmt@^0.77.0`                                                                  |
 | ESLint                  | `@nuxt/eslint-config`                                                            |
 | Knip                    | `knip@>=6`                                                                       |
 | Import sorting (opt-in) | `eslint-plugin-perfectionist`                                                    |
