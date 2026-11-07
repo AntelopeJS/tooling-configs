@@ -61,6 +61,26 @@ test("map is silent on a complete map and names every gap of an incomplete one",
   );
 });
 
+test("map names each tracked dotfile no feature covers, one line per file, where a matcher that skips dotfiles stays silent", (t) => {
+  const { root, tmp } = mapRepo(t, {
+    ...SPLIT,
+    "src/.prettierrc": "{}\n",
+    "src/conf/.npmrc": "x=1\n",
+  });
+  const gaps = verify(root, tmp, ["map"]);
+  assert.equal(gaps.status, 1);
+  assert.deepEqual(
+    gaps.stdout
+      .trim()
+      .split("\n")
+      .filter((line) => line.includes("/.")),
+    [
+      "unmapped: src/.prettierrc matches no feature glob",
+      "unmapped: src/conf/.npmrc matches no feature glob",
+    ],
+  );
+});
+
 test("plan runs smoke plus every touched feature and fails on an unmapped user-facing file, never on a test", (t) => {
   const { root, tmp } = mapRepo(t, {
     [`${SKILL}/features/core.md`]: feature(
