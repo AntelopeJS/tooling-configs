@@ -269,3 +269,15 @@ test("a run folder inside the repository is left out of the tree, so its own evi
   assert.equal(second.status, 0, second.stdout);
   assert.match(second.stdout, /reuses smoke\/shared, not run again/);
 });
+
+test("an untracked nested repository turns reuse off, since an edit inside it leaves its folder's time alone; fingerprinting the folder alone reuses a stale PASS", (t) => {
+  const { root, tmp, run } = repo(t, ["shared"], ["shared"]);
+  mkdirSync(join(root, "nested"));
+  execFileSync("git", ["init", "-q"], { cwd: join(root, "nested") });
+  put(root, "nested/a.txt", "a\n");
+  assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
+  put(root, "nested/a.txt", "changed content, longer\n");
+  const second = verify(root, tmp, ["journey", run, "store"]);
+  assert.equal(second.status, 0, second.stdout);
+  assert.equal(second.stdout, "PASS store/shared\n");
+});

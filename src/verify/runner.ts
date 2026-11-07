@@ -200,7 +200,9 @@ function gitPaths(root: string, args: string[]): string[] {
  * size and modification time of every changed tracked file and every
  * untracked, non-ignored entry. It never reads file contents, so symlinks,
  * nested repositories and huge files cost one `lstat` each; an edit always
- * moves the modification time. The run's own folder is left out when it sits
+ * moves the modification time. A path it cannot fingerprint, an untracked
+ * nested repository (whose inner edits leave its folder's time alone) or a
+ * name that is not UTF-8, disables reuse. The run's own folder is left out when it sits
  * inside the repository, since its evidence changes with every journey.
  * `undefined` when git cannot answer, which disables reuse instead of failing
  * the journey.
@@ -220,6 +222,8 @@ function treeState(root: string, runDir: string): string | undefined {
     ]
       .filter((path) => inside === null || !`${path}/`.startsWith(inside))
       .sort();
+    if (paths.some((path) => path.endsWith("/") || path.includes("\uFFFD")))
+      return undefined;
     for (const path of paths) {
       const stat = lstatSync(join(root, path), {
         bigint: true,
