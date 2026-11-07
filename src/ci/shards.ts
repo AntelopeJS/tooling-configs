@@ -77,8 +77,8 @@ export function assignShards(
 }
 
 /**
- * The files shard `shard` of `total` runs, heaviest first because `node --test` starts files in argument order and a
- * heavy file started last runs alone at the tail. Throws when a path would break `node --test` or the shard is empty.
+ * The files shard `shard` of `total` runs; `node --test` sorts them by path before it starts any. Throws when a path
+ * would break `node --test` or the shard is empty.
  */
 export function shardFiles(
   files: readonly string[],

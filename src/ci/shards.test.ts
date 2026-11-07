@@ -47,14 +47,6 @@ test("shardFiles over every shard runs each file exactly once", () => {
   assert.deepEqual(ran.toSorted(), files);
 });
 
-test("shardFiles lists the heaviest file first, so none starts last and runs alone at the tail", () => {
-  assert.deepEqual(shardFiles(["a", "b", "c"], { a: 1, b: 9, c: 5 }, 1, 1), [
-    "b",
-    "c",
-    "a",
-  ]);
-});
-
 test("shardFiles fails a shard that would run no file", () => {
   assert.throws(
     () => shardFiles(["a"], WEIGHTS, 2, 2),
