@@ -200,7 +200,7 @@ test("a build that fails a check is not kept, so the next journey builds again",
   assert.equal(failed.status, 1);
   assert.match(
     failed.stdout,
-    /^FAIL smoke\/reader\n {4}02-build: exit code 0/m,
+    /^FAIL smoke\/reader \(\d+\.\d s\)\n {4}02-build: exit code 0/m,
   );
   unflag("fail");
   const rebuilt = verify(root, tmp, ["journey", run, "tree", "reader"]);
