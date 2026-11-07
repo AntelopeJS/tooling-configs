@@ -1,7 +1,8 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, matchesGlob, relative } from "node:path";
+import { join, relative } from "node:path";
 
+import { matchesPath } from "./glob.ts";
 import {
   behaviourChange,
   inWorktree,
@@ -61,7 +62,7 @@ export interface FormalGate {
 
 function changesCheckFiles(check: FormalCheck, changed: string[]): boolean {
   return changed.some((file) =>
-    (check.files ?? []).some((glob) => matchesGlob(file, glob)),
+    (check.files ?? []).some((glob) => matchesPath(file, glob)),
   );
 }
 
@@ -223,7 +224,7 @@ function renamedFromBase(
     (field, index) =>
       field.startsWith("R") &&
       (check.files ?? []).some((glob) =>
-        matchesGlob(fields[index + 2] ?? "", glob),
+        matchesPath(fields[index + 2] ?? "", glob),
       ),
   );
 }
