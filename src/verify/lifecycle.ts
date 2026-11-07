@@ -8,10 +8,11 @@ import {
 import { join, relative } from "node:path";
 
 import {
+  child,
   children,
-  isObject,
   num,
   object,
+  optStr,
   parseJson,
   str,
 } from "../garden/json.ts";
@@ -44,12 +45,34 @@ function containerPrefix(): string {
   return process.env.VERIFY_CONTAINER_PREFIX ?? "verify";
 }
 
+/** The `prepack` values that do nothing but run the package's build script. */
+const BUILD_ONLY_PREPACKS = new Set([
+  "pnpm run build",
+  "pnpm build",
+  "npm run build",
+  "yarn build",
+  "yarn run build",
+]);
+
+function script(workspace: Workspace, name: string): string | undefined {
+  return optStr(child(workspace.manifest, "scripts"), name);
+}
+
+/** Whether `pnpm pack` builds the package itself, so a setup build before it would run the same build twice. */
+function packBuilds(workspace: Workspace): boolean {
+  const prepack = script(workspace, "prepack");
+  return (
+    workspace.kind === "interface" &&
+    prepack !== undefined &&
+    BUILD_ONLY_PREPACKS.has(prepack.trim())
+  );
+}
+
 function setupCommands(workspace: Workspace): string[][] {
   if (workspace.config.setup) return workspace.config.setup;
-  const scripts = workspace.manifest.scripts;
-  const build =
-    scripts !== undefined && isObject(scripts) && scripts.build !== undefined;
-  return build && workspace.kind !== "template"
+  return script(workspace, "build") !== undefined &&
+    workspace.kind !== "template" &&
+    !packBuilds(workspace)
     ? [["pnpm", "run", "build"]]
     : [];
 }
