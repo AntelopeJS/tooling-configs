@@ -6,7 +6,7 @@ import { down, gc, run, status, statusTable } from "../lease/commands.ts";
 import { isServerRole } from "../lease/env.ts";
 
 const USAGE =
-  "usage: antelopejs-lease run [--as api|web] -- <command...> | status [--json] | down [--force] | gc [--idle <days>]";
+  "usage: antelopejs-lease run [--as api|web] -- <command...> | status [--json] | down [--stop] [--force] | gc [--idle <days>]";
 const DEFAULT_IDLE_DAYS = 14;
 const MIN_IDLE_DAYS = 1;
 
@@ -37,9 +37,15 @@ async function statusVerb(args: string[]): Promise<number> {
 async function downVerb(args: string[]): Promise<number> {
   const { values } = parseArgs({
     args,
-    options: { force: { type: "boolean" } },
+    options: { force: { type: "boolean" }, stop: { type: "boolean" } },
   });
-  await down(process.env, values.force === true);
+  await down(process.env, {
+    force: values.force === true,
+    stop:
+      values.stop === true
+        ? (line) => process.stdout.write(`${line}\n`)
+        : undefined,
+  });
   return 0;
 }
 

@@ -16,12 +16,14 @@ import {
   mongodPaths,
   openLease,
   readEntries,
+  recordedRuns,
   removeLease,
   sweep,
   withRegistryLock,
   type LeaseState,
   type Observed,
 } from "./registry.ts";
+import { stopOwn } from "./stop.ts";
 
 const DOWN_GRACE_MS = 10_000;
 const DAY_MS = 86_400_000;
@@ -138,13 +140,34 @@ export function statusTable(rows: readonly LeaseReport[]): string {
     .join("");
 }
 
+/** What `down` may do beyond the teardown itself. */
+export interface DownOptions {
+  /** Tear down although the api or web port still listens. */
+  readonly force: boolean;
+  /**
+   * Stop the processes this lease started first, and call this once per process stopped. Absent:
+   * stop nothing, and refuse while a port listens.
+   */
+  readonly stop?: (line: string) => void;
+}
+
+function stillListens(busy: readonly number[], stopped: boolean): Error {
+  const ports = busy.join(" and ");
+  return new Error(
+    stopped
+      ? `antelopejs-lease: port ${ports} of this lease still listens after --stop, held by a process this user may not stop; pass --force to tear down anyway`
+      : `antelopejs-lease: port ${ports} of this lease still listens; stop what this worktree started with antelopejs-lease down --stop, or pass --force to tear down anyway`,
+  );
+}
+
 /**
- * Tears down this worktree's lease: stops its mongod and deletes its data, logs and tmp. Refuses
- * while its api or web port accepts, unless `force`. Does nothing when there is no lease.
+ * Tears down this worktree's lease: stops its mongod and deletes its data, logs and tmp. With
+ * `stop`, first stops the processes the lease started. Refuses while its api or web port accepts,
+ * unless `force`. Does nothing when there is no lease.
  */
 export async function down(
   env: NodeJS.ProcessEnv,
-  force: boolean,
+  options: DownOptions,
 ): Promise<void> {
   const worktree = locateWorktree(process.cwd());
   const entry = readEntries(leaseHome(env)).find(
@@ -154,14 +177,13 @@ export async function down(
   if (entry.parsed?.kind === "foreign") throw foreignRecord(entry.dir);
   const ports =
     entry.parsed?.kind === "current" ? entry.parsed.record.ports : undefined;
-  if (ports !== undefined && !force) {
+  if (ports !== undefined && options.stop !== undefined)
+    await stopOwn(recordedRuns(entry.dir), ports, options.stop);
+  if (ports !== undefined && !options.force) {
     const busy = [];
     for (const port of [ports.api, ports.web])
       if (await accepting(port)) busy.push(port);
-    if (busy.length > 0)
-      throw new Error(
-        `antelopejs-lease: port ${busy.join(" and ")} of this lease still listens; stop the servers first (for dms-dev.sh: antelopejs-lease run -- bash <path to dms-dev.sh> stop), or pass --force`,
-      );
+    if (busy.length > 0) throw stillListens(busy, options.stop !== undefined);
   }
   await stopMongod(mongodPaths(entry.dir).dbpath, DOWN_GRACE_MS);
   await withRegistryLock(() => removeLease(entry.dir));

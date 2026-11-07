@@ -34,6 +34,7 @@ import {
   type MongoMode,
   type ParsedRecord,
 } from "./protocol.ts";
+import { identify } from "./procs.ts";
 
 const LOCK_WAIT_MS = 15_000;
 const RECORD_FILE = "lease.json";
@@ -257,17 +258,37 @@ function runPids(dir: string): number[] {
   }
 }
 
+/** A `run` the lease recorded: its pid, and its start time when the platform could read it. */
+export interface RecordedRun {
+  readonly pid: number;
+  /** Empty when the run was recorded without a start time, so its pid cannot be told from a reused one. */
+  readonly start: string;
+}
+
+/** The runs recorded under the lease in `dir`, live or not. */
+export function recordedRuns(dir: string): RecordedRun[] {
+  return runPids(dir).flatMap((pid) => {
+    try {
+      const start = readFileSync(join(dir, RUNS_DIR, String(pid)), "utf8");
+      return Number.isInteger(pid) && pid > 0 ? [{ pid, start }] : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
 /**
- * Records that process `pid` runs a command under the lease in `dir`, and forgets the runs that
- * have exited. `gc` never removes a lease while one of its runs is alive. A pid the system reused
- * keeps the lease until that process exits too, which only delays `gc`.
+ * Records that process `pid` runs a command under the lease in `dir`, with the start time of that
+ * process, and forgets the runs that have exited. `gc` never removes a lease while one of its runs
+ * is alive. A pid the system reused keeps the lease until that process exits too, which only delays
+ * `gc`; `down --stop` compares the start time and leaves such a process alone.
  */
 export function markRun(dir: string, pid: number): void {
   const runs = join(dir, RUNS_DIR);
   mkdirSync(runs, { recursive: true });
   for (const gone of runPids(dir).filter((other) => !running(other)))
     rmSync(join(runs, String(gone)), { force: true });
-  writeFileSync(join(runs, String(pid)), "");
+  writeFileSync(join(runs, String(pid)), identify(pid)?.start ?? "");
 }
 
 async function quiet(record: LeaseRecord, dir: string): Promise<boolean> {
