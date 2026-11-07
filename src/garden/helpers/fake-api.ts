@@ -133,7 +133,34 @@ export class FakeApi implements GardenApi {
     this.route(`/repos/AntelopeJS/${name}/commits/main/check-runs`, {
       check_runs: checks,
     });
+    for (const branch of ["main", "next"])
+      this.callerChanged(name, undefined, branch);
     return this;
+  }
+
+  /** The newest commit touching ci.yml on the branch was committed at the date; undefined means no commit touched it. */
+  callerChanged(name: string, committed?: string, branch = "main"): this {
+    return this.fileChanged(
+      name,
+      ".github/workflows/ci.yml",
+      committed,
+      branch,
+    );
+  }
+
+  /** The newest commit touching the file on the branch was committed at the date; undefined means no commit touched it. */
+  fileChanged(
+    name: string,
+    path: string,
+    committed?: string,
+    branch = "main",
+  ): this {
+    return this.route(
+      `/repos/AntelopeJS/${name}/commits?path=${path}&sha=${branch}&per_page=1`,
+      committed === undefined
+        ? []
+        : [{ commit: { committer: { date: committed } } }],
+    );
   }
 
   context(): GardenContext {

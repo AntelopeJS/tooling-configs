@@ -21,6 +21,12 @@ export interface OrgRepo {
   defaultBranch: string;
 }
 
+/** A reusable workflow a run called, as `path@ref` pinned to the commit `sha` it resolved to. */
+interface ReferencedWorkflow {
+  path: string;
+  sha: string;
+}
+
 export interface WorkflowRun {
   id: number;
   conclusion: string | undefined;
@@ -29,6 +35,8 @@ export interface WorkflowRun {
   updatedAt: number;
   url: string;
   headSha: string;
+  /** Empty when the run called no reusable workflow or the payload predates the field. */
+  referencedWorkflows: ReferencedWorkflow[];
 }
 
 export interface CheckRun {
@@ -109,6 +117,13 @@ export function workflowRun(value: JsonValue): WorkflowRun {
     updatedAt: time(source, "updated_at"),
     url: str(source, "html_url"),
     headSha: optStr(source, "head_sha") ?? "",
+    referencedWorkflows: (source.referenced_workflows === null
+      ? []
+      : children(source, "referenced_workflows")
+    ).map((workflow) => ({
+      path: str(workflow, "path"),
+      sha: optStr(workflow, "sha") ?? "",
+    })),
   };
 }
 

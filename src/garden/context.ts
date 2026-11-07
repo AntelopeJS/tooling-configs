@@ -131,6 +131,7 @@ export class GardenContext {
   private readonly closed = new Memo<PullRequest[]>();
   private readonly commitTimes = new Memo<number>();
   private readonly cleanups = new Memo<boolean>();
+  private readonly pathChanges = new Memo<number | undefined>();
 
   constructor(api: GardenApi) {
     this.api = api;
@@ -311,6 +312,28 @@ export class GardenContext {
         "commit",
       );
       return time(child(child(body, "commit"), "committer"), "date");
+    });
+  }
+
+  /** When the newest commit of the branch that touched the path was committed, in milliseconds; undefined when none did. */
+  lastChange(
+    repo: GardenRepo,
+    path: string,
+    branch: string,
+  ): Promise<number | undefined> {
+    return this.pathChanges.get(`${repo.name}:${branch}:${path}`, async () => {
+      const [newest] = list(
+        await this.api.json(
+          `/repos/${ORG}/${repo.name}/commits?path=${path}&sha=${encodeURIComponent(branch)}&per_page=1`,
+        ),
+        "commits",
+      );
+      return newest === undefined
+        ? undefined
+        : time(
+            child(child(object(newest, "commit"), "commit"), "committer"),
+            "date",
+          );
     });
   }
 

@@ -3,9 +3,9 @@ import test from "node:test";
 
 import { ciDuration, median, redBranch } from "./checks/ci-health.ts";
 import { workflowRun } from "./decode.ts";
-import { run } from "./helpers/builders.ts";
+import { ago, run } from "./helpers/builders.ts";
 import { FakeApi, fixture } from "./helpers/fake-api.ts";
-import { object, children } from "./json.ts";
+import { object, children, isObject } from "./json.ts";
 import type { CheckResult } from "./types.ts";
 
 function world(runs: ReturnType<typeof run>[], tier = "N1"): FakeApi {
@@ -86,7 +86,123 @@ test("the median of the last 10 runs is judged against the 30-day baseline by +2
   );
 });
 
+function slowdown(
+  workflowSha: (index: number) => string | undefined,
+): ReturnType<typeof run>[] {
+  return Array.from({ length: 20 }, (_, index) =>
+    run(
+      index + 1,
+      "success",
+      1 + index * 6,
+      index < 10 ? 125 : 100,
+      workflowSha(index),
+    ),
+  );
+}
+
+test("a slowdown that starts with a new referenced-workflow sha is accepted as the new baseline, the same slowdown under an unchanged sha is a finding", async () => {
+  const changed = world(slowdown((index) => (index < 10 ? "new" : "old")));
+  assert.deepEqual(keys(await ciDuration.run(changed.context())), []);
+  const unchanged = world(slowdown(() => "same"));
+  assert.deepEqual(keys(await ciDuration.run(unchanged.context())), [
+    "mongodb|ci-duration|main",
+  ]);
+});
+
+test("a slowdown that starts after a commit to ci.yml is accepted, a commit older than the whole window changes nothing", async () => {
+  const after = world(timed(125, 100)).callerChanged("mongodb", ago(57));
+  assert.deepEqual(keys(await ciDuration.run(after.context())), []);
+  const before = world(timed(125, 100)).callerChanged("mongodb", ago(200));
+  assert.deepEqual(keys(await ciDuration.run(before.context())), [
+    "mongodb|ci-duration|main",
+  ]);
+});
+
+test("the finding names the window start, the ci.yml change here, where naming the oldest kept run fails", async () => {
+  const api = world(timed(125, 100)).callerChanged("mongodb", ago(200));
+  const result = await ciDuration.run(api.context());
+  assert.equal(result.kind, "findings");
+  assert.ok(
+    result.kind === "findings" &&
+      result.findings[0].evidence.includes(`since ${ago(200)}`),
+  );
+});
+
+test("runs without referenced_workflows decode to an empty list and are judged by duration alone", async () => {
+  const [old, current] = [
+    run(1, "success", 1),
+    run(2, "success", 1, 60, "abc"),
+  ];
+  assert.deepEqual(workflowRun(old).referencedWorkflows, []);
+  assert.deepEqual(workflowRun(current).referencedWorkflows, [
+    {
+      path: "AntelopeJS/.github/.github/workflows/ci-node.yml@refs/tags/v1",
+      sha: "abc",
+    },
+  ]);
+  assert.deepEqual(
+    keys(await ciDuration.run(world(timed(125, 100)).context())),
+    ["mongodb|ci-duration|main"],
+  );
+});
+
 test("the median of an even sample is the mean of the two middle values", () => {
   assert.equal(median([10, 40, 20, 30]), 25);
   assert.equal(median([3, 1, 2]), 2);
+});
+
+function ownWorkflowRuns(): ReturnType<typeof run>[] {
+  return Array.from({ length: 20 }, (_, index) => {
+    const body = run(
+      index + 1,
+      "success",
+      1 + index * 6,
+      index < 10 ? 125 : 100,
+    );
+    return isObject(body)
+      ? {
+          ...body,
+          referenced_workflows: [
+            {
+              path: `AntelopeJS/mongodb/.github/workflows/test.yml@sha${index + 1}`,
+              ref: "refs/heads/main",
+              sha: `sha${index + 1}`,
+            },
+          ],
+        }
+      : body;
+  });
+}
+
+test("a workflow file of the repository's own, pinned to each run's head, keeps the window and restarts it only when that file changes; a signature that counts its sha never judges", async () => {
+  const same = world(ownWorkflowRuns()).fileChanged(
+    "mongodb",
+    ".github/workflows/test.yml",
+    ago(200),
+  );
+  assert.deepEqual(keys(await ciDuration.run(same.context())), [
+    "mongodb|ci-duration|main",
+  ]);
+  const edited = world(ownWorkflowRuns()).fileChanged(
+    "mongodb",
+    ".github/workflows/test.yml",
+    ago(57),
+  );
+  assert.deepEqual(keys(await ciDuration.run(edited.context())), []);
+});
+
+test("a null referenced_workflows or an entry without sha decodes instead of throwing", () => {
+  const body = run(1, "success", 1);
+  assert.ok(isObject(body));
+  assert.deepEqual(
+    workflowRun({ ...body, referenced_workflows: null }).referencedWorkflows,
+    [],
+  );
+  assert.deepEqual(
+    workflowRun({
+      ...body,
+      referenced_workflows: [{ path: "AntelopeJS/.github/x.yml@v1" }],
+    }).referencedWorkflows,
+    [{ path: "AntelopeJS/.github/x.yml@v1", sha: "" }],
+  );
 });

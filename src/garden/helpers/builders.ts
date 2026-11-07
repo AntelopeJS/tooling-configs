@@ -1,5 +1,5 @@
 import { NOW } from "./fake-api.ts";
-import type { JsonValue } from "../json.ts";
+import type { JsonObject, JsonValue } from "../json.ts";
 
 const HOUR = 60 * 60 * 1000;
 
@@ -12,8 +12,9 @@ export function run(
   conclusion: string,
   hoursAgo: number,
   seconds = 60,
+  workflowSha?: string,
 ): JsonValue {
-  return {
+  const body: JsonObject = {
     id,
     conclusion,
     created_at: ago(hoursAgo),
@@ -24,6 +25,15 @@ export function run(
     html_url: `https://github.com/AntelopeJS/x/actions/runs/${id}`,
     head_sha: `sha${id}`,
   };
+  if (workflowSha !== undefined)
+    body.referenced_workflows = [
+      {
+        path: "AntelopeJS/.github/.github/workflows/ci-node.yml@refs/tags/v1",
+        ref: "refs/tags/v1",
+        sha: workflowSha,
+      },
+    ];
+  return body;
 }
 
 export function checkRun(name: string, conclusion: string): JsonValue {
