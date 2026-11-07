@@ -260,6 +260,17 @@ test("a later journey of the run starts with the modules an earlier passing jour
   assert.equal(installs(), 2);
 });
 
+test("the fixture project tree a journey records is the same whether or not a kept cache seeds it, where seeding before the tree adds .antelope/cache to later journeys' evidence", (t) => {
+  const { root, tmp, journey } = cacheRepo(t);
+  const run = newRun(root, tmp);
+  const tree = () =>
+    read(run, "evidence/smoke/reader/01-fixture-project/tree.txt");
+  assert.equal(journey(run, "smoke").status, 0);
+  const first = tree();
+  assert.equal(journey(run, "smoke").status, 0);
+  assert.equal(tree(), first);
+});
+
 test("a write through a relative link of a seeded module stays in its journey", (t) => {
   const { root, tmp, installs, journey } = cacheRepo(t);
   const run = newRun(root, tmp);
