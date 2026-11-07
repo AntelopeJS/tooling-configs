@@ -100,6 +100,11 @@ function repo(t: TestContext, features: Features) {
   return { root, tmp, run: newRun(root, tmp) };
 }
 
+/** Journey output without the `(x.y s)` time each journey line ends with, so a comparison does not depend on how long a journey took. */
+function untimed(stdout: string): string {
+  return stdout.replace(/ \(\d+\.\d s\)$/gm, "");
+}
+
 function statuses(run: string, name: string): string[] {
   return evidence(run, `${name}/feature.json`).map(
     (result: { journey: string; status: string; reusedFrom?: string }) =>
@@ -115,7 +120,7 @@ test("journey --plan runs smoke then the diff's features and merges each feature
   const planned = verify(root, tmp, ["journey", run, "--plan"]);
   assert.equal(planned.status, 1, planned.stderr);
   assert.equal(
-    planned.stdout,
+    untimed(planned.stdout),
     [
       "PASS smoke/own",
       "FAIL api/bad",
@@ -140,7 +145,7 @@ test("journey --plan on a run created with new --all runs every feature; a plan 
     "--plan",
   ]);
   assert.equal(planned.status, 0, planned.stderr);
-  assert.match(planned.stdout, /^PASS docs\/own/m);
+  assert.match(untimed(planned.stdout), /^PASS docs\/own/m);
 });
 
 test("a failing or unknown feature still lets the next feature run, and the call exits 1; a loop that stops at the first failure, or returns the last feature's code, fails it", (t) => {
@@ -155,9 +160,9 @@ test("a failing or unknown feature still lets the next feature run, and the call
     "api,nope,smoke",
   ]);
   assert.equal(result.status, 1);
-  assert.match(result.stdout, /^FAIL api\/bad\n/);
+  assert.match(untimed(result.stdout), /^FAIL api\/bad\n/);
   assert.match(
-    result.stdout,
+    untimed(result.stdout),
     /^NOT VERIFIED api\/unreachable\n {4}the sandbox is down\nPASS smoke\/own\n$/m,
   );
   assert.equal(result.stderr, "Unknown feature nope: no features/nope.md\n");
@@ -183,7 +188,10 @@ test("journey --plan prints exactly what one call per planned feature prints, an
     together.run,
     "--plan",
   ]);
-  assert.equal(planned.stdout, outputs.map((output) => output.stdout).join(""));
+  assert.equal(
+    untimed(planned.stdout),
+    outputs.map((output) => untimed(output.stdout)).join(""),
+  );
   assert.equal(planned.stderr, outputs.map((output) => output.stderr).join(""));
   assert.equal(planned.status, 1);
   for (const name of ["smoke", "api"])
@@ -198,7 +206,7 @@ test("a journey two planned features list runs once in one --plan call and the l
   const planned = verify(root, tmp, ["journey", run, "--plan"]);
   assert.equal(planned.status, 0, planned.stderr);
   assert.equal(
-    planned.stdout,
+    untimed(planned.stdout),
     "PASS smoke/shared\nPASS api/shared (reuses smoke/shared, not run again)\nPASS api/own\n",
   );
   assert.equal(ran(run, "api/shared"), false);
@@ -213,10 +221,10 @@ test("after the feature, a positional stays a journey id even when a feature has
   });
   const named = verify(root, tmp, ["journey", run, "api", "docs"]);
   assert.equal(named.status, 0, named.stderr);
-  assert.equal(named.stdout, "PASS api/docs\n");
+  assert.equal(untimed(named.stdout), "PASS api/docs\n");
   assert.equal(ran(run, "docs/bad"), false);
   const whole = verify(root, tmp, ["journey", run, "api"]);
-  assert.equal(whole.stdout, "PASS api/docs\nPASS api/own\n");
+  assert.equal(untimed(whole.stdout), "PASS api/docs\nPASS api/own\n");
   const refused = verify(root, tmp, ["journey", run, "api", "bad"]);
   assert.equal(refused.status, 1);
   assert.equal(
@@ -246,7 +254,7 @@ test("journey --plan gives each feature the environment its own call would have;
   const { root, tmp, run } = repo(t, { smoke: ["leak"], api: ["peek"] });
   const planned = verify(root, tmp, ["journey", run, "--plan"]);
   assert.equal(planned.status, 0, planned.stdout + planned.stderr);
-  assert.equal(planned.stdout, "PASS smoke/leak\nPASS api/peek\n");
+  assert.equal(untimed(planned.stdout), "PASS smoke/leak\nPASS api/peek\n");
 });
 
 test("journey --plan names the features left unrun when a journey leaves an uncaught error; a loop with no handler dies with a bare stack trace", (t) => {
@@ -271,5 +279,5 @@ test("journey --features joins repeated flags and trims names; parsing that keep
     " api ",
   ]);
   assert.equal(named.status, 0, named.stdout + named.stderr);
-  assert.equal(named.stdout, "PASS smoke/own\nPASS api/shared\n");
+  assert.equal(untimed(named.stdout), "PASS smoke/own\nPASS api/shared\n");
 });
