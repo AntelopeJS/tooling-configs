@@ -1,12 +1,16 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
+  lstatSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   rmdirSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 
 import { BUILTIN_JOURNEYS } from "./builtins.ts";
 import { VerifyContext, type BuiltinJourney } from "./context.ts";
@@ -15,6 +19,7 @@ import { killGroup, onInterrupt } from "./record.ts";
 import type { JourneyEnd, JourneyResult, JourneyStatus } from "./results.ts";
 import type { Journey } from "./types.ts";
 import {
+  git,
   removeTree,
   saveRun,
   type RunState,
@@ -179,9 +184,135 @@ export function readResults(
   return results;
 }
 
+/** NUL-separated paths git prints, read without the default output limit, since a large worktree can list megabytes. */
+function gitPaths(root: string, args: string[]): string[] {
+  const listed = spawnSync("git", args, {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024 * 1024,
+  });
+  if (listed.status !== 0) throw new Error(`git ${args.join(" ")} failed`);
+  return listed.stdout.split("\0").filter(Boolean);
+}
+
+/**
+ * A fingerprint of the tree a journey runs against: HEAD, and the path, type,
+ * size and modification time of every changed tracked file and every
+ * untracked, non-ignored entry. It never reads file contents, so symlinks,
+ * nested repositories and huge files cost one `lstat` each; an edit always
+ * moves the modification time. A path it cannot fingerprint, an untracked
+ * nested repository (whose inner edits leave its folder's time alone) or a
+ * name that is not UTF-8, disables reuse. The run's own folder is left out when it sits
+ * inside the repository, since its evidence changes with every journey.
+ * `undefined` when git cannot answer, which disables reuse instead of failing
+ * the journey.
+ */
+function treeState(root: string, runDir: string): string | undefined {
+  try {
+    const own = relative(root, runDir);
+    const inside =
+      own !== "" && !own.startsWith("..") && !isAbsolute(own)
+        ? `${own}/`
+        : null;
+    const hash = createHash("sha256");
+    hash.update(git(root, ["rev-parse", "HEAD"]));
+    const paths = [
+      ...gitPaths(root, ["diff", "HEAD", "--name-only", "-z", "--no-renames"]),
+      ...gitPaths(root, ["ls-files", "-z", "--others", "--exclude-standard"]),
+    ]
+      .filter((path) => inside === null || !`${path}/`.startsWith(inside))
+      .sort();
+    if (paths.some((path) => path.endsWith("/") || path.includes("\uFFFD")))
+      return undefined;
+    for (const path of paths) {
+      const stat = lstatSync(join(root, path), {
+        bigint: true,
+        throwIfNoEntry: false,
+      });
+      hash.update(
+        `\0${path}\0${stat === undefined ? "gone" : `${stat.mode}:${stat.size}:${stat.mtimeNs}`}`,
+      );
+    }
+    return hash.digest("hex");
+  } catch {
+    return undefined;
+  }
+}
+
+/** The PASS of journey `id` that another feature of this run recorded by running it against the same tree, if any. */
+function passElsewhere(
+  state: RunState,
+  feature: string,
+  id: string,
+  tree: string,
+): JourneyResult | undefined {
+  const features = readdirSync(state.evidence, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name !== feature)
+    .map((entry) => entry.name)
+    .sort();
+  for (const other of features) {
+    const source = readResults(state, other)?.find(
+      (result) =>
+        result.journey === id &&
+        result.status === "PASS" &&
+        result.reusedFrom === undefined &&
+        result.tree === tree,
+    );
+    if (source !== undefined) return source;
+  }
+  return undefined;
+}
+
+/** Records the tree a journey ran against in its result.json. */
+function stamp(
+  state: RunState,
+  result: JourneyResult,
+  tree: string | undefined,
+): JourneyResult {
+  if (tree === undefined) return result;
+  const stamped = { ...result, tree };
+  writeFileSync(
+    join(state.evidence, result.folder, "result.json"),
+    `${JSON.stringify(stamped, null, 2)}\n`,
+  );
+  return stamped;
+}
+
+/** Records `source` as the result of `id` under `feature` without running the journey: its own result.json names the folder it reuses. */
+function reuse(
+  state: RunState,
+  feature: string,
+  id: string,
+  source: JourneyResult,
+): JourneyResult {
+  const folder = join(state.evidence, feature, id);
+  rmSync(folder, { recursive: true, force: true });
+  mkdirSync(folder, { recursive: true });
+  const result: JourneyResult = {
+    ...source,
+    feature,
+    folder: relative(state.evidence, folder),
+    reusedFrom: source.folder,
+  };
+  writeFileSync(
+    join(folder, "result.json"),
+    `${JSON.stringify(result, null, 2)}\n`,
+  );
+  return result;
+}
+
 /**
  * Runs the named journeys of a feature, or all of them, and merges their
  * results into feature.json so partial runs add up instead of overwriting.
+ *
+ * A journey id is the same code whichever feature lists it. When no ids are
+ * named, a journey that another feature of this run already ran and passed
+ * is not run again: the feature records a result that reuses that PASS and
+ * names its evidence folder. Only a PASS is reused, only for the same tree
+ * (HEAD, uncommitted diff and untracked files) and while HEAD is still the
+ * commit the run was created at, never across runs, and never for a
+ * journey this feature already has a result for. Naming ids runs them even
+ * when a PASS exists.
  */
 export async function runFeature(
   workspace: Workspace,
@@ -198,6 +329,11 @@ export async function runFeature(
       `${feature} registers no journey ${unknown.join(", ")}; it registers ${registered.join(", ")}`,
     );
   const known = knownJourneys(workspace);
+  const earlier = readResults(state, feature) ?? [];
+  const tree = treeState(workspace.root, state.dir);
+  const mayReuse =
+    ids.length === 0 &&
+    git(workspace.root, ["rev-parse", "HEAD"]) === state.headSha;
   const results: JourneyResult[] = [];
   for (const id of ids.length > 0 ? ids : registered) {
     const journey = known.get(id);
@@ -205,9 +341,22 @@ export async function runFeature(
       throw new Error(
         `${feature} names journey ${id}, which is neither built in nor in verify.config.ts journeys`,
       );
-    results.push(await runOne(workspace, state, feature, id, journey));
+    const source =
+      mayReuse &&
+      tree !== undefined &&
+      !earlier.some((result) => result.journey === id)
+        ? passElsewhere(state, feature, id, tree)
+        : undefined;
+    results.push(
+      source === undefined
+        ? stamp(
+            state,
+            await runOne(workspace, state, feature, id, journey),
+            tree,
+          )
+        : reuse(state, feature, id, source),
+    );
   }
-  const earlier = readResults(state, feature) ?? [];
   const merged = registered.flatMap((id) =>
     results
       .filter((result) => result.journey === id)

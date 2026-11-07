@@ -57,7 +57,7 @@ ${text.builtins}
 
 ## Evidence
 
-Each step writes \`<run>/evidence/<feature>/<journey>/<NN-step>/\` with \`command.txt\`, \`stdout.txt\`, \`stderr.txt\`, \`exit-code.txt\`, \`pid.txt\` for background processes, \`tree.txt\`, \`http.json\` for every request, and \`checks.json\`. \`result.json\` holds a journey's result and \`feature.json\` the merged results of the feature. Read the evidence before you judge a PASS: a check proves only what it asserts.
+Each step writes \`<run>/evidence/<feature>/<journey>/<NN-step>/\` with \`command.txt\`, \`stdout.txt\`, \`stderr.txt\`, \`exit-code.txt\`, \`pid.txt\` for background processes, \`tree.txt\`, \`http.json\` for every request, and \`checks.json\`. \`result.json\` holds a journey's result and \`feature.json\` the merged results of the feature. A journey id listed under two features runs once per run: when \`journey <run> <feature>\` names no ids and another feature of the run already passed that id at the same HEAD, the feature records a result with \`reusedFrom\` naming that evidence folder and runs nothing. Name the id to run it again. Read the evidence before you judge a PASS: a check proves only what it asserts.
 
 ## Cleanup
 

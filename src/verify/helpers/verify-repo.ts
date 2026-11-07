@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { TestContext } from "node:test";
 
@@ -85,4 +85,13 @@ export function evidence(run: string, path: string) {
 /** The entries left at the top of a run folder, sorted. */
 export function runEntries(run: string): string[] {
   return readdirSync(run).sort();
+}
+
+/** Whether a journey's evidence folder holds a step folder, so the journey ran instead of being reused. */
+export function ran(run: string, path: string): boolean {
+  const folder = join(run, "evidence", path);
+  return (
+    existsSync(folder) &&
+    readdirSync(folder).some((entry) => /^\d\d-/.test(entry))
+  );
 }

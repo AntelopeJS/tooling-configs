@@ -76,7 +76,9 @@ async function runJourneys(
 ): Promise<number> {
   const results = await runFeature(workspace, loadRun(dir), feature, ids);
   for (const result of results) {
-    print(`${result.status} ${feature}/${result.journey}`);
+    print(
+      `${result.status} ${feature}/${result.journey}${result.reusedFrom === undefined ? "" : ` (reuses ${result.reusedFrom}, not run again)`}`,
+    );
     for (const step of result.steps)
       for (const check of step.checks.filter((entry) => !entry.pass))
         print(`    ${step.name}: ${check.name} (${check.detail})`);

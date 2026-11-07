@@ -21,6 +21,10 @@ export interface JourneyResult {
   error: string | null;
   notVerified: string | null;
   folder: string;
+  /** Set when the journey did not run for this feature: the evidence folder, relative to the run's evidence, of the PASS of the same journey that this result reuses. */
+  reusedFrom?: string;
+  /** The state of the tree the journey ran against: HEAD, the uncommitted diff and the untracked files. A PASS is reused only for the same tree. */
+  tree?: string;
 }
 
 /** Why a journey ended early: an error, or why it could not reach the product. */
