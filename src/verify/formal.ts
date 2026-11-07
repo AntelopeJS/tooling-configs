@@ -14,7 +14,7 @@ import { operatorEnv, type RunState, type Workspace } from "./workspace.ts";
 
 const OUTPUT_LIMIT = 64 * 1024 * 1024;
 
-/** Each violated rule whose counterexample length every line naming it gave as the same run of decimal digits, as a number of states. */
+/** Each violated rule whose counterexample length every line naming it gave as the same safe integer, written in decimal digits in a `states` group other than the rule's own group. */
 type Lengths = Readonly<Record<string, number>>;
 
 /** The rules a run of the check reported as broken and as holding. */
@@ -101,14 +101,22 @@ function passingRules(
   return !check.violation && exitCode === 0 ? ["property"] : [];
 }
 
+function withIndices(pattern: RegExp): RegExp {
+  return pattern.hasIndices
+    ? pattern
+    : new RegExp(pattern.source, `${pattern.flags}d`);
+}
+
 function counterexampleLengths(check: FormalCheck, output: string): Lengths {
   if (!check.violation) return {};
   const seen = new Map<string, number | null>();
-  for (const match of output.matchAll(check.violation)) {
+  for (const match of output.matchAll(withIndices(check.violation))) {
     const states = match.groups?.states;
     const rule = match[1];
+    const statesIsRule =
+      match.indices?.[1]?.[0] === match.indices?.groups?.states?.[0];
     const length =
-      states === undefined || !/^\d+$/.test(states) || rule === states
+      states === undefined || !/^\d+$/.test(states) || statesIsRule
         ? null
         : Number(states);
     seen.set(rule, seen.has(rule) && seen.get(rule) !== length ? null : length);

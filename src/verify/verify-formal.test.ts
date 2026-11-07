@@ -431,3 +431,18 @@ test("a states group that captures no digits gives no length; Number() would rea
     "FAIL formal-add: covered behaviour changed (emit), violated NegativeZero\n",
   );
 });
+
+test("a numeric rule whose length equals its name keeps that length in its own states group; a parser that compares the captured text drops it and fails a same-findings run", (t) => {
+  const { root, tmp, run } = lineRepo(
+    t,
+    "/^finding (\\w+): (?<states>\\d+) states/gm",
+    "finding 3: 3 states",
+    "finding 3: 3 states",
+  );
+  const formal = verify(root, tmp, ["formal", run]);
+  assert.equal(formal.status, 0, formal.stdout);
+  assert.equal(
+    formal.stdout,
+    "PASS formal-add: covered behaviour changed (emit), same known findings as base: 3\n",
+  );
+});

@@ -41,7 +41,7 @@ export interface FormalCheck {
   files?: string[];
   /** Runs from the repository root; exits 0 while every finding breaks as recorded. */
   command: string[];
-  /** The first capture group names a rule the output reports as broken, and an optional group named `states`, after it, gives its counterexample length in decimal digits; a `states` group that is the first group, or that captures anything but digits, gives no length; a covered behaviour change keeps the base's findings as known only when every one has the same length at HEAD as on the base. Without `violation`, a non-zero exit is the one rule `property` broken. */
+  /** The first capture group names a rule the output reports as broken, and an optional group named `states`, after it, gives its counterexample length in decimal digits; a `states` group that is the first group, that captures anything but digits, or whose number is above `Number.MAX_SAFE_INTEGER` gives no length; a covered behaviour change keeps the base's findings as known only when every one has the same length at HEAD as on the base. Without `violation`, a non-zero exit is the one rule `property` broken. */
   violation: RegExp | null;
   /** The first capture group names a rule the output reports as holding; a base finding counts as fixed only when HEAD reports it so. Without `passing` and `violation`, a zero exit is the one rule `property` holding. */
   passing?: RegExp | null;
