@@ -94,7 +94,7 @@ function cachedTarballs(folder: string): string[] {
 test("a second run with the tarball cached downloads nothing, where an implementation that packs on every run downloads it again", async (t) => {
   const state = await setup(t);
   const first = journey(state);
-  assert.match(first.result.stdout, /^PASS smoke\/minor-bump$/m);
+  assert.match(first.result.stdout, /^PASS smoke\/minor-bump \(\d+\.\d s\)$/m);
   assert.equal(await tarballRequests(state.registry), 1);
   assert.equal(cachedTarballs(state.cached).length, 1);
   assert.equal(
@@ -102,7 +102,7 @@ test("a second run with the tarball cached downloads nothing, where an implement
     false,
   );
   const second = journey(state);
-  assert.match(second.result.stdout, /^PASS smoke\/minor-bump$/m);
+  assert.match(second.result.stdout, /^PASS smoke\/minor-bump \(\d+\.\d s\)$/m);
   assert.equal(await tarballRequests(state.registry), 1);
   const steps = stepNames(second.folder);
   assert.equal(
@@ -127,11 +127,14 @@ test("a corrupt cached tarball is deleted and packed again, where an implementat
   const [name] = cachedTarballs(state.cached);
   writeFileSync(join(state.cached, name), "not a gzip archive");
   const repaired = journey(state);
-  assert.match(repaired.result.stdout, /^PASS smoke\/minor-bump$/m);
+  assert.match(
+    repaired.result.stdout,
+    /^PASS smoke\/minor-bump \(\d+\.\d s\)$/m,
+  );
   assert.equal(await tarballRequests(state.registry), 2);
   assert.notEqual(read(state.cached, name), "not a gzip archive");
   const after = journey(state);
-  assert.match(after.result.stdout, /^PASS smoke\/minor-bump$/m);
+  assert.match(after.result.stdout, /^PASS smoke\/minor-bump \(\d+\.\d s\)$/m);
   assert.equal(await tarballRequests(state.registry), 2);
 });
 
@@ -141,7 +144,10 @@ test("a truncated cached tarball that keeps its gzip magic bytes is repacked, wh
   const [name] = cachedTarballs(state.cached);
   truncateSync(join(state.cached, name), 20);
   const repaired = journey(state);
-  assert.match(repaired.result.stdout, /^PASS smoke\/minor-bump$/m);
+  assert.match(
+    repaired.result.stdout,
+    /^PASS smoke\/minor-bump \(\d+\.\d s\)$/m,
+  );
   assert.equal(await tarballRequests(state.registry), 2);
 });
 
@@ -156,7 +162,7 @@ test("a temp pack folder left by an interrupted run is never read as the cache, 
     writeFileSync(join(folder, "acme-stale-packument-1.7.0.tgz"), "partial");
   }
   const run = journey(state);
-  assert.match(run.result.stdout, /^PASS smoke\/minor-bump$/m);
+  assert.match(run.result.stdout, /^PASS smoke\/minor-bump \(\d+\.\d s\)$/m);
   assert.equal(await tarballRequests(state.registry), 1);
   assert.equal(cachedTarballs(state.cached).length, 1);
   assert.equal(
@@ -176,7 +182,10 @@ test("a pack that fails leaves the cache empty and the journey failed, where an 
   const state = await setup(t);
   await fetch(`${state.registry}/break-tarballs`, { method: "POST" });
   const run = journey(state);
-  assert.doesNotMatch(run.result.stdout, /^PASS smoke\/minor-bump$/m);
+  assert.doesNotMatch(
+    run.result.stdout,
+    /^PASS smoke\/minor-bump \(\d+\.\d s\)$/m,
+  );
   assert.equal(cachedTarballs(state.cached).length, 0);
   assert.deepEqual(entries(join(state.cached, "..")), []);
 });
@@ -196,7 +205,10 @@ test("a cached tarball swapped for a valid tarball of another package is repacke
     }),
   );
   const repaired = journey(state);
-  assert.match(repaired.result.stdout, /^PASS smoke\/minor-bump$/m);
+  assert.match(
+    repaired.result.stdout,
+    /^PASS smoke\/minor-bump \(\d+\.\d s\)$/m,
+  );
   assert.equal(await tarballRequests(state.registry), 2);
   assert.deepEqual(cachedTarballs(state.cached), [name]);
   assert.equal(read(state.cached, name), genuine);
@@ -212,7 +224,10 @@ test("two tarballs in the version folder are never trusted, where an implementat
   const [name] = cachedTarballs(state.cached);
   copyFileSync(join(state.cached, name), join(state.cached, "copy.tgz"));
   const repaired = journey(state);
-  assert.match(repaired.result.stdout, /^PASS smoke\/minor-bump$/m);
+  assert.match(
+    repaired.result.stdout,
+    /^PASS smoke\/minor-bump \(\d+\.\d s\)$/m,
+  );
   assert.equal(await tarballRequests(state.registry), 2);
   assert.equal(cachedTarballs(state.cached).length, 1);
 });
@@ -221,7 +236,10 @@ test("a packed tarball whose integrity is not the published one fails the journe
   const state = await setup(t);
   await fetch(`${state.registry}/lie-about-integrity`, { method: "POST" });
   const run = journey(state);
-  assert.doesNotMatch(run.result.stdout, /^PASS smoke\/minor-bump$/m);
+  assert.doesNotMatch(
+    run.result.stdout,
+    /^PASS smoke\/minor-bump \(\d+\.\d s\)$/m,
+  );
   assert.deepEqual(entries(join(state.cached, "..")), []);
   const step = stepNames(run.folder).find((name) => /check-packed/.test(name));
   const [check] = evidence(run.folder, `smoke/minor-bump/${step}/checks.json`);
@@ -273,14 +291,23 @@ test("an interrupt during the pack deletes the staging folder, where an implemen
 test("an integrity that lists sha1 before sha512 reuses the cache on the second run, where a comparison of the whole value fails every run", async (t) => {
   const state = await setup(t);
   await fetch(`${state.registry}/integrity-sha1-sha512`, { method: "POST" });
-  assert.match(journey(state).result.stdout, /^PASS smoke\/minor-bump$/m);
-  assert.match(journey(state).result.stdout, /^PASS smoke\/minor-bump$/m);
+  assert.match(
+    journey(state).result.stdout,
+    /^PASS smoke\/minor-bump \(\d+\.\d s\)$/m,
+  );
+  assert.match(
+    journey(state).result.stdout,
+    /^PASS smoke\/minor-bump \(\d+\.\d s\)$/m,
+  );
   assert.equal(await tarballRequests(state.registry), 1);
 });
 
 test("a sha1-only integrity passes and writes nothing to the cache, where an implementation that caches what it cannot check discards it on every run", async (t) => {
   const state = await setup(t);
   await fetch(`${state.registry}/integrity-sha1`, { method: "POST" });
-  assert.match(journey(state).result.stdout, /^PASS smoke\/minor-bump$/m);
+  assert.match(
+    journey(state).result.stdout,
+    /^PASS smoke\/minor-bump \(\d+\.\d s\)$/m,
+  );
   assert.deepEqual(entries(join(state.cached, "..")), []);
 });
