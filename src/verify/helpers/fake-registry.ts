@@ -39,14 +39,30 @@ function tarball(version: string): Buffer {
 
 function serve(port: number): void {
   const versions = [FIRST];
+  const requests: string[] = [];
+  let broken = false;
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (request.method === "GET" && url.pathname === "/requests") {
+      response.end(JSON.stringify(requests));
+      return;
+    }
+    requests.push(`${request.method} ${url.pathname}`);
+    if (request.method === "POST" && url.pathname === "/break-tarballs") {
+      broken = true;
+      response.end("broken");
+      return;
+    }
     if (request.method === "POST" && url.pathname === "/publish") {
       versions.push(LATER);
       response.end("published");
       return;
     }
     const archive = /^\/tarballs\/(.+)\.tgz$/.exec(url.pathname);
+    if (archive !== null && broken) {
+      response.writeHead(500).end();
+      return;
+    }
     if (archive !== null && versions.includes(archive[1])) {
       response.end(tarball(archive[1]));
       return;
@@ -91,6 +107,8 @@ function serve(port: number): void {
  * Starts a registry in a child process, so a test that blocks on a spawned
  * bin still gets answers, and returns its URL. It lists `FIRST` until a
  * `POST /publish`, which adds `LATER` and changes the packument's etag.
+ * `POST /break-tarballs` makes every tarball download answer 500.
+ * `GET /requests` answers the JSON list of the `METHOD /path` it has served.
  */
 export async function startRegistry(t: TestContext): Promise<string> {
   const port = await freePort();

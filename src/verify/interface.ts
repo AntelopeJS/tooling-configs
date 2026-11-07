@@ -1,5 +1,14 @@
-import { mkdirSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, dirname, join } from "node:path";
 
 import { isObject, type JsonValue } from "../garden/json.ts";
 import { equal, exitIs, interrupted } from "./checks.ts";
@@ -266,40 +275,100 @@ function publishedVersion(output: string): string | null {
   return text === "" ? null : text.replace(/^"|"$/g, "");
 }
 
+const ONLINE = {
+  npm_config_offline: "false",
+  npm_config_prefer_offline: "false",
+};
+
+function tarballIn(folder: string): string | undefined {
+  if (!existsSync(folder)) return undefined;
+  const file = readdirSync(folder).find((entry) => entry.endsWith(".tgz"));
+  return file === undefined ? undefined : join(folder, file);
+}
+
+/** Packs into a staging folder next to the cache, so the cache only ever receives a complete tarball. */
+async function packPublished(
+  context: VerifyContext,
+  name: string,
+  version: string,
+  folder: string,
+): Promise<string | undefined> {
+  mkdirSync(dirname(folder), { recursive: true });
+  const staging = mkdtempSync(`${folder}.pack-`);
+  try {
+    const packed = await context.command(
+      `npm pack ${name}@${version}`,
+      "npm",
+      ["pack", `${name}@${version}`, "--pack-destination", staging],
+      { env: ONLINE },
+    );
+    const staged = tarballIn(staging);
+    if (packed.exitCode !== 0 || staged === undefined) {
+      context.expect(packed.folder, [exitIs(packed, 0)], { critical: true });
+      return undefined;
+    }
+    mkdirSync(folder, { recursive: true });
+    const cached = join(folder, basename(staged));
+    renameSync(staged, cached);
+    return cached;
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+}
+
+function extractPublished(context: VerifyContext, tarball: string) {
+  const extracted = join(context.work, "published");
+  rmSync(extracted, { recursive: true, force: true });
+  mkdirSync(extracted, { recursive: true });
+  return context.command("extract published", "tar", [
+    "-xzf",
+    tarball,
+    "-C",
+    extracted,
+  ]);
+}
+
+function publishedRoot(context: VerifyContext): string {
+  const root = join(context.work, "published", "package");
+  linkDependencies(root, context.repo);
+  return root;
+}
+
+/** Extracts a published version from the cache, packing it once when the cache holds none or an unreadable one. */
 async function fetchPublished(
   context: VerifyContext,
   name: string,
   version: string,
 ): Promise<string | undefined> {
   const folder = join(CACHE_DIR, "published", name.replace("/", "+"), version);
-  mkdirSync(folder, { recursive: true });
-  const env = {
-    npm_config_offline: "false",
-    npm_config_prefer_offline: "false",
-  };
-  const packed = await context.command(
-    `npm pack ${name}@${version}`,
-    "npm",
-    ["pack", `${name}@${version}`, "--pack-destination", folder],
-    { env },
-  );
-  const tarball = readdirSync(folder).find((file) => file.endsWith(".tgz"));
-  if (packed.exitCode !== 0 || tarball === undefined) {
-    context.expect(packed.folder, [exitIs(packed, 0)], { critical: true });
-    return undefined;
+  const cached = tarballIn(folder);
+  if (cached !== undefined) {
+    const untar = await extractPublished(context, cached);
+    if (untar.exitCode === 0) {
+      context.expect(untar.folder, [exitIs(untar, 0)]);
+      context.expect(context.step(`reuse cached ${name}@${version}`), [
+        {
+          name: `the cached tarball of ${name}@${version} is reused and no npm pack ran`,
+          pass: true,
+          detail: cached,
+        },
+      ]);
+      return publishedRoot(context);
+    }
+    rmSync(cached, { force: true });
+    context.expect(context.step(`discard cached ${name}@${version}`), [
+      {
+        name: `the unreadable cached tarball of ${name}@${version} is deleted and packed again`,
+        pass: !existsSync(cached),
+        detail: `${cached}: ${untar.stderr.trim().slice(-200)}`,
+      },
+    ]);
   }
-  const extracted = join(context.work, "published");
-  mkdirSync(extracted, { recursive: true });
-  const untar = await context.command("extract published", "tar", [
-    "-xzf",
-    join(folder, tarball),
-    "-C",
-    extracted,
-  ]);
+  const packed = await packPublished(context, name, version, folder);
+  if (packed === undefined) return undefined;
+  const untar = await extractPublished(context, packed);
   context.expect(untar.folder, [exitIs(untar, 0)], { critical: true });
-  const root = join(extracted, "package");
-  linkDependencies(root, context.repo);
-  return root;
+  return publishedRoot(context);
 }
 
 function changeTitles(context: VerifyContext): string[] {
@@ -322,12 +391,7 @@ const minorBump: BuiltinJourney = {
       `npm view ${name}`,
       "npm",
       ["view", name, "version", "--json"],
-      {
-        env: {
-          npm_config_offline: "false",
-          npm_config_prefer_offline: "false",
-        },
-      },
+      { env: ONLINE },
     );
     const missing = view.exitCode !== 0 && /E404/.test(view.stderr);
     if (view.exitCode !== 0 && !missing)
