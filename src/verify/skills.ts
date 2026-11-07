@@ -48,12 +48,12 @@ Doctor checks that HEAD has not moved since \`new\`, \`ajs\` comes from the repo
 
 \`\`\`bash
 ${BIN} plan --base origin/main
-${BIN} journey <run> --plan --jobs 4
+${BIN} journey <run> --plan
 \`\`\`
 
 \`plan\` maps the diff to features and lists unmapped surfaces. \`journey <run> --plan\` runs every feature \`plan\` lists as \`run\` for the run's base, \`smoke\` first, in one call: it prints each feature's lines in turn, keeps going after a feature fails, and exits 1 when any journey did not pass. Run it once instead of one call per feature.
 
-When verify.config.ts declares no \`services\`, pass \`--jobs 4\`: up to four features run at once, each in a process of its own, capped at half the machine's cores. The output, the evidence and the exit code are those of the call without \`--jobs\`, and a feature that lists a journey an earlier feature lists waits for it, so it still reuses that PASS. A feature whose process dies or leaves an uncaught error is named on stderr, and the others still run. \`--jobs\` above 1 is refused when verify.config.ts declares \`services\`, because each journey resets them as it starts, which would wipe the data of a journey running beside it. Without \`--jobs\`, a journey that leaves an uncaught error behind ends the call and the line \`not run: <features>\` names what to rerun.
+Features run one after another by default. When verify.config.ts declares no \`services\`, use \`--jobs 4\` when the machine is otherwise idle (load below the core count); otherwise run sequentially. \`--jobs\` runs up to that many features at once, each in a process of its own, capped at half the machine's cores; it finishes sooner but costs about twice the CPU time. The output, the evidence and the exit code are those of the sequential call, and a feature that lists a journey an earlier feature lists waits for it, so it still reuses that PASS. A feature whose process dies or leaves an uncaught error is named on stderr, and the others still run. On an interrupt, a feature's process that has not stopped 5 s later, or at a second interrupt, is killed with the apps it started; the call prints every feature that ended and names the rest in \`not run: <features>\`. \`--jobs\` above 1 is refused when verify.config.ts declares \`services\`, because each journey resets them as it starts, which would wipe the data of a journey running beside it. Without \`--jobs\`, a journey that leaves an uncaught error behind ends the call and the line \`not run: <features>\` names what to rerun.
 
 To rerun after a fix, run one feature, or only the journeys you name, or several features by name, with \`--jobs\` too:
 

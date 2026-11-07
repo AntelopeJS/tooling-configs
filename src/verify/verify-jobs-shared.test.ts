@@ -17,8 +17,11 @@ import {
   verify,
   verifyRepo,
 } from "./helpers/verify-repo.ts";
+import { loadRun } from "./workspace.ts";
 
 const SKILL = ".agents/skills/verify-module";
+
+const WORKSPACE = join(PACKAGE_ROOT, "src/verify/workspace.ts");
 
 const TWO_JOBS = availableParallelism() < 4 && "needs 4 cores for --jobs 2";
 
@@ -46,8 +49,8 @@ function config(barrier: string): string {
   const app = `        await meet(context, "loaded");
         const app = await context.dev("ajs project dev", context.work);
         await meet(context, "started");
-        const recorded = JSON.parse(readFileSync(join(context.work, "../../..", "run.json"), "utf8")).processes.length;
-        context.expect(app.folder, [equal("run.json records the apps of both journeys", recorded, 2)]);
+        const recorded = loadRun(join(context.work, "../../..")).processes.length;
+        context.expect(app.folder, [equal("the run records the apps of both journeys", recorded, 2)]);
         await meet(context, "read");
         await context.stop("stop", app);`;
   const prepared = `        const folder = await context.prepared("tree", async (built) => {
@@ -59,9 +62,13 @@ function config(barrier: string): string {
   const hang = `        const app = await context.dev("ajs project dev", context.work);
         writeFileSync(join(${JSON.stringify(barrier)}, "app-" + app.pid), "");
         await new Promise((resolve) => setTimeout(resolve, 20000));`;
+  const deaf = `        process.removeAllListeners("SIGTERM");
+        process.on("SIGTERM", () => {});
+${hang}`;
   return `import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { equal, exitIs } from ${JSON.stringify(CHECKS)};
+import { loadRun } from ${JSON.stringify(WORKSPACE)};
 const meet = async (context, point) => {
   const folder = join(${JSON.stringify(barrier)}, point);
   mkdirSync(folder, { recursive: true });
@@ -78,6 +85,7 @@ export default {
     ${journey("prepare-b", prepared)},
     ${journey("hang-a", hang)},
     ${journey("hang-b", hang)},
+    ${journey("deaf", deaf)},
   },
 };
 `;
@@ -106,6 +114,7 @@ function repo(t: TestContext) {
     [`${SKILL}/features/right.md`]: feature(["right/**"], ["prepare-b"]),
     [`${SKILL}/features/hang.md`]: feature(["hang/**"], ["hang-a"]),
     [`${SKILL}/features/stall.md`]: feature(["stall/**"], ["hang-b"]),
+    [`${SKILL}/features/deaf.md`]: feature(["deaf/**"], ["deaf"]),
   });
   put(
     root,
@@ -117,7 +126,7 @@ function repo(t: TestContext) {
 }
 
 test(
-  "two journeys that start apps at once each keep their app's record in run.json, and both records go once the apps stop; writing back each command's whole state keeps only the last writer's record",
+  "two journeys that start apps at once each keep their app's record in the run, and both records go once the apps stop; writing back each command's whole state keeps only the last writer's record",
   { skip: TWO_JOBS },
   (t) => {
     const { root, tmp, run } = repo(t);
@@ -130,7 +139,11 @@ test(
       "2",
     ]);
     assert.equal(result.status, 0, result.stdout + result.stderr);
-    assert.deepEqual(JSON.parse(read(run, "run.json")).processes, []);
+    assert.deepEqual(loadRun(run).processes, []);
+    assert.deepEqual(
+      runEntries(run).filter((name) => name.startsWith("processes-")),
+      [],
+    );
   },
 );
 
@@ -159,47 +172,87 @@ test(
   },
 );
 
+/** Starts `journey <run> --features <features> --jobs 2`, waits until both features started an app, and returns the call and those apps. */
+async function interruptible(t: TestContext, features: string) {
+  const { root, tmp, run } = repo(t);
+  const barrier = join(tmp, "barrier");
+  mkdirSync(barrier, { recursive: true });
+  const apps = () =>
+    runEntries(barrier)
+      .filter((name) => name.startsWith("app-"))
+      .map((name) => Number(name.slice(4)));
+  const call = spawn(
+    process.execPath,
+    [
+      join(PACKAGE_ROOT, "src/bin/verify.ts"),
+      "journey",
+      run,
+      "--features",
+      features,
+      "--jobs",
+      "2",
+    ],
+    {
+      cwd: root,
+      env: { ...process.env, TMPDIR: tmp, ANTELOPEJS_LEASE: "", CI: "1" },
+      stdio: "ignore",
+    },
+  );
+  const exited = once(call, "exit");
+  for (let waited = 0; apps().length < 2 && waited < 20_000; waited += 50)
+    await delay(50);
+  const started = apps();
+  t.after(() => {
+    call.kill("SIGKILL");
+    for (const pid of started.filter(alive)) process.kill(pid, "SIGKILL");
+  });
+  assert.equal(started.length, 2);
+  const stopped = async () => {
+    for (let waited = 0; started.some(alive) && waited < 5000; waited += 50)
+      await delay(50);
+    return started.filter(alive);
+  };
+  return { call, exited, stopped };
+}
+
 test(
   "a SIGTERM to a journey --jobs call reaches each feature's process, which stops its app, and the call exits 143; a call that does not forward it exits at once and leaves both apps running",
   { skip: TWO_JOBS },
   async (t) => {
-    const { root, tmp, run } = repo(t);
-    const barrier = join(tmp, "barrier");
-    mkdirSync(barrier, { recursive: true });
-    const apps = () =>
-      runEntries(barrier)
-        .filter((name) => name.startsWith("app-"))
-        .map((name) => Number(name.slice(4)));
-    const call = spawn(
-      process.execPath,
-      [
-        join(PACKAGE_ROOT, "src/bin/verify.ts"),
-        "journey",
-        run,
-        "--features",
-        "hang,stall",
-        "--jobs",
-        "2",
-      ],
-      {
-        cwd: root,
-        env: { ...process.env, TMPDIR: tmp, ANTELOPEJS_LEASE: "", CI: "1" },
-        stdio: "ignore",
-      },
-    );
-    const exited = once(call, "exit");
-    for (let waited = 0; apps().length < 2 && waited < 20_000; waited += 50)
-      await delay(50);
-    const started = apps();
-    t.after(() => {
-      for (const pid of started.filter(alive)) process.kill(pid, "SIGKILL");
-    });
-    assert.equal(started.length, 2);
+    const { call, exited, stopped } = await interruptible(t, "hang,stall");
     call.kill("SIGTERM");
     const [code] = await exited;
     assert.equal(code, 143);
-    for (let waited = 0; started.some(alive) && waited < 5000; waited += 50)
-      await delay(50);
-    assert.deepEqual(started.filter(alive), []);
+    assert.deepEqual(await stopped(), []);
+  },
+);
+
+test(
+  "a feature process that ignores SIGTERM is killed with its app once the grace period ends, and the call exits 143; a call that only forwards the signal waits for it forever",
+  { skip: TWO_JOBS },
+  async (t) => {
+    const { call, exited, stopped } = await interruptible(t, "hang,deaf");
+    const sent = Date.now();
+    call.kill("SIGTERM");
+    const ended = await Promise.race([exited, delay(15_000, ["hung"])]);
+    assert.deepEqual(ended, [143, null]);
+    assert.ok(Date.now() - sent >= 4000, "the grace period ran");
+    assert.deepEqual(await stopped(), []);
+  },
+);
+
+test(
+  "a second interrupt kills a feature process that ignores the first at once, with its app, and the call exits with the first signal's code; a call that waits out the grace period after a repeated signal takes 5 s",
+  { skip: TWO_JOBS },
+  async (t) => {
+    const { call, exited, stopped } = await interruptible(t, "hang,deaf");
+    const sent = Date.now();
+    call.kill("SIGTERM");
+    await delay(300);
+    call.kill("SIGINT");
+    const ended = await Promise.race([exited, delay(15_000, ["hung"])]);
+    assert.deepEqual(ended, [143, null]);
+    assert.ok(Date.now() - sent < 3000, "the second signal did not wait");
+    assert.deepEqual(await stopped(), []);
   },
 );

@@ -1,6 +1,9 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { availableParallelism, constants } from "node:os";
 
+import { killGroup } from "./record.ts";
+import { commandRecords } from "./workspace.ts";
+
 /** One feature a `journey` call runs and the journey ids it names; no ids runs every journey the feature registers. */
 export interface FeatureRun {
   feature: string;
@@ -20,6 +23,9 @@ interface Slot {
 
 const INTERRUPTS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"] as const;
 
+/** How long a feature's process may take, after an interrupt, to stop what its journey started before it is killed. */
+const GRACE_MS = 5000;
+
 /**
  * The most features a `journey` call runs at once: `requested`, capped at
  * the number of features and at half the logical cores, one feature per
@@ -27,7 +33,7 @@ const INTERRUPTS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"] as const;
  * app booting under `ajs project dev`, which keeps a core busy, so features
  * past one per physical core slow each other's boot more than they overlap
  * it. The cap only stops a count that oversubscribes the machine; the
- * synced skill recommends 4.
+ * synced skill recommends 4 on an otherwise idle machine.
  */
 export function jobLimit(requested: number, features: number): number {
   return Math.max(
@@ -101,13 +107,20 @@ function runProcess(slot: Slot, args: string[]): Promise<void> {
  * and uncaught-error handler its own call would have, which features
  * sharing one process could not keep apart while running at once. A feature
  * whose process fails, ends on a signal or leaves an uncaught error does not
- * stop the others. An interrupt reaches every running feature's process,
- * which stops what its journey started; the call then prints what ended, in
- * order, and exits with the shell's code for the signal.
+ * stop the others.
+ *
+ * An interrupt reaches every running feature's process, which stops what
+ * its journey started. A process still running {@link GRACE_MS} later, or
+ * at a second interrupt, is killed with its process group, and so is every
+ * process its records file in `dir` names. The call then prints the output
+ * of every feature that ended, in order, names on stderr the features that
+ * never started, and exits with the shell's code for the first signal.
+ * @param dir the run folder, whose records files name what each feature's process started.
  * @param argsOf the arguments, after the Node executable, of the process that runs one feature.
  * @returns 1 when any feature's process failed, else 0.
  */
 export async function runConcurrently(
+  dir: string,
   runs: FeatureRun[],
   jobs: number,
   journeysOf: (feature: string) => string[],
@@ -122,11 +135,16 @@ export async function runConcurrently(
     stderr: [],
     passed: false,
   }));
-  let printed = 0;
+  const printed = new Set<Slot>();
+  const print = (slot: Slot) => {
+    printed.add(slot);
+    process.stdout.write(Buffer.concat(slot.stdout));
+    process.stderr.write(Buffer.concat(slot.stderr));
+  };
   const flush = () => {
-    for (; slots[printed]?.state === "ended"; printed++) {
-      process.stdout.write(Buffer.concat(slots[printed].stdout));
-      process.stderr.write(Buffer.concat(slots[printed].stderr));
+    for (const slot of slots) {
+      if (slot.state !== "ended") return;
+      if (!printed.has(slot)) print(slot);
     }
   };
   let interrupted: (typeof INTERRUPTS)[number] | undefined;
@@ -139,10 +157,24 @@ export async function runConcurrently(
         )
       : undefined;
   const busy = () => slots.filter((slot) => slot.state === "running").length;
+  const kill = () => {
+    for (const slot of slots) {
+      const pid = slot.child?.pid;
+      if (slot.state !== "running" || pid === undefined) continue;
+      killGroup(pid);
+      for (const record of commandRecords(dir, pid)) killGroup(record.pid);
+    }
+  };
+  let deadline: NodeJS.Timeout | undefined;
   const forward = (signal: (typeof INTERRUPTS)[number]) => {
-    interrupted ??= signal;
+    if (interrupted !== undefined) {
+      kill();
+      return;
+    }
+    interrupted = signal;
     for (const slot of slots)
       if (slot.state === "running") slot.child?.kill(signal);
+    deadline = setTimeout(kill, GRACE_MS);
   };
   for (const signal of INTERRUPTS) process.on(signal, forward);
   await new Promise<void>((done) => {
@@ -165,8 +197,16 @@ export async function runConcurrently(
     };
     fill();
   });
+  clearTimeout(deadline);
   for (const signal of INTERRUPTS) process.off(signal, forward);
-  if (interrupted !== undefined)
-    process.exit(128 + constants.signals[interrupted]);
-  return slots.every((slot) => slot.passed) ? 0 : 1;
+  if (interrupted === undefined)
+    return slots.every((slot) => slot.passed) ? 0 : 1;
+  for (const slot of slots)
+    if (slot.state === "ended" && !printed.has(slot)) print(slot);
+  const unrun = slots.filter((slot) => slot.state === "waiting");
+  if (unrun.length > 0)
+    process.stderr.write(
+      `not run: ${unrun.map((slot) => slot.run.feature).join(", ")}\n`,
+    );
+  process.exit(128 + constants.signals[interrupted]);
 }

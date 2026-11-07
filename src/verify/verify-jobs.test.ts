@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import test, { type TestContext } from "node:test";
 
-import { put } from "../guardrails/helpers/test-repo.ts";
+import { PACKAGE_ROOT, put } from "../guardrails/helpers/test-repo.ts";
 import {
   CHECKS,
   evidence,
@@ -66,6 +69,15 @@ export default {
       entryPoint: "node",
       async run(context) {
         context.expect(context.step("meet-b"), [equal("another journey ran at the same time", await meet(context), true)]);
+      },
+    },
+    "hold": {
+      title: "holds until the call is interrupted",
+      entryPoint: "node",
+      async run() {
+        mkdirSync(${JSON.stringify(barrier)}, { recursive: true });
+        writeFileSync(join(${JSON.stringify(barrier)}, "held"), "");
+        await new Promise((resolve) => setTimeout(resolve, 30000));
       },
     },
     "killed": {
@@ -276,3 +288,70 @@ test("--jobs refuses a count that is not a whole number above 0, and a single fe
   }
   assert.equal(ran(run, "smoke/own"), false);
 });
+
+test(
+  "an interrupted journey --jobs call prints every feature that ended, in order, past one that never started, and names the unstarted one; a call that stops printing at the first feature not ended loses c",
+  { skip: TWO_JOBS },
+  async (t) => {
+    const { root, tmp, run } = repo(t, {
+      a: ["hold"],
+      b: ["hold"],
+      c: ["own"],
+    });
+    const call = spawn(
+      process.execPath,
+      [
+        join(PACKAGE_ROOT, "src/bin/verify.ts"),
+        "journey",
+        run,
+        "--features",
+        "a,b,c",
+        "--jobs",
+        "2",
+      ],
+      {
+        cwd: root,
+        env: { ...process.env, TMPDIR: tmp, ANTELOPEJS_LEASE: "", CI: "1" },
+      },
+    );
+    t.after(() => call.kill("SIGKILL"));
+    let stdout = "";
+    let stderr = "";
+    call.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    call.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    const exited = once(call, "exit");
+    const started = () =>
+      existsSync(join(tmp, "barrier", "held")) &&
+      existsSync(join(run, "evidence", "c", "feature.json"));
+    for (let waited = 0; !started() && waited < 20_000; waited += 50)
+      await delay(50);
+    await delay(500);
+    call.kill("SIGTERM");
+    const [code] = await exited;
+    assert.equal(code, 143);
+    assert.equal(untimed(stdout), "PASS c/own\n");
+    assert.equal(stderr, "not run: b\n");
+  },
+);
+
+test(
+  "a feature whose name starts with a dash runs under --jobs as it runs without; a feature process whose argv puts the name before the options reads it as an option and fails",
+  { skip: TWO_JOBS },
+  (t) => {
+    const { root, tmp, run } = repo(t, { smoke: ["own"], "-dash": ["shared"] });
+    for (const jobs of ["1", "2"]) {
+      const result = verify(root, tmp, [
+        "journey",
+        run,
+        "--features=-dash,smoke",
+        "--jobs",
+        jobs,
+      ]);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.equal(
+        untimed(result.stdout),
+        "PASS -dash/shared\nPASS smoke/own\n",
+      );
+    }
+  },
+);
