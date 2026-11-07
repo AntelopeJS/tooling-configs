@@ -13,8 +13,10 @@ import {
   type JsonObject,
   type JsonValue,
 } from "../garden/json.ts";
+import { appFault } from "./app-fault.ts";
 import { readinessFailure } from "./docker.ts";
 import { ajsEntry, writeFixture, type Fixture } from "./fixture.ts";
+import { prepare } from "./prepared.ts";
 import {
   freePort,
   killGroup,
@@ -65,14 +67,6 @@ const POLL_MS = 250;
 const SETTLE_MS = 3000;
 /** The waits between the readiness reruns after a failed journey: one miss under load does not hide a catch. */
 const READINESS_RETRY_MS = [500, 1000, 2000];
-/** The signals a process outside the run sends to end an app. Any other signal, such as SIGABRT or SIGSEGV, is the product crashing. */
-const OUTSIDE_KILLS: ReadonlySet<string> = new Set([
-  "SIGKILL",
-  "SIGTERM",
-  "SIGHUP",
-  "SIGINT",
-]);
-
 function slug(text: string): string {
   return text
     .toLowerCase()
@@ -99,6 +93,8 @@ export class VerifyContext implements JourneyContext {
   readonly work: string;
   readonly home: string;
   readonly steps: StepRecord[] = [];
+  /** The HOME every command gets while `prepared` runs a build; the journey's HOME when `null`. */
+  buildHome: string | null = null;
   private readonly running: Running[] = [];
   private readonly started: Running[] = [];
   private readonly fixtures = new Map<string, Fixture>();
@@ -140,8 +136,11 @@ export class VerifyContext implements JourneyContext {
   }
 
   private env(extra: { [name: string]: string } = {}): NodeJS.ProcessEnv {
-    return isolatedEnv(this.workspace, this.home, extra);
+    return isolatedEnv(this.workspace, this.buildHome ?? this.home, extra);
   }
+
+  readonly prepared: JourneyContext["prepared"] = (key, build) =>
+    prepare(this, key, build);
 
   command(
     name: string,
@@ -512,23 +511,7 @@ export class VerifyContext implements JourneyContext {
       if (failure !== null)
         return `the service ${name} no longer passes its readiness command: ${failure}`;
     }
-    for (const { app, sent, exit } of this.started) {
-      const label = `${app.name} (pid ${app.pid})`;
-      if (
-        exit?.signal &&
-        OUTSIDE_KILLS.has(exit.signal) &&
-        !sent.includes(exit.signal)
-      )
-        return `${label} was killed by ${exit.signal}, a signal the harness did not send`;
-      const output = readOutput(app.folder);
-      const port = new RegExp(`(?<![0-9])${app.port}(?![0-9])`);
-      const taken = `${output.stdout}\n${output.stderr}`
-        .split("\n")
-        .find((line) => line.includes("EADDRINUSE") && port.test(line));
-      if (taken !== undefined)
-        return `${label} could not bind port ${app.port}, which another process holds: ${taken.trim().slice(0, 300)}`;
-    }
-    return null;
+    return appFault(this.started);
   }
 
   /** The last readiness failure of a service after the reruns, or `null` once one rerun passes. */
