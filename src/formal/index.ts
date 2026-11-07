@@ -279,7 +279,11 @@ function writeOutcome(entry: string, outcome: Outcome): void {
     writeFileSync(temp, JSON.stringify(outcome));
     renameSync(temp, entry);
   } catch {
-    rmSync(temp, { force: true });
+    try {
+      rmSync(temp, { force: true });
+    } catch {
+      return;
+    }
   }
 }
 

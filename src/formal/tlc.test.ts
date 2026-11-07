@@ -284,3 +284,13 @@ test("a cache that cannot be written still lets a passing check pass; a cache wr
   assert.equal(run.status, 0, run.stderr);
   assert.deepEqual(resultEntries(cache.XDG_CACHE_HOME), []);
 });
+
+test("a results path that is a file still lets a passing check pass; a cleanup that throws inside the guard fails it", (t) => {
+  const cache = cacheOn();
+  const formal = join(cache.XDG_CACHE_HOME, "antelopejs-formal");
+  mkdirSync(formal, { recursive: true });
+  writeFileSync(join(formal, "results"), "not a folder\n");
+  t.after(() => rmSync(cache.XDG_CACHE_HOME, { recursive: true, force: true }));
+  const run = check({ findings: MATCHING }, cache);
+  assert.equal(run.status, 0, run.stderr);
+});
