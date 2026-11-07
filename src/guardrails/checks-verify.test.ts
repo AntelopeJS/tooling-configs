@@ -141,6 +141,64 @@ test("a layer whose code imports Node APIs type-checks against the repository's 
   assert.equal(result.status, 0, result.stdout);
 });
 
+test("a layer inheriting declarationDir, isolatedDeclarations and declarationMap passes, caught by a generated config that unsets declaration and leaves the options that need it", (t) => {
+  const root = layerRepo(t, CLEAN_SOURCE);
+  put(
+    root,
+    "tsconfig.json",
+    JSON.stringify({
+      compilerOptions: {
+        target: "ES2022",
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        strict: true,
+        declaration: true,
+        declarationDir: "./types",
+        declarationMap: true,
+        isolatedDeclarations: true,
+        emitDeclarationOnly: true,
+        incremental: true,
+        tsBuildInfoFile: "./.cache/root.tsbuildinfo",
+        types: [],
+      },
+      include: ["src"],
+    }),
+  );
+  const result = run(root);
+  assert.equal(result.status, 0, result.stdout);
+  assert.equal(result.stdout, "Checks: 9 passed, 0 failed.\n");
+  assert.equal(existsSync(join(root, ".cache")), false);
+});
+
+test("layer code that only declaration emit rejects passes, caught by a generated config that keeps the declaration: true the layer inherits", (t) => {
+  const root = layerRepo(
+    t,
+    "class Base {\n  private secret = 1;\n}\n\nexport function make() {\n  return new (class extends Base {})();\n}\n",
+  );
+  const result = run(root);
+  assert.equal(result.status, 0, result.stdout);
+});
+
+test("a layer tsconfig that does not include verify.config.ts fails and names the fix, caught by an implementation that checks only the files the tsconfig lists", (t) => {
+  const root = layerRepo(t, BROKEN_SOURCE);
+  put(
+    root,
+    `${LAYER}/tsconfig.json`,
+    JSON.stringify({
+      extends: "../../../tsconfig.json",
+      compilerOptions: { rootDir: "../../..", noEmit: true },
+      include: ["journeys/**/*.ts"],
+    }),
+  );
+  put(root, `${LAYER}/journeys/clean.ts`, CLEAN_SOURCE);
+  const result = run(root);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(
+    result.stdout,
+    /\[verify:types\]\n\.agents\/skills\/verify-interface\/tsconfig\.json: does not include verify\.config\.ts, so it is never type-checked\./,
+  );
+});
+
 test("a layer with a verify.config.ts and no tsconfig.json fails and names the fix, caught by an implementation that skips it", (t) => {
   const root = checksRepo(t);
   put(root, `${LAYER}/verify.config.ts`, CLEAN_SOURCE);
@@ -205,7 +263,7 @@ test("a stale layer lockfile fails under verify:lockfiles and names the dependen
   assert.equal(result.status, 1, result.stdout);
   assert.match(
     result.stdout,
-    /\[verify:lockfiles\]\n\.agents\/skills\/verify-interface\/pnpm-lock\.yaml does not match \.agents\/skills\/verify-interface\/package\.json: run `pnpm install --dir \.agents\/skills\/verify-interface --ignore-workspace --lockfile-only`\.\n {2}importer "\." dependencies "left-pad": the manifests ask for "\^1\.3\.0", the lockfile has none\.\n/,
+    /\[verify:lockfiles\]\n\.agents\/skills\/verify-interface\/pnpm-lock\.yaml does not match \.agents\/skills\/verify-interface\/package\.json: run `pnpm install --dir \.agents\/skills\/verify-interface --ignore-workspace --lockfile-only`\.\n {2}importer "\." "left-pad": package\.json asks for "\^1\.3\.0", the lockfile has none\.\n/,
   );
   assert.match(result.stdout, /Checks: 8 passed, 1 failed, 1 skipped\.\n$/);
 });

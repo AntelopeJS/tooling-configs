@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, matchesGlob, posix } from "node:path";
-import { isMap, isScalar, isSeq, parseDocument, type YAMLMap } from "yaml";
+import { join, posix } from "node:path";
+import { isMap, isScalar, parseDocument, type YAMLMap } from "yaml";
 
 import { verifyLayers } from "./verify-layers.ts";
 
@@ -20,47 +20,26 @@ const OTHER_LOCKS = [
   "bun.lockb",
 ] as const;
 
-/** The manifest fields pnpm records as an importer's specifiers. */
-const PNPM_FIELDS = [
+/** The manifest fields both package managers record as a project's direct dependencies. */
+const DIRECT_FIELDS = [
   "dependencies",
   "devDependencies",
   "optionalDependencies",
 ] as const;
 
-/** The manifest fields npm records in the root entry of `package-lock.json`. */
-const NPM_FIELDS = [...PNPM_FIELDS, "peerDependencies"] as const;
-
-/** The first pnpm major that reads overrides only from `pnpm-workspace.yaml`, never from the `pnpm` field of `package.json`. */
-const PNPM_WITHOUT_MANIFEST_SETTINGS = 11;
-
-/** Lockfile settings pnpm's frozen install compares with its configuration, and their defaults. */
-const PNPM_SETTINGS = {
-  autoInstallPeers: "true",
-  excludeLinksFromLockfile: "false",
-} as const;
-
 /** A JSON or YAML mapping, read with every scalar as its source text; `undefined` when absent or not a mapping. */
 type Mapping = YAMLMap | undefined;
 
-/** What a lockfile records and what its manifests ask for, keyed by a readable path such as `importer "." dependencies "zod"`. */
-type Entries = Map<string, string>;
+/** Direct dependencies by name, each with every specifier it is declared or locked with across the three fields. */
+type Direct = Map<string, Set<string>>;
 
-/** The two sides a lockfile check compares. */
-interface Comparison {
-  expected: Entries;
-  locked: Entries;
-}
-
-/** A folder verify installs from, relative to the repository root, and the lockfile it holds, if any. */
+/** A folder this check reads, relative to the repository root, and the lockfile it holds; `undefined` for a folder verify installs from that holds none. */
 export interface InstallFolder {
   folder: string;
   lockfile: typeof PNPM_LOCK | typeof NPM_LOCK | "other" | undefined;
 }
 
 class Unreadable extends Error {}
-
-/** The value an importer key holds on the side that has it. */
-const IMPORTER = "importer";
 
 /** Parses a JSON or YAML file whose top level is a mapping; throws `Unreadable` otherwise. */
 function readMapping(path: string): YAMLMap {
@@ -74,10 +53,6 @@ function readMapping(path: string): YAMLMap {
   return contents;
 }
 
-function readOptional(path: string): Mapping {
-  return existsSync(path) ? readMapping(path) : undefined;
-}
-
 function mapping(map: Mapping, key: string): Mapping {
   const value = map?.get(key, true);
   return isMap(value) ? value : undefined;
@@ -88,292 +63,109 @@ function scalar(map: Mapping, key: string): string | undefined {
   return isScalar(value) ? String(value.value) : undefined;
 }
 
-function sequence(map: Mapping, key: string): string[] {
-  const value = map?.get(key, true);
-  if (!isSeq(value)) return [];
-  return value.items.flatMap((item) =>
-    isScalar(item) ? [String(item.value)] : [],
-  );
-}
-
 function keys(map: Mapping): string[] {
   return (map?.items ?? []).flatMap((pair) =>
     isScalar(pair.key) ? [String(pair.key.value)] : [],
   );
 }
 
-function strings(map: Mapping): Map<string, string> {
-  return new Map(
-    keys(map).flatMap((key) => {
-      const value = scalar(map, key);
-      return value === undefined ? [] : [[key, value]];
-    }),
+/** Reads a project's direct dependencies, with `specifierOf` reading the specifier of one name from its field. */
+function directOf(
+  node: Mapping,
+  specifierOf: (field: Mapping, name: string) => string | undefined,
+): Direct {
+  const direct: Direct = new Map();
+  for (const field of DIRECT_FIELDS) {
+    const entries = mapping(node, field);
+    for (const name of keys(entries)) {
+      const specifier = specifierOf(entries, name);
+      if (specifier === undefined) throw new Unreadable(name);
+      direct.set(name, new Set([...(direct.get(name) ?? []), specifier]));
+    }
+  }
+  return direct;
+}
+
+/** A `package.json` or a `package-lock.json` root entry, where each name maps to its specifier. */
+function declared(node: Mapping): Direct {
+  return directOf(node, scalar);
+}
+
+/** A `pnpm-lock.yaml` importer, where each name maps to its `specifier` and resolved `version`. */
+function pnpmLocked(node: Mapping): Direct {
+  return directOf(node, (field, name) =>
+    scalar(mapping(field, name), "specifier"),
   );
 }
 
-/** Whether a `package.json` needs a lockfile: it has dependencies, or it cannot be read and so might. */
-function needsLockfile(path: string): boolean {
-  try {
-    const manifest = readMapping(path);
-    return PNPM_FIELDS.some(
-      (field) => keys(mapping(manifest, field)).length > 0,
-    );
-  } catch (error) {
-    if (error instanceof Unreadable) return true;
-    throw error;
-  }
-}
-
-function lockfileOf(names: Set<string>): InstallFolder["lockfile"] {
-  if (names.has(PNPM_LOCK)) return PNPM_LOCK;
-  if (names.has(NPM_LOCK)) return NPM_LOCK;
-  return OTHER_LOCKS.some((name) => names.has(name)) ? "other" : undefined;
-}
-
-function scan(root: string, folder: string, deep: boolean): InstallFolder[] {
-  const path = join(root, folder);
-  if (!existsSync(path)) return [];
-  const listing = readdirSync(path, { withFileTypes: true });
-  const names = new Set(
-    listing.filter((entry) => entry.isFile()).map((entry) => entry.name),
-  );
-  const lockfile = lockfileOf(names);
-  const here: InstallFolder[] =
-    lockfile !== undefined ||
-    (names.has(MANIFEST) && needsLockfile(join(path, MANIFEST)))
-      ? [{ folder, lockfile }]
-      : [];
-  const below = deep
-    ? listing
-        .filter(
-          (entry) =>
-            entry.isDirectory() &&
-            entry.name !== "node_modules" &&
-            entry.name !== "dist",
-        )
-        .flatMap((entry) => scan(root, `${folder}/${entry.name}`, deep))
-    : [];
-  return [...here, ...below];
-}
-
-function workspacePatterns(workspace: Mapping): string[] {
-  return sequence(workspace, "packages");
-}
-
-function normalizedPattern(pattern: string): string {
-  const trimmed = pattern.replace(/^\.\//u, "").replace(/\/+$/u, "");
-  return trimmed === "" ? "." : trimmed;
-}
-
-/** Whether a pnpm workspace with these `packages` patterns lists `member`, a path relative to the workspace root. */
-function listsMember(patterns: string[], member: string): boolean {
-  let listed = false;
-  for (const pattern of patterns) {
-    const negated = pattern.startsWith("!");
-    const glob = normalizedPattern(negated ? pattern.slice(1) : pattern);
-    if (glob === member || matchesGlob(member, glob)) listed = !negated;
-  }
-  return listed;
-}
-
-/** Whether a `pnpm-workspace.yaml` in a folder above `folder`, up to the repository root, lists it, so that workspace's lockfile holds its dependencies. */
-function inEnclosingWorkspace(root: string, folder: string): boolean {
-  let above = posix.dirname(folder);
-  while (true) {
-    const workspace = readOptional(join(root, above, PNPM_WORKSPACE));
-    if (
-      workspace !== undefined &&
-      listsMember(
-        workspacePatterns(workspace),
-        posix.relative(above === "." ? "" : above, folder),
-      )
-    )
-      return true;
-    if (above === ".") return false;
-    above = posix.dirname(above);
-  }
+function listed(specifiers: Set<string> | undefined): string {
+  return specifiers === undefined
+    ? "none"
+    : [...specifiers].map((specifier) => `"${specifier}"`).join(" or ");
 }
 
 /**
- * Every folder verify installs from, when a layer exists: each folder under a layer, `node_modules` and `dist` aside, and the
- * root `playground`, that holds a lockfile or a `package.json` with dependencies.
+ * The names whose specifiers differ between a manifest and what its lockfile records, in either direction. A name counts as
+ * present whichever of the three fields records it, and matches when the two sides share a specifier. A name the lockfile
+ * records and the manifest declares only as a peer passes, since the package manager may or may not install peers. `skip`
+ * names the manifest entries the lockfile may leave out or record with another specifier.
  */
-export function verifyInstallFolders(root: string): InstallFolder[] {
-  const layers = verifyLayers(root);
-  if (layers.length === 0) return [];
-  return [
-    ...layers.flatMap((layer) => scan(root, layer, true)),
-    ...scan(root, PLAYGROUND, false),
-  ];
-}
-
-function pnpmMajor(manifest: Mapping): number | undefined {
-  const match = /^pnpm@(\d+)/u.exec(scalar(manifest, "packageManager") ?? "");
-  return match ? Number(match[1]) : undefined;
-}
-
-function pnpmMembers(path: string, patterns: string[]): string[] {
-  const members: string[] = [];
-  const walk = (relative: string) => {
-    for (const entry of readdirSync(join(path, relative), {
-      withFileTypes: true,
-    })) {
-      if (!entry.isDirectory() || entry.name === "node_modules") continue;
-      const member = relative === "" ? entry.name : `${relative}/${entry.name}`;
-      if (
-        existsSync(join(path, member, MANIFEST)) &&
-        listsMember(patterns, member)
-      )
-        members.push(member);
-      walk(member);
-    }
-  };
-  if (patterns.length > 0) walk("");
-  return [".", ...members];
-}
-
-function expectedSpecifiers(
-  importer: string,
+function differences(
   manifest: Mapping,
-  settings: Map<string, string>,
-): Entries {
-  const expected: Entries = new Map();
-  const declared = new Set<string>();
-  for (const field of PNPM_FIELDS)
-    for (const [name, specifier] of strings(mapping(manifest, field))) {
-      declared.add(name);
-      if (
-        settings.get("excludeLinksFromLockfile") === "true" &&
-        specifier.startsWith("link:")
-      )
-        continue;
-      expected.set(`importer "${importer}" ${field} "${name}"`, specifier);
-    }
-  if (settings.get("autoInstallPeers") === "true")
-    for (const [name, specifier] of strings(
-      mapping(manifest, "peerDependencies"),
-    ))
-      if (!declared.has(name))
-        expected.set(
-          `importer "${importer}" dependencies "${name}"`,
-          specifier,
-        );
-  return expected;
+  locked: Direct,
+  skip: (name: string, specifiers: Set<string>) => boolean,
+): string[] {
+  const wanted = declared(manifest);
+  const peers = new Set(keys(mapping(manifest, "peerDependencies")));
+  const line = (name: string) =>
+    `"${name}": package.json asks for ${listed(wanted.get(name))}, the lockfile has ${listed(locked.get(name))}.`;
+  const stale = [...wanted]
+    .filter(
+      ([name, specifiers]) =>
+        ![...(locked.get(name) ?? [])].some((specifier) =>
+          specifiers.has(specifier),
+        ) && !skip(name, specifiers),
+    )
+    .map(([name]) => line(name));
+  const extra = [...locked.keys()]
+    .filter((name) => !wanted.has(name) && !peers.has(name))
+    .map(line);
+  return [...stale, ...extra].sort();
 }
 
-function lockedSpecifiers(importer: string, node: Mapping): Entries {
-  const locked: Entries = new Map();
-  for (const field of PNPM_FIELDS)
-    for (const name of keys(mapping(node, field))) {
-      const specifier = scalar(
-        mapping(mapping(node, field), name),
-        "specifier",
-      );
-      if (specifier === undefined) throw new Unreadable(name);
-      locked.set(`importer "${importer}" ${field} "${name}"`, specifier);
-    }
-  return locked;
+/** Every package name an override selector such as `foo`, `@scope/foo@^1` or `bar@1>foo@2` mentions, its target among them. */
+function overrideNames(selector: string): string[] {
+  return selector
+    .split(">")
+    .flatMap((segment) => /^(?:@[^/@]+\/)?[^@]+/u.exec(segment) ?? []);
 }
 
-function expectedOverrides(
-  manifest: Mapping,
-  workspace: Mapping,
-  ownWorkspace: boolean,
-): Entries {
-  const fromManifest =
-    (pnpmMajor(manifest) ?? 0) < PNPM_WITHOUT_MANIFEST_SETTINGS
-      ? strings(mapping(mapping(manifest, "pnpm"), "overrides"))
-      : new Map<string, string>();
-  const fromWorkspace = ownWorkspace
-    ? strings(mapping(workspace, "overrides"))
-    : new Map<string, string>();
-  const declared = new Map(
-    NPM_FIELDS.flatMap((field) => [...strings(mapping(manifest, field))]),
-  );
-  return new Map(
-    [...fromManifest, ...fromWorkspace].map(([selector, value]) => [
-      `overrides "${selector}"`,
-      value.startsWith("$") ? (declared.get(value.slice(1)) ?? value) : value,
-    ]),
-  );
-}
-
-function expectedSettings(workspace: Mapping): Map<string, string> {
-  return new Map(
-    Object.entries(PNPM_SETTINGS).map(([name, fallback]) => [
-      name,
-      scalar(workspace, name) ?? fallback,
-    ]),
-  );
-}
-
-function pnpmEntries(path: string): Comparison {
+function pnpmDifferences(path: string): string[] {
   const lockfile = readMapping(join(path, PNPM_LOCK));
   if (Number(scalar(lockfile, "lockfileVersion") ?? "0") < 6)
     throw new Unreadable(path);
-  const manifest = readMapping(join(path, MANIFEST));
-  const workspace = readOptional(join(path, PNPM_WORKSPACE));
-  const patterns = workspacePatterns(workspace);
-  const settings = expectedSettings(workspace);
+  const overridden = new Set(
+    keys(mapping(lockfile, "overrides")).flatMap(overrideNames),
+  );
+  const linksLeftOut =
+    scalar(mapping(lockfile, "settings"), "excludeLinksFromLockfile") ===
+    "true";
+  const skip = (name: string, specifiers: Set<string>) =>
+    overridden.has(name) ||
+    (linksLeftOut &&
+      [...specifiers].every((specifier) => specifier.startsWith("link:")));
   const importers = mapping(lockfile, "importers");
-  const expected: Entries = new Map([
-    ...expectedOverrides(manifest, workspace, patterns.length > 0),
-    ...[...settings].map(([name, value]): [string, string] => [
-      `settings "${name}"`,
-      value,
-    ]),
-  ]);
-  for (const member of pnpmMembers(path, patterns)) {
-    expected.set(`importer "${member}"`, IMPORTER);
-    const memberManifest =
-      member === "." ? manifest : readMapping(join(path, member, MANIFEST));
-    for (const entry of expectedSpecifiers(member, memberManifest, settings))
-      expected.set(...entry);
-  }
-  const settingsNode = mapping(lockfile, "settings");
-  const locked: Entries = new Map([
-    ...[...strings(mapping(lockfile, "overrides"))].map(
-      ([selector, value]): [string, string] => [
-        `overrides "${selector}"`,
-        value,
-      ],
-    ),
-    ...Object.entries(PNPM_SETTINGS).map(
-      ([name, fallback]): [string, string] => [
-        `settings "${name}"`,
-        scalar(settingsNode, name) ?? fallback,
-      ],
-    ),
-  ]);
-  for (const importer of importers ? keys(importers) : ["."]) {
-    locked.set(`importer "${importer}"`, IMPORTER);
+  return (importers ? keys(importers) : ["."]).flatMap((importer) => {
+    const manifest = join(path, importer, MANIFEST);
+    if (!existsSync(manifest)) return [];
     const node = importers ? mapping(importers, importer) : lockfile;
-    for (const entry of lockedSpecifiers(importer, node)) locked.set(...entry);
-  }
-  return { expected, locked };
+    return differences(readMapping(manifest), pnpmLocked(node), skip).map(
+      (line) => `importer "${importer}" ${line}`,
+    );
+  });
 }
 
-function npmFields(node: Mapping): Entries {
-  const fields = new Map(
-    NPM_FIELDS.map((field) => [field, strings(mapping(node, field))]),
-  );
-  return new Map(
-    [...fields].flatMap(([field, specifiers]) =>
-      [...specifiers]
-        .filter(
-          ([name]) =>
-            field !== "dependencies" ||
-            !fields.get("optionalDependencies")?.has(name),
-        )
-        .map(([name, specifier]): [string, string] => [
-          `${field} "${name}"`,
-          specifier,
-        ]),
-    ),
-  );
-}
-
-function npmEntries(path: string): Comparison {
+function npmDifferences(path: string): string[] {
   const lockfile = readMapping(join(path, NPM_LOCK));
   const rootEntry = mapping(mapping(lockfile, "packages"), "");
   if (
@@ -381,33 +173,112 @@ function npmEntries(path: string): Comparison {
     rootEntry === undefined
   )
     throw new Unreadable(path);
-  return {
-    expected: npmFields(readMapping(join(path, MANIFEST))),
-    locked: npmFields(rootEntry),
-  };
+  const manifest = join(path, MANIFEST);
+  if (!existsSync(manifest)) return [];
+  return differences(readMapping(manifest), declared(rootEntry), () => false);
 }
 
-function describe(value: string | undefined): string {
-  return value === undefined ? "none" : `"${value}"`;
+function lockfileIn(path: string): InstallFolder["lockfile"] {
+  if (existsSync(join(path, PNPM_LOCK))) return PNPM_LOCK;
+  if (existsSync(join(path, NPM_LOCK))) return NPM_LOCK;
+  return OTHER_LOCKS.some((name) => existsSync(join(path, name)))
+    ? "other"
+    : undefined;
 }
 
-function mismatch(key: string, expected?: string, locked?: string): string {
-  if (expected === IMPORTER)
-    return `  ${key}: a workspace package the lockfile does not list.\n`;
-  if (locked === IMPORTER)
-    return `  ${key}: the lockfile lists it, and no workspace package matches it.\n`;
-  return `  ${key}: the manifests ask for ${describe(expected)}, the lockfile has ${describe(locked)}.\n`;
+/** Each folder at or under `folder`, `node_modules` and `dist` aside, that holds a lockfile. */
+function lockedFolders(root: string, folder: string): InstallFolder[] {
+  const path = join(root, folder);
+  if (!existsSync(path)) return [];
+  const lockfile = lockfileIn(path);
+  return [
+    ...(lockfile === undefined ? [] : [{ folder, lockfile }]),
+    ...readdirSync(path, { withFileTypes: true })
+      .filter(
+        (entry) =>
+          entry.isDirectory() &&
+          entry.name !== "node_modules" &&
+          entry.name !== "dist",
+      )
+      .flatMap((entry) => lockedFolders(root, `${folder}/${entry.name}`)),
+  ];
 }
 
-function mismatches(expected: Entries, locked: Entries): string[] {
-  const all = new Set([...expected.keys(), ...locked.keys()]);
-  return [...all]
-    .filter((key) => expected.get(key) !== locked.get(key))
-    .sort()
-    .map((key) => mismatch(key, expected.get(key), locked.get(key)));
+/** Whether a `package.json` declares a direct dependency; `false` when it is missing or cannot be read, so this check cannot tell. */
+function hasDependencies(path: string): boolean {
+  try {
+    if (!existsSync(path)) return false;
+    const manifest = readMapping(path);
+    return DIRECT_FIELDS.some(
+      (field) => keys(mapping(manifest, field)).length > 0,
+    );
+  } catch (error) {
+    if (error instanceof Unreadable) return false;
+    throw error;
+  }
 }
 
-function fixCommand(root: string, { folder, lockfile }: InstallFolder): string {
+/**
+ * The folders this check reads, when a layer exists: each folder under a layer, `node_modules` and `dist` aside, and the
+ * root `playground`, that holds a lockfile; and each layer's `playground` and the root `playground`, the folders verify
+ * installs from, when its `package.json` has dependencies and it holds no lockfile.
+ */
+export function verifyInstallFolders(root: string): InstallFolder[] {
+  const layers = verifyLayers(root);
+  if (layers.length === 0) return [];
+  const playgrounds = [
+    ...layers.map((layer) => `${layer}/${PLAYGROUND}`),
+    PLAYGROUND,
+  ];
+  const rootPlayground = lockfileIn(join(root, PLAYGROUND));
+  return [
+    ...layers.flatMap((layer) => lockedFolders(root, layer)),
+    ...(rootPlayground === undefined
+      ? []
+      : [{ folder: PLAYGROUND, lockfile: rootPlayground }]),
+    ...playgrounds
+      .filter(
+        (folder) =>
+          lockfileIn(join(root, folder)) === undefined &&
+          hasDependencies(join(root, folder, MANIFEST)),
+      )
+      .map((folder) => ({ folder, lockfile: undefined })),
+  ];
+}
+
+/** The folders above `folder`, nearest first, up to the repository root. */
+function ancestors(folder: string): string[] {
+  const parent = posix.dirname(folder);
+  return parent === folder ? [] : [parent, ...ancestors(parent)];
+}
+
+/** Whether a manifest declares workspaces, or cannot be read and so might. */
+function declaresWorkspaces(path: string): boolean {
+  try {
+    return existsSync(path) && readMapping(path).has("workspaces");
+  } catch (error) {
+    if (error instanceof Unreadable) return true;
+    throw error;
+  }
+}
+
+/**
+ * Whether a folder above `folder` holds a workspace that may list it, a `pnpm-workspace.yaml` or a `package.json` with
+ * `workspaces`: its membership then follows patterns this check does not evaluate, and that workspace's lockfile may hold it.
+ */
+function inWorkspace(root: string, folder: string): boolean {
+  return ancestors(folder).some(
+    (above) =>
+      existsSync(join(root, above, PNPM_WORKSPACE)) ||
+      declaresWorkspaces(join(root, above, MANIFEST)),
+  );
+}
+
+function fixCommand(
+  root: string,
+  folder: string,
+  lockfile: typeof PNPM_LOCK | typeof NPM_LOCK,
+): string {
   if (lockfile === NPM_LOCK)
     return `npm install --package-lock-only --prefix ${folder}`;
   return existsSync(join(root, folder, PNPM_WORKSPACE))
@@ -415,51 +286,50 @@ function fixCommand(root: string, { folder, lockfile }: InstallFolder): string {
     : `pnpm install --dir ${folder} --ignore-workspace --lockfile-only`;
 }
 
-function compareFolder(
-  root: string,
-  install: InstallFolder & { lockfile: typeof PNPM_LOCK | typeof NPM_LOCK },
-): string {
-  const { folder, lockfile } = install;
-  const path = join(root, folder);
-  if (!existsSync(join(path, MANIFEST)))
-    return `${folder}/${lockfile} has no ${MANIFEST} beside it.\n`;
-  const { expected, locked } =
-    lockfile === PNPM_LOCK ? pnpmEntries(path) : npmEntries(path);
-  const found = mismatches(expected, locked);
-  return found.length === 0
-    ? ""
-    : `${folder}/${lockfile} does not match ${folder}/${MANIFEST}: run \`${fixCommand(root, install)}\`.\n${found.join("")}`;
+function unlocked(root: string, folder: string): string {
+  if (inWorkspace(root, folder)) return "";
+  const manager = ancestors(folder).some((above) =>
+    existsSync(join(root, above, NPM_LOCK)),
+  )
+    ? NPM_LOCK
+    : PNPM_LOCK;
+  return `${folder}/${MANIFEST} has dependencies and no lockfile: run \`${fixCommand(root, folder, manager)}\`.\n`;
 }
 
-function checkFolder(root: string, install: InstallFolder): string {
-  const { folder, lockfile } = install;
+function checkFolder(
+  root: string,
+  { folder, lockfile }: InstallFolder,
+): string {
   if (lockfile === "other") return "";
   try {
-    if (lockfile !== undefined)
-      return compareFolder(root, { folder, lockfile });
-    return inEnclosingWorkspace(root, folder)
+    if (lockfile === undefined) return unlocked(root, folder);
+    const path = join(root, folder);
+    const found =
+      lockfile === PNPM_LOCK ? pnpmDifferences(path) : npmDifferences(path);
+    return found.length === 0
       ? ""
-      : `${folder}/${MANIFEST} has dependencies and no lockfile: run \`${fixCommand(root, install)}\`.\n`;
+      : `${folder}/${lockfile} does not match ${folder}/${MANIFEST}: run \`${fixCommand(root, folder, lockfile)}\`.\n${found.map((line) => `  ${line}\n`).join("")}`;
   } catch (error) {
     if (error instanceof Unreadable)
-      return `${folder}/${lockfile ?? MANIFEST}: could not read it, a ${MANIFEST} or a ${PNPM_WORKSPACE} it depends on, as a version this check knows.\n`;
+      return `${folder}/${lockfile ?? MANIFEST}: could not read it, or a ${MANIFEST} it locks, as a version this check knows.\n`;
     throw error;
   }
 }
 
 /**
- * Compares, in code, each lockfile verify installs from with the manifests it was made from, the way a frozen install does,
- * and fails on any difference in either direction. For a `pnpm-lock.yaml`: the importers, which are `.` plus the members a
- * `pnpm-workspace.yaml` in the same folder lists; each importer's `dependencies`, `devDependencies` and `optionalDependencies`
- * specifiers, plus the `peerDependencies` pnpm adds when `autoInstallPeers` is on; `overrides`, from the `pnpm` field of
- * `package.json` before pnpm 11 and from that `pnpm-workspace.yaml`, with `$name` references resolved; and the
- * `autoInstallPeers` and `excludeLinksFromLockfile` settings that file sets. For a `package-lock.json`: the root entry's
- * `dependencies`, `devDependencies`, `optionalDependencies` and `peerDependencies`. A folder whose `package.json` has
- * dependencies and no lockfile fails, unless a `pnpm-workspace.yaml` above it lists it.
+ * Compares, in code, the direct dependencies each lockfile records with the `package.json` files it locks, and fails on a
+ * difference in either direction. A `pnpm-lock.yaml` is compared importer by importer, for each importer it lists that has a
+ * `package.json` on disk; a `package-lock.json` by its root entry. Only `dependencies`, `devDependencies` and
+ * `optionalDependencies` are compared, by name and specifier: a name counts as present whichever of the three fields records
+ * it, and specifiers such as `catalog:` or `workspace:^` compare as written. A name the lockfile records that `package.json`
+ * declares only in `peerDependencies` passes. A `package.json` name that an override selector in the `pnpm-lock.yaml`
+ * mentions, or a `link:` one the lockfile leaves out under `excludeLinksFromLockfile`, is not compared. A missing lockfile fails only in a layer's
+ * `playground` or the root `playground` whose `package.json` has dependencies, unless a folder above it holds a workspace.
  *
- * It spawns no package manager, writes no file and fetches nothing. It does not check the resolved versions, integrity
- * hashes or transitive entries, `.npmrc` or user configuration, catalogs, patches or npm workspaces: verify's own frozen
- * install still rejects those. Returns what failed, empty when every lockfile matches.
+ * It spawns no package manager, writes no file and fetches nothing. It does not check workspace membership, overrides,
+ * settings, catalogs, `.npmrc` or user configuration, resolved versions, integrity hashes, transitive entries, npm workspace
+ * members, or `yarn.lock` and `bun.lock`: verify's own frozen install still rejects a lockfile stale there. Returns what
+ * failed, empty when every lockfile matches.
  */
 export function checkLockfiles(root: string): string {
   return verifyInstallFolders(root)

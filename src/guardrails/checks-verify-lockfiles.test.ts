@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
 import {
-  type FixtureManifest,
+  type DependencyFields,
   NO_DEPENDENCIES,
   npmLock,
   pnpmLock,
@@ -25,14 +25,21 @@ function repo(t: TestContext): string {
   return root;
 }
 
-function manifest(fields: FixtureManifest): string {
+function manifest(fields: DependencyFields): string {
   return JSON.stringify({ ...NO_DEPENDENCIES, ...fields });
 }
 
-function stalePnpm(t: TestContext, mine: string, theirs: string): string {
+function playground(
+  t: TestContext,
+  mine: string,
+  theirs: string,
+  files: Record<string, string> = {},
+): string {
   const root = repo(t);
   put(root, `${PLAYGROUND}/package.json`, mine);
   put(root, `${PLAYGROUND}/pnpm-lock.yaml`, theirs);
+  for (const [path, content] of Object.entries(files))
+    put(root, `${PLAYGROUND}/${path}`, content);
   return checkLockfiles(root);
 }
 
@@ -44,89 +51,127 @@ for (const { title, mine, theirs, line } of [
       "a dependency package.json adds fails, caught by comparing only what the lockfile lists",
     mine: manifest({ dependencies: LEFT_PAD }),
     theirs: pnpmLock({ ".": {} }),
-    line: `importer "." dependencies "left-pad": the manifests ask for "^1.3.0", the lockfile has none.`,
+    line: `importer "." "left-pad": package.json asks for "^1.3.0", the lockfile has none.`,
   },
   {
     title:
       "a dependency package.json removes fails, caught by comparing only what package.json lists",
     mine: manifest({}),
     theirs: pnpmLock({ ".": { devDependencies: LEFT_PAD } }),
-    line: `importer "." devDependencies "left-pad": the manifests ask for none, the lockfile has "^1.3.0".`,
+    line: `importer "." "left-pad": package.json asks for none, the lockfile has "^1.3.0".`,
   },
   {
     title:
       "a changed specifier fails, caught by comparing dependency names only",
     mine: manifest({ optionalDependencies: { "left-pad": "^2.0.0" } }),
     theirs: pnpmLock({ ".": { optionalDependencies: LEFT_PAD } }),
-    line: `importer "." optionalDependencies "left-pad": the manifests ask for "^2.0.0", the lockfile has "^1.3.0".`,
+    line: `importer "." "left-pad": package.json asks for "^2.0.0", the lockfile has "^1.3.0".`,
   },
   {
     title:
-      "a dependency moved to devDependencies fails, caught by comparing names across fields",
-    mine: manifest({ devDependencies: LEFT_PAD }),
+      "a catalog: specifier the lockfile records as a range fails, caught by resolving catalogs before comparing",
+    mine: manifest({ dependencies: { "left-pad": "catalog:" } }),
     theirs: pnpmLock({ ".": { dependencies: LEFT_PAD } }),
-    line: `importer "." dependencies "left-pad": the manifests ask for none, the lockfile has "^1.3.0".\n  importer "." devDependencies "left-pad": the manifests ask for "^1.3.0", the lockfile has none.`,
-  },
-  {
-    title:
-      "a changed pnpm.overrides entry fails, caught by an implementation that ignores overrides",
-    mine: manifest({ pnpm: { overrides: { "left-pad": "1.3.0" } } }),
-    theirs: pnpmLock({ ".": {} }, { overrides: { "left-pad": "1.2.0" } }),
-    line: `overrides "left-pad": the manifests ask for "1.3.0", the lockfile has "1.2.0".`,
-  },
-  {
-    title:
-      "an override the lockfile keeps after package.json dropped it fails, caught by comparing overrides one way",
-    mine: manifest({}),
-    theirs: pnpmLock({ ".": {} }, { overrides: { "left-pad": "1.2.0" } }),
-    line: `overrides "left-pad": the manifests ask for none, the lockfile has "1.2.0".`,
-  },
-  {
-    title:
-      "a lockfile made with autoInstallPeers off fails under the default, caught by an implementation that ignores settings",
-    mine: manifest({}),
-    theirs: pnpmLock({ ".": {} }, { settings: { autoInstallPeers: false } }),
-    line: `settings "autoInstallPeers": the manifests ask for "true", the lockfile has "false".`,
+    line: `importer "." "left-pad": package.json asks for "catalog:", the lockfile has "^1.3.0".`,
   },
 ])
   test(`pnpm: ${title}`, (t) => {
-    assert.equal(stalePnpm(t, mine, theirs), `${PNPM_HEAD}  ${line}\n`);
+    assert.equal(playground(t, mine, theirs), `${PNPM_HEAD}  ${line}\n`);
   });
 
-for (const { title, mine, theirs } of [
+for (const { title, mine, theirs, files } of [
   {
     title:
-      "a peer dependency pnpm installs as a dependency matches, caught by an implementation that ignores autoInstallPeers",
+      "a name in both dependencies and devDependencies matches a lockfile that records it once, caught by comparing field by field",
+    mine: manifest({ dependencies: LEFT_PAD, devDependencies: LEFT_PAD }),
+    theirs: pnpmLock({ ".": { dependencies: LEFT_PAD } }),
+  },
+  {
+    title:
+      "a peer the lockfile installs as a dependency matches, caught by an implementation that fails every lockfile name package.json does not list as a dependency",
     mine: manifest({ peerDependencies: LEFT_PAD }),
     theirs: pnpmLock({ ".": { dependencies: LEFT_PAD } }),
   },
   {
     title:
-      "a `$name` override matches the specifier it names, caught by comparing the reference literally",
+      "a peer the lockfile leaves out under auto-install-peers=false in .npmrc matches, caught by expecting every peer to be installed",
+    mine: manifest({ peerDependencies: LEFT_PAD }),
+    theirs: pnpmLock({ ".": {} }, { settings: { autoInstallPeers: false } }),
+    files: { ".npmrc": "auto-install-peers=false\n" },
+  },
+  {
+    title:
+      "catalog: and workspace: specifiers match as pnpm records them, caught by resolving them before comparing",
     mine: manifest({
-      dependencies: LEFT_PAD,
-      pnpm: { overrides: { "left-pad": "$left-pad" } },
+      dependencies: { "left-pad": "catalog:", tool: "workspace:^" },
     }),
+    theirs: pnpmLock({
+      ".": { dependencies: { "left-pad": "catalog:", tool: "workspace:^" } },
+    }),
+    files: {
+      "pnpm-workspace.yaml":
+        "packages:\n  - tool\ncatalog:\n  left-pad: ^1.3.0\n",
+      "tool/package.json": JSON.stringify({ name: "tool", version: "1.0.0" }),
+    },
+  },
+  {
+    title:
+      "overrides in a pnpm-workspace.yaml without packages match the specifier pnpm writes for them, caught by comparing an overridden name or the overrides themselves",
+    mine: manifest({ dependencies: LEFT_PAD }),
+    theirs: pnpmLock(
+      { ".": { dependencies: { "left-pad": "1.3.0" } } },
+      { overrides: { "left-pad": "1.3.0" } },
+    ),
+    files: { "pnpm-workspace.yaml": "overrides:\n  left-pad: 1.3.0\n" },
+  },
+  {
+    title:
+      "a catalog: override matches the version pnpm resolves it to, caught by comparing the overrides as written",
+    mine: manifest({ dependencies: { "left-pad": "catalog:" } }),
     theirs: pnpmLock(
       { ".": { dependencies: LEFT_PAD } },
       { overrides: { "left-pad": "^1.3.0" } },
     ),
+    files: {
+      "pnpm-workspace.yaml":
+        "catalog:\n  left-pad: ^1.3.0\noverrides:\n  left-pad: 'catalog:'\n",
+    },
   },
   {
     title:
-      "pnpm.overrides is ignored when packageManager pins pnpm 11 or later, caught by reading it for every version",
-    mine: manifest({
-      packageManager: "pnpm@11.0.0",
-      pnpm: { overrides: { "left-pad": "1.2.0" } },
+      "an override whose selector holds a range still exempts its package, caught by splitting the selector on every >",
+    mine: manifest({ dependencies: LEFT_PAD }),
+    theirs: pnpmLock(
+      { ".": { dependencies: { "left-pad": "1.3.0" } } },
+      { overrides: { "left-pad@>1.0.0": "1.3.0" } },
+    ),
+  },
+  {
+    title:
+      "a workspace package the lockfile does not list passes, caught by computing membership from patterns where a leading negation must still exclude it",
+    mine: manifest({ dependencies: LEFT_PAD }),
+    theirs: pnpmLock({ ".": { dependencies: LEFT_PAD }, "packages/a": {} }),
+    files: {
+      "pnpm-workspace.yaml": "packages:\n  - '!packages/b'\n  - packages/*\n",
+      "packages/a/package.json": manifest({}),
+      "packages/b/package.json": manifest({ dependencies: LEFT_PAD }),
+    },
+  },
+  {
+    title:
+      "an importer the lockfile lists without a package.json on disk is skipped, caught by reading a manifest for every importer",
+    mine: manifest({ dependencies: LEFT_PAD }),
+    theirs: pnpmLock({
+      ".": { dependencies: LEFT_PAD },
+      "packages/gone": { dependencies: LEFT_PAD },
     }),
-    theirs: pnpmLock({ ".": {} }),
   },
 ])
   test(`pnpm: ${title}`, (t) => {
-    assert.equal(stalePnpm(t, mine, theirs), "");
+    assert.equal(playground(t, mine, theirs, files), "");
   });
 
-test("pnpm: a stale sub-importer of a workspace playground fails, caught by an implementation that compares only the root importer", (t) => {
+test("pnpm: a stale importer of a workspace playground fails, caught by an implementation that compares only the root importer", (t) => {
   const root = repo(t);
   put(root, `${PLAYGROUND}/pnpm-workspace.yaml`, "packages:\n  - packages/*\n");
   put(root, `${PLAYGROUND}/package.json`, manifest({ dependencies: LEFT_PAD }));
@@ -134,11 +179,6 @@ test("pnpm: a stale sub-importer of a workspace playground fails, caught by an i
     root,
     `${PLAYGROUND}/packages/app/package.json`,
     manifest({ dependencies: { "left-pad": "^2.0.0" } }),
-  );
-  put(
-    root,
-    `${PLAYGROUND}/packages/tool/package.json`,
-    manifest({ devDependencies: LEFT_PAD }),
   );
   put(
     root,
@@ -151,9 +191,7 @@ test("pnpm: a stale sub-importer of a workspace playground fails, caught by an i
   assert.equal(
     checkLockfiles(root),
     `${PLAYGROUND}/pnpm-lock.yaml does not match ${PLAYGROUND}/package.json: run \`pnpm install --dir ${PLAYGROUND} --lockfile-only\`.\n` +
-      `  importer "packages/app" dependencies "left-pad": the manifests ask for "^2.0.0", the lockfile has "^1.3.0".\n` +
-      `  importer "packages/tool": a workspace package the lockfile does not list.\n` +
-      `  importer "packages/tool" devDependencies "left-pad": the manifests ask for "^1.3.0", the lockfile has none.\n`,
+      `  importer "packages/app" "left-pad": package.json asks for "^2.0.0", the lockfile has "^1.3.0".\n`,
   );
 });
 
@@ -165,26 +203,65 @@ test("pnpm: a stale layer lockfile still fails under a root pnpm-workspace.yaml,
   assert.match(checkLockfiles(root), /does not match/);
 });
 
-test("a package.json with dependencies and no lockfile fails, caught by an implementation that checks only the lockfiles it finds", (t) => {
-  const root = repo(t);
-  put(root, `${PLAYGROUND}/package.json`, manifest({ dependencies: LEFT_PAD }));
-  assert.equal(
-    checkLockfiles(root),
-    `${PLAYGROUND}/package.json has dependencies and no lockfile: run \`pnpm install --dir ${PLAYGROUND} --ignore-workspace --lockfile-only\`.\n`,
-  );
-});
+for (const [folder, above, command] of [
+  [
+    PLAYGROUND,
+    undefined,
+    `pnpm install --dir ${PLAYGROUND} --ignore-workspace --lockfile-only`,
+  ],
+  [
+    "playground",
+    "package-lock.json",
+    "npm install --package-lock-only --prefix playground",
+  ],
+] as const)
+  test(`a playground ${folder} with dependencies and no lockfile fails and names the ${command.split(" ")[0]} fix, caught by an implementation that checks only the lockfiles it finds or always suggests pnpm`, (t) => {
+    const root = repo(t);
+    if (above) put(root, above, npmLock({}));
+    put(root, `${folder}/package.json`, manifest({ dependencies: LEFT_PAD }));
+    assert.equal(
+      checkLockfiles(root),
+      `${folder}/package.json has dependencies and no lockfile: run \`${command}\`.\n`,
+    );
+  });
 
-test("a root playground the root pnpm workspace lists needs no lockfile of its own, caught by requiring one in every folder", (t) => {
-  const root = repo(t);
-  put(root, "pnpm-workspace.yaml", "packages:\n  - './'\n  - playground\n");
-  put(root, "playground/package.json", manifest({ dependencies: LEFT_PAD }));
-  put(
-    root,
-    `${LAYER}/node_modules/dep/package.json`,
-    manifest({ dependencies: LEFT_PAD }),
-  );
-  assert.equal(checkLockfiles(root), "");
-});
+for (const { title, files } of [
+  {
+    title:
+      "a nested fixture folder with dependencies and no lockfile passes, caught by requiring a lockfile in every folder under a layer",
+    files: {
+      [`${LAYER}/fixtures/consumer/package.json`]: manifest({
+        dependencies: LEFT_PAD,
+      }),
+    },
+  },
+  {
+    title:
+      "a playground an npm workspace may list needs no lockfile of its own, caught by an implementation that ignores npm workspaces",
+    files: {
+      "package.json": JSON.stringify({
+        ...NO_DEPENDENCIES,
+        workspaces: ["playground"],
+      }),
+      "package-lock.json": npmLock({}),
+      "playground/package.json": manifest({ dependencies: LEFT_PAD }),
+    },
+  },
+  {
+    title:
+      "a playground under a root pnpm-workspace.yaml needs no lockfile of its own, caught by an implementation that evaluates workspace patterns",
+    files: {
+      "pnpm-workspace.yaml": "packages:\n  - './'\n  - playground\n",
+      "playground/package.json": manifest({ dependencies: LEFT_PAD }),
+    },
+  },
+])
+  test(title, (t) => {
+    const root = repo(t);
+    for (const [path, content] of Object.entries(files))
+      put(root, path, content);
+    assert.equal(checkLockfiles(root), "");
+  });
 
 for (const [file, content] of [
   ["pnpm-lock.yaml", "importers: [\n"],
@@ -201,7 +278,7 @@ for (const [file, content] of [
     put(root, `${PLAYGROUND}/${file}`, content);
     assert.equal(
       checkLockfiles(root),
-      `${PLAYGROUND}/${file}: could not read it, a package.json or a pnpm-workspace.yaml it depends on, as a version this check knows.\n`,
+      `${PLAYGROUND}/${file}: could not read it, or a package.json it locks, as a version this check knows.\n`,
     );
   });
 
@@ -212,19 +289,19 @@ for (const { title, mine, theirs, line } of [
     title: "a dependency package.json adds fails",
     mine: { dependencies: LEFT_PAD },
     theirs: {},
-    line: `dependencies "left-pad": the manifests ask for "^1.3.0", the lockfile has none.`,
+    line: `"left-pad": package.json asks for "^1.3.0", the lockfile has none.`,
   },
   {
     title: "a dependency package.json removes fails",
     mine: {},
-    theirs: { peerDependencies: LEFT_PAD },
-    line: `peerDependencies "left-pad": the manifests ask for none, the lockfile has "^1.3.0".`,
+    theirs: { devDependencies: LEFT_PAD },
+    line: `"left-pad": package.json asks for none, the lockfile has "^1.3.0".`,
   },
   {
     title: "a changed specifier fails",
     mine: { devDependencies: { "left-pad": "^2.0.0" } },
     theirs: { devDependencies: LEFT_PAD },
-    line: `devDependencies "left-pad": the manifests ask for "^2.0.0", the lockfile has "^1.3.0".`,
+    line: `"left-pad": package.json asks for "^2.0.0", the lockfile has "^1.3.0".`,
   },
 ])
   test(`npm: ${title}, caught by an implementation that passes it through a could-not-check branch or compares one way`, (t) => {
@@ -234,7 +311,7 @@ for (const { title, mine, theirs, line } of [
     assert.equal(checkLockfiles(root), `${NPM_HEAD}  ${line}\n`);
   });
 
-test("npm: a dependency also listed as optional matches a lockfile that records it once, as npm normalizes it, caught by comparing package.json raw", (t) => {
+test("npm: a dependency also listed as optional matches a lockfile that records it once, as npm normalizes it, caught by comparing field by field", (t) => {
   const root = repo(t);
   put(
     root,

@@ -10,12 +10,6 @@ export interface DependencyFields {
   peerDependencies?: Record<string, string>;
 }
 
-/** The fields a fixture `package.json` sets besides its name. */
-export interface FixtureManifest extends DependencyFields {
-  packageManager?: string;
-  pnpm?: { overrides: Record<string, string> };
-}
-
 /** What a run that writes nothing leaves as it was: a lockfile's inode and mtime, and its folder's mtime and listing. */
 export function folderStamp(folder: string, lockfile: string) {
   const stats = statSync(join(folder, lockfile));

@@ -19,17 +19,23 @@ const TSCONFIG = "tsconfig.json";
 const NOT_LAYER_CODE = new Set(["node_modules", "dist"]);
 const LAYER_PLAYGROUND = "playground";
 
+const VERIFY_CONFIG = "verify.config.ts";
+
 /**
- * Options the generated config sets over the layer's: nothing is emitted or cached, so no `.tsbuildinfo` is written, and the
- * declaration checks of a file that is never emitted are not run.
+ * Options the generated config sets over the layer's: nothing is emitted, and each declaration or build-cache option the
+ * layer may inherit is unset with `null`, so no `.tsbuildinfo` is written, no option is left needing `declaration` or
+ * `composite`, and the declaration checks of files that are never emitted are not run.
  */
 const NO_OUTPUT = {
   noEmit: true,
-  incremental: false,
-  composite: false,
-  declaration: false,
-  declarationMap: false,
-  emitDeclarationOnly: false,
+  declaration: null,
+  composite: null,
+  incremental: null,
+  tsBuildInfoFile: null,
+  declarationDir: null,
+  declarationMap: null,
+  emitDeclarationOnly: null,
+  isolatedDeclarations: null,
 };
 
 /** The verify layers of a repository, relative to its root: each `.agents/skills/verify-*` folder that holds a `tsconfig.json` or a `verify.config.ts`. */
@@ -41,7 +47,7 @@ export function verifyLayers(root: string): string[] {
       (entry) =>
         entry.isDirectory() &&
         entry.name.startsWith(LAYER_PREFIX) &&
-        [TSCONFIG, "verify.config.ts"].some((file) =>
+        [TSCONFIG, VERIFY_CONFIG].some((file) =>
           existsSync(join(skills, entry.name, file)),
         ),
     )
@@ -84,6 +90,12 @@ async function typecheckLayer(
     onUnRecoverableConfigFileDiagnostic: () => undefined,
   });
   if (parsed === undefined) return `${layer}/${TSCONFIG}: could not read it.\n`;
+  const verifyConfig = join(root, layer, VERIFY_CONFIG);
+  if (
+    existsSync(verifyConfig) &&
+    !parsed.fileNames.some((file) => resolve(file) === verifyConfig)
+  )
+    return `${layer}/${TSCONFIG}: does not include ${VERIFY_CONFIG}, so it is never type-checked. Add it to the tsconfig's "include" or "files".\n`;
   const files = parsed.fileNames.filter((file) =>
     isLayerCode(join(root, layer), resolve(file)),
   );
@@ -118,8 +130,8 @@ async function typecheckLayer(
  * Type-checks the own code of each verify layer with the repository's own TypeScript. The files are those the layer's
  * `tsconfig.json` includes, minus its `playground` folder, which verify compiles with the playground's own config after
  * installing it, and any `node_modules` or `dist` folder. A config generated in the system temp folder extends the layer's,
- * lists those files, and turns off emit, incremental builds and declaration checks, so nothing is written in the repository
- * and no package is fetched. Returns the compiler output of the layers that fail, empty when all pass.
+ * lists those files, turns off emit and unsets the emit and build-cache options in `NO_OUTPUT`, so nothing is written in the
+ * repository and no package is fetched. A layer whose `tsconfig.json` does not include its `verify.config.ts` fails. Returns the compiler output of the layers that fail, empty when all pass.
  */
 export async function typecheckLayers(
   root: string,
