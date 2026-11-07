@@ -26,7 +26,7 @@ export interface JourneyResult {
   reusedFrom?: string;
   /** The state of the tree the journey ran against: HEAD, the uncommitted diff and the untracked files. A PASS is reused only for the same tree. */
   tree?: string;
-  /** The journey's duration in milliseconds, cleanup included; absent in a result an older version wrote. */
+  /** The journey's duration in milliseconds, its processes' cleanup included and the deletion of its scratch folder and HOME, which runs after this result is written, excluded; absent in a result an older version wrote. */
   ms?: number;
   /** How long each step folder lasted, from its `step()` call to the next one or the journey's end; absent in a result an older version wrote. */
   stepMs?: StepTiming[];

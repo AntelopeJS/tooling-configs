@@ -16,12 +16,12 @@ interface FormalTiming {
   ms: number | null;
 }
 
-/** Every measurement a verdict shows, and the sum of those that exist. */
+/** Every measurement a verdict shows, and their sum; `totalMs` is `null` when any phase has no measurement, so a partial sum never reads as the run's cost. */
 export interface TimingReport {
   setup: PhaseTiming[];
   journeys: JourneyTiming[];
   formal: FormalTiming[];
-  totalMs: number;
+  totalMs: number | null;
 }
 
 /** The journey results of one feature, as the verdict lists them. */
@@ -37,8 +37,10 @@ const SLOWEST_STEPS = 3;
 const TOTAL_LABEL =
   "**Total measured** (commands only; agent time between commands is not included)";
 
-function sum(values: (number | null)[]): number {
-  return values.reduce<number>((total, ms) => total + (ms ?? 0), 0);
+function sum(values: (number | null)[]): number | null {
+  return values.every((ms) => ms !== null)
+    ? values.reduce<number>((total, ms) => total + (ms ?? 0), 0)
+    : null;
 }
 
 function slowest(steps: StepTiming[]): StepTiming[] {
@@ -68,9 +70,13 @@ export function timingReport(
     journeys,
     formal: checks,
     totalMs:
-      sum(setup.map((entry) => entry.ms)) +
-      sum(journeys.map((entry) => entry.ms)) +
-      sum(checks.map((entry) => entry.ms)),
+      setup.length === 0
+        ? null
+        : sum([
+            ...setup.map((entry) => entry.ms),
+            ...journeys.map((entry) => entry.ms),
+            ...checks.map((entry) => entry.ms),
+          ]),
   };
 }
 

@@ -52,10 +52,10 @@ function resetServices(context: VerifyContext): void {
   )) {
     if (!service.reset) continue;
     const container = context.service(name).container;
+    const folder = context.step(`reset ${name}`);
     const run = spawnSync("docker", ["exec", container, ...service.reset], {
       encoding: "utf8",
     });
-    const folder = context.step(`reset ${name}`);
     writeFileSync(
       join(folder, "command.txt"),
       `docker exec ${container} ${service.reset.join(" ")}\n`,

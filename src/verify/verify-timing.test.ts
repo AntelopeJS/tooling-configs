@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -131,11 +131,8 @@ test("a step lasts from its step call to the next one and the last until the jou
   );
 });
 
-test("a run.json and results written before timings existed still render a verdict, with `not measured` rows and no NaN; a reader that assumes the fields exist crashes", (t) => {
+test("a verdict with any unmeasured phase prints no total, and old run.json and results render as `not measured` with no NaN; a total that counts a missing time as zero fails", (t) => {
   const { root, tmp, run } = timingRepo(t, ["quick"]);
-  const old = JSON.parse(read(run, "run.json"));
-  delete old.timings;
-  put(run, "run.json", JSON.stringify(old));
   const ran = verify(root, tmp, ["journey", run, "smoke"]);
   assert.equal(ran.status, 0, ran.stdout + ran.stderr);
   for (const file of ["smoke/quick/result.json", "smoke/feature.json"]) {
@@ -146,15 +143,68 @@ test("a run.json and results written before timings existed still render a verdi
     }
     put(run, `evidence/${file}`, JSON.stringify(value));
   }
+  const partial = judged(root, tmp, run);
+  assert.equal(partial.status, 0, partial.stderr);
+  assert.match(
+    partial.stdout,
+    /\| journey smoke\/quick \| not measured \|\n\| \*\*Total measured\*\*[^|]*\| not measured \|\n/,
+  );
+  assert.equal(evidence(run, "verdict.json").timings.totalMs, null);
+  const old = JSON.parse(read(run, "run.json"));
+  delete old.timings;
+  put(run, "run.json", JSON.stringify(old));
   const verdict = judged(root, tmp, run);
   assert.equal(verdict.status, 0, verdict.stderr);
   assert.match(
     verdict.stdout,
-    /\| Phase \| Time \|\n\|---\|---\|\n\| new \(setup, pack, services, sources\) \| not measured \|\n\| journey smoke\/quick \| not measured \|\n\| \*\*Total measured\*\*[^|]*\| 0\.0 s \|\n/,
+    /\| Phase \| Time \|\n\|---\|---\|\n\| new \(setup, pack, services, sources\) \| not measured \|\n\| journey smoke\/quick \| not measured \|\n\| \*\*Total measured\*\*[^|]*\| not measured \|\n/,
   );
   assert.doesNotMatch(verdict.stdout, /NaN|undefined/);
   const { timings } = evidence(run, "verdict.json");
   assert.deepEqual(timings.setup, []);
   assert.equal(timings.journeys[0].ms, null);
-  assert.equal(timings.totalMs, 0);
+  assert.equal(timings.totalMs, null);
+});
+
+const SLOW_RESET_DOCKER = `#!/bin/sh
+case "$1" in
+  port) echo "6379/tcp -> 127.0.0.1:41234" ;;
+  exec) case "$*" in *FLUSHALL*) sleep 0.6 ;; esac; echo pong ;;
+  inspect) echo true ;;
+esac
+exit 0
+`;
+
+test("a service reset is timed inside its own step; a reset run before its step starts reads as free and fails", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "verify-timing-reset-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const root = verifyRepo(t, {
+    "README.md": "# Demo\n",
+    [`${SKILL}/verify.config.ts`]: `export default {
+  doors: ${PUBLISH_DOORS},
+  setup: [["node", "-e", "0"]],
+  services: { cache: { image: "redis:7", port: 6379, ready: ["redis-cli", "ping"], reset: ["redis-cli", "FLUSHALL"] } },
+  journeys: {
+    seen: {
+      title: "one step",
+      entryPoint: "node",
+      async run(context) {
+        const folder = context.step("look");
+        context.expect(folder, [{ name: "ran", pass: true, detail: "" }]);
+      },
+    },
+  },
+};
+`,
+    [`${SKILL}/features/smoke.md`]: feature([], ["seen"]),
+  });
+  put(tmp, "bin/docker", SLOW_RESET_DOCKER);
+  chmodSync(join(tmp, "bin/docker"), 0o755);
+  const env = { PATH: `${join(tmp, "bin")}:${process.env.PATH}` };
+  const run = newRun(root, tmp, env);
+  const ran = verify(root, tmp, ["journey", run, "smoke"], env);
+  assert.equal(ran.status, 0, ran.stdout + ran.stderr);
+  const { stepMs } = evidence(run, "smoke/seen/result.json");
+  assert.equal(stepMs[0].step, "01-reset-cache");
+  assert.ok(stepMs[0].ms >= 550, `reset step ${stepMs[0].ms} ms`);
 });
