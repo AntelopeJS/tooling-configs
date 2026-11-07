@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.8
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.7...v0.3.8)
+
+### 🩹 Fixes
+
+- **verify:** Record processes per command and bound interrupts under --jobs ([#216](https://github.com/AntelopeJS/tooling-configs/pull/216))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.3.7
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.6...v0.3.7)
