@@ -20,6 +20,7 @@ import { installedPackage } from "./fixture.ts";
 import { linkDependencies } from "./interface.ts";
 import { killGroup, runRecorded } from "./record.ts";
 import { seedSources, templateName } from "./sources.ts";
+import type { CommandResult } from "./types.ts";
 import {
   allocateRun,
   git,
@@ -74,6 +75,17 @@ async function runSetup(workspace: Workspace, state: RunState): Promise<void> {
   }
 }
 
+/** The last 300 characters of each non-empty stream of a command, since a tool may print its message on either. */
+function outputTail(result: CommandResult): string {
+  return [
+    ["stdout", result.stdout],
+    ["stderr", result.stderr],
+  ]
+    .filter(([, text]) => text.trim() !== "")
+    .map(([name, text]) => `${name}: ${text.trim().slice(-300)}`)
+    .join("\n");
+}
+
 async function packInterface(
   workspace: Workspace,
   state: RunState,
@@ -89,7 +101,9 @@ async function packInterface(
   });
   const tarball = readdirSync(folder).find((file) => file.endsWith(".tgz"));
   if (packed.exitCode !== 0 || tarball === undefined)
-    throw new Error(`pnpm pack failed: ${packed.stderr.slice(-300)}`);
+    throw new Error(
+      `pnpm pack failed; see ${packed.folder}\n${outputTail(packed)}`,
+    );
   const extract = await runRecorded(join(state.evidence, "setup", "extract"), {
     program: "tar",
     args: ["-xzf", join(folder, tarball), "-C", folder],
