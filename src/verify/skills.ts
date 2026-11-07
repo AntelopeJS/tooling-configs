@@ -7,7 +7,7 @@ import {
 import { DEFAULT_SHARED } from "./map.ts";
 import { KIND_TEXT } from "./skill-kinds.ts";
 
-const BIN = "pnpm exec antelopejs-verify";
+const BIN = "node_modules/.bin/antelopejs-verify";
 
 function bullets(lines: string[]): string {
   return lines.map((line) => `- ${line}`).join("\n");
