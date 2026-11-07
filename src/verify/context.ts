@@ -6,6 +6,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, join, relative } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   isObject,
@@ -14,6 +15,7 @@ import {
   type JsonValue,
 } from "../garden/json.ts";
 import { appFault } from "./app-fault.ts";
+import { ProjectCaches } from "./caches.ts";
 import { readinessFailure } from "./docker.ts";
 import { ajsEntry, writeFixture, type Fixture } from "./fixture.ts";
 import { prepare } from "./prepared.ts";
@@ -74,10 +76,6 @@ function slug(text: string): string {
     .replace(/^-|-$/g, "");
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 interface Running {
   app: App;
   handle: BackgroundHandle;
@@ -104,6 +102,7 @@ export class VerifyContext implements JourneyContext {
 
   readonly workspace: Workspace;
   readonly state: RunState;
+  readonly caches: ProjectCaches;
 
   constructor(
     workspace: Workspace,
@@ -117,6 +116,7 @@ export class VerifyContext implements JourneyContext {
     this.folder = join(state.evidence, feature, journey);
     this.work = join(state.dir, "work", feature, journey);
     this.home = join(state.dir, "homes", feature, journey);
+    this.caches = new ProjectCaches(join(state.dir, "ajs-cache"));
     for (const folder of [this.folder, this.work, this.home]) {
       rmSync(folder, { recursive: true, force: true });
       mkdirSync(folder, { recursive: true });
@@ -154,7 +154,7 @@ export class VerifyContext implements JourneyContext {
       cwd: options.cwd ?? this.work,
       env: this.env(options.env),
       timeoutMs: options.timeoutMs,
-    });
+    }).then((result) => this.caches.observed(result));
   }
 
   /** Runs `ajs <args>` of the repository's `@antelopejs/core`. */
@@ -258,6 +258,7 @@ export class VerifyContext implements JourneyContext {
     const fixture = writeFixture(this.workspace, this.state, folder, config);
     this.fixtures.set(fixture.project, fixture);
     this.tree("fixture project", fixture.project);
+    this.caches.seed(fixture.project);
     return fixture.project;
   }
 
@@ -313,7 +314,7 @@ export class VerifyContext implements JourneyContext {
     });
     saveRun(this.state);
     await this.waitReady(app, handle, fixture !== undefined);
-    return app;
+    return this.caches.observed(app);
   }
 
   private async probe(
@@ -478,7 +479,7 @@ export class VerifyContext implements JourneyContext {
       ],
       { critical: true },
     );
-    return this.ajs(name, [
+    const init = await this.ajs(name, [
       "project",
       "init",
       relative(this.work, project),
@@ -486,6 +487,8 @@ export class VerifyContext implements JourneyContext {
       this.state.templateName,
       ...flags,
     ]);
+    if (init.exitCode === 0) this.caches.seed(project);
+    return init;
   }
 
   /** Stops every app the journey left running. */

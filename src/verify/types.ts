@@ -191,14 +191,20 @@ export interface JourneyContext {
   service(name: string): ServiceEndpoint;
   /** Runs a command inside a service's container: the read-back through the native client. */
   native(name: string, service: string, args: string[]): Promise<CommandResult>;
-  /** Writes the fixture project of the interface or module kind and returns its folder. Each call writes a fresh project, so a journey can hold several. */
+  /**
+   * Writes the fixture project of the interface or module kind and returns its folder. Each call writes a fresh project, so a journey can hold several.
+   * The project's `.antelope/cache` starts as a copy of a cache of registry modules an earlier passing journey of the run left exactly as a fresh `ajs` install leaves it, none installed from a lock record, so `ajs` installs a registry module once per run.
+   */
   fixture(options?: { moduleConfig?: JsonObject }): string;
   /** Starts `ajs project dev` in a project and waits until it is ready. */
   dev(name: string, project: string, options?: DevOptions): Promise<App>;
   call(name: string, app: App, request: CallRequest): Promise<CallResult>;
   /** Stops an app with SIGINT by recorded PID. */
   stop(name: string, app: App): Promise<StopResult>;
-  /** Creates a project from the template under verification with `ajs project init`. */
+  /**
+   * Creates a project from the template under verification with `ajs project init`.
+   * Once init succeeds, the project's `.antelope/cache` starts as a copy of a cache of registry modules an earlier passing journey of the run left exactly as a fresh `ajs` install leaves it, none installed from a lock record.
+   */
   scaffold(
     name: string,
     project: string,
