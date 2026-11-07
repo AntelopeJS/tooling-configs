@@ -84,6 +84,21 @@ test("DMS_MONGO_URL replaces the lease's mongod in MONGO_URL and keeps the lease
   assert.equal(env.MONGO_DATABASE, `dms_${id}`);
 });
 
+test("leaseEnv records the caller's TMPDIR, empty when it had none, and keeps the outermost one when nested (fails when the caller's tmp is lost under the lease's TMPDIR, or an inner lease records the outer lease's tmp)", () => {
+  const key = "ANTELOPEJS_LEASE_PARENT_TMPDIR";
+  assert.equal(
+    leaseEnv(lease, { TMPDIR: "/operator/tmp" })[key],
+    "/operator/tmp",
+  );
+  assert.equal(leaseEnv(lease, {})[key], "");
+  assert.equal(
+    leaseEnv(lease, { TMPDIR: "/leases/outer/tmp", [key]: "/operator/tmp" })[
+      key
+    ],
+    "/operator/tmp",
+  );
+});
+
 test("run strips the caller's PORT and hands --as web the web port (fails when the bin does not pass --as through to the command)", async (t) => {
   const root = scratch(t);
   const worktree = gitInit(join(root, "w"));
