@@ -46,10 +46,10 @@ const SHARED_BY_ALL = [
   "antelope-lock/**",
 ];
 
-/** The files whose change can break any feature, so a diff touching one runs them all. */
+/** The files whose change can break any feature, so a diff touching one runs them all. A module declares its interfaces under `src/interfaces/` or, with a single one, `src/interface/`. */
 export const DEFAULT_SHARED = {
   interface: SHARED_BY_ALL,
-  module: [...SHARED_BY_ALL, "src/interfaces/**"],
+  module: [...SHARED_BY_ALL, "src/interfaces/**", "src/interface/**"],
   template: [...SHARED_BY_ALL, "antelope.config.*", "antelope.json"],
 };
 
