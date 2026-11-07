@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { isObject, parseJson, type JsonObject } from "../garden/json.ts";
@@ -308,4 +308,25 @@ export function isolatedEnv(
     ...workspace.config.env,
     ...extra,
   };
+}
+
+/**
+ * `path` with the repository's `node_modules/.bin` first, as `pnpm exec`
+ * puts it, so setup commands, journeys and formal checks find the
+ * repository's own bins whether the CLI was started through `pnpm exec` or
+ * through `node_modules/.bin/antelopejs-verify`. A `path` that already lists
+ * that folder, as `pnpm exec` from a package of a workspace does after the
+ * package's own, is kept as it is, and so is an unset or empty one, which
+ * leaves children the system's default search path.
+ */
+export function withLocalBins(
+  root: string,
+  path: string | undefined,
+): string | undefined {
+  if (!path) return path;
+  const bins = resolve(root, "node_modules", ".bin");
+  const listed = path
+    .split(delimiter)
+    .some((entry) => entry !== "" && resolve(root, entry) === bins);
+  return listed ? path : `${bins}${delimiter}${path}`;
 }

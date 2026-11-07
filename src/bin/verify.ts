@@ -24,7 +24,12 @@ import { postComment, pushEvidence, setStatus } from "../verify/publish.ts";
 import { knownJourneys, runFeature } from "../verify/runner.ts";
 import { seconds } from "../verify/timing.ts";
 import { renderVerdict } from "../verify/verdict.ts";
-import { loadRun, openWorkspace, type Workspace } from "../verify/workspace.ts";
+import {
+  loadRun,
+  openWorkspace,
+  withLocalBins,
+  type Workspace,
+} from "../verify/workspace.ts";
 
 const USAGE = `Usage: antelopejs-verify <command>
 
@@ -171,6 +176,8 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
   const root = repositoryRoot();
+  const path = withLocalBins(root, process.env.PATH);
+  if (path !== undefined) process.env.PATH = path;
   const workspace = await openWorkspace(root, detectKind(root, values.kind));
   if (command === "new")
     print(

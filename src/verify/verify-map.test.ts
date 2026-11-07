@@ -221,7 +221,7 @@ test("every shell block of every shared skill is one antelopejs-verify command p
     );
     const lines = commandBlocks(text).flat();
     assert.deepEqual(
-      [...new Set(lines.map((line) => line.split(" ")[3]))].sort(),
+      [...new Set(lines.map((line) => line.split(" ")[1]))].sort(),
       [
         "clean",
         "doctor",
@@ -237,7 +237,7 @@ test("every shell block of every shared skill is one antelopejs-verify command p
     for (const line of lines)
       assert.match(
         line,
-        /^pnpm exec antelopejs-verify [a-z-]+( [^|;&$`]*)?$/,
+        /^node_modules\/\.bin\/antelopejs-verify [a-z-]+( [^|;&$`]*)?$/,
         `${kind}: ${line}`,
       );
   }
