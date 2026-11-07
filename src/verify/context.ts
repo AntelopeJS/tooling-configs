@@ -498,9 +498,11 @@ export class VerifyContext implements JourneyContext {
    * still fails its readiness command after a few reruns, an app killed by
    * SIGKILL, SIGTERM, SIGHUP or SIGINT that the harness did not send, or the
    * app the harness started failing to bind the driver's port, or the first
-   * failing step being a command whose final error says that a known container
-   * or package registry was down or unreachable (see `registryFault`). A break that takes its own service down
-   * reads as an outage. Call it after `cleanup`, when every app has exited.
+   * failing step being a dependency or image fetch (`pnpm install`, `docker
+   * pull` and the like) whose every error line says that a known container or
+   * package registry was down or unreachable (see `registryFault` for the
+   * commands, the error lines, the request targets and the hosts). A break that
+   * takes its own service down reads as an outage. Call it after `cleanup`, when every app has exited.
    */
   async environmentFault(): Promise<string | null> {
     for (const [name, service] of Object.entries(

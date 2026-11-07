@@ -95,3 +95,26 @@ export function ran(run: string, path: string): boolean {
     readdirSync(folder).some((entry) => /^\d\d-/.test(entry))
   );
 }
+
+/** Creates a run, runs the feature `name` once and returns the `journey` command's result with each journey's status, a NOT VERIFIED one followed by its reason. */
+export function journeyStatuses(
+  root: string,
+  tmp: string,
+  env: Record<string, string>,
+  name: string,
+) {
+  const run = newRun(root, tmp, env).split("\n").at(-1) ?? "";
+  const result = verify(root, tmp, ["journey", run, name], env);
+  verify(root, tmp, ["clean", run], env);
+  const statuses: Record<string, string> = Object.fromEntries(
+    evidence(run, `${name}/feature.json`).map(
+      (entry: { journey: string; status: string; notVerified: string }) => [
+        entry.journey,
+        entry.notVerified === null
+          ? entry.status
+          : `${entry.status}: ${entry.notVerified}`,
+      ],
+    ),
+  );
+  return { result, statuses };
+}
