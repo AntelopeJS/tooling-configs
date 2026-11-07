@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import type { TestContext } from "node:test";
@@ -15,12 +16,10 @@ export const FIRST = "1.7.0";
 /** The version `POST /publish` adds to the registry. */
 export const LATER = "1.7.1";
 
-function tarball(version: string): Buffer {
-  const body = Buffer.from(
-    JSON.stringify({ name: PACKAGE, version, main: "index.js" }),
-  );
+function entry(path: string, content: string): Buffer {
+  const body = Buffer.from(content);
   const header = Buffer.alloc(512);
-  header.write("package/package.json", 0);
+  header.write(`package/${path}`, 0);
   header.write("0000644\0", 100);
   header.write("0000000\0", 108);
   header.write("0000000\0", 116);
@@ -34,13 +33,37 @@ function tarball(version: string): Buffer {
   for (const byte of header) sum += byte;
   header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148);
   const padding = Buffer.alloc((512 - (body.length % 512)) % 512);
-  return gzipSync(Buffer.concat([header, body, padding, Buffer.alloc(1024)]));
+  return Buffer.concat([header, body, padding]);
+}
+
+/** A gzipped tarball holding each file under `package/`, byte for byte the same on every call. */
+export function archive(files: Record<string, string>): Buffer {
+  const entries = Object.entries(files).map(([path, content]) =>
+    entry(path, content),
+  );
+  return gzipSync(Buffer.concat([...entries, Buffer.alloc(1024)]));
+}
+
+function tarball(version: string): Buffer {
+  return archive({
+    "package.json": JSON.stringify({
+      name: PACKAGE,
+      version,
+      main: "index.js",
+    }),
+  });
+}
+
+function integrity(version: string, lying: boolean): string {
+  if (lying) return `sha512-${"A".repeat(86)}==`;
+  return `sha512-${createHash("sha512").update(tarball(version)).digest("base64")}`;
 }
 
 function serve(port: number): void {
   const versions = [FIRST];
   const requests: string[] = [];
-  let broken = false;
+  let tarballs: "served" | "broken" | "hung" = "served";
+  let lying = false;
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     if (request.method === "GET" && url.pathname === "/requests") {
@@ -49,8 +72,18 @@ function serve(port: number): void {
     }
     requests.push(`${request.method} ${url.pathname}`);
     if (request.method === "POST" && url.pathname === "/break-tarballs") {
-      broken = true;
+      tarballs = "broken";
       response.end("broken");
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/hang-tarballs") {
+      tarballs = "hung";
+      response.end("hung");
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/lie-about-integrity") {
+      lying = true;
+      response.end("lying");
       return;
     }
     if (request.method === "POST" && url.pathname === "/publish") {
@@ -58,13 +91,14 @@ function serve(port: number): void {
       response.end("published");
       return;
     }
-    const archive = /^\/tarballs\/(.+)\.tgz$/.exec(url.pathname);
-    if (archive !== null && broken) {
+    const download = /^\/tarballs\/(.+)\.tgz$/.exec(url.pathname);
+    if (download !== null && tarballs === "broken") {
       response.writeHead(500).end();
       return;
     }
-    if (archive !== null && versions.includes(archive[1])) {
-      response.end(tarball(archive[1]));
+    if (download !== null && tarballs === "hung") return;
+    if (download !== null && versions.includes(download[1])) {
+      response.end(tarball(download[1]));
       return;
     }
     if (decodeURIComponent(url.pathname) === `/${PACKAGE}`) {
@@ -73,6 +107,9 @@ function serve(port: number): void {
         response.writeHead(304, { etag }).end();
         return;
       }
+      const abbreviated = String(request.headers.accept).startsWith(
+        "application/vnd.npm.install-v1+json",
+      );
       const origin = `http://127.0.0.1:${port}`;
       response.writeHead(200, {
         "content-type": "application/json",
@@ -88,7 +125,10 @@ function serve(port: number): void {
               {
                 name: PACKAGE,
                 version,
-                dist: { tarball: `${origin}/tarballs/${version}.tgz` },
+                dist: {
+                  tarball: `${origin}/tarballs/${version}.tgz`,
+                  integrity: integrity(version, lying && !abbreviated),
+                },
               },
             ]),
           ),
@@ -107,7 +147,11 @@ function serve(port: number): void {
  * Starts a registry in a child process, so a test that blocks on a spawned
  * bin still gets answers, and returns its URL. It lists `FIRST` until a
  * `POST /publish`, which adds `LATER` and changes the packument's etag.
- * `POST /break-tarballs` makes every tarball download answer 500.
+ * `POST /break-tarballs` makes every tarball download answer 500 and
+ * `POST /hang-tarballs` makes it never answer. Every version lists the
+ * `dist.integrity` of its tarball. After `POST /lie-about-integrity` the full
+ * document, which `npm view` reads, lists one that no tarball has, while the
+ * install document, which `npm pack` reads, stays true.
  * `GET /requests` answers the JSON list of the `METHOD /path` it has served.
  */
 export async function startRegistry(t: TestContext): Promise<string> {
