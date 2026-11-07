@@ -80,6 +80,7 @@
   "dependencies": {
     "@oxlint/plugins": "1.81.0",
     "dts-bundle-generator": "^9.5.1",
+    "minimatch": "^10.2.6",
     "typescript": "^5.9.3",
     "yaml": "^2.9.1"
   },

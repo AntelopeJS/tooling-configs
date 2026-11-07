@@ -236,6 +236,26 @@ test("doors flags a declared funnel, adds no default glob for a kind set to null
   );
 });
 
+test("doors flags a dotfile under a door's glob, where doors matched with path.matchesGlob let a change to it through silently", (t) => {
+  const { root, tmp } = mapRepo(t);
+  put(root, "src/store/.cache/rows.json", "[]\n");
+  const doors = verify(root, tmp, ["doors"]);
+  assert.equal(doors.status, 0, doors.stderr);
+  assert.equal(
+    doors.stdout,
+    "One-way-door: data\n  data: src/store/.cache/rows.json\n",
+  );
+});
+
+test("a covers glob whose only tracked file is a dotfile matches it, where map's tracked-file check with path.matchesGlob calls the glob dead", (t) => {
+  const { root, tmp } = mapRepo(t, {
+    "conf/.npmrc": "x=1\n",
+    [`${SKILL}/features/conf.md`]: feature(["conf/**"], ["module-dev"]),
+  });
+  const result = verify(root, tmp, ["map"]);
+  assert.doesNotMatch(result.stdout, /glob conf\/\*\* matches no tracked file/);
+});
+
 test("the bin names the missing repo-owned layer instead of running without it", (t) => {
   const { root, tmp } = mapRepo(t);
   rmSync(join(root, SKILL, "verify.config.ts"));
