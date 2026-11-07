@@ -3,6 +3,9 @@ import { num, object, parseJson } from "../garden/json.ts";
 /** Seconds each test file took in CI, keyed by repository-relative path. */
 export type TestWeights = Readonly<Record<string, number>>;
 
+/** Seconds every test file costs before its first test, process start and imports, which the measured weights leave out. */
+const FILE_OVERHEAD = 0.2;
+
 /** `node --test` reads each path as a glob, and the shard step splits its list on whitespace. */
 const GLOB_OR_SPACE = /[[\]*?{}\\\s]/u;
 
@@ -66,7 +69,9 @@ export function assignShards(
   const loads: number[] = Array.from({ length: total }, () => 0);
   const weighted = files.map((file) => ({
     file,
-    weight: Object.hasOwn(weights, file) ? weights[file]! : fallback,
+    weight:
+      (Object.hasOwn(weights, file) ? weights[file]! : fallback) +
+      FILE_OVERHEAD,
   }));
   for (const { file, weight } of weighted.toSorted(byWeightThenPath)) {
     const target = loads.indexOf(Math.min(...loads));

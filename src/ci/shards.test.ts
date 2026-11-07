@@ -88,3 +88,12 @@ test("parseWeights rejects a weight that is not a number", () => {
     /a: expected a number/,
   );
 });
+
+test("files measured at zero seconds spread across shards instead of piling onto one, since each still costs a process start", () => {
+  const files = ["a", "b", "c", "d"];
+  const shards = assignShards(files, { a: 0, b: 0, c: 0, d: 0 }, 2);
+  assert.deepEqual(
+    shards.map((shard) => shard.length),
+    [2, 2],
+  );
+});
