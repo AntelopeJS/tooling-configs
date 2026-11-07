@@ -44,6 +44,8 @@ export interface FormalResult {
   commits?: Commits;
   behaviour?: BehaviourChange;
   checkChanged?: boolean;
+  /** True when the diff adds the check: the base run failed, the base's verify.config.ts never names it, and none of its files is a rename of a base file. */
+  newCheck?: boolean;
   base?: BaseRun | null;
   fixed?: string[];
   missing?: string[];
@@ -177,6 +179,74 @@ function baseRun(
   return rulesOf(check, run);
 }
 
+function gitOutput(root: string, args: string[]): string | null {
+  const run = spawnSync("git", args, {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: OUTPUT_LIMIT,
+  });
+  return run.status === 0 ? run.stdout : null;
+}
+
+function namedOnBase(
+  workspace: Workspace,
+  check: FormalCheck,
+  baseSha: string,
+): boolean {
+  const config = relative(
+    workspace.root,
+    join(workspace.skill, "verify.config.ts"),
+  );
+  const text = gitOutput(workspace.root, ["show", `${baseSha}:${config}`]);
+  if (text === null) return false;
+  return ['"', "'", "`"].some((quote) =>
+    text.includes(`${quote}${check.name}${quote}`),
+  );
+}
+
+function renamedFromBase(
+  root: string,
+  check: FormalCheck,
+  diff: FormalDiff,
+): boolean {
+  const fields = (
+    gitOutput(root, [
+      "diff",
+      "-M",
+      "--name-status",
+      "-z",
+      diff.baseSha,
+      diff.headSha,
+    ]) ?? ""
+  ).split("\0");
+  return fields.some(
+    (field, index) =>
+      field.startsWith("R") &&
+      (check.files ?? []).some((glob) =>
+        matchesGlob(fields[index + 2] ?? "", glob),
+      ),
+  );
+}
+
+/**
+ * Whether the diff adds the check: the base could not run it, its name
+ * appears nowhere in the base's verify.config.ts, and no file of its own
+ * `files` is a rename of a base file. A moved or renamed check, or one whose
+ * base ran, is a changed check, gated against the base.
+ */
+function addedByDiff(
+  workspace: Workspace,
+  check: FormalCheck,
+  diff: FormalDiff,
+  base: BaseRun,
+): boolean {
+  return (
+    base.exitCode !== 0 &&
+    !namedOnBase(workspace, check, diff.baseSha) &&
+    !renamedFromBase(workspace.root, check, diff)
+  );
+}
+
 function gateFields(
   workspace: Workspace,
   check: FormalCheck,
@@ -193,6 +263,7 @@ function gateFields(
   return {
     behaviour,
     checkChanged,
+    newCheck: checkChanged && addedByDiff(workspace, check, diff, base),
     base,
     fixed: base.violated.filter(
       (rule) => head.passing.includes(rule) && !head.violated.includes(rule),
@@ -270,17 +341,74 @@ function knownFindingsOfBase(result: FormalResult): boolean {
 }
 
 /**
+ * The outcome a result's base run forces before the findings are weighed: a
+ * check the diff adds, on a diff that leaves the covered behaviour unchanged,
+ * passes its recorded findings, since its record is reviewed with it and the
+ * base has nothing to compare, and fails with the advice to land it alone when
+ * the covered code changed too; otherwise a failure
+ * for a changed check with no base run recorded, a base run that exited non-zero
+ * while HEAD breaks rules, or, when the covered behaviour is unchanged, a rule
+ * HEAD breaks that the base did not. `null` when the base decides nothing.
+ */
+function baseGate(result: FormalResult): FormalGate | null {
+  const { base, behaviour } = result;
+  if (
+    result.newCheck === true &&
+    base &&
+    base.exitCode !== 0 &&
+    behaviour?.changed === false
+  )
+    return {
+      fails: false,
+      outcome: `new check, absent from the base: ${result.violated.length > 0 ? `recorded findings ${result.violated.join(", ")}` : "no violated rule"}`,
+    };
+  if (
+    result.newCheck === true &&
+    behaviour?.changed === true &&
+    result.violated.length > 0
+  )
+    return {
+      fails: true,
+      outcome:
+        "new check with a covered-code change: land the check in its own PR first",
+    };
+  if (result.checkChanged === true && !base)
+    return {
+      fails: true,
+      outcome: "the check's own files changed but no base run was recorded",
+    };
+  if (!base) return null;
+  if (base.exitCode !== 0 && result.violated.length > 0)
+    return {
+      fails: true,
+      outcome: `the base run exited ${base.exitCode}, so ${result.violated.join(", ")} cannot be compared with the base`,
+    };
+  const added = result.violated.filter((rule) => !base.violated.includes(rule));
+  if (behaviour?.changed === false && added.length > 0)
+    return {
+      fails: true,
+      outcome: `covered behaviour unchanged (${behaviour.method}), but the check breaks rules the base did not: ${added.join(", ")}`,
+    };
+  return null;
+}
+
+/**
  * How a formal check's result weighs on a verdict whose diff it covers. A
  * non-zero exit (a tool error, or a check that no longer matches its record)
  * fails, so every violated rule of a result that reaches the rest of the gate
  * is a recorded finding. A rule the base broke that HEAD does not report at
- * all fails. Recorded findings are known when the diff left the covered
- * code's behaviour unchanged. When it changed them, they are known only when
- * the base run exited 0 and broke every one of them, each with the same
- * counterexample length at HEAD as on the base, and every other rule the
- * base broke is fixed at HEAD; a new rule, a changed length, or a length
- * either run did not report fails. A rule the base broke and HEAD reports
- * passing is reported as fixed.
+ * all fails. A base run that exited non-zero cannot vouch for HEAD's findings,
+ * and a changed check with no base run recorded fails. A check the diff adds
+ * (the base could not run it, never names it and holds none of its files
+ * under another path) passes its recorded findings when the covered
+ * behaviour is unchanged. Otherwise, when the covered behaviour is unchanged,
+ * recorded findings are known, except a rule HEAD breaks that the base run
+ * did not, which fails whatever the diff touched. When the behaviour
+ * changed, they are known only when the base run exited 0 and broke every
+ * one of them, each with the same counterexample length at HEAD as on the
+ * base, and every other rule the base broke is fixed at HEAD; a new rule, a
+ * changed length, or a length either run did not report fails. A rule the
+ * base broke and HEAD reports passing is reported as fixed.
  */
 export function formalGate(result: FormalResult): FormalGate {
   if (result.exitCode !== 0) {
@@ -301,6 +429,8 @@ export function formalGate(result: FormalResult): FormalGate {
       outcome: `violated ${result.violated.join(", ") || "nothing"}`,
     };
   const how = result.behaviour.method;
+  const againstBase = baseGate(result);
+  if (againstBase) return againstBase;
   if (!result.behaviour.changed)
     return {
       fails: false,
