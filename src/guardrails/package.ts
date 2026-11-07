@@ -142,10 +142,10 @@ const DEFAULT_SCRIPTS = {
   knip: "knip",
 };
 
-/** Rewrites every earlier synced install to the current one, leaving the current one, which contains the last earlier text, untouched. */
 /** Stands in for the current install while the script is split on its separators, since the install holds `&&` itself. */
 const INSTALL_TOKEN = "\u0000prepare-install\u0000";
 
+/** Rewrites every earlier synced install to the current one in one pass and keeps a single install, whatever separator joined the copies. */
 function migratePrepare(current: string): string {
   const tokenized = current
     .split(PREPARE_INSTALL)
