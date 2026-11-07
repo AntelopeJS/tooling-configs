@@ -1,7 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { packageManager, parseManifest } from "./package.ts";
+import {
+  type PackageManager,
+  packageManager,
+  parseManifest,
+} from "./package.ts";
 import { CEILINGS_FILE } from "./ceilings.ts";
 import { runCommand } from "./run-command.ts";
 import {
@@ -10,6 +14,12 @@ import {
   startServices,
   stopServices,
 } from "./services.ts";
+import {
+  checkLockfiles,
+  typecheckLayers,
+  verifyLayers,
+  verifyLockfiles,
+} from "./verify-layers.ts";
 
 const CHECK_STEPS = [
   "typecheck",
@@ -21,7 +31,32 @@ const CHECK_STEPS = [
   "ratchet",
   "suppressions",
   "sync:check",
+  "verify:types",
+  "verify:lockfiles",
 ];
+
+/** Steps `antelopejs-checks` runs itself, no package.json script behind them: each returns what failed, empty when it passed. */
+const OWN_STEPS = new Map<
+  string,
+  (
+    root: string,
+    manager: PackageManager,
+    signal: AbortSignal | undefined,
+  ) => Promise<string>
+>([
+  ["verify:types", typecheckLayers],
+  [
+    "verify:lockfiles",
+    (root, _manager, signal) => checkLockfiles(root, signal),
+  ],
+]);
+
+function hasWork(root: string, step: string): boolean {
+  if (step === "ratchet") return existsSync(join(root, CEILINGS_FILE));
+  if (step === "verify:types") return verifyLayers(root).length > 0;
+  if (step === "verify:lockfiles") return verifyLockfiles(root).length > 0;
+  return true;
+}
 
 /** The step that runs after the others, never beside them: tests often hold time limits that CPU contention would break. */
 const RUNS_ALONE = "test";
@@ -52,6 +87,11 @@ async function runSteps(
   const manager = packageManager(manifest);
   const runStep = async (step: string): Promise<string[]> => {
     if (signal?.aborted) return [];
+    const own = OWN_STEPS.get(step);
+    if (own) {
+      const failure = await own(root, manager, signal);
+      return failure ? [`[${step}]\n${failure}`] : [];
+    }
     if (!manifest.scripts?.[step])
       return [
         `[${step}] Missing package.json script "${step}". Run antelopejs-sync.\n`,
@@ -96,9 +136,7 @@ export async function runChecks(root: string, options: ChecksOptions = {}) {
       interrupted: false,
       output: `[${CHECKS_SKIP_ENV}]\nUnknown step ${unknown.map((name) => `"${name}"`).join(", ")}. Valid steps: ${CHECK_STEPS.join(", ")}.\nChecks: 0 passed, 1 failed.\n`,
     };
-  const present = CHECK_STEPS.filter(
-    (step) => step !== "ratchet" || existsSync(join(root, CEILINGS_FILE)),
-  );
+  const present = CHECK_STEPS.filter((step) => hasWork(root, step));
   const steps = present.filter((step) => !requested.includes(step));
   const skipped = present.length - steps.length;
   const manifest = parseManifest(
