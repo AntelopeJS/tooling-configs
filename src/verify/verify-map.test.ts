@@ -144,6 +144,16 @@ test("a single-interface module's src/interface is shared too, where a default n
   });
 });
 
+test("a dotfile under a covered folder plans its feature, where a matcher that skips dotfiles plans smoke alone with nothing touched", (t) => {
+  const { root, tmp } = mapRepo(t, SPLIT);
+  put(root, "src/store/.prettierrc", "{}\n");
+  const plan = planOf(root, tmp);
+  assert.deepEqual(plan.run, ["smoke", "store"]);
+  assert.deepEqual(plan.touched, [
+    { feature: "store", files: ["src/store/.prettierrc"] },
+  ]);
+});
+
 test("a diff touching only a covered source file plans that feature and smoke, never the rest, where an always-full plan runs every feature", (t) => {
   const { root, tmp } = mapRepo(t, SPLIT);
   put(root, "src/index.ts", "export const one = 2;\n");

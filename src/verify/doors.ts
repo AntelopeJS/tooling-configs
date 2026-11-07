@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { matchesGlob } from "node:path";
 
+import { matchesPath } from "./glob.ts";
 import type { VerifyKind } from "./kinds.ts";
 import type { DoorKind } from "./types.ts";
 import type { Workspace } from "./workspace.ts";
@@ -59,7 +59,7 @@ export function flaggedDoors(
   return kinds.flatMap((kind) => {
     const globs = doorGlobs(workspace, kind);
     const hits = files.filter((file) =>
-      globs.some((glob) => matchesGlob(file, glob)),
+      globs.some((glob) => matchesPath(file, glob)),
     );
     return hits.length > 0 ? [{ kind, files: hits }] : [];
   });

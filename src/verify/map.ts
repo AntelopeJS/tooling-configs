@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, matchesGlob, relative } from "node:path";
+import { join, relative } from "node:path";
 
+import { matchesPath } from "./glob.ts";
 import { skillFolder } from "./kinds.ts";
 import { git, type Workspace } from "./workspace.ts";
 
@@ -90,7 +91,7 @@ export function readFeatures(workspace: Workspace): Feature[] {
 }
 
 function matches(file: string, globs: string[]): boolean {
-  return globs.some((glob) => matchesGlob(file, glob));
+  return globs.some((glob) => matchesPath(file, glob));
 }
 
 /** Whether a user can observe a change to `file`. */
@@ -141,7 +142,7 @@ function featureProblems(
   if (feature.name !== SMOKE_FEATURE && feature.covers.length === 0)
     problems.push(`${feature.file}: lists no covers globs`);
   for (const glob of feature.covers)
-    if (!tracked.some((file) => matchesGlob(file, glob)))
+    if (!tracked.some((file) => matchesPath(file, glob)))
       problems.push(`${feature.file}: glob ${glob} matches no tracked file`);
   if (feature.docs.length === 0)
     problems.push(`${feature.file}: lists no docs pages`);
