@@ -212,18 +212,40 @@ export function readOutput(folder: string): Output {
   };
 }
 
-/** Asks the kernel for a free TCP port on the loopback interface. */
-export function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
+/** Where `freePort` looks first: below the kernel's ephemeral range, which outgoing connections keep drawing from, and below the 20000-29999 ports antelopejs-lease hands out. */
+const PORT_RANGE = { low: 10_000, high: 20_000 } as const;
+const PORT_ATTEMPTS = 50;
+
+function bindable(port: number): Promise<number | null> {
+  return new Promise((resolve) => {
     const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
+    server.once("error", () => resolve(null));
+    server.listen(port, "127.0.0.1", () => {
       const address = server.address();
-      const port =
-        address !== null && address instanceof Object ? address.port : 0;
-      server.close(() => resolve(port));
+      const bound =
+        address !== null && address instanceof Object ? address.port : null;
+      server.close(() => resolve(bound));
     });
   });
+}
+
+/**
+ * A free TCP port on the loopback interface for a process the harness starts
+ * next. It tries random ports below the kernel's ephemeral range first, where
+ * no outgoing connection on a busy host takes it between this check and the
+ * app's own bind, and falls back to a port the kernel picks.
+ */
+export async function freePort(): Promise<number> {
+  for (let attempt = 0; attempt < PORT_ATTEMPTS; attempt++) {
+    const port =
+      PORT_RANGE.low +
+      Math.floor(Math.random() * (PORT_RANGE.high - PORT_RANGE.low));
+    const bound = await bindable(port);
+    if (bound !== null) return bound;
+  }
+  const picked = await bindable(0);
+  if (picked === null) throw new Error("no free loopback port");
+  return picked;
 }
 
 function reason(error: Error): string {

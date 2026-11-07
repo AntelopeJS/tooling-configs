@@ -65,7 +65,12 @@ class NotVerified extends Error {}
 
 const READY_TIMEOUT_MS = 120_000;
 const STOP_TIMEOUT_MS = 30_000;
+/** The longest wait between readiness probes. */
 const POLL_MS = 250;
+/** The wait between readiness probes in the first `FAST_POLL_WINDOW_MS`, where most apps come up: an app ready in 300 ms is seen within 25 ms of it instead of at the 500 ms tick. */
+const FAST_POLL_MS = 25;
+/** How long readiness is probed every `FAST_POLL_MS` before falling back to `POLL_MS`. */
+const FAST_POLL_WINDOW_MS = 3000;
 const SETTLE_MS = 3000;
 /** The waits between the readiness reruns after a failed journey: one miss under load does not hide a catch. */
 const READINESS_RETRY_MS = [500, 1000, 2000];
@@ -358,9 +363,10 @@ export class VerifyContext implements JourneyContext {
     void handle.exited.then(() => {
       exited = true;
     });
+    const fastUntil = Date.now() + FAST_POLL_WINDOW_MS;
     let check = await this.probe(app, fixture, folder);
     while (!check.pass && !exited && Date.now() < deadline) {
-      await sleep(POLL_MS);
+      await sleep(Date.now() < fastUntil ? FAST_POLL_MS : POLL_MS);
       check = await this.probe(app, fixture, folder);
     }
     const settle = this.workspace.config.template?.probe.log
