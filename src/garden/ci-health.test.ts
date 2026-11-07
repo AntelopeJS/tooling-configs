@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { ciDuration, median, redBranch } from "./checks/ci-health.ts";
 import { workflowRun } from "./decode.ts";
-import { run } from "./helpers/builders.ts";
+import { ago, run } from "./helpers/builders.ts";
 import { FakeApi, fixture } from "./helpers/fake-api.ts";
 import { object, children } from "./json.ts";
 import type { CheckResult } from "./types.ts";
@@ -83,6 +83,66 @@ test("the median of the last 10 runs is judged against the 30-day baseline by +2
   assert.deepEqual(
     keys(await ciDuration.run(world(timed(500, 100).slice(0, 12)).context())),
     [],
+  );
+});
+
+function slowdown(
+  workflowSha: (index: number) => string | undefined,
+): ReturnType<typeof run>[] {
+  return Array.from({ length: 20 }, (_, index) =>
+    run(
+      index + 1,
+      "success",
+      1 + index * 6,
+      index < 10 ? 125 : 100,
+      workflowSha(index),
+    ),
+  );
+}
+
+test("a slowdown that starts with a new referenced-workflow sha is accepted as the new baseline, the same slowdown under an unchanged sha is a finding", async () => {
+  const changed = world(slowdown((index) => (index < 10 ? "new" : "old")));
+  assert.deepEqual(keys(await ciDuration.run(changed.context())), []);
+  const unchanged = world(slowdown(() => "same"));
+  assert.deepEqual(keys(await ciDuration.run(unchanged.context())), [
+    "mongodb|ci-duration|main",
+  ]);
+});
+
+test("a slowdown that starts after a commit to ci.yml is accepted, a commit older than the whole window changes nothing", async () => {
+  const after = world(timed(125, 100)).callerChanged("mongodb", ago(57));
+  assert.deepEqual(keys(await ciDuration.run(after.context())), []);
+  const before = world(timed(125, 100)).callerChanged("mongodb", ago(200));
+  assert.deepEqual(keys(await ciDuration.run(before.context())), [
+    "mongodb|ci-duration|main",
+  ]);
+});
+
+test("the finding names the date the baseline starts from", async () => {
+  const api = world(timed(125, 100)).callerChanged("mongodb", ago(200));
+  const result = await ciDuration.run(api.context());
+  assert.equal(result.kind, "findings");
+  assert.ok(
+    result.kind === "findings" &&
+      result.findings[0].evidence.includes(`since ${ago(115)}`),
+  );
+});
+
+test("runs without referenced_workflows decode to an empty list and are judged by duration alone", async () => {
+  const [old, current] = [
+    run(1, "success", 1),
+    run(2, "success", 1, 60, "abc"),
+  ];
+  assert.deepEqual(workflowRun(old).referencedWorkflows, []);
+  assert.deepEqual(workflowRun(current).referencedWorkflows, [
+    {
+      path: "AntelopeJS/.github/.github/workflows/ci-node.yml@refs/tags/v1",
+      sha: "abc",
+    },
+  ]);
+  assert.deepEqual(
+    keys(await ciDuration.run(world(timed(125, 100)).context())),
+    ["mongodb|ci-duration|main"],
   );
 });
 

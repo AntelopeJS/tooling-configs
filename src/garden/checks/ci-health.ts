@@ -5,6 +5,7 @@ import { finding, type Finding } from "../types.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
 const WORKFLOW = "ci.yml";
+const CALLER = `.github/workflows/${WORKFLOW}`;
 const RECENT_RUNS = 10;
 const MIN_BASELINE = 5;
 const RELATIVE_LIMIT = 1.2;
@@ -60,30 +61,58 @@ async function red(
   ];
 }
 
+function signature(run: WorkflowRun): string {
+  return [
+    ...new Set(
+      run.referencedWorkflows.map(
+        ({ path, sha }) => `${path.split("@")[0]} ${sha}`,
+      ),
+    ),
+  ]
+    .sort()
+    .join("\n");
+}
+
+/** The newest unbroken streak of runs that called the same reusable workflows at the same commits as the newest run. */
+function sameWorkflows(runs: readonly WorkflowRun[]): WorkflowRun[] {
+  if (runs.length === 0) return [];
+  const current = signature(runs[0]);
+  const end = runs.findIndex((run) => signature(run) !== current);
+  return runs.slice(0, end === -1 ? runs.length : end);
+}
+
 async function slow(
   context: GardenContext,
   repo: GardenRepo,
 ): Promise<Finding[]> {
   const branch = await context.targetBranch(repo);
   const runs = await context.workflowRuns(repo, WORKFLOW, branch);
-  const horizon = context.api.now().getTime() - 30 * DAY;
-  const passed = (runs ?? []).filter(
-    (run) => run.conclusion === "success" && run.createdAt >= horizon,
+  if (runs === undefined) return [];
+  const callerChange = await context.lastChange(repo, CALLER, branch);
+  const start = Math.max(
+    context.api.now().getTime() - 30 * DAY,
+    callerChange ?? 0,
   );
-  const baseline = passed.slice(RECENT_RUNS).map(duration);
-  if (passed.length <= RECENT_RUNS || baseline.length < MIN_BASELINE) return [];
-  const recent = median(passed.slice(0, RECENT_RUNS).map(duration));
+  const window = sameWorkflows(
+    runs.filter(
+      (run) => run.conclusion === "success" && run.createdAt >= start,
+    ),
+  );
+  const baseline = window.slice(RECENT_RUNS).map(duration);
+  if (window.length <= RECENT_RUNS || baseline.length < MIN_BASELINE) return [];
+  const recent = median(window.slice(0, RECENT_RUNS).map(duration));
   const usual = median(baseline);
   if (
     recent <= usual * RELATIVE_LIMIT &&
     recent <= usual + ABSOLUTE_LIMIT_SECONDS
   )
     return [];
+  const since = new Date(window[window.length - 1].createdAt).toISOString();
   return [
     finding(
       { repo: repo.name, check: "ci-duration", subject: branch },
-      `The median of the last ${RECENT_RUNS} ${WORKFLOW} runs on ${branch} is ${Math.round(recent)} s against ${Math.round(usual)} s over the previous 30 days.`,
-      `The median is within 20% and 60 s of the 30-day baseline.`,
+      `The median of the last ${RECENT_RUNS} ${WORKFLOW} runs on ${branch} is ${Math.round(recent)} s against ${Math.round(usual)} s over the earlier runs since ${since}, the later of 30 days ago and the last change to ${CALLER} or the workflows it calls.`,
+      `The median is within 20% and 60 s of the baseline since the last change to ${CALLER} or the workflows it calls.`,
     ),
   ];
 }
@@ -95,6 +124,12 @@ export const redBranch: Check = {
   },
 };
 
+/**
+ * Flags a repository whose last 10 successful `ci.yml` runs on the target branch take longer than the runs before them.
+ * The baseline starts after the last change to what CI runs, so a check added on purpose is accepted: it begins at the
+ * newest commit touching `.github/workflows/ci.yml` and at the newest unbroken streak of runs that called the same
+ * reusable workflow commits. Too few runs since then is no finding while the baseline refills.
+ */
 export const ciDuration: Check = {
   id: "ci-duration",
   async run(context) {
