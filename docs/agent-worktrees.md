@@ -58,13 +58,21 @@ Run each command from inside your worktree. Each step is one shell command, and 
    DMS_BACK_DIR=$PWD/packages/dms/playground pnpm exec antelopejs-lease run -- bash packages/dms/skills/dms-project/scripts/dms-dev.sh stop
    ```
 
+   Stop your own work only through the lease, with this command or with `down --stop` in step 6. Never use `pkill`, `killall` or any pattern match on a command line, a container name or a path: the machine runs the work of many agents, and a pattern stops theirs too.
+
 6. Tear down the lease.
 
    ```sh
-   pnpm exec antelopejs-lease down
+   pnpm exec antelopejs-lease down --stop
    ```
 
-   `down` stops the mongod of the lease, then deletes its data, logs and tmp directory. It refuses while the api or web port still listens, so stop the servers first. `--force` skips that check. When the worktree has no lease, `down` does nothing.
+   `down --stop` first stops the processes this worktree started, and nothing else. `run` exports `ANTELOPEJS_LEASE=<lease id>` to its command, and every process that command starts inherits it, a dev server that daemonized into another process group or session included. `down --stop` reads the environment of each process of this user in `/proc` and stops every one that holds `ANTELOPEJS_LEASE` with this lease's id, except itself and the commands that started it. It signals each pid alone, never a process group, so a process that left the lease's environment is never reached through its group. It sends SIGTERM, waits 5 s, then sends SIGKILL, and prints one `stopped pid <pid> (<command line>)` line per process. It scans again afterwards and stops what was started in the meantime. It prints nothing when there was nothing to stop. It reads the start time of each process when it finds it and checks it again before each signal, so a pid the system handed to another process in between is never signalled. A process that exited but that its parent has not reaped yet counts as stopped.
+
+   A process that listens on the api or web port without this lease's `ANTELOPEJS_LEASE` is not this lease's, even on its port: another user's lease, another registry that handed out the same port, or an unrelated server. `down --stop` leaves it running and fails, naming its pid. A process that cleared or rewrote its environment, as `env -i` or a supervisor with a fixed environment does, no longer holds the marker, and `down --stop` cannot find it. Stop it with its own stop command.
+
+   `down --stop` reads `/proc`, so it runs on Linux only. On macOS, `ps` shows the environment of a process only appended to its command line, with no boundary between the two, so `down --stop` refuses there. Stop your servers with their own stop command, as in step 5, then run `down`.
+
+   `down` then stops the mongod of the lease and deletes its data, logs and tmp directory. Without `--stop` it refuses while the api or web port still listens, and says to use `--stop`. `--force` skips that check. When the worktree has no lease, `down` does nothing.
 
 7. Reclaim what other runs left behind.
 
@@ -78,21 +86,21 @@ Run each command from inside your worktree. Each step is one shell command, and 
 
 `run` passes its own environment to the command without `PORT`, and adds these variables. It does not set `DMS_API_BASE_URL`, because `ajs dms dev` would read it before `.antelope/dev.json` and miss a backend that fell back to another port.
 
-| Variable               | Value                                                                     |
-| ---------------------- | ------------------------------------------------------------------------- |
-| `ANTELOPEJS_LEASE`     | The lease id, the first ten hex digits of the sha256 of the worktree path |
-| `ANTELOPEJS_LEASE_DIR` | The lease directory                                                       |
-| `DMS_BACK_PORT`        | The api port                                                              |
-| `DMS_FRONT_PORT`       | The web port                                                              |
-| `DMS_INSPECT_PORT`     | The Node inspector port                                                   |
-| `DMS_SMTP_PORT`        | The SMTP port                                                             |
-| `DMS_CLIENT_BASE_URL`  | `http://localhost:<web port>`                                             |
-| `MONGO_URL`            | `mongodb://127.0.0.1:<mongo port>`, or `DMS_MONGO_URL` when it is set     |
-| `MONGO_DATABASE`       | `dms_<lease id>`                                                          |
-| `DMS_BACK_LOG`         | `<lease dir>/logs/back.log`                                               |
-| `DMS_FRONT_LOG`        | `<lease dir>/logs/front.log`                                              |
-| `TMPDIR`               | `<lease dir>/tmp`                                                         |
-| `PORT`                 | Removed. With `--as api` or `--as web`, the api or web port               |
+| Variable               | Value                                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `ANTELOPEJS_LEASE`     | The lease id, the first ten hex digits of the sha256 of the worktree path. `down --stop` stops the processes that hold it |
+| `ANTELOPEJS_LEASE_DIR` | The lease directory                                                                                                       |
+| `DMS_BACK_PORT`        | The api port                                                                                                              |
+| `DMS_FRONT_PORT`       | The web port                                                                                                              |
+| `DMS_INSPECT_PORT`     | The Node inspector port                                                                                                   |
+| `DMS_SMTP_PORT`        | The SMTP port                                                                                                             |
+| `DMS_CLIENT_BASE_URL`  | `http://localhost:<web port>`                                                                                             |
+| `MONGO_URL`            | `mongodb://127.0.0.1:<mongo port>`, or `DMS_MONGO_URL` when it is set                                                     |
+| `MONGO_DATABASE`       | `dms_<lease id>`                                                                                                          |
+| `DMS_BACK_LOG`         | `<lease dir>/logs/back.log`                                                                                               |
+| `DMS_FRONT_LOG`        | `<lease dir>/logs/front.log`                                                                                              |
+| `TMPDIR`               | `<lease dir>/tmp`                                                                                                         |
+| `PORT`                 | Removed. With `--as api` or `--as web`, the api or web port                                                               |
 
 To use a Mongo server you run yourself, set `DMS_MONGO_URL` before `run`. `run` then starts no mongod, and `MONGO_DATABASE` still gives each worktree its own database on that server. A mongod the lease started before keeps running for the servers that still use it, and `status` shows its pid. `down` stops it.
 
@@ -130,17 +138,18 @@ Two things still keep registries apart. The first block a lease tries comes from
 
 `antelopejs-lease` prints each failure as one line on stderr, prefixed with `antelopejs-lease:`, and exits with code 1. The command after `--` keeps its own exit code. A command that is not found exits with 127, and one that is not executable with 126.
 
-| The message says                                                   | What to do                                                                                                                                                                                                                                                  |
-| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<dir> is not inside a git worktree`                               | Run the command from inside the worktree.                                                                                                                                                                                                                   |
-| `registry lock 127.0.0.1:20000 held for 15 s`                      | Another process holds the lock. Find it with the `ss` or `lsof` command the message prints. Stop it if it hangs, then retry.                                                                                                                                |
-| `no free port block in 20010-29999`                                | Run `antelopejs-lease gc`. Run `down` in the worktrees whose leases `status` lists and you no longer need. Then retry.                                                                                                                                      |
-| `the lease of <path> belongs to an earlier checkout`               | The servers of a deleted or recreated worktree at this path still listen. Stop the pids the message names, then rerun.                                                                                                                                      |
-| `<dir>/lease.json was written by another antelopejs-lease version` | Run the tooling-configs version that wrote it. Or delete the directory once no DMS uses it.                                                                                                                                                                 |
-| `no mongod on PATH or in ~/.cache/mongodb-binaries`                | Install MongoDB, or set `DMS_MONGO_URL` to a server you run.                                                                                                                                                                                                |
-| `mongod did not answer on port <port>`                             | Read the end of the log the message names. It says why mongod stopped. When the message names a pid that holds the port, that process took the port after the lease was created. Stop it and rerun, or run `down` so that the next `run` picks a new block. |
-| `mongod <pid> was still running 2 s after SIGKILL`                 | Check the process with `ps -p <pid>`. Retry once it is gone.                                                                                                                                                                                                |
-| `port <port> of this lease still listens`                          | Stop the servers with `dms-dev.sh stop` through `run --`, as in step 5. Then rerun `down`. To tear down anyway, pass `--force`.                                                                                                                             |
-| `cannot run <command>`                                             | With `not found` (127), check the name and your `PATH`. With `is not executable` or `is a directory` (126), set the execute bit or name the file. With `interpreter "<path>" not found` (127), fix the `#!` line. A `\r` in it means Windows line endings.  |
-| `ANTELOPEJS_LEASE_HOME must be an absolute path`                   | Set it to an absolute path, or unset it to use `~/.antelopejs/leases`.                                                                                                                                                                                      |
-| Any message followed by a `usage:` line                            | Fix the arguments. The `usage:` line lists the valid forms.                                                                                                                                                                                                 |
+| The message says                                                   | What to do                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<dir> is not inside a git worktree`                               | Run the command from inside the worktree.                                                                                                                                                                                                                                                            |
+| `registry lock 127.0.0.1:20000 held for 15 s`                      | Another process holds the lock. Find it with the `ss` or `lsof` command the message prints. Stop it if it hangs, then retry.                                                                                                                                                                         |
+| `no free port block in 20010-29999`                                | Run `antelopejs-lease gc`. Run `down` in the worktrees whose leases `status` lists and you no longer need. Then retry.                                                                                                                                                                               |
+| `the lease of <path> belongs to an earlier checkout`               | The servers of a deleted or recreated worktree at this path still listen. Stop the pids the message names, then rerun.                                                                                                                                                                               |
+| `<dir>/lease.json was written by another antelopejs-lease version` | Run the tooling-configs version that wrote it. Or delete the directory once no DMS uses it.                                                                                                                                                                                                          |
+| `no mongod on PATH or in ~/.cache/mongodb-binaries`                | Install MongoDB, or set `DMS_MONGO_URL` to a server you run.                                                                                                                                                                                                                                         |
+| `mongod did not answer on port <port>`                             | Read the end of the log the message names. It says why mongod stopped. When the message names a pid that holds the port, that process took the port after the lease was created. Stop it and rerun, or run `down` so that the next `run` picks a new block.                                          |
+| `mongod <pid> was still running 2 s after SIGKILL`                 | Check the process with `ps -p <pid>`. Retry once it is gone.                                                                                                                                                                                                                                         |
+| `port <port> of this lease still listens`                          | Run `antelopejs-lease down --stop`, which stops what this worktree started. Never `pkill` or `killall`. With `after --stop` in the message, the pid it names lacks this lease's `ANTELOPEJS_LEASE`, so it is not yours to stop: leave it to whoever started it. To tear down anyway, pass `--force`. |
+| `down --stop reads /proc and runs on Linux only`                   | Stop your servers with their own stop command, then run `antelopejs-lease down`.                                                                                                                                                                                                                     |
+| `cannot run <command>`                                             | With `not found` (127), check the name and your `PATH`. With `is not executable` or `is a directory` (126), set the execute bit or name the file. With `interpreter "<path>" not found` (127), fix the `#!` line. A `\r` in it means Windows line endings.                                           |
+| `ANTELOPEJS_LEASE_HOME must be an absolute path`                   | Set it to an absolute path, or unset it to use `~/.antelopejs/leases`.                                                                                                                                                                                                                               |
+| Any message followed by a `usage:` line                            | Fix the arguments. The `usage:` line lists the valid forms.                                                                                                                                                                                                                                          |

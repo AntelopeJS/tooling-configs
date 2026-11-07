@@ -240,7 +240,7 @@ export async function removeLease(dir: string): Promise<void> {
 }
 
 function running(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
+  if (!Number.isInteger(pid) || pid <= 1) return false;
   try {
     process.kill(pid, 0);
     return true;
