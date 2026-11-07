@@ -119,6 +119,11 @@ function journeyRows(
         reasons.push(
           `${feature}/${result.journey} failed; ${feature} is outside the diff's features, so check its covers globs`,
         );
+      const stale = staleReuse(state, result);
+      if (stale !== null)
+        reasons.push(
+          `${feature}/${result.journey} reuses ${result.reusedFrom}, which is now ${stale}`,
+        );
       if (result.status === "NOT VERIFIED")
         outsideNotVerified.push(
           `${feature}/${result.journey}: ${result.notVerified}`,

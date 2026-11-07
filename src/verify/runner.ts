@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -9,7 +10,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 
 import { BUILTIN_JOURNEYS } from "./builtins.ts";
 import { VerifyContext, type BuiltinJourney } from "./context.ts";
@@ -183,19 +184,55 @@ export function readResults(
   return results;
 }
 
-/** A fingerprint of the tree a journey runs against: HEAD, the uncommitted diff and every untracked file's content. */
-function treeState(root: string): string {
-  const hash = createHash("sha256");
-  hash.update(git(root, ["rev-parse", "HEAD"]));
-  hash.update(git(root, ["diff", "HEAD", "--binary"]));
-  for (const file of git(root, ["ls-files", "--others", "--exclude-standard"])
-    .split("\n")
-    .filter(Boolean)
-    .sort()) {
-    hash.update(`\0${file}\0`);
-    hash.update(readFileSync(join(root, file)));
+/** NUL-separated paths git prints, read without the default output limit, since a large worktree can list megabytes. */
+function gitPaths(root: string, args: string[]): string[] {
+  const listed = spawnSync("git", args, {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024 * 1024,
+  });
+  if (listed.status !== 0) throw new Error(`git ${args.join(" ")} failed`);
+  return listed.stdout.split("\0").filter(Boolean);
+}
+
+/**
+ * A fingerprint of the tree a journey runs against: HEAD, and the path, type,
+ * size and modification time of every changed tracked file and every
+ * untracked, non-ignored entry. It never reads file contents, so symlinks,
+ * nested repositories and huge files cost one `lstat` each; an edit always
+ * moves the modification time. The run's own folder is left out when it sits
+ * inside the repository, since its evidence changes with every journey.
+ * `undefined` when git cannot answer, which disables reuse instead of failing
+ * the journey.
+ */
+function treeState(root: string, runDir: string): string | undefined {
+  try {
+    const own = relative(root, runDir);
+    const inside =
+      own !== "" && !own.startsWith("..") && !isAbsolute(own)
+        ? `${own}/`
+        : null;
+    const hash = createHash("sha256");
+    hash.update(git(root, ["rev-parse", "HEAD"]));
+    const paths = [
+      ...gitPaths(root, ["diff", "HEAD", "--name-only", "-z", "--no-renames"]),
+      ...gitPaths(root, ["ls-files", "-z", "--others", "--exclude-standard"]),
+    ]
+      .filter((path) => inside === null || !`${path}/`.startsWith(inside))
+      .sort();
+    for (const path of paths) {
+      const stat = lstatSync(join(root, path), {
+        bigint: true,
+        throwIfNoEntry: false,
+      });
+      hash.update(
+        `\0${path}\0${stat === undefined ? "gone" : `${stat.mode}:${stat.size}:${stat.mtimeNs}`}`,
+      );
+    }
+    return hash.digest("hex");
+  } catch {
+    return undefined;
   }
-  return hash.digest("hex");
 }
 
 /** The PASS of journey `id` that another feature of this run recorded by running it against the same tree, if any. */
@@ -226,8 +263,9 @@ function passElsewhere(
 function stamp(
   state: RunState,
   result: JourneyResult,
-  tree: string,
+  tree: string | undefined,
 ): JourneyResult {
+  if (tree === undefined) return result;
   const stamped = { ...result, tree };
   writeFileSync(
     join(state.evidence, result.folder, "result.json"),
@@ -288,7 +326,7 @@ export async function runFeature(
     );
   const known = knownJourneys(workspace);
   const earlier = readResults(state, feature) ?? [];
-  const tree = treeState(workspace.root);
+  const tree = treeState(workspace.root, state.dir);
   const mayReuse =
     ids.length === 0 &&
     git(workspace.root, ["rev-parse", "HEAD"]) === state.headSha;
@@ -300,7 +338,9 @@ export async function runFeature(
         `${feature} names journey ${id}, which is neither built in nor in verify.config.ts journeys`,
       );
     const source =
-      mayReuse && !earlier.some((result) => result.journey === id)
+      mayReuse &&
+      tree !== undefined &&
+      !earlier.some((result) => result.journey === id)
         ? passElsewhere(state, feature, id, tree)
         : undefined;
     results.push(

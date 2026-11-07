@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -234,4 +235,37 @@ test("a reused PASS whose source later fails makes the verdict name the stale re
     verdict.stdout,
     /- store\/flaky reuses smoke\/flaky, which is now FAIL\n/,
   );
+});
+
+test("untracked entries git lists oddly, a non-ASCII name, symlinks to a folder or to nothing and a nested repository, never stop a journey; a fingerprint that reads every untracked path as a file crashes", (t) => {
+  const { root, tmp, run } = repo(t, ["shared"], ["shared"]);
+  assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
+  put(root, "café.txt", "x\n");
+  symlinkSync("src", join(root, "linkdir"));
+  symlinkSync("nowhere", join(root, "dangling"));
+  mkdirSync(join(root, "nested"));
+  execFileSync("git", ["init", "-q"], { cwd: join(root, "nested") });
+  put(root, "nested/a.txt", "a\n");
+  const second = verify(root, tmp, ["journey", run, "store"]);
+  assert.equal(second.status, 0, second.stdout + second.stderr);
+  assert.equal(second.stdout, "PASS store/shared\n");
+});
+
+test("a run folder inside the repository is left out of the tree, so its own evidence never blocks reuse; hashing it reruns every journey", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "verify-reuse-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const root = verifyRepo(t, {
+    "README.md": "# Demo\n",
+    "src/store.ts": "export const store = 1;\n",
+    [`${SKILL}/verify.config.ts`]: CONFIG,
+    [`${SKILL}/features/smoke.md`]: feature([], ["shared"]),
+    [`${SKILL}/features/store.md`]: feature(["src/**"], ["shared"]),
+  });
+  const inside = join(root, "tmp");
+  mkdirSync(inside);
+  const run = newRun(root, inside);
+  assert.equal(verify(root, inside, ["journey", run, "smoke"]).status, 0);
+  const second = verify(root, inside, ["journey", run, "store"]);
+  assert.equal(second.status, 0, second.stdout);
+  assert.match(second.stdout, /reuses smoke\/shared, not run again/);
 });
