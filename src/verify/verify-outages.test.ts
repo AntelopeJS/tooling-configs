@@ -12,6 +12,11 @@ import {
   verify,
   verifyRepo,
 } from "./helpers/verify-repo.ts";
+import {
+  REGISTRY_HELPERS,
+  REGISTRY_IDS,
+  registryJourneys,
+} from "./helpers/registry-journeys.ts";
 
 const SKILL = ".agents/skills/verify-module";
 
@@ -157,71 +162,6 @@ const JOURNEYS = `
       },
     },`;
 
-const REGISTRY_HELPERS = String.raw`
-async function failing(context, name, output) {
-  const run = await context.command(name, process.execPath, ["-e", "console.error(process.argv[1]); process.exit(1)", output]);
-  context.expect(run.folder, [{ name: "the command succeeds", pass: run.exitCode === 0, detail: run.stderr }]);
-}
-`;
-
-const REGISTRY_OUTPUT = {
-  dns: 'ERROR: failed to solve: node:22-alpine: failed to resolve source metadata for docker.io/library/node:22-alpine: failed to do request: Head "https://registry-1.docker.io/v2/library/node/manifests/22-alpine": dial tcp: lookup registry-1.docker.io on 127.0.0.53:53: server misbehaving',
-  rate: "ERROR: failed to solve: node:22-alpine: toomanyrequests: You have reached your unauthenticated pull rate limit.",
-  missing:
-    "ERROR: failed to solve: docker.io/acme/missing:1.0: failed to resolve source metadata for docker.io/acme/missing:1.0: docker.io/acme/missing:1.0: not found\nError response from daemon: manifest for acme/missing:1.0 not found: manifest unknown: manifest unknown",
-  timeout:
-    "Error: i/o timeout while reading the cache at 127.0.0.1:6379; the request timeout of 30000 ms elapsed",
-  npm: "npm error code ENOTFOUND\nnpm error network request to https://registry.npmjs.org/left-pad failed, reason: getaddrinfo ENOTFOUND registry.npmjs.org",
-  after:
-    "npm error network request to https://registry.npmjs.org/left-pad failed, reason: read ECONNRESET",
-};
-
-const REGISTRY_JOURNEYS = `
-    "pull-dns": {
-      title: "the base image pull cannot resolve Docker Hub",
-      entryPoint: "docker build",
-      async run(context) { await failing(context, "docker build", ${JSON.stringify(REGISTRY_OUTPUT.dns)}); },
-    },
-    "pull-rate-limited": {
-      title: "Docker Hub rate limits the pull",
-      entryPoint: "docker build",
-      async run(context) { await failing(context, "docker build", ${JSON.stringify(REGISTRY_OUTPUT.rate)}); },
-    },
-    "pull-missing-tag": {
-      title: "the base image tag does not exist",
-      entryPoint: "docker build",
-      async run(context) { await failing(context, "docker build", ${JSON.stringify(REGISTRY_OUTPUT.missing)}); },
-    },
-    "product-timeout": {
-      title: "the product reports a timeout of its own",
-      entryPoint: "node",
-      async run(context) { await failing(context, "start", ${JSON.stringify(REGISTRY_OUTPUT.timeout)}); },
-    },
-    "npm-unreachable": {
-      title: "the install cannot reach the npm registry",
-      entryPoint: "pnpm install",
-      async run(context) { await failing(context, "pnpm install", ${JSON.stringify(REGISTRY_OUTPUT.npm)}); },
-    },
-    "expected-failure": {
-      title: "a command that must fail does, then the product is wrong",
-      entryPoint: "pnpm install",
-      async run(context) {
-        const run = await context.command("expected failure", process.execPath, ["-e", "console.error(process.argv[1]); process.exit(1)", ${JSON.stringify(REGISTRY_OUTPUT.after)}]);
-        context.expect(run.folder, [{ name: "the command fails", pass: run.exitCode === 1, detail: run.stderr }]);
-        const wrong = await context.command("wrong answer", process.execPath, ["-e", "0"]);
-        context.expect(wrong.folder, [{ name: "the product is right", pass: false, detail: "wrong" }]);
-      },
-    },
-    "product-fails-first": {
-      title: "the product is wrong, then a later install hits an outage",
-      entryPoint: "pnpm install",
-      async run(context) {
-        const wrong = await context.command("wrong answer", process.execPath, ["-e", "0"]);
-        context.expect(wrong.folder, [{ name: "the product is right", pass: false, detail: "wrong" }]);
-        await failing(context, "pnpm install", ${JSON.stringify(REGISTRY_OUTPUT.after)});
-      },
-    },`;
-
 function config(dead: string): string {
   return `import { writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -231,7 +171,7 @@ export default {
   doors: ${PUBLISH_DOORS},
   setup: [["node", "-e", "0"]],
   services: { cache: { image: "redis:7", port: 6379, ready: ["redis-cli", "ping"] } },
-  journeys: {${JOURNEYS}${REGISTRY_JOURNEYS}
+  journeys: {${JOURNEYS}${registryJourneys()}
   },
 };
 `;
@@ -254,18 +194,7 @@ function outageRepo(t: TestContext) {
       ["src/**"],
       ["service-up", "service-gone"],
     ),
-    [`${SKILL}/features/registry.md`]: feature(
-      ["src/**"],
-      [
-        "pull-dns",
-        "pull-rate-limited",
-        "pull-missing-tag",
-        "product-timeout",
-        "npm-unreachable",
-        "expected-failure",
-        "product-fails-first",
-      ],
-    ),
+    [`${SKILL}/features/registry.md`]: feature(["src/**"], REGISTRY_IDS),
     [`${SKILL}/features/processes.md`]: feature(
       ["src/**"],
       [
@@ -296,6 +225,18 @@ function outageRepo(t: TestContext) {
   return { root, tmp, env };
 }
 
+const finished = new Map<string, ReturnType<typeof journeys>>();
+
+/** Runs the feature once for the whole file, so each test reads its journeys from one run. */
+function outageRun(t: TestContext, name: string) {
+  const known = finished.get(name);
+  if (known !== undefined) return known;
+  const { root, tmp, env } = outageRepo(t);
+  const run = journeys(root, tmp, env, name);
+  finished.set(name, run);
+  return run;
+}
+
 function journeys(
   root: string,
   tmp: string,
@@ -307,7 +248,7 @@ function journeys(
   const run = created.stdout.trim().split("\n").at(-1) ?? "";
   const result = verify(root, tmp, ["journey", run, name], env);
   verify(root, tmp, ["clean", run], env);
-  const statuses = Object.fromEntries(
+  const statuses: Record<string, string> = Object.fromEntries(
     evidence(run, `${name}/feature.json`).map(
       (entry: { journey: string; status: string; notVerified: string }) => [
         entry.journey,
@@ -320,9 +261,25 @@ function journeys(
   return { result, statuses };
 }
 
+function assertFail(t: TestContext, ids: string[]) {
+  const { statuses } = outageRun(t, "registry");
+  for (const id of ids) assert.equal(statuses[id], "FAIL", id);
+}
+
+function assertOutage(t: TestContext, cases: [string, string, RegExp][]) {
+  const { statuses } = outageRun(t, "registry");
+  for (const [id, step, cause] of cases)
+    assert.match(
+      statuses[id],
+      new RegExp(
+        `^NOT VERIFIED: step 01-${step} could not reach a container or package registry, an outage outside the code under test: ${cause.source}`,
+      ),
+      id,
+    );
+}
+
 test("a journey whose service stopped answering ends NOT VERIFIED, and a wrong answer from a live service FAILs", (t) => {
-  const { root, tmp, env } = outageRepo(t);
-  const { result, statuses } = journeys(root, tmp, env, "services");
+  const { result, statuses } = outageRun(t, "services");
   assert.equal(result.status, 1);
   assert.match(
     statuses["service-gone"],
@@ -332,8 +289,7 @@ test("a journey whose service stopped answering ends NOT VERIFIED, and a wrong a
 });
 
 test("a project killed from outside or holding a taken port is NOT VERIFIED, and a project that exits on its own FAILs", (t) => {
-  const { root, tmp, env } = outageRepo(t);
-  const { statuses } = journeys(root, tmp, env, "processes");
+  const { statuses } = outageRun(t, "processes");
   assert.match(
     statuses.killed,
     /^NOT VERIFIED: ajs project dev \(pid \d+\) was killed by SIGKILL, a signal the harness did not send$/,
@@ -347,51 +303,114 @@ test("a project killed from outside or holding a taken port is NOT VERIFIED, and
 });
 
 test("a product crash by SIGABRT, a product double bind and a logged EADDRINUSE stay FAIL, and one transient readiness miss still counts the catch", (t) => {
-  const { root, tmp, env } = outageRepo(t);
-  const { statuses } = journeys(root, tmp, env, "processes");
+  const { statuses } = outageRun(t, "processes");
   assert.equal(statuses.aborts, "FAIL");
   assert.equal(statuses["double-bind"], "FAIL");
   assert.equal(statuses.mention, "FAIL");
   assert.equal(statuses["transient-miss"], "FAIL");
 });
 
-test("a base image pull that cannot resolve Docker Hub is NOT VERIFIED and names the step and the cause", (t) => {
-  const { root, tmp, env } = outageRepo(t);
-  const { statuses } = journeys(root, tmp, env, "registry");
-  assert.match(
-    statuses["pull-dns"],
-    /^NOT VERIFIED: step 01-docker-build could not reach a container or package registry, an outage outside the code under test: .*lookup registry-1\.docker\.io.*server misbehaving/,
-  );
+test("a failed pull or install that ends on a network cause at a known registry host is NOT VERIFIED and names the step and the cause (catches a classifier that needs more than the final error line)", (t) => {
+  assertOutage(t, [
+    [
+      "docker-dns",
+      "docker-build",
+      /.*lookup registry-1\.docker\.io.*server misbehaving/,
+    ],
+    [
+      "docker-deadline",
+      "docker-build",
+      /.*registry-1\.docker\.io.*context deadline exceeded/,
+    ],
+    [
+      "ecr-no-such-host",
+      "docker-build",
+      /.*dkr\.ecr\.eu-west-1\.amazonaws\.com.*no such host/,
+    ],
+    [
+      "npm-enotfound",
+      "pnpm-install",
+      /npm error network request .*ENOTFOUND registry\.npmjs\.org/,
+    ],
+    [
+      "pnpm-socket-hang-up",
+      "pnpm-install",
+      /ERR_PNPM_META_FETCH_FAIL .*socket hang up/,
+    ],
+  ]);
 });
 
-test("the Docker Hub rate limit is NOT VERIFIED", (t) => {
-  const { root, tmp, env } = outageRepo(t);
-  const { statuses } = journeys(root, tmp, env, "registry");
-  assert.match(
-    statuses["pull-rate-limited"],
-    /^NOT VERIFIED: step 01-docker-build .*toomanyrequests/,
-  );
+test("a 5xx answer from a registry is NOT VERIFIED (catches dropping the E5xx and ERR_PNPM_FETCH_5xx forms)", (t) => {
+  assertOutage(t, [
+    ["npm-503", "pnpm-install", /npm error code E503/],
+    ["pnpm-502", "pnpm-install", /ERR_PNPM_FETCH_502 /],
+  ]);
 });
 
-test("an install that cannot resolve registry.npmjs.org is NOT VERIFIED", (t) => {
-  const { root, tmp, env } = outageRepo(t);
-  const { statuses } = journeys(root, tmp, env, "registry");
-  assert.match(
-    statuses["npm-unreachable"],
-    /^NOT VERIFIED: step 01-pnpm-install .*ENOTFOUND registry\.npmjs\.org/,
-  );
+test("a 5xx line without a host, from pnpm or the Docker client, is NOT VERIFIED (catches requiring a host on status lines)", (t) => {
+  assertOutage(t, [
+    ["pnpm-503-no-host", "pnpm-install", /ERR_PNPM_FETCH_503 /],
+    [
+      "docker-5xx-no-host",
+      "docker-pull",
+      /docker: error pulling .*received unexpected HTTP status: 503/,
+    ],
+  ]);
 });
 
-test("a missing image tag and a product timeout stay FAIL", (t) => {
-  const { root, tmp, env } = outageRepo(t);
-  const { statuses } = journeys(root, tmp, env, "registry");
-  assert.equal(statuses["pull-missing-tag"], "FAIL");
-  assert.equal(statuses["product-timeout"], "FAIL");
+test("the Docker Hub pull rate limit is NOT VERIFIED (catches dropping toomanyrequests and pull rate limit inside a Docker error)", (t) => {
+  assertOutage(t, [
+    ["docker-toomanyrequests", "docker-build", /.*toomanyrequests/],
+    ["docker-pull-rate-limit", "docker-pull", /docker: .*pull rate limit/],
+  ]);
 });
 
-test("a registry error in a step whose checks passed, or after a product failure, does not hide the failure", (t) => {
-  const { root, tmp, env } = outageRepo(t);
-  const { statuses } = journeys(root, tmp, env, "registry");
-  assert.equal(statuses["expected-failure"], "FAIL");
-  assert.equal(statuses["product-fails-first"], "FAIL");
+test("a coloured error line is NOT VERIFIED, and so is a final outage after an earlier product error (catches matching without stripping ANSI, and letting the first error line decide)", (t) => {
+  assertOutage(t, [
+    ["ansi-colored", "pnpm-install", /npm error network request .*ENOTFOUND/],
+    [
+      "product-error-before-outage",
+      "pnpm-install",
+      /npm error network request .*ENOTFOUND/,
+    ],
+  ]);
+});
+
+test("a recovered retry warning, a test named after a registry outage, a product rate limiter and a product log line stay FAIL (catches deciding on any line that mentions a registry)", (t) => {
+  assertFail(t, [
+    "recovered-retry-then-ts-error",
+    "mirror-test-name",
+    "product-rate-limiter",
+    "pino-url-field",
+    "scaffold-checks-output",
+  ]);
+});
+
+test("a typo host, a private registry, a source file named registry.service.ts and a pnpm GET host outside the list stay FAIL (catches a generic registry.<domain> host pattern)", (t) => {
+  assertFail(t, [
+    "typo-host",
+    "private-registry",
+    "source-file-name",
+    "pnpm-get-host-unknown",
+  ]);
+});
+
+test("a Docker Hub host on an npm line, a missing image tag and a product timeout stay FAIL (catches one host list for all tools, and matching a 404 or a bare timeout)", (t) => {
+  assertFail(t, ["docker-host-on-npm-line", "missing-tag", "product-timeout"]);
+});
+
+test("a product error printed after the outage, or on the other stream, stays FAIL (catches any matching line deciding instead of the last error line)", (t) => {
+  assertFail(t, ["product-error-after-outage", "streams-disagree"]);
+});
+
+test("a registry error in a step whose command exits 0 but whose check fails stays FAIL (catches deciding without the exit code)", (t) => {
+  assertFail(t, ["exit-zero"]);
+});
+
+test("a registry error in a step whose checks passed, or after a product failure, does not hide the failure (catches reading any step instead of the first failing one)", (t) => {
+  assertFail(t, ["expected-failure", "product-fails-first"]);
+});
+
+test("a line of millions of labels is skipped and the journey stays FAIL (catches matching lines of any length, which overflows the regex stack)", (t) => {
+  assertFail(t, ["oversized-line"]);
 });
