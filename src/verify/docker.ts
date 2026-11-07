@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { stopwatch } from "./timing.ts";
 import type { ContainerRecord, RunState, Workspace } from "./workspace.ts";
 import { saveRun } from "./workspace.ts";
 
@@ -87,6 +88,7 @@ export function startServices(
       definition.image,
     ];
     const folder = join(state.evidence, "services", service);
+    const elapsed = stopwatch();
     const started = docker(args);
     record(join(folder, "01-run"), args, started);
     if (started.status !== 0)
@@ -102,6 +104,10 @@ export function startServices(
     container.port = publishedPort(name, definition.port);
     saveRun(state);
     waitReady(name, definition.ready, join(folder, "02-ready"));
+    state.timings.push({
+      phase: `service ${service} (start and ready)`,
+      ms: elapsed(),
+    });
   }
 }
 

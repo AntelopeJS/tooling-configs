@@ -3,10 +3,20 @@ import { join, relative } from "node:path";
 
 import type { JourneyResult } from "./results.ts";
 import { flaggedDoors } from "./doors.ts";
-import { formalGate, readFormalResult, touchedFormalChecks } from "./formal.ts";
+import {
+  formalGate,
+  readFormalResult,
+  touchedFormalChecks,
+  type FormalResult,
+} from "./formal.ts";
 import type { Judgement } from "./judgement.ts";
 import { planFor, SMOKE_FEATURE, type FullReason, type Plan } from "./map.ts";
 import { featureJourneys, readResults } from "./runner.ts";
+import {
+  timingReport,
+  timingTable,
+  type FeatureResults,
+} from "./timing-report.ts";
 import { git, type RunState, type Workspace } from "./workspace.ts";
 
 /** The overall result a verdict carries; NOT VERIFIED when a journey could not reach the product, never PASS. */
@@ -89,8 +99,10 @@ function journeyRows(
   const reasons: string[] = [];
   const notVerified: string[] = [];
   const outsideNotVerified: string[] = [];
+  const listed: FeatureResults[] = [];
   for (const feature of plan.run) {
     const results = readResults(state, feature) ?? [];
+    listed.push({ feature, results });
     const registered = featureJourneys(workspace, feature) ?? [];
     for (const id of registered.filter(
       (journey) => !results.some((result) => result.journey === journey),
@@ -113,8 +125,10 @@ function journeyRows(
       rows.push(journeyRow(feature, result, link));
     }
   }
-  for (const feature of featuresOutsidePlan(state, plan))
-    for (const result of readResults(state, feature) ?? []) {
+  for (const feature of featuresOutsidePlan(state, plan)) {
+    const results = readResults(state, feature) ?? [];
+    listed.push({ feature, results });
+    for (const result of results) {
       if (result.status === "FAIL")
         reasons.push(
           `${feature}/${result.journey} failed; ${feature} is outside the diff's features, so check its covers globs`,
@@ -132,7 +146,8 @@ function journeyRows(
         journeyRow(`${feature} (outside the diff's features)`, result, link),
       );
     }
-  return { rows, reasons, notVerified, outsideNotVerified };
+  }
+  return { rows, reasons, notVerified, outsideNotVerified, listed };
 }
 
 function doorReasons(
@@ -183,6 +198,7 @@ function formalSection(
 ) {
   const reasons: string[] = [];
   const lines: string[] = [];
+  const ran: FormalResult[] = [];
   const touched = touchedFormalChecks(workspace, plan.changed).map(
     (check) => check.name,
   );
@@ -196,6 +212,7 @@ function formalSection(
         );
       continue;
     }
+    ran.push(result);
     if (gate && result.behaviour === undefined && result.exitCode === 0)
       reasons.push(
         `formal check ${check.name} covers the diff but its run did not compare the covered behaviour with the base`,
@@ -212,7 +229,7 @@ function formalSection(
       `\`${check.name}\` (${gate ? "covers the diff, gates the verdict" : "does not cover the diff, informational"}): ${summary}. [evidence](${link(result.folder)})`,
     );
   }
-  return { reasons, lines };
+  return { reasons, lines, ran };
 }
 
 function docsReasons(judgement: Judgement, plan: Plan): string[] {
@@ -287,6 +304,7 @@ export function renderVerdict(
     journeys.notVerified,
     notVerified.length + judgement.attention.length,
   );
+  const timings = timingReport(state.timings, journeys.listed, formal.ran);
   const touched = plan.touched.map(
     (entry) =>
       `\`${entry.feature}\` (diff: ${entry.files.map((file) => `\`${file}\``).join(", ")})`,
@@ -340,6 +358,9 @@ export function renderVerdict(
     "### Attention",
     ...bullets(judgement.attention, "Nothing."),
     "",
+    "### Timing",
+    ...timingTable(timings),
+    "",
     `Evidence: \`verify-evidence\` branch, [\`pr-${pr}/${plan.headSha}/\`](${link("")})`,
     "",
   ].join("\n");
@@ -350,7 +371,7 @@ export function renderVerdict(
   );
   writeFileSync(
     join(state.evidence, "verdict.json"),
-    `${JSON.stringify({ result, headSha: plan.headSha, skillSha, pr, reasons }, null, 2)}\n`,
+    `${JSON.stringify({ result, headSha: plan.headSha, skillSha, pr, reasons, timings }, null, 2)}\n`,
   );
   return {
     result,

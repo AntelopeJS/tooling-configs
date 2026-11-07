@@ -17,6 +17,7 @@ import { VerifyContext, type BuiltinJourney } from "./context.ts";
 import { readFeatures } from "./map.ts";
 import { killGroup, onInterrupt } from "./record.ts";
 import type { JourneyEnd, JourneyResult, JourneyStatus } from "./results.ts";
+import { stopwatch } from "./timing.ts";
 import type { Journey } from "./types.ts";
 import {
   git,
@@ -135,6 +136,7 @@ async function driveJourney(
   journey: BuiltinJourney | Journey,
 ): Promise<JourneyResult> {
   const { state } = context;
+  const elapsed = stopwatch();
   let failure: JourneyEnd = {
     error: null,
     notVerified: null,
@@ -165,6 +167,8 @@ async function driveJourney(
     steps: context.steps,
     ...failure,
     folder: relative(state.evidence, context.folder),
+    stepMs: context.clock.finish(),
+    ms: elapsed(),
   };
   writeFileSync(
     join(context.folder, "result.json"),

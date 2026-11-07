@@ -5,7 +5,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 
 import {
   isObject,
@@ -40,6 +40,7 @@ import type {
   TreeRecord,
 } from "./types.ts";
 import type { JourneyEnd, StepRecord } from "./results.ts";
+import { StepClock } from "./timing.ts";
 import {
   isolatedEnv,
   saveRun,
@@ -102,6 +103,8 @@ export class VerifyContext implements JourneyContext {
   private readonly started: Running[] = [];
   private readonly fixtures = new Map<string, Fixture>();
   private index = 0;
+  /** Times every step folder of the journey. */
+  readonly clock = new StepClock();
 
   readonly workspace: Workspace;
   readonly state: RunState;
@@ -124,7 +127,7 @@ export class VerifyContext implements JourneyContext {
     }
   }
 
-  /** A fresh numbered step folder. */
+  /** A fresh numbered step folder; it also ends the clock of the previous step and starts its own. */
   step(name: string): string {
     this.index += 1;
     const folder = join(
@@ -132,6 +135,7 @@ export class VerifyContext implements JourneyContext {
       `${String(this.index).padStart(2, "0")}-${slug(name)}`,
     );
     mkdirSync(folder, { recursive: true });
+    this.clock.start(basename(folder));
     return folder;
   }
 

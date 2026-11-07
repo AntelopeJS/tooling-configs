@@ -22,6 +22,7 @@ import { clean, createRun, doctor } from "../verify/lifecycle.ts";
 import { checkMap, planFor } from "../verify/map.ts";
 import { postComment, pushEvidence, setStatus } from "../verify/publish.ts";
 import { knownJourneys, runFeature } from "../verify/runner.ts";
+import { seconds } from "../verify/timing.ts";
 import { renderVerdict } from "../verify/verdict.ts";
 import { loadRun, openWorkspace, type Workspace } from "../verify/workspace.ts";
 
@@ -77,7 +78,7 @@ async function runJourneys(
   const results = await runFeature(workspace, loadRun(dir), feature, ids);
   for (const result of results) {
     print(
-      `${result.status} ${feature}/${result.journey}${result.reusedFrom === undefined ? "" : ` (reuses ${result.reusedFrom}, not run again)`}`,
+      `${result.status} ${feature}/${result.journey}${result.reusedFrom === undefined ? ` (${seconds(result.ms)})` : ` (reuses ${result.reusedFrom}, not run again)`}`,
     );
     for (const step of result.steps)
       for (const check of step.checks.filter((entry) => !entry.pass))

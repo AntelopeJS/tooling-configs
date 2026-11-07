@@ -21,6 +21,7 @@ import { installedPackage } from "./fixture.ts";
 import { linkDependencies } from "./interface.ts";
 import { killGroup, runRecorded } from "./record.ts";
 import { seedSources, templateName } from "./sources.ts";
+import { stopwatch } from "./timing.ts";
 import type { CommandResult } from "./types.ts";
 import {
   allocateRun,
@@ -80,17 +81,16 @@ function setupCommands(workspace: Workspace): string[][] {
 async function runSetup(workspace: Workspace, state: RunState): Promise<void> {
   const commands = setupCommands(workspace);
   for (const [index, [program, ...args]] of commands.entries()) {
-    const folder = join(
-      state.evidence,
-      "setup",
-      `${String(index + 1).padStart(2, "0")}-${program}`,
-    );
+    const name = `${String(index + 1).padStart(2, "0")}-${program}`;
+    const folder = join(state.evidence, "setup", name);
+    const elapsed = stopwatch();
     const result = await runRecorded(folder, {
       program,
       args,
       cwd: workspace.root,
       env: { ...process.env, ...workspace.config.env },
     });
+    state.timings.push({ phase: `setup/${name}`, ms: elapsed() });
     if (result.exitCode !== 0)
       throw new Error(
         `setup \`${result.command}\` exited ${result.exitCode}; see ${folder}`,
@@ -222,16 +222,24 @@ export async function createRun(
   title: string,
   all: boolean,
 ): Promise<RunState> {
+  const pruned = stopwatch();
   pruneRuns();
+  const pruneMs = pruned();
   const state = allocateRun(workspace, baseRef, title, all);
+  state.timings.push({ phase: "prune old runs", ms: pruneMs });
   saveRun(state);
   await runSetup(workspace, state);
-  if (workspace.kind === "interface")
+  if (workspace.kind === "interface") {
+    const elapsed = stopwatch();
     state.pack = await packInterface(workspace, state);
+    state.timings.push({ phase: "pack interface", ms: elapsed() });
+  }
   startServices(workspace, state, containerPrefix());
   if (workspace.kind === "template") {
+    const elapsed = stopwatch();
     state.manifestUrl = seedSources(workspace, state);
     state.templateName = templateName(workspace);
+    state.timings.push({ phase: "seed template sources", ms: elapsed() });
   }
   saveRun(state);
   return state;

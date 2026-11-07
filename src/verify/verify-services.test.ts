@@ -89,3 +89,36 @@ for (const kind of ["interface", "template"] as const)
     verify(root, tmp, ["clean", run, "--kind", kind], env);
     assert.match(read(tmp, "docker.log"), /^rm -f -v verify-/m);
   });
+
+const PHASES = {
+  interface: [
+    "prune old runs",
+    "setup/01-node",
+    "pack interface",
+    "service cache (start and ready)",
+  ],
+  template: [
+    "prune old runs",
+    "setup/01-node",
+    "service cache (start and ready)",
+    "seed template sources",
+  ],
+};
+
+for (const kind of ["interface", "template"] as const)
+  test(`new records the ${kind} kind's phases in order in run.json; a run that times only the setup command fails`, (t) => {
+    const { root, tmp, env } = serviceRepo(t, kind);
+    const created = verify(root, tmp, ["new", "--kind", kind], env);
+    assert.equal(created.status, 0, created.stdout + created.stderr);
+    const run = created.stdout.trim().split("\n").at(-1) ?? "";
+    const { timings } = JSON.parse(read(run, "run.json"));
+    assert.deepEqual(
+      timings.map((entry: { phase: string }) => entry.phase),
+      PHASES[kind],
+    );
+    assert.ok(
+      timings.every(
+        (entry: { ms: number }) => Number.isInteger(entry.ms) && entry.ms >= 0,
+      ),
+    );
+  });

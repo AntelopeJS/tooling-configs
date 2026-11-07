@@ -6,6 +6,7 @@ import test, { type TestContext } from "node:test";
 
 import { commit, put, read } from "../guardrails/helpers/test-repo.ts";
 import {
+  evidence,
   feature,
   newRun,
   PUBLISH_DOORS,
@@ -48,7 +49,11 @@ const CONFIG = `export default {
 };
 `;
 
-function formalRepo(t: TestContext, head: Record<string, string>) {
+function formalRepo(
+  t: TestContext,
+  head: Record<string, string>,
+  check = CHECK,
+) {
   const tmp = mkdtempSync(join(tmpdir(), "verify-runs-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   const root = verifyRepo(t, {
@@ -57,7 +62,7 @@ function formalRepo(t: TestContext, head: Record<string, string>) {
     "src/ops.js": OPS,
     "src/typed.ts":
       "export const total = [1, 2, 3].reduce((sum, n) => sum + n, 0);\n",
-    ".agents/skills/formal-add/check.mjs": CHECK,
+    ".agents/skills/formal-add/check.mjs": check,
     [`${SKILL}/verify.config.ts`]: CONFIG,
     [`${SKILL}/features/smoke.md`]: feature([], ["module-dev"]),
     [`${SKILL}/features/math.md`]: feature(["src/**"], ["module-dev"]),
@@ -265,5 +270,29 @@ test("a diff that touches only a check's own files runs the check and gates it a
   assert.match(
     judged(root, tmp, run),
     /- formal check formal-add: rules the base broke are absent at HEAD: NegativeZero\n/,
+  );
+});
+
+test("a formal check's time covers its head and base runs and shows in the verdict, and `not measured` when the result predates timings; timing only the head run fails", (t) => {
+  const slowBase = `await new Promise((resolve) => setTimeout(resolve, 600));\n${CHECK}`;
+  const { root, tmp, run } = formalRepo(
+    t,
+    { ".agents/skills/formal-add/check.mjs": CHECK },
+    slowBase,
+  );
+  const formal = verify(root, tmp, ["formal", run]);
+  assert.equal(formal.status, 0, formal.stdout + formal.stderr);
+  const result = evidence(run, "formal/formal-add/result.json");
+  assert.equal(result.checkChanged, true);
+  assert.ok(result.ms >= 550, `formal check took ${result.ms} ms`);
+  assert.match(
+    judged(root, tmp, run),
+    /\| formal formal-add \| \d+\.\d s \|\n/,
+  );
+  delete result.ms;
+  put(run, "evidence/formal/formal-add/result.json", JSON.stringify(result));
+  assert.match(
+    judged(root, tmp, run),
+    /\| formal formal-add \| not measured \|\n/,
   );
 });

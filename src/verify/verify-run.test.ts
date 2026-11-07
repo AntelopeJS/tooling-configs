@@ -89,7 +89,7 @@ test("journey records PASS and FAIL from the checks and merges partial runs into
   assert.equal(first.status, 1);
   assert.match(
     first.stdout,
-    /^FAIL store\/bad\n {4}01-node-exits-3: exit code 0 \(exit code 3\)/m,
+    /^FAIL store\/bad \(\d+\.\d s\)\n {4}01-node-exits-3: exit code 0 \(exit code 3\)/m,
   );
   const second = verify(root, tmp, ["journey", run, "store", "ok"]);
   assert.equal(second.status, 0, second.stdout);
@@ -129,7 +129,7 @@ test("missing sandbox keys make every journey NOT VERIFIED without running it, a
   assert.equal(smoke.status, 1);
   assert.match(
     smoke.stdout,
-    /NOT VERIFIED smoke\/ok\n {4}provider sandbox keys missing from the environment: DEMO_SANDBOX_KEY/,
+    /NOT VERIFIED smoke\/ok \(\d+\.\d s\)\n {4}provider sandbox keys missing from the environment: DEMO_SANDBOX_KEY/,
   );
   assert.equal(
     existsSync(join(run, "evidence/smoke/ok/01-node-exits-0")),
