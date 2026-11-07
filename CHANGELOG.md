@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.3.6
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.5...v0.3.6)
+
+### 🚀 Enhancements
+
+- **verify:** Accept a covered formal check that breaks the same recorded findings as base ([#203](https://github.com/AntelopeJS/tooling-configs/pull/203))
+- **checks:** Type-check verify layers and their lockfiles ([#205](https://github.com/AntelopeJS/tooling-configs/pull/205))
+- **sync:** Report when build or release can skip what typecheck checks ([#211](https://github.com/AntelopeJS/tooling-configs/pull/211))
+- **sync:** Turn the CI test job off when the test script is a placeholder ([#214](https://github.com/AntelopeJS/tooling-configs/pull/214))
+
+### 🔥 Performance
+
+- **verify:** Call the verify CLI through node_modules/.bin in the synced skills ([#207](https://github.com/AntelopeJS/tooling-configs/pull/207))
+- **verify:** Run every planned feature in one journey call ([#209](https://github.com/AntelopeJS/tooling-configs/pull/209))
+- **verify:** Reuse the cached tarball of a published interface version ([#210](https://github.com/AntelopeJS/tooling-configs/pull/210))
+- **verify:** Probe app readiness every 25 ms while it starts ([#212](https://github.com/AntelopeJS/tooling-configs/pull/212))
+
+### 🩹 Fixes
+
+- **verify:** Count a single-interface module's src/interface as shared ([#208](https://github.com/AntelopeJS/tooling-configs/pull/208))
+
+### 📖 Documentation
+
+- **readme:** Recommend oxfmt 0.77, the version the preset moved to ([#202](https://github.com/AntelopeJS/tooling-configs/pull/202))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.3.5
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.4...v0.3.5)
