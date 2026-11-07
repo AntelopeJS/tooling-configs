@@ -6,6 +6,8 @@ import type { ContainerRecord, RunState, Workspace } from "./workspace.ts";
 import { saveRun } from "./workspace.ts";
 
 const READY_TIMEOUT_MS = 90_000;
+/** The open-file limit of every service container, MongoDB's recommended value: Docker's default soft limit of 1024 runs out when mongod holds dropped tables open until its next checkpoint. */
+const OPEN_FILES = 64_000;
 
 function docker(args: string[]) {
   const run = spawnSync("docker", args, { encoding: "utf8" });
@@ -53,7 +55,8 @@ function waitReady(container: string, ready: string[], folder: string): void {
 /**
  * Starts every service of verify.config.ts in its own container, named
  * `<prefix>-<repo>-<service>-<run id>`, publishes its port on a free
- * loopback port chosen by Docker, and waits for its readiness command. Each
+ * loopback port chosen by Docker, raises its open-file limit to 64000, and
+ * waits for its readiness command. Each
  * container is recorded before it is probed, so `clean` removes it even when
  * it never became ready.
  */
@@ -78,6 +81,8 @@ export function startServices(
       name,
       "-p",
       `127.0.0.1::${definition.port}`,
+      "--ulimit",
+      `nofile=${OPEN_FILES}:${OPEN_FILES}`,
       ...env,
       definition.image,
     ];
