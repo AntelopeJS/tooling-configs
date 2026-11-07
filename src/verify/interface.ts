@@ -1,7 +1,25 @@
-import { mkdirSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, dirname, join } from "node:path";
 
-import { isObject, type JsonValue } from "../garden/json.ts";
+import {
+  isObject,
+  isString,
+  type JsonValue,
+  optStr,
+  parseJson,
+} from "../garden/json.ts";
 import { equal, exitIs, interrupted } from "./checks.ts";
 import type { BuiltinJourney, VerifyContext } from "./context.ts";
 import {
@@ -10,6 +28,7 @@ import {
   minorRule,
   type Surface,
 } from "./surface.ts";
+import { onInterrupt } from "./record.ts";
 import type { App, Check } from "./types.ts";
 import { CACHE_DIR, git } from "./workspace.ts";
 
@@ -261,38 +280,113 @@ const everyFunction: BuiltinJourney = {
   },
 };
 
-function publishedVersion(output: string): string | null {
-  const text = output.trim();
-  return text === "" ? null : text.replace(/^"|"$/g, "");
+interface PublishedView {
+  version: string | null;
+  integrity: string | null;
 }
 
-async function fetchPublished(
-  context: VerifyContext,
-  name: string,
-  version: string,
-): Promise<string | undefined> {
-  const folder = join(CACHE_DIR, "published", name.replace("/", "+"), version);
-  mkdirSync(folder, { recursive: true });
-  const env = {
-    npm_config_offline: "false",
-    npm_config_prefer_offline: "false",
+/** Reads the latest version and its sha512 integrity from `npm view <name> version dist.integrity --json`. */
+function publishedView(output: string): PublishedView {
+  const text = output.trim();
+  if (text === "") return { version: null, integrity: null };
+  const parsed = parseJson(text);
+  if (isString(parsed)) return { version: parsed, integrity: null };
+  if (!isObject(parsed)) return { version: null, integrity: null };
+  return {
+    version: optStr(parsed, "version") ?? null,
+    integrity: sha512Token(optStr(parsed, "dist.integrity")),
   };
-  const packed = await context.command(
-    `npm pack ${name}@${version}`,
-    "npm",
-    ["pack", `${name}@${version}`, "--pack-destination", folder],
-    { env },
+}
+
+/** The `sha512-` token of a Subresource Integrity value, which may list several hashes; `null` when it has none, which npm also checks but this cache cannot. */
+function sha512Token(integrity: string | undefined): string | null {
+  return (
+    (integrity ?? "")
+      .split(/\s+/)
+      .find((token) => token.startsWith("sha512-")) ?? null
   );
-  const tarball = readdirSync(folder).find((file) => file.endsWith(".tgz"));
-  if (packed.exitCode !== 0 || tarball === undefined) {
-    context.expect(packed.folder, [exitIs(packed, 0)], { critical: true });
-    return undefined;
+}
+
+const ONLINE = {
+  npm_config_offline: "false",
+  npm_config_prefer_offline: "false",
+};
+
+function tarballsIn(folder: string): string[] {
+  if (!existsSync(folder)) return [];
+  return readdirSync(folder)
+    .filter((entry) => entry.endsWith(".tgz"))
+    .map((entry) => join(folder, entry));
+}
+
+/** The registry's integrity string of a file: `sha512-` and the base64 of its SHA-512. */
+function integrityOf(file: string): string {
+  return `sha512-${createHash("sha512").update(readFileSync(file)).digest("base64")}`;
+}
+
+/** Packs into a staging folder next to the cache, so the cache only ever receives a complete tarball that matches the published integrity. */
+async function packPublished(
+  context: VerifyContext,
+  published: { name: string; version: string; integrity: string | null },
+  folder: string,
+): Promise<string | undefined> {
+  const { name, version, integrity } = published;
+  mkdirSync(dirname(folder), { recursive: true });
+  const staging = mkdtempSync(`${folder}.pack-`);
+  const release = onInterrupt(() =>
+    rmSync(staging, { recursive: true, force: true }),
+  );
+  try {
+    const packed = await context.command(
+      `npm pack ${name}@${version}`,
+      "npm",
+      ["pack", `${name}@${version}`, "--pack-destination", staging],
+      { env: ONLINE },
+    );
+    const [staged] = tarballsIn(staging);
+    if (packed.exitCode !== 0 || staged === undefined) {
+      context.expect(packed.folder, [exitIs(packed, 0)], { critical: true });
+      return undefined;
+    }
+    if (integrity !== null) {
+      const actual = integrityOf(staged);
+      context.expect(
+        context.step(`check packed ${name}@${version}`),
+        [
+          {
+            name: `the packed tarball of ${name}@${version} has the integrity the registry publishes`,
+            pass: actual === integrity,
+            detail: `packed ${actual}, published ${integrity}`,
+          },
+        ],
+        { critical: true },
+      );
+    }
+    if (integrity === null) {
+      const uncached = join(context.work, basename(staged));
+      copyFileSync(staged, uncached);
+      return uncached;
+    }
+    mkdirSync(folder, { recursive: true });
+    const cached = join(folder, basename(staged));
+    renameSync(staged, cached);
+    return cached;
+  } finally {
+    release();
+    rmSync(staging, { recursive: true, force: true });
   }
+}
+
+async function extractPublished(
+  context: VerifyContext,
+  tarball: string,
+): Promise<string> {
   const extracted = join(context.work, "published");
+  rmSync(extracted, { recursive: true, force: true });
   mkdirSync(extracted, { recursive: true });
   const untar = await context.command("extract published", "tar", [
     "-xzf",
-    join(folder, tarball),
+    tarball,
     "-C",
     extracted,
   ]);
@@ -300,6 +394,68 @@ async function fetchPublished(
   const root = join(extracted, "package");
   linkDependencies(root, context.repo);
   return root;
+}
+
+/**
+ * A private copy, under the journey's work folder, of the cached tarball of a
+ * version, only when it is the folder's single tarball and the copy's
+ * integrity is the published one. Hashing and extracting the same copy keeps
+ * another run that replaces the cached file in between from changing what
+ * this journey reads.
+ */
+function trustedTarball(
+  files: string[],
+  integrity: string | null,
+  work: string,
+): string | undefined {
+  const [only] = files;
+  if (files.length !== 1 || integrity === null) return undefined;
+  const copy = join(work, basename(only));
+  try {
+    copyFileSync(only, copy);
+  } catch {
+    return undefined;
+  }
+  return integrityOf(copy) === integrity ? copy : undefined;
+}
+
+/** Extracts a published version from the cache when its one tarball has the published integrity, and packs it again otherwise. */
+async function fetchPublished(
+  context: VerifyContext,
+  name: string,
+  published: { version: string; integrity: string | null },
+): Promise<string | undefined> {
+  const { version, integrity } = published;
+  const folder = join(CACHE_DIR, "published", name.replace("/", "+"), version);
+  const files = tarballsIn(folder);
+  mkdirSync(context.work, { recursive: true });
+  const trusted = trustedTarball(files, integrity, context.work);
+  if (trusted !== undefined) {
+    context.expect(context.step(`reuse cached ${name}@${version}`), [
+      {
+        name: `the cached tarball of ${name}@${version} has the published integrity, so it is reused and no npm pack ran`,
+        pass: true,
+        detail: `${files[0]}: ${integrity}`,
+      },
+    ]);
+    return extractPublished(context, trusted);
+  }
+  if (files.length > 0) {
+    for (const file of files) rmSync(file, { force: true });
+    context.expect(context.step(`discard cached ${name}@${version}`), [
+      {
+        name: `the cached tarballs of ${name}@${version} are deleted and packed again, as ${files.length === 1 ? "the one" : `none of the ${files.length}`} cannot be trusted`,
+        pass: tarballsIn(folder).length === 0,
+        detail: `${files.join(", ")} against ${integrity ?? "no published integrity"}`,
+      },
+    ]);
+  }
+  const packed = await packPublished(
+    context,
+    { name, version, integrity },
+    folder,
+  );
+  return packed === undefined ? undefined : extractPublished(context, packed);
 }
 
 function changeTitles(context: VerifyContext): string[] {
@@ -321,25 +477,25 @@ const minorBump: BuiltinJourney = {
     const view = await context.command(
       `npm view ${name}`,
       "npm",
-      ["view", name, "version", "--json"],
-      {
-        env: {
-          npm_config_offline: "false",
-          npm_config_prefer_offline: "false",
-        },
-      },
+      ["view", name, "version", "dist.integrity", "--json"],
+      { env: ONLINE },
     );
     const missing = view.exitCode !== 0 && /E404/.test(view.stderr);
     if (view.exitCode !== 0 && !missing)
       context.notVerified(
         `npm view ${name} failed: ${view.stderr.trim().slice(-200)}`,
       );
-    const published = missing ? null : publishedVersion(view.stdout);
+    const { version: published, integrity } = missing
+      ? { version: null, integrity: null }
+      : publishedView(view.stdout);
     const head = readSurface(context, context.state.pack, "head");
     const root =
       published === null
         ? undefined
-        : await fetchPublished(context, name, published);
+        : await fetchPublished(context, name, {
+            version: published,
+            integrity,
+          });
     const before =
       root === undefined
         ? undefined
