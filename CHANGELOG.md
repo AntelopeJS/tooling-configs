@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.3.5
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.4...v0.3.5)
+
+### 🚀 Enhancements
+
+- **verify:** Time each phase of a run and show it in the verdict ([#186](https://github.com/AntelopeJS/tooling-configs/pull/186))
+
+### 🔥 Performance
+
+- **verify:** Prepare a project once per run and copy it per journey ([#197](https://github.com/AntelopeJS/tooling-configs/pull/197))
+- **verify:** Install a project's registry modules once per run ([#200](https://github.com/AntelopeJS/tooling-configs/pull/200))
+
+### 🩹 Fixes
+
+- **verify:** Run journeys, setup and formal checks in the operator's environment, not the lease's ([#198](https://github.com/AntelopeJS/tooling-configs/pull/198))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.3.4
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.3...v0.3.4)
