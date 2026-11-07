@@ -73,7 +73,9 @@
     "knip": "knip",
     "suppressions": "node src/bin/suppressions.ts",
     "suppressions:update": "node src/bin/suppressions.ts --update",
-    "docs:generate": "node src/docs/generate.ts"
+    "docs:generate": "node src/docs/generate.ts",
+    "ci:shard": "node src/ci/shard.ts",
+    "ci:weights": "node src/ci/refresh-weights.ts"
   },
   "dependencies": {
     "@oxlint/plugins": "1.81.0",
