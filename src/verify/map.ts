@@ -37,6 +37,26 @@ const NOT_USER_FACING = {
   template: VERIFICATION_LAYER,
 };
 
+const SHARED_BY_ALL = [
+  "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "tsconfig.json",
+  "tsconfig.*.json",
+];
+
+/** The files whose change can break any feature, so a diff touching one runs them all. */
+export const DEFAULT_SHARED = {
+  interface: SHARED_BY_ALL,
+  module: SHARED_BY_ALL,
+  template: [
+    ...SHARED_BY_ALL,
+    "antelope-lock/**",
+    "antelope.config.*",
+    "antelope.json",
+  ],
+};
+
 function frontmatterLists(text: string): Map<string, string[]> {
   const lists = new Map<string, string[]>();
   const match = /^---\n([\s\S]*?)\n---\n/.exec(text);
@@ -83,6 +103,14 @@ function userFacing(workspace: Workspace, file: string): boolean {
     workspace.config.userFacing ?? DEFAULT_USER_FACING[workspace.kind];
   return (
     matches(file, globs) && !matches(file, NOT_USER_FACING[workspace.kind])
+  );
+}
+
+/** The changed files that run every feature; the verification layer never counts. */
+function sharedFiles(workspace: Workspace, changed: string[]): string[] {
+  const globs = workspace.config.shared ?? DEFAULT_SHARED[workspace.kind];
+  return changed.filter(
+    (file) => matches(file, globs) && !matches(file, VERIFICATION_LAYER),
   );
 }
 
@@ -156,15 +184,23 @@ export function checkMap(workspace: Workspace, builtins: string[]): string[] {
   return problems;
 }
 
+/** Why a plan runs every feature: a shared file changed, or the run was created with `--all`. */
+export type FullReason =
+  | { reason: "shared"; files: string[] }
+  | { reason: "all" };
+
 /** What a diff asks a verdict to run. */
 export interface Plan {
   baseRef: string;
   baseSha: string;
   headSha: string;
   changed: string[];
+  /** The features whose covers globs match the diff, whether or not the plan runs the full set. */
   touched: { feature: string; files: string[] }[];
   unmapped: string[];
   docs: string[];
+  /** Null when only the touched features and smoke run. */
+  full: FullReason | null;
   run: string[];
   dirty: string[];
 }
@@ -182,12 +218,28 @@ function changedFiles(workspace: Workspace, baseSha: string): string[] {
   return [...new Set([...committed, ...untracked].filter(Boolean))].sort();
 }
 
+/** The reason a plan runs every feature, `all` taking precedence over a shared file. */
+function fullReason(
+  workspace: Workspace,
+  changed: string[],
+  all: boolean,
+): FullReason | null {
+  if (all) return { reason: "all" };
+  const files = sharedFiles(workspace, changed);
+  return files.length > 0 ? { reason: "shared", files } : null;
+}
+
 /**
  * Maps the change from the merge base of `baseRef` onto features: every
- * touched feature plus the smoke feature runs, and a user-facing file outside
- * every glob is an unmapped surface.
+ * touched feature plus the smoke feature runs, every feature runs when a
+ * shared file changed or `all` is set, and a user-facing file outside every
+ * glob is an unmapped surface.
  */
-export function planFor(workspace: Workspace, baseRef: string): Plan {
+export function planFor(
+  workspace: Workspace,
+  baseRef: string,
+  all = false,
+): Plan {
   const features = readFeatures(workspace);
   const baseSha = git(workspace.root, ["merge-base", baseRef, "HEAD"]);
   const changed = changedFiles(workspace, baseSha);
@@ -209,9 +261,13 @@ export function planFor(workspace: Workspace, baseRef: string): Plan {
         .flatMap((feature) => feature.docs),
     ),
   ];
+  const full = fullReason(workspace, changed, all);
+  const planned = full
+    ? features.map((feature) => feature.name)
+    : [...touchedNames];
   const run = [
     SMOKE_FEATURE,
-    ...[...touchedNames].filter((name) => name !== SMOKE_FEATURE),
+    ...planned.filter((name) => name !== SMOKE_FEATURE),
   ];
   const dirty = git(workspace.root, [
     "status",
@@ -228,6 +284,7 @@ export function planFor(workspace: Workspace, baseRef: string): Plan {
     touched,
     unmapped,
     docs,
+    full,
     run,
     dirty,
   };

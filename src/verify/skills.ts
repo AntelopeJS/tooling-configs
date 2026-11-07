@@ -4,6 +4,7 @@ import {
   type SyncedSkillFile,
   type VerifyKind,
 } from "./kinds.ts";
+import { DEFAULT_SHARED } from "./map.ts";
 import { KIND_TEXT } from "./skill-kinds.ts";
 
 const BIN = "pnpm exec antelopejs-verify";
@@ -71,7 +72,7 @@ Each journey deletes its scratch folder and \`HOME\`, its install included, when
 - \`verify.config.ts\` default-exports a \`VerifyConfig\` from \`@antelopejs/tooling-configs/verify\`:
   - \`doors\`: one entry per door kind (\`data\`, \`format\`, \`contract\`, \`outbound\`, \`exposure\`, \`publish\`), each \`null\` when it cannot apply or \`{ globs, funnels, why }\`.
   - \`journeys\`: the repository's journeys by id, each \`{ title, entryPoint, run(context) }\`, using the check helpers the same import exports. A check states what the product must do; an environment that went away is never a failing check. When a journey fails, the harness reruns each service's readiness command, up to four times over about 3.5 s, and looks at every \`ajs project dev\` the journey started, its own readiness probe included. The journey ends NOT VERIFIED, not FAIL, when a service still fails every rerun, an app was killed by SIGKILL, SIGTERM, SIGHUP or SIGINT that the harness did not send, or the app the harness started failed to bind the port the harness gave it (\`EADDRINUSE\` naming that port). An app that exits on its own with an exit code, one that crashes by another signal such as SIGABRT or SIGSEGV, and one that logs \`EADDRINUSE\` for any other port are the product's failure. A change that takes its own service down still reads as an outage: the service stays down, so the journey is NOT VERIFIED. For anything else the journey depends on, such as a process it started with \`context.command\` or an outside endpoint, probe it when a check fails and call \`context.notVerified(reason)\` when it no longer answers.
-  - \`env\`, \`setup\` (commands replacing the build), \`userFacing\` (globs replacing the kind's default) and \`formal\` (formal checks: \`name\`, \`covers\`, \`command\`, \`violation\`, and optionally \`behaviour\` and \`baseCommand\`).
+  - \`env\`, \`setup\` (commands replacing the build), \`userFacing\` and \`shared\` (globs replacing the kind's default; \`shared\` lists the files whose change runs every feature), and \`formal\` (formal checks: \`name\`, \`covers\`, \`command\`, \`violation\`, and optionally \`behaviour\` and \`baseCommand\`).
 ${text.layer}
 - \`features/README.md\`: the index of the features; \`map\` does not read it as a feature.
 - \`features/<feature>.md\`: frontmatter lists \`covers:\` (source globs), \`docs:\` (pages a verdict judges) and \`journeys:\`, then the sections Sub-features, How to get to it (user POV), Driving it with antelopejs-verify, and Gotchas. \`features/smoke.md\` covers nothing and runs on every verdict; here it runs ${text.smoke}.
@@ -84,7 +85,7 @@ ${BIN} map
 
 ## Verdict rules
 
-1. **Run every feature whose \`covers:\` globs the diff touches, plus \`smoke\`.** \`plan\` prints that list as \`run\`.
+1. **Run every feature whose \`covers:\` globs the diff touches, plus \`smoke\`.** \`plan\` prints that list as \`run\`. When the diff changes a shared file (${DEFAULT_SHARED[kind].map((glob) => `\`${glob}\``).join(", ")}; \`shared\` in \`verify.config.ts\` replaces this list), \`run\` is every feature and \`full\` says why. Before a release, create the run with \`new --all\` and plan with \`plan --all\`: every feature runs, whatever the diff.
 2. **An unmapped surface fails the verdict.** A changed user-facing file no feature covers needs a feature entry and its journeys in the same PR.
 3. **Every registered journey of a feature in \`run\` must have run and passed.** Run whole features. A journey that could not reach the product, or whose environment went away during it, is NOT VERIFIED, and so is the verdict, whatever else passed: never PASS and never PASS+NOTES. Every journey result in the run's evidence counts, also for a feature outside \`run\`: a failed one fails the verdict, because it shows a \`covers:\` glob that misses what the diff broke. A NOT VERIFIED one outside \`run\` is listed under Not verified and caps the result at PASS+NOTES. A journey outside \`run\` that never ran is not required.
 4. **Docs.** Judge every \`docs:\` page of a touched feature against what the journeys showed. A stale page fails the verdict.

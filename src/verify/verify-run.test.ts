@@ -214,6 +214,79 @@ test("the verdict passes only when every registered journey ran and passed, with
   );
 });
 
+test("a run created with new --all makes the verdict require every feature's journeys and says why, where a verdict that drops the run's flag passes on smoke alone", (t) => {
+  const { root, tmp } = runRepo(t);
+  const run = newRun(root, tmp);
+  const created = verify(root, tmp, ["new", "--all"]);
+  assert.equal(created.status, 0, created.stderr);
+  const full = created.stdout.trim();
+  assert.equal(JSON.parse(read(full, "run.json")).all, true);
+  assert.equal(JSON.parse(read(run, "run.json")).all, false);
+  assert.equal(verify(root, tmp, ["journey", full, "smoke"]).status, 0);
+  judgement(full, JUDGED);
+  const partial = verify(root, tmp, ["verdict", full, "--pr", "7"]);
+  assert.equal(partial.status, 1);
+  assert.match(
+    partial.stdout,
+    /- store\/ok was not run\n- store\/kept was not run\n/,
+  );
+  assert.deepEqual(evidence(full, "plan.json").full, { reason: "all" });
+  assert.equal(verify(root, tmp, ["journey", full, "store"]).status, 0);
+  const passed = verify(root, tmp, ["verdict", full, "--pr", "7"]);
+  assert.equal(passed.status, 0, passed.stderr);
+  assert.match(
+    passed.stdout,
+    /### Touched features\n- none\n- smoke: runs on every verdict\n- Every feature ran: the run was created with `--all`, before a release\.\n/,
+  );
+});
+
+test("a run.json written before --all existed reads as a plain run", (t) => {
+  const { root, tmp } = runRepo(t);
+  const run = newRun(root, tmp);
+  const stored = JSON.parse(read(run, "run.json"));
+  delete stored.all;
+  put(run, "run.json", JSON.stringify(stored));
+  assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
+  judgement(run, JUDGED);
+  const verdict = verify(root, tmp, ["verdict", run, "--pr", "7"]);
+  assert.equal(verdict.status, 0, verdict.stderr);
+  assert.equal(evidence(run, "plan.json").full, null);
+});
+
+test("a shared-file diff makes the verdict require every feature and lists the shared files, where a covers-only verdict passes on smoke alone", (t) => {
+  const { root, tmp } = runRepo(t);
+  put(
+    root,
+    "package.json",
+    '{"name":"guardrails-test","type":"module","version":"2.0.0"}\n',
+  );
+  const run = newRun(root, tmp);
+  assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
+  judgement(run, {
+    ...JUDGED,
+    doors: {
+      rows: [
+        {
+          kind: "publish",
+          location: "package.json",
+          irreversible: "the version",
+          containment: "dry run",
+        },
+      ],
+    },
+  });
+  const partial = verify(root, tmp, ["verdict", run, "--pr", "7"]);
+  assert.equal(partial.status, 1);
+  assert.match(partial.stdout, /- store\/ok was not run\n/);
+  assert.equal(verify(root, tmp, ["journey", run, "store"]).status, 0);
+  const passed = verify(root, tmp, ["verdict", run, "--pr", "7"]);
+  assert.equal(passed.status, 0, passed.stderr);
+  assert.match(
+    passed.stdout,
+    /- Every feature ran: the diff changes shared files `package\.json`\.\n/,
+  );
+});
+
 test("a journey that failed outside the diff's features fails the verdict, even when an unrun journey sits beside it", (t) => {
   const { root, tmp } = runRepo(t);
   put(
