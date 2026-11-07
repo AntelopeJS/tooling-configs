@@ -116,11 +116,12 @@ export function repositoryTools(manifest: Manifest) {
   ];
 }
 
-/** Installs hooks only in a folder holding `.git`, the top of a checkout, worktree or submodule, so a package installed inside another checkout never writes that checkout's hooks; git's own lookup is avoided because `GIT_DIR` can point it at an outer repository. */
+/** Installs hooks only in a folder whose own `.git` is a working repository, the top of a checkout, worktree or submodule. `GIT_DIR` and `GIT_WORK_TREE` are pinned to that folder, since a git hook or CI wrapper can point them at an outer repository, and a `.git` that does not resolve skips silently. */
 export const PREPARE_INSTALL =
-  "if [ -e .git ] && command -v git >/dev/null 2>&1 && command -v lefthook >/dev/null 2>&1; then lefthook install; fi";
+  "if [ -e .git ] && command -v git >/dev/null 2>&1 && command -v lefthook >/dev/null 2>&1 && GIT_DIR=.git GIT_WORK_TREE=. git rev-parse --git-dir >/dev/null 2>&1; then GIT_DIR=.git GIT_WORK_TREE=. lefthook install; fi";
 
 const PREVIOUS_PREPARE_INSTALLS = [
+  "if [ -e .git ] && command -v git >/dev/null 2>&1 && command -v lefthook >/dev/null 2>&1; then lefthook install; fi",
   "if git rev-parse --is-inside-work-tree >/dev/null 2>&1 && command -v lefthook >/dev/null 2>&1; then lefthook install; fi",
   'if [ "$(git rev-parse --is-inside-work-tree --show-prefix 2>/dev/null)" = true ] && command -v lefthook >/dev/null 2>&1; then lefthook install; fi',
 ];
@@ -142,15 +143,25 @@ const DEFAULT_SCRIPTS = {
 };
 
 /** Rewrites every earlier synced install to the current one, leaving the current one, which contains the last earlier text, untouched. */
+/** Stands in for the current install while the script is split on its separators, since the install holds `&&` itself. */
+const INSTALL_TOKEN = "\u0000prepare-install\u0000";
+
 function migratePrepare(current: string): string {
-  const doubled = `${PREPARE_INSTALL} && ${PREPARE_INSTALL}`;
-  let migrated = current
+  const tokenized = current
     .split(PREPARE_INSTALL)
-    .map((part) => part.replace(PREVIOUS_INSTALL, () => PREPARE_INSTALL))
-    .join(PREPARE_INSTALL);
-  while (migrated.includes(doubled))
-    migrated = migrated.replaceAll(doubled, () => PREPARE_INSTALL);
-  return migrated;
+    .map((part) => part.replace(PREVIOUS_INSTALL, () => INSTALL_TOKEN))
+    .join(INSTALL_TOKEN);
+  let seen = false;
+  return tokenized
+    .split(/(\s*(?:&&|\|\||;)\s*)/)
+    .reduce<string[]>((kept, piece, index, pieces) => {
+      if (index % 2 === 1) return kept;
+      if (piece === INSTALL_TOKEN && seen) return kept;
+      seen ||= piece === INSTALL_TOKEN;
+      return kept.length === 0 ? [piece] : [...kept, pieces[index - 1], piece];
+    }, [])
+    .join("")
+    .replaceAll(INSTALL_TOKEN, () => PREPARE_INSTALL);
 }
 
 function prepareScript(current = ""): string {

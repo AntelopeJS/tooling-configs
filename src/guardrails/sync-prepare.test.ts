@@ -139,3 +139,51 @@ test("a prepare holding both the current and an earlier install keeps only the c
   assert.equal(bin(root, "sync").status, 0);
   assert.equal(preparedScript(root), PREPARE_INSTALL);
 });
+
+test("a .git that does not resolve, a dangling gitfile or an empty folder, skips silently instead of failing the install or writing an outer repository's hooks", (t) => {
+  const outer = syncedRepo(t);
+  const prepare = preparedScript(outer);
+  const stubs = stubLefthook(outer);
+  const dangling = join(outer, "copied");
+  mkdirSync(dangling);
+  put(outer, "copied/.git", "gitdir: ../.git/modules/gone\n");
+  const empty = join(outer, "vendored");
+  mkdirSync(join(empty, ".git"), { recursive: true });
+  for (const cwd of [dangling, empty]) {
+    const result = runPrepare(prepare, cwd, stubs);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout + result.stderr, "");
+  }
+  assert.equal(existsSync(join(outer, HOOK_MARKER)), false);
+});
+
+test("a nested repository installs into its own hooks even with GIT_DIR pointing at the outer one; a guard that only tests for .git lets lefthook follow GIT_DIR", (t) => {
+  const outer = syncedRepo(t);
+  const prepare = preparedScript(outer);
+  const stubs = stubLefthook(outer);
+  const inner = join(outer, "inner");
+  mkdirSync(inner);
+  execFileSync("git", ["init", "-q"], { cwd: inner });
+  const result = spawnSync("/bin/sh", ["-c", prepare], {
+    cwd: inner,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${stubs}:${process.env.PATH}`,
+      GIT_DIR: join(outer, ".git"),
+      GIT_WORK_TREE: outer,
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(join(outer, HOOK_MARKER)), false);
+  assert.equal(existsSync(join(inner, HOOK_MARKER)), true);
+});
+
+test("an earlier install beside the current one is dropped whatever separator joins them; a dedupe that only knows `&&` keeps both", (t) => {
+  const root = syncedRepo(t);
+  const manifest = JSON.parse(read(root, "package.json"));
+  manifest.scripts.prepare = `${PREVIOUS_PREPARE}; echo kept || ${PREPARE_INSTALL}`;
+  put(root, "package.json", `${JSON.stringify(manifest, null, 2)}\n`);
+  assert.equal(bin(root, "sync").status, 0);
+  assert.equal(preparedScript(root), `${PREPARE_INSTALL}; echo kept`);
+});
