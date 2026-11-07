@@ -468,10 +468,7 @@ export function syncRepository(
   const notes = plan.flatMap((artifact) =>
     artifact.kind === "migrated" ? artifact.notes : [],
   );
-  (options.check ? errors : notes).push(
-    ...repositoryNotices(root, context),
-    ...checkTypecheckCoverage(root),
-  );
+  (options.check ? errors : notes).push(...repositoryNotices(root, context));
   if (
     !errors.length &&
     profile === "full" &&
@@ -513,7 +510,10 @@ export function syncRepository(
     errors,
     notes,
     verifyNotes: options.check || errors.length ? [] : verify.notes,
-    advisories: entryOnly.advisories,
+    advisories: [
+      ...entryOnly.advisories,
+      ...checkTypecheckCoverage(root).map((finding) => `Note: ${finding}`),
+    ],
     dependenciesAdded,
   };
 }

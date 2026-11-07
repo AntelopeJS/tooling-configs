@@ -177,9 +177,9 @@ const FULL_RULES = [
   ],
   [
     "No `skipLibCheck` in a tsconfig; `build` skips only what `typecheck` checks",
-    "`antelopejs-sync --check`",
+    "`antelopejs-sync` note (report-only)",
   ],
-  ["`release` runs `typecheck`", "`antelopejs-sync --check`"],
+  ["`release` runs `typecheck`", "`antelopejs-sync` note (report-only)"],
   ["A test names the wrong implementation it catches", "review; no tool"],
 ] as const;
 
