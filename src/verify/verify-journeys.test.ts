@@ -37,6 +37,33 @@ export default {
     ${journey("own", 0)},
     ${journey("docs", 0)},
     ${journey("bad", 3)},
+    "leak": {
+      title: "sets a variable in the harness process",
+      entryPoint: "node",
+      async run(context) {
+        process.env.PROBE_LEAK = "leaked";
+        const result = await context.command("node exits 0", process.execPath, ["-e", "process.exitCode = 0"]);
+        context.expect(result.folder, [exitIs(result, 0)]);
+      },
+    },
+    "peek": {
+      title: "fails when it inherits PROBE_LEAK",
+      entryPoint: "node",
+      async run(context) {
+        const result = await context.command("node reads PROBE_LEAK", process.execPath, ["-e", "process.exitCode = process.env.PROBE_LEAK ? 5 : 0"]);
+        context.expect(result.folder, [exitIs(result, 0)]);
+      },
+    },
+    "timer": {
+      title: "leaves a timer that throws",
+      entryPoint: "node",
+      async run(context) {
+        setTimeout(() => { throw new Error("async boom"); }, 20);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const result = await context.command("node exits 0", process.execPath, ["-e", "process.exitCode = 0"]);
+        context.expect(result.folder, [exitIs(result, 0)]);
+      },
+    },
     "unreachable": {
       title: "unreachable",
       entryPoint: "node",
@@ -213,4 +240,36 @@ test("journey --plan or --features refuses journey ids and each other before any
   }
   assert.equal(ran(run, "smoke/own"), false);
   assert.equal(ran(run, "api/own"), false);
+});
+
+test("journey --plan gives each feature the environment its own call would have; a loop that leaves a journey's process.env change in place fails the next feature", (t) => {
+  const { root, tmp, run } = repo(t, { smoke: ["leak"], api: ["peek"] });
+  const planned = verify(root, tmp, ["journey", run, "--plan"]);
+  assert.equal(planned.status, 0, planned.stdout + planned.stderr);
+  assert.equal(planned.stdout, "PASS smoke/leak\nPASS api/peek\n");
+});
+
+test("journey --plan names the features left unrun when a journey leaves an uncaught error; a loop with no handler dies with a bare stack trace", (t) => {
+  const { root, tmp, run } = repo(t, { smoke: ["timer"], api: ["shared"] });
+  const planned = verify(root, tmp, ["journey", run, "--plan"]);
+  assert.equal(planned.status, 1);
+  assert.match(
+    planned.stderr,
+    /^smoke: a journey left an uncaught error: async boom\nnot run: api\n$/,
+  );
+  assert.equal(ran(run, "api/shared"), false);
+});
+
+test("journey --features joins repeated flags and trims names; parsing that keeps the last flag drops smoke, and one that keeps spaces calls api unknown", (t) => {
+  const { root, tmp, run } = repo(t, { smoke: ["own"], api: ["shared"] });
+  const named = verify(root, tmp, [
+    "journey",
+    run,
+    "--features",
+    "smoke",
+    "--features",
+    " api ",
+  ]);
+  assert.equal(named.status, 0, named.stdout + named.stderr);
+  assert.equal(named.stdout, "PASS smoke/own\nPASS api/shared\n");
 });

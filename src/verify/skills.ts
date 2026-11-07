@@ -51,7 +51,7 @@ ${BIN} plan --base origin/main
 ${BIN} journey <run> --plan
 \`\`\`
 
-\`plan\` maps the diff to features and lists unmapped surfaces. \`journey <run> --plan\` runs every feature \`plan\` lists as \`run\` for the run's base, \`smoke\` first, in one call: it prints each feature's lines in turn, keeps going after a feature fails, and exits 1 when any journey did not pass. Run it once instead of one call per feature. To rerun after a fix, run one feature, or only the journeys you name, or several features by name:
+\`plan\` maps the diff to features and lists unmapped surfaces. \`journey <run> --plan\` runs every feature \`plan\` lists as \`run\` for the run's base, \`smoke\` first, in one call: it prints each feature's lines in turn, keeps going after a feature fails, and exits 1 when any journey did not pass. A journey that leaves an uncaught error behind ends the call and the line \`not run: <features>\` names what to rerun. Run it once instead of one call per feature. To rerun after a fix, run one feature, or only the journeys you name, or several features by name:
 
 \`\`\`bash
 ${BIN} journey <run> <feature> [journey...]
