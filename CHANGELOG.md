@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.3.4
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.3...v0.3.4)
+
+### 🚀 Enhancements
+
+- **sync:** Drop the caller checks job that only re-aggregates ci ([#189](https://github.com/AntelopeJS/tooling-configs/pull/189))
+- **verify:** Run every feature when a shared file changes or before a release ([#188](https://github.com/AntelopeJS/tooling-configs/pull/188))
+- **lease:** Stop only this worktree's own work with down --stop ([#196](https://github.com/AntelopeJS/tooling-configs/pull/196))
+
+### 🔥 Performance
+
+- **checks:** Run the check steps concurrently ([#190](https://github.com/AntelopeJS/tooling-configs/pull/190))
+- **verify:** Build an interface once when its prepack is the build ([#192](https://github.com/AntelopeJS/tooling-configs/pull/192))
+- **verify:** Reuse a passed journey of another feature within one run ([#194](https://github.com/AntelopeJS/tooling-configs/pull/194))
+- **fmt:** Move to oxfmt 0.77, which formats Markdown without a Node worker pool ([#195](https://github.com/AntelopeJS/tooling-configs/pull/195))
+- **formal:** Cache checkSpec results by everything TLC reads ([#199](https://github.com/AntelopeJS/tooling-configs/pull/199))
+
+### 🩹 Fixes
+
+- **garden:** Start the ci-duration baseline after the last change to the CI caller or its reusable workflows ([#187](https://github.com/AntelopeJS/tooling-configs/pull/187))
+- **sync:** Install lefthook hooks from prepare only at the git top level ([#191](https://github.com/AntelopeJS/tooling-configs/pull/191))
+- **verify:** Stop forcing prefer-offline on the shared npm cache ([#193](https://github.com/AntelopeJS/tooling-configs/pull/193))
+- **verify:** Raise the open-file limit of service containers ([#201](https://github.com/AntelopeJS/tooling-configs/pull/201))
+
+### 🤖 CI
+
+- Balance test shards by measured file duration ([#185](https://github.com/AntelopeJS/tooling-configs/pull/185))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.3.3
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.2...v0.3.3)
