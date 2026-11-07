@@ -282,7 +282,7 @@ function stamp(
   return stamped;
 }
 
-/** Records `source` as the result of `id` under `feature` without running the journey: its own result.json names the folder it reuses. */
+/** Records `source` as the result of `id` under `feature` without running the journey: its own result.json names the folder it reuses, and its time is zero so a run's total counts the journey once. */
 function reuse(
   state: RunState,
   feature: string,
@@ -297,6 +297,8 @@ function reuse(
     feature,
     folder: relative(state.evidence, folder),
     reusedFrom: source.folder,
+    ms: 0,
+    stepMs: [],
   };
   writeFileSync(
     join(folder, "result.json"),

@@ -257,6 +257,19 @@ function resultOf(
   return notes > 0 ? "PASS+NOTES" : "PASS";
 }
 
+/** The verdict's Unmapped surfaces section, empty when every changed surface has a feature. */
+function unmappedSection(unmapped: string[]): string[] {
+  if (unmapped.length === 0) return [];
+  return [
+    "### Unmapped surfaces",
+    ...unmapped.map(
+      (file) =>
+        `- \`${file}\` matches no feature glob; add it to a feature file.`,
+    ),
+    "",
+  ];
+}
+
 /**
  * Computes the verdict of a run from its journey results, the diff plan and
  * the verifier's judgement, and writes verdict.md, verdict.json and plan.json
@@ -322,16 +335,7 @@ export function renderVerdict(
     `- ${SMOKE_FEATURE}: runs on every verdict`,
     ...(plan.full ? [`- ${fullLine(plan.full)}`] : []),
     "",
-    ...(plan.unmapped.length > 0
-      ? [
-          "### Unmapped surfaces",
-          ...plan.unmapped.map(
-            (file) =>
-              `- \`${file}\` matches no feature glob; add it to a feature file.`,
-          ),
-          "",
-        ]
-      : []),
+    ...unmappedSection(plan.unmapped),
     ...(reasons.length > 0
       ? ["### Why it fails", ...reasons.map((reason) => `- ${reason}`), ""]
       : []),
