@@ -34,11 +34,17 @@ async function statusVerb(args: string[]): Promise<number> {
   return 0;
 }
 
+/** `down --stop` can stop the reader of its own output, such as a `| tee` in the same lease; losing that output must not abort the teardown. */
+function ignoreBrokenPipe(error: NodeJS.ErrnoException): void {
+  if (error.code !== "EPIPE") throw error;
+}
+
 async function downVerb(args: string[]): Promise<number> {
   const { values } = parseArgs({
     args,
     options: { force: { type: "boolean" }, stop: { type: "boolean" } },
   });
+  if (values.stop === true) process.stdout.on("error", ignoreBrokenPipe);
   await down(process.env, {
     force: values.force === true,
     stop:

@@ -288,3 +288,29 @@ test("every lease signal refuses a pid that is not an integer above 1, so kill(-
     assert.throws(() => assertSignallable(pid), /refusing to signal pid/);
   assert.doesNotThrow(() => assertSignallable(process.pid));
 });
+
+test(
+  "down --stop piped into a reader of the same lease still tears the lease down when that reader is gone (fails when the broken pipe on its output aborts the teardown)",
+  { timeout: 60_000 },
+  async (t) => {
+    const root = scratch(t);
+    const worktree = gitInit(join(root, "w"));
+    const env = externalEnv(join(root, ".home"));
+    const printed = await leasedEnv(worktree, env);
+    await startRun(t, worktree, env, WAITER);
+    const down = LEASE_ARGV.map((part) => `'${part}'`).join(" ");
+    const outcome = await lease(
+      [
+        "run",
+        "--",
+        "bash",
+        "-c",
+        `${down} down --stop | head -c 0; echo "down=\${PIPESTATUS[0]}"`,
+      ],
+      worktree,
+      env,
+    );
+    assert.match(outcome.stdout, /down=0/, outcome.stdout + outcome.stderr);
+    assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), false);
+  },
+);
