@@ -209,13 +209,22 @@ export interface JourneyContext {
    * the preparation many journeys repeat, such as a scaffolded and installed
    * project. Returns `<work>/<key>`. The first journey of the run that asks
    * for `key` runs `build` on that empty folder with its usual recorded
-   * steps. When `build` returns and none of its checks failed, the run keeps
-   * a copy of the folder and of the build's step evidence. A later journey of
-   * the run, in this `journey` command or a later one, gets a fresh copy of
-   * the kept folder and one step, `prepared <key>`, that names the journey
-   * that built it and holds that build's evidence under `build/`. A build
-   * that throws or fails a check is not kept, so the next journey builds
-   * again. The commands `build` runs get a HOME of their own, deleted when
+   * steps, after a step `prepared <key>` that marks them as the build and says
+   * whether the run kept it. The run keeps a copy of the folder and of the
+   * build's step evidence only when `build` returns, recorded at least one
+   * check, passed every check, and left nothing in the folder but files,
+   * directories and symlinks. A later journey of the run, in this `journey`
+   * command or a later one, gets a fresh copy of the kept folder and one
+   * step, `prepared <key>`, that names the journey that built it and holds
+   * that build's evidence under `build/`. A build that is not kept is built
+   * again by the next journey. Rerunning the journey that built builds again.
+   * In a copy, an absolute symlink into the built folder points to the same
+   * path in the copy; every other symlink keeps its target. `build` writes
+   * only inside the folder it is given: what it writes elsewhere, such as a
+   * sibling in the journey's work folder or the repository, stays with the
+   * journey that built. Two journeys that ask for the same key at once, in
+   * concurrent `journey` commands, both build, and the first to finish is
+   * kept. The commands `build` runs get a HOME of their own, deleted when
    * `build` ends, so what they write there (`ajs config set git`, caches) is
    * never kept and every journey continues with its own HOME. Every journey
    * passes the same `build` for a key. `key` is lowercase letters and digits
