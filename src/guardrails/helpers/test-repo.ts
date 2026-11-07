@@ -117,6 +117,9 @@ export function read(root: string, path: string): string {
   return readFileSync(join(root, path), "utf8");
 }
 
+export const API_BUILD_SCRIPT =
+  "tsc --noEmit false --composite false --declarationMap false";
+
 /** A repository publishing a compiled `src` through `dist` with a build script, for the proof commands. */
 export function apiRepo(t: TestContext): string {
   const root = testRepo(t);
@@ -131,9 +134,7 @@ export function apiRepo(t: TestContext): string {
     JSON.stringify({
       name: "public-api",
       type: "module",
-      scripts: {
-        build: "tsc --noEmit false --composite false --declarationMap false",
-      },
+      scripts: { build: API_BUILD_SCRIPT },
       exports: {
         ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
       },
