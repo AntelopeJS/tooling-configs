@@ -25,6 +25,7 @@ import { stopwatch, timed } from "./timing.ts";
 import type { CommandResult } from "./types.ts";
 import {
   allocateRun,
+  commandRecords,
   git,
   isolatedEnv,
   operatorEnv,
@@ -158,7 +159,7 @@ interface Leftovers {
   containers: string[];
 }
 
-/** The leftovers a run recorded; none when its run.json is missing or unreadable. */
+/** The leftovers a run recorded in run.json and its commands' records files; none when its run.json is missing or unreadable. */
 function recorded(dir: string): Leftovers {
   try {
     const state = object(
@@ -166,7 +167,10 @@ function recorded(dir: string): Leftovers {
       "run.json",
     );
     return {
-      pids: children(state, "processes").map((entry) => num(entry, "pid")),
+      pids: [
+        ...children(state, "processes").map((entry) => num(entry, "pid")),
+        ...commandRecords(dir).map((record) => record.pid),
+      ],
       containers: children(state, "containers").map((entry) =>
         str(entry, "name"),
       ),

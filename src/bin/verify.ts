@@ -350,7 +350,9 @@ async function main(argv: string[]): Promise<number> {
     const runs = featureRuns(workspace, rest, values);
     const jobs = jobsFor(workspace, runs, values);
     if (jobs === 1) return runJourneys(workspace, rest[0], runs);
+    const dir = resolve(rest[0]);
     return runConcurrently(
+      dir,
       runs,
       jobs,
       (name) => featureJourneys(workspace, name) ?? [],
@@ -358,10 +360,11 @@ async function main(argv: string[]): Promise<number> {
         ...process.execArgv,
         process.argv[1],
         "journey",
-        resolve(rest[0]),
-        feature,
+        dir,
         "--kind",
         workspace.kind,
+        "--",
+        feature,
       ],
     );
   } else if (command === "formal")

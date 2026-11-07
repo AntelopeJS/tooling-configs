@@ -17,7 +17,15 @@ import { homedir, tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { isObject, parseJson, type JsonObject } from "../garden/json.ts";
+import {
+  isObject,
+  list,
+  num,
+  object,
+  parseJson,
+  str,
+  type JsonObject,
+} from "../garden/json.ts";
 import {
   DEV_STACK_VARIABLES,
   LEASE_DIR,
@@ -171,7 +179,7 @@ function stateFile(dir: string): string {
   return join(dir, "run.json");
 }
 
-/** Reads a run created by `new`, failing with the reason when it is missing, and marks it active by touching run.json. */
+/** Reads a run created by `new`, failing with the reason when it is missing, and marks it active by touching run.json. Its processes are those run.json records and those of every command's records file. */
 export function loadRun(dir: string): RunState {
   const file = stateFile(resolve(dir));
   if (!existsSync(file))
@@ -184,7 +192,12 @@ export function loadRun(dir: string): RunState {
     timings?: PhaseTiming[];
     all?: boolean;
   } = JSON.parse(readFileSync(file, "utf8"));
-  return { ...stored, timings: stored.timings ?? [], all: stored.all === true };
+  return {
+    ...stored,
+    processes: [...stored.processes, ...commandRecords(stored.dir)],
+    timings: stored.timings ?? [],
+    all: stored.all === true,
+  };
 }
 
 /** Writes `text` to `file` through a sibling temporary file and one rename, so a reader in another process sees the old content or the new, never part of it. */
@@ -198,63 +211,67 @@ export function writeWhole(file: string, text: string): void {
   }
 }
 
-/** Persists the run state. */
+/** Persists the run state; the processes a command's records file holds stay in that file only. */
 export function saveRun(state: RunState): void {
-  writeWhole(stateFile(state.dir), `${JSON.stringify(state, null, 2)}\n`);
+  const commands = new Set(
+    commandRecords(state.dir).map((record) => record.pid),
+  );
+  writeWhole(
+    stateFile(state.dir),
+    `${JSON.stringify({ ...state, processes: state.processes.filter((record) => !commands.has(record.pid)) }, null, 2)}\n`,
+  );
 }
 
-/** Whether the process `pid` still runs. */
-function running(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error instanceof Error && "code" in error && error.code === "EPERM";
-  }
-}
+/** A command's records file in the run folder: the command's PID, a random suffix that keeps a later command with a reused PID from overwriting it, and `.json`. */
+const RECORDS_FILE = /^processes-(\d+)-[0-9a-f]+\.json$/;
+
+/** This command's records file in each run it started processes in, and the records it holds. */
+const ownRecords = new Map<
+  string,
+  { file: string; records: ProcessRecord[] }
+>();
 
 /**
- * Runs `body` holding the run's lock, a file created exclusively that names
- * its holder. A lock whose holder no longer runs, as after a crash, is taken
- * over.
+ * The processes the commands of the run in `dir` recorded in their own
+ * files: every command's, or only those of the command whose PID is
+ * `command`. A file that does not hold a list of records records nothing,
+ * and a temporary file a crashed command left is not read.
  */
-function withRunLock(dir: string, body: () => void): void {
-  const lock = join(dir, "run.json.lock");
-  const pause = new Int32Array(new SharedArrayBuffer(4));
-  for (;;) {
-    try {
-      writeFileSync(lock, String(process.pid), { flag: "wx" });
-      break;
-    } catch (error) {
-      if (
-        !(error instanceof Error && "code" in error && error.code === "EEXIST")
-      )
-        throw error;
-    }
-    let holder = Number.NaN;
-    try {
-      holder = Number(readFileSync(lock, "utf8"));
-    } catch {
-      continue;
-    }
-    if (Number.isInteger(holder) && holder > 0 && !running(holder))
-      rmSync(lock, { force: true });
-    else Atomics.wait(pause, 0, 0, 2);
-  }
+export function commandRecords(dir: string, command?: number): ProcessRecord[] {
+  let names: string[];
   try {
-    body();
-  } finally {
-    rmSync(lock, { force: true });
+    names = readdirSync(dir);
+  } catch {
+    return [];
   }
+  return names.flatMap((name) => {
+    const match = RECORDS_FILE.exec(name);
+    if (
+      match === null ||
+      (command !== undefined && Number(match[1]) !== command)
+    )
+      return [];
+    try {
+      return list(parseJson(readFileSync(join(dir, name), "utf8")), name).map(
+        (entry) => {
+          const record = object(entry, name);
+          return { name: str(record, "name"), pid: num(record, "pid") };
+        },
+      );
+    } catch {
+      return [];
+    }
+  });
 }
 
 /**
  * Adds `add` to the processes the run records and drops the records of the
- * PIDs in `drop`, in `state` and in run.json. Several `journey` commands of
- * one run may start and stop processes at once, so run.json changes under a
- * lock, from what it holds then: writing back `state` whole would drop the
- * records another command made since this one loaded the run. `state` keeps
- * only the records this command loaded or made.
+ * PIDs in `drop`, in `state` and in this command's records file, which
+ * {@link loadRun} reads with run.json and every other command's file.
+ * Several `journey` commands of one run may start and stop processes at
+ * once; each writes only its own file, whole, so none can lose a record
+ * another made, and none waits for another. The file goes once it records
+ * nothing.
  */
 export function recordProcesses(
   state: RunState,
@@ -265,10 +282,17 @@ export function recordProcesses(
     ...(change.add ?? []),
   ];
   state.processes = apply(state.processes);
-  withRunLock(state.dir, () => {
-    const stored = loadRun(state.dir);
-    saveRun({ ...stored, processes: apply(stored.processes) });
-  });
+  const own = ownRecords.get(state.dir) ?? {
+    file: join(
+      state.dir,
+      `processes-${process.pid}-${randomBytes(6).toString("hex")}.json`,
+    ),
+    records: [],
+  };
+  own.records = apply(own.records);
+  ownRecords.set(state.dir, own);
+  if (own.records.length === 0) rmSync(own.file, { force: true });
+  else writeWhole(own.file, `${JSON.stringify(own.records)}\n`);
 }
 
 /** Allocates the folders of a new run under the system temp folder. */

@@ -225,11 +225,21 @@ test("new skips a stale run it cannot delete, says so, and still creates its run
   assert.equal(existsSync(created.stdout.trim()), true);
 });
 
-test("new deletes runs untouched for 7 days, of any repository, and keeps recent runs and runs with a live process", async (t) => {
+test("new deletes runs untouched for 7 days, of any repository, and keeps recent runs and runs with a live process, one a journey command recorded in its own file included; a prune that reads run.json alone deletes that run", async (t) => {
   const { root, tmp } = lifecycleRepo(t);
   const stale = newRun(root, tmp);
   const recent = newRun(root, tmp);
   const busy = newRun(root, tmp);
+  const recording = newRun(root, tmp);
+  const sleeper = spawn(process.execPath, [
+    "-e",
+    "setInterval(() => {}, 1000)",
+  ]);
+  t.after(() => sleeper.kill("SIGKILL"));
+  writeFileSync(
+    join(recording, "processes-4242-0a1b.json"),
+    JSON.stringify([{ name: "app (demo)", pid: sleeper.pid }]),
+  );
   const other = join(
     tmp,
     "antelopejs-verify/other-repo/20200101T000000-abcdef",
@@ -237,13 +247,19 @@ test("new deletes runs untouched for 7 days, of any repository, and keeps recent
   put(other, "work/app/node_modules/dep/index.js", "");
   recordSleeper(t, busy);
   const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
-  for (const file of [join(stale, "run.json"), join(busy, "run.json"), other])
+  for (const file of [
+    join(stale, "run.json"),
+    join(busy, "run.json"),
+    join(recording, "run.json"),
+    other,
+  ])
     utimesSync(file, old, old);
   newRun(root, tmp);
   assert.equal(existsSync(stale), false);
   assert.equal(existsSync(other), false);
   assert.equal(existsSync(recent), true);
   assert.equal(existsSync(busy), true);
+  assert.equal(existsSync(recording), true);
 });
 
 test("a command on an old run marks it active, so the next new keeps it", (t) => {
@@ -257,4 +273,25 @@ test("a command on an old run marks it active, so the next new keeps it", (t) =>
   );
   newRun(root, tmp);
   assert.equal(existsSync(run), true);
+});
+
+test("doctor and clean see a process another journey command recorded in its own file: doctor names it, clean kills it and deletes the file; a reader of run.json alone misses it and leaves it running", async (t) => {
+  const { root, tmp } = lifecycleRepo(t);
+  const run = newRun(root, tmp);
+  const sleeper = spawn(process.execPath, [
+    "-e",
+    "setInterval(() => {}, 1000)",
+  ]);
+  t.after(() => sleeper.kill("SIGKILL"));
+  writeFileSync(
+    join(run, "processes-4242-0a1b.json"),
+    JSON.stringify([{ name: "app (demo)", pid: sleeper.pid }]),
+  );
+  assert.match(
+    verify(root, tmp, ["doctor", run]).stdout,
+    new RegExp(`FAIL no leftover process app \\(demo\\): pid ${sleeper.pid}`),
+  );
+  assert.equal(verify(root, tmp, ["clean", run]).status, 0);
+  await until(() => !alive(Number(sleeper.pid)));
+  assert.deepEqual(runEntries(run), ["evidence", "run.json"]);
 });
