@@ -8,6 +8,7 @@ import {
   type BehaviourChange,
   type Commits,
 } from "./behaviour.ts";
+import { stopwatch } from "./timing.ts";
 import type { FormalCheck } from "./types.ts";
 import { operatorEnv, type RunState, type Workspace } from "./workspace.ts";
 
@@ -41,6 +42,8 @@ export interface FormalResult {
   base?: BaseRun | null;
   fixed?: string[];
   missing?: string[];
+  /** Milliseconds the head run and, when it ran, the base run took; absent in a result an older version wrote. */
+  ms?: number;
 }
 
 /** How a result weighs on a verdict whose diff the check covers. */
@@ -179,6 +182,7 @@ export function runFormalCheck(
   check: FormalCheck,
   diff: FormalDiff | null,
 ): FormalResult {
+  const elapsed = stopwatch();
   const folder = join(state.evidence, "formal", check.name);
   mkdirSync(folder, { recursive: true });
   const run = runCommand(check.command, workspace.root);
@@ -197,6 +201,7 @@ export function runFormalCheck(
       { commits: { baseSha: diff.baseSha, headSha: diff.headSha } },
       gateFields(workspace, check, diff, folder, head),
     );
+  result.ms = elapsed();
   writeFileSync(
     join(folder, "result.json"),
     `${JSON.stringify(result, null, 2)}\n`,

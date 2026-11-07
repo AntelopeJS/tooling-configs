@@ -150,7 +150,10 @@ test("a journey that passes or fails deletes its install, read-only folders incl
   const { root, tmp } = lifecycleRepo(t);
   const run = newRun(root, tmp);
   const result = verify(root, tmp, ["journey", run, "smoke"]);
-  assert.match(result.stdout, /^PASS smoke\/passes\nFAIL smoke\/fails\n/);
+  assert.match(
+    result.stdout,
+    /^PASS smoke\/passes \(\d+\.\d s\)\nFAIL smoke\/fails \(\d+\.\d s\)\n/,
+  );
   assert.deepEqual(runEntries(run), ["evidence", "run.json"]);
   assert.equal(
     read(run, "evidence/smoke/fails/01-install/exit-code.txt"),
@@ -192,7 +195,7 @@ test("a command that outlives its timeout is killed with what it started, and th
   const run = newRun(root, tmp);
   const began = Date.now();
   const result = verify(root, tmp, ["journey", run, "slow"]);
-  assert.match(result.stdout, /^FAIL slow\/slow\n/);
+  assert.match(result.stdout, /^FAIL slow\/slow \(\d+\.\d s\)\n/);
   assert.ok(Date.now() - began < 20_000, "the journey ended near the timeout");
   assert.deepEqual(runEntries(run), ["evidence", "run.json"]);
 });
@@ -201,7 +204,7 @@ test("a journey whose install cannot be deleted still records its result and nam
   const { root, tmp } = lifecycleRepo(t);
   const run = newRun(root, tmp);
   const result = verify(root, tmp, ["journey", run, "locked"]);
-  assert.equal(result.stdout, "PASS locked/locked\n");
+  assert.match(result.stdout, /^PASS locked\/locked \(\d+\.\d s\)\n$/);
   assert.match(result.stderr, /could not delete .*work\/locked\/locked/);
   assert.equal(evidence(run, "locked/feature.json")[0].status, "PASS");
 });

@@ -60,5 +60,5 @@ test("an exact version published after an earlier run cached the packument still
   const run = newRun(root, tmp, cache);
   const result = verify(root, tmp, ["journey", run, "smoke"], cache);
   assert.equal(result.status, 0, result.stdout);
-  assert.match(result.stdout, /^PASS smoke\/stale$/m);
+  assert.match(result.stdout, /^PASS smoke\/stale \(\d+\.\d s\)$/m);
 });

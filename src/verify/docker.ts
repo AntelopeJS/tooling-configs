@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { stopwatch } from "./timing.ts";
 import type { ContainerRecord, RunState, Workspace } from "./workspace.ts";
 import { saveRun } from "./workspace.ts";
 
@@ -87,21 +88,31 @@ export function startServices(
       definition.image,
     ];
     const folder = join(state.evidence, "services", service);
-    const started = docker(args);
-    record(join(folder, "01-run"), args, started);
-    if (started.status !== 0)
-      throw new Error(`docker ${args.join(" ")} failed: ${started.stderr}`);
-    const container: ContainerRecord = {
-      service,
-      name,
-      host: "127.0.0.1",
-      port: 0,
-    };
-    state.containers.push(container);
-    saveRun(state);
-    container.port = publishedPort(name, definition.port);
-    saveRun(state);
-    waitReady(name, definition.ready, join(folder, "02-ready"));
+    const elapsed = stopwatch();
+    let failed = true;
+    try {
+      const started = docker(args);
+      record(join(folder, "01-run"), args, started);
+      if (started.status !== 0)
+        throw new Error(`docker ${args.join(" ")} failed: ${started.stderr}`);
+      const container: ContainerRecord = {
+        service,
+        name,
+        host: "127.0.0.1",
+        port: 0,
+      };
+      state.containers.push(container);
+      saveRun(state);
+      container.port = publishedPort(name, definition.port);
+      saveRun(state);
+      waitReady(name, definition.ready, join(folder, "02-ready"));
+      failed = false;
+    } finally {
+      state.timings.push({
+        phase: `service ${service} (start and ready)${failed ? " (failed)" : ""}`,
+        ms: elapsed(),
+      });
+    }
   }
 }
 

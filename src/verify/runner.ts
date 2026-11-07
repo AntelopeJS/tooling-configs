@@ -17,6 +17,7 @@ import { VerifyContext, type BuiltinJourney } from "./context.ts";
 import { readFeatures } from "./map.ts";
 import { killGroup, onInterrupt } from "./record.ts";
 import type { JourneyEnd, JourneyResult, JourneyStatus } from "./results.ts";
+import { stopwatch } from "./timing.ts";
 import type { Journey } from "./types.ts";
 import {
   git,
@@ -51,10 +52,10 @@ function resetServices(context: VerifyContext): void {
   )) {
     if (!service.reset) continue;
     const container = context.service(name).container;
+    const folder = context.step(`reset ${name}`);
     const run = spawnSync("docker", ["exec", container, ...service.reset], {
       encoding: "utf8",
     });
-    const folder = context.step(`reset ${name}`);
     writeFileSync(
       join(folder, "command.txt"),
       `docker exec ${container} ${service.reset.join(" ")}\n`,
@@ -135,6 +136,7 @@ async function driveJourney(
   journey: BuiltinJourney | Journey,
 ): Promise<JourneyResult> {
   const { state } = context;
+  const elapsed = stopwatch();
   let failure: JourneyEnd = {
     error: null,
     notVerified: null,
@@ -165,6 +167,8 @@ async function driveJourney(
     steps: context.steps,
     ...failure,
     folder: relative(state.evidence, context.folder),
+    stepMs: context.clock.finish(),
+    ms: elapsed(),
   };
   writeFileSync(
     join(context.folder, "result.json"),
@@ -278,7 +282,7 @@ function stamp(
   return stamped;
 }
 
-/** Records `source` as the result of `id` under `feature` without running the journey: its own result.json names the folder it reuses. */
+/** Records `source` as the result of `id` under `feature` without running the journey: its own result.json names the folder it reuses, and its time is zero so a run's total counts the journey once. */
 function reuse(
   state: RunState,
   feature: string,
@@ -293,6 +297,8 @@ function reuse(
     feature,
     folder: relative(state.evidence, folder),
     reusedFrom: source.folder,
+    ms: 0,
+    stepMs: [],
   };
   writeFileSync(
     join(folder, "result.json"),

@@ -21,6 +21,7 @@ import { installedPackage } from "./fixture.ts";
 import { linkDependencies } from "./interface.ts";
 import { killGroup, runRecorded } from "./record.ts";
 import { seedSources, templateName } from "./sources.ts";
+import { stopwatch, timed } from "./timing.ts";
 import type { CommandResult } from "./types.ts";
 import {
   allocateRun,
@@ -81,16 +82,18 @@ function setupCommands(workspace: Workspace): string[][] {
 async function runSetup(workspace: Workspace, state: RunState): Promise<void> {
   const commands = setupCommands(workspace);
   for (const [index, [program, ...args]] of commands.entries()) {
-    const folder = join(
-      state.evidence,
-      "setup",
-      `${String(index + 1).padStart(2, "0")}-${program}`,
-    );
+    const name = `${String(index + 1).padStart(2, "0")}-${program}`;
+    const folder = join(state.evidence, "setup", name);
+    const elapsed = stopwatch();
     const result = await runRecorded(folder, {
       program,
       args,
       cwd: workspace.root,
       env: { ...operatorEnv(), ...workspace.config.env },
+    });
+    state.timings.push({
+      phase: `setup/${name}${result.exitCode === 0 ? "" : " (failed)"}`,
+      ms: elapsed(),
     });
     if (result.exitCode !== 0)
       throw new Error(
@@ -223,18 +226,27 @@ export async function createRun(
   title: string,
   all: boolean,
 ): Promise<RunState> {
+  const pruned = stopwatch();
   pruneRuns();
+  const pruneMs = pruned();
   const state = allocateRun(workspace, baseRef, title, all);
+  state.timings.push({ phase: "prune old runs", ms: pruneMs });
   saveRun(state);
-  await runSetup(workspace, state);
-  if (workspace.kind === "interface")
-    state.pack = await packInterface(workspace, state);
-  startServices(workspace, state, containerPrefix());
-  if (workspace.kind === "template") {
-    state.manifestUrl = seedSources(workspace, state);
-    state.templateName = templateName(workspace);
+  try {
+    await runSetup(workspace, state);
+    if (workspace.kind === "interface")
+      state.pack = await timed(state, "pack interface", () =>
+        packInterface(workspace, state),
+      );
+    startServices(workspace, state, containerPrefix());
+    if (workspace.kind === "template")
+      await timed(state, "seed template sources", () => {
+        state.manifestUrl = seedSources(workspace, state);
+        state.templateName = templateName(workspace);
+      });
+  } finally {
+    saveRun(state);
   }
-  saveRun(state);
   return state;
 }
 

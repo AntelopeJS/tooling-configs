@@ -76,7 +76,7 @@ test("a journey listed under two features runs once and the second feature recor
   assert.equal(second.status, 0, second.stdout);
   assert.match(
     second.stdout,
-    /^PASS store\/shared \(reuses smoke\/shared, not run again\)\nPASS store\/own\n$/,
+    /^PASS store\/shared \(reuses smoke\/shared, not run again\)\nPASS store\/own \(\d+\.\d s\)\n$/,
   );
   assert.equal(ran(run, "smoke/shared"), true);
   assert.equal(ran(run, "store/shared"), false);
@@ -90,7 +90,9 @@ test("a journey listed under two features runs once and the second feature recor
     "smoke/shared",
   );
   assert.equal(evidence(run, "smoke/feature.json")[0].reusedFrom, undefined);
-  assert.equal(reused.ms, undefined);
+  assert.ok((evidence(run, "smoke/feature.json")[0].ms ?? 0) > 0);
+  assert.equal(reused.ms, 0);
+  assert.deepEqual(reused.stepMs, []);
 });
 
 test("a FAIL or NOT VERIFIED result is never reused: the second feature runs the journey itself", (t) => {
@@ -101,8 +103,11 @@ test("a FAIL or NOT VERIFIED result is never reused: the second feature runs the
   );
   assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 1);
   const second = verify(root, tmp, ["journey", run, "store"]);
-  assert.match(second.stdout, /^FAIL store\/bad\n/m);
-  assert.match(second.stdout, /^NOT VERIFIED store\/unreachable\n/m);
+  assert.match(second.stdout, /^FAIL store\/bad \(\d+\.\d s\)\n/m);
+  assert.match(
+    second.stdout,
+    /^NOT VERIFIED store\/unreachable \(\d+\.\d s\)\n/m,
+  );
   assert.equal(ran(run, "store/bad"), true);
   for (const result of evidence(run, "store/feature.json"))
     assert.equal(result.reusedFrom, undefined);
@@ -115,7 +120,7 @@ test("a run whose HEAD moved after it was created never reuses a PASS", (t) => {
   commit(root);
   const second = verify(root, tmp, ["journey", run, "store"]);
   assert.equal(second.status, 0, second.stdout);
-  assert.equal(second.stdout, "PASS store/shared\n");
+  assert.match(second.stdout, /^PASS store\/shared \(\d+\.\d s\)\n$/);
   assert.equal(ran(run, "store/shared"), true);
 });
 
@@ -123,7 +128,7 @@ test("naming the journey runs it even when another feature already passed it", (
   const { root, tmp, run } = repo(t, ["shared"], ["shared"]);
   assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
   const forced = verify(root, tmp, ["journey", run, "store", "shared"]);
-  assert.equal(forced.stdout, "PASS store/shared\n");
+  assert.match(forced.stdout, /^PASS store\/shared \(\d+\.\d s\)\n$/);
   assert.equal(ran(run, "store/shared"), true);
   assert.equal(evidence(run, "store/feature.json")[0].reusedFrom, undefined);
 });
@@ -136,7 +141,7 @@ test("a feature that already has a result for a journey runs it again instead of
   );
   assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
   const again = verify(root, tmp, ["journey", run, "store"]);
-  assert.equal(again.stdout, "PASS store/shared\n");
+  assert.match(again.stdout, /^PASS store\/shared \(\d+\.\d s\)\n$/);
   assert.equal(ran(run, "store/shared"), true);
 });
 
@@ -205,7 +210,7 @@ test("an uncommitted edit after the source ran is a new tree, so the journey run
   put(root, "src/store.ts", "export const store = 2;\n");
   const second = verify(root, tmp, ["journey", run, "store"]);
   assert.equal(second.status, 0, second.stdout);
-  assert.equal(second.stdout, "PASS store/shared\n");
+  assert.match(second.stdout, /^PASS store\/shared \(\d+\.\d s\)\n$/);
   assert.equal(ran(run, "store/shared"), true);
 });
 
@@ -248,7 +253,7 @@ test("untracked entries git lists oddly, a non-ASCII name, symlinks to a folder 
   put(root, "nested/a.txt", "a\n");
   const second = verify(root, tmp, ["journey", run, "store"]);
   assert.equal(second.status, 0, second.stdout + second.stderr);
-  assert.equal(second.stdout, "PASS store/shared\n");
+  assert.match(second.stdout, /^PASS store\/shared \(\d+\.\d s\)\n$/);
 });
 
 test("a run folder inside the repository is left out of the tree, so its own evidence never blocks reuse; hashing it reruns every journey", (t) => {
@@ -279,5 +284,5 @@ test("an untracked nested repository turns reuse off, since an edit inside it le
   put(root, "nested/a.txt", "changed content, longer\n");
   const second = verify(root, tmp, ["journey", run, "store"]);
   assert.equal(second.status, 0, second.stdout);
-  assert.equal(second.stdout, "PASS store/shared\n");
+  assert.match(second.stdout, /^PASS store\/shared \(\d+\.\d s\)\n$/);
 });

@@ -25,6 +25,7 @@ import {
   PARENT_TMPDIR,
 } from "../lease/env.ts";
 import { skillFolder, type VerifyKind } from "./kinds.ts";
+import type { PhaseTiming } from "./timing.ts";
 import type { VerifyConfig } from "./types.ts";
 
 /** The repository under verification, its kind and its repo-owned layer. */
@@ -77,6 +78,8 @@ export interface RunState {
   templateName: string;
   /** Provider sandbox keys missing from the environment. */
   missingKeys: string[];
+  /** How long each phase of `new` took, in the order they ran; empty for a run an older version created. */
+  timings: PhaseTiming[];
 }
 
 /**
@@ -176,8 +179,11 @@ export function loadRun(dir: string): RunState {
     );
   const now = new Date();
   utimesSync(file, now, now);
-  const stored: RunState = JSON.parse(readFileSync(file, "utf8"));
-  return { ...stored, all: stored.all === true };
+  const stored: Omit<RunState, "timings" | "all"> & {
+    timings?: PhaseTiming[];
+    all?: boolean;
+  } = JSON.parse(readFileSync(file, "utf8"));
+  return { ...stored, timings: stored.timings ?? [], all: stored.all === true };
 }
 
 /** Persists the run state. */
@@ -215,6 +221,7 @@ export function allocateRun(
     missingKeys: (workspace.config.saas?.env ?? []).filter(
       (key) => !process.env[key],
     ),
+    timings: [],
   };
 }
 
