@@ -204,6 +204,27 @@ export interface JourneyContext {
     project: string,
     flags?: string[],
   ): Promise<CommandResult>;
+  /**
+   * Builds a folder once per run and gives every journey its own copy, for
+   * the preparation many journeys repeat, such as a scaffolded and installed
+   * project. Returns `<work>/<key>`. The first journey of the run that asks
+   * for `key` runs `build` on that empty folder with its usual recorded
+   * steps. When `build` returns and none of its checks failed, the run keeps
+   * a copy of the folder and of the build's step evidence. A later journey of
+   * the run, in this `journey` command or a later one, gets a fresh copy of
+   * the kept folder and one step, `prepared <key>`, that names the journey
+   * that built it and holds that build's evidence under `build/`. A build
+   * that throws or fails a check is not kept, so the next journey builds
+   * again. The commands `build` runs get a HOME of their own, deleted when
+   * `build` ends, so what they write there (`ajs config set git`, caches) is
+   * never kept and every journey continues with its own HOME. Every journey
+   * passes the same `build` for a key. `key` is lowercase letters and digits
+   * joined by dashes. `clean` deletes what the run kept.
+   */
+  prepared(
+    key: string,
+    build: (folder: string) => Promise<void>,
+  ): Promise<string>;
 }
 
 /** A repo-owned journey of `verify.config.ts`, named by id in a feature file. */

@@ -15,6 +15,7 @@ import {
 } from "../garden/json.ts";
 import { readinessFailure } from "./docker.ts";
 import { ajsEntry, writeFixture, type Fixture } from "./fixture.ts";
+import { prepare } from "./prepared.ts";
 import {
   freePort,
   killGroup,
@@ -99,6 +100,8 @@ export class VerifyContext implements JourneyContext {
   readonly work: string;
   readonly home: string;
   readonly steps: StepRecord[] = [];
+  /** The HOME every command gets while `prepared` runs a build; the journey's HOME when `null`. */
+  buildHome: string | null = null;
   private readonly running: Running[] = [];
   private readonly started: Running[] = [];
   private readonly fixtures = new Map<string, Fixture>();
@@ -140,8 +143,11 @@ export class VerifyContext implements JourneyContext {
   }
 
   private env(extra: { [name: string]: string } = {}): NodeJS.ProcessEnv {
-    return isolatedEnv(this.workspace, this.home, extra);
+    return isolatedEnv(this.workspace, this.buildHome ?? this.home, extra);
   }
+
+  readonly prepared: JourneyContext["prepared"] = (key, build) =>
+    prepare(this, key, build);
 
   command(
     name: string,
