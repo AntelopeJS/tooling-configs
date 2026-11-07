@@ -36,6 +36,14 @@ export default {
     ${journey("shared", 0)},
     ${journey("own", 0)},
     ${journey("bad", 3)},
+    "flaky": {
+      title: "flaky fails once flaky.marker exists",
+      entryPoint: "node",
+      async run(context) {
+        const result = await context.command("node checks the marker", process.execPath, ["-e", "process.exitCode = require('node:fs').existsSync(process.argv[1]) ? 3 : 0", context.repo + "/flaky.marker"]);
+        context.expect(result.folder, [exitIs(result, 0)]);
+      },
+    },
     "unreachable": {
       title: "unreachable",
       entryPoint: "node",
@@ -172,5 +180,58 @@ test("the verdict still requires every registered journey and marks each reused 
   assert.match(
     passed.stdout,
     /\| store \| `shared`: node \| pass: shared exits 0 \(not run again: reuses \[smoke\/shared\]\(https:\/\/github\.com\/acme\/demo\/tree\/verify-evidence\/pr-7\/[0-9a-f]{40}\/smoke\/shared\)\) \| \[store\/shared\]\(/,
+  );
+});
+
+const DATA_JUDGEMENT = JSON.stringify({
+  doors: {
+    rows: [
+      {
+        kind: "data",
+        location: "src/store.ts",
+        irreversible: "rows deleted",
+        containment: "dry run",
+      },
+    ],
+  },
+  docs: [{ page: "README.md", matches: true }],
+  verifier: "a fresh thread",
+});
+
+test("an uncommitted edit after the source ran is a new tree, so the journey runs again; reuse keyed on HEAD alone would keep a stale PASS", (t) => {
+  const { root, tmp, run } = repo(t, ["shared"], ["shared"]);
+  assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
+  put(root, "src/store.ts", "export const store = 2;\n");
+  const second = verify(root, tmp, ["journey", run, "store"]);
+  assert.equal(second.status, 0, second.stdout);
+  assert.equal(second.stdout, "PASS store/shared\n");
+  assert.equal(ran(run, "store/shared"), true);
+});
+
+test("a reused PASS whose source later fails makes the verdict name the stale reuse; a verdict that trusts the copied status shows a pass", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "verify-reuse-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const root = verifyRepo(t, {
+    "README.md": "# Demo\n",
+    "src/store.ts": "export const store = 1;\n",
+    [`${SKILL}/verify.config.ts`]: CONFIG,
+    [`${SKILL}/features/smoke.md`]: feature([], ["flaky"]),
+    [`${SKILL}/features/store.md`]: feature(["src/**"], ["flaky"]),
+  });
+  put(root, "src/store.ts", "export const store = 2;\n");
+  const run = newRun(root, tmp);
+  put(run, "evidence/judgement.json", DATA_JUDGEMENT);
+  assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
+  assert.match(
+    verify(root, tmp, ["journey", run, "store"]).stdout,
+    /reuses smoke\/flaky/,
+  );
+  put(root, "flaky.marker", "");
+  assert.equal(verify(root, tmp, ["journey", run, "smoke", "flaky"]).status, 1);
+  const verdict = verify(root, tmp, ["verdict", run, "--pr", "7"]);
+  assert.equal(verdict.status, 1);
+  assert.match(
+    verdict.stdout,
+    /- store\/flaky reuses smoke\/flaky, which is now FAIL\n/,
   );
 });

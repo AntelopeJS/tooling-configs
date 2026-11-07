@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -182,11 +183,27 @@ export function readResults(
   return results;
 }
 
-/** The PASS of journey `id` that another feature of this run recorded by running it, if any. */
+/** A fingerprint of the tree a journey runs against: HEAD, the uncommitted diff and every untracked file's content. */
+function treeState(root: string): string {
+  const hash = createHash("sha256");
+  hash.update(git(root, ["rev-parse", "HEAD"]));
+  hash.update(git(root, ["diff", "HEAD", "--binary"]));
+  for (const file of git(root, ["ls-files", "--others", "--exclude-standard"])
+    .split("\n")
+    .filter(Boolean)
+    .sort()) {
+    hash.update(`\0${file}\0`);
+    hash.update(readFileSync(join(root, file)));
+  }
+  return hash.digest("hex");
+}
+
+/** The PASS of journey `id` that another feature of this run recorded by running it against the same tree, if any. */
 function passElsewhere(
   state: RunState,
   feature: string,
   id: string,
+  tree: string,
 ): JourneyResult | undefined {
   const features = readdirSync(state.evidence, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && entry.name !== feature)
@@ -197,11 +214,26 @@ function passElsewhere(
       (result) =>
         result.journey === id &&
         result.status === "PASS" &&
-        result.reusedFrom === undefined,
+        result.reusedFrom === undefined &&
+        result.tree === tree,
     );
     if (source !== undefined) return source;
   }
   return undefined;
+}
+
+/** Records the tree a journey ran against in its result.json. */
+function stamp(
+  state: RunState,
+  result: JourneyResult,
+  tree: string,
+): JourneyResult {
+  const stamped = { ...result, tree };
+  writeFileSync(
+    join(state.evidence, result.folder, "result.json"),
+    `${JSON.stringify(stamped, null, 2)}\n`,
+  );
+  return stamped;
 }
 
 /** Records `source` as the result of `id` under `feature` without running the journey: its own result.json names the folder it reuses. */
@@ -234,8 +266,9 @@ function reuse(
  * A journey id is the same code whichever feature lists it. When no ids are
  * named, a journey that another feature of this run already ran and passed
  * is not run again: the feature records a result that reuses that PASS and
- * names its evidence folder. Only a PASS is reused, only while HEAD is still
- * the commit the run was created at, never across runs, and never for a
+ * names its evidence folder. Only a PASS is reused, only for the same tree
+ * (HEAD, uncommitted diff and untracked files) and while HEAD is still the
+ * commit the run was created at, never across runs, and never for a
  * journey this feature already has a result for. Naming ids runs them even
  * when a PASS exists.
  */
@@ -255,6 +288,7 @@ export async function runFeature(
     );
   const known = knownJourneys(workspace);
   const earlier = readResults(state, feature) ?? [];
+  const tree = treeState(workspace.root);
   const mayReuse =
     ids.length === 0 &&
     git(workspace.root, ["rev-parse", "HEAD"]) === state.headSha;
@@ -267,11 +301,15 @@ export async function runFeature(
       );
     const source =
       mayReuse && !earlier.some((result) => result.journey === id)
-        ? passElsewhere(state, feature, id)
+        ? passElsewhere(state, feature, id, tree)
         : undefined;
     results.push(
       source === undefined
-        ? await runOne(workspace, state, feature, id, journey)
+        ? stamp(
+            state,
+            await runOne(workspace, state, feature, id, journey),
+            tree,
+          )
         : reuse(state, feature, id, source),
     );
   }

@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 import type { JourneyResult } from "./results.ts";
@@ -57,6 +57,15 @@ function journeyRow(
   return `| ${label} | \`${result.journey}\`: ${result.entryPoint} | ${outcome}: ${result.title}${reused} | [${result.folder}](${link(result.folder)}) |`;
 }
 
+/** For a reused result, the status of its source when that is no longer PASS (`missing` when gone); otherwise null. */
+function staleReuse(state: RunState, result: JourneyResult): string | null {
+  if (result.reusedFrom === undefined) return null;
+  const file = join(state.evidence, result.reusedFrom, "result.json");
+  if (!existsSync(file)) return "missing";
+  const source: JourneyResult = JSON.parse(readFileSync(file, "utf8"));
+  return source.status === "PASS" ? null : source.status;
+}
+
 /** The features outside the plan that have journey results in the run's evidence, in name order. */
 function featuresOutsidePlan(state: RunState, plan: Plan): string[] {
   return readdirSync(state.evidence, { withFileTypes: true })
@@ -96,6 +105,11 @@ function journeyRows(
         reasons.push(`${feature}/${result.journey} failed`);
       if (result.status === "NOT VERIFIED")
         notVerified.push(`${feature}/${result.journey}: ${result.notVerified}`);
+      const stale = staleReuse(state, result);
+      if (stale !== null)
+        reasons.push(
+          `${feature}/${result.journey} reuses ${result.reusedFrom}, which is now ${stale}`,
+        );
       rows.push(journeyRow(feature, result, link));
     }
   }
