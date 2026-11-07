@@ -271,11 +271,16 @@ function readOutcome(file: string): Outcome | undefined {
   }
 }
 
+/** Stores an outcome for later replays; a cache that cannot be written, read-only or full, only costs the next run a TLC run. */
 function writeOutcome(entry: string, outcome: Outcome): void {
-  mkdirSync(path.dirname(entry), { recursive: true });
   const temp = `${entry}.${randomUUID()}.tmp`;
-  writeFileSync(temp, JSON.stringify(outcome));
-  renameSync(temp, entry);
+  try {
+    mkdirSync(path.dirname(entry), { recursive: true });
+    writeFileSync(temp, JSON.stringify(outcome));
+    renameSync(temp, entry);
+  } catch {
+    rmSync(temp, { force: true });
+  }
 }
 
 async function modelCheck(plan: Plan): Promise<Outcome & { work: string }> {

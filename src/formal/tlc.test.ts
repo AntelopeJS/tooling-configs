@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   rmSync,
   writeFileSync,
+  chmodSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -268,4 +269,18 @@ test("a corrupt cached result reruns TLC, which replaces it", (t) => {
   const replay = check({ findings: MATCHING }, { ...cache, ...NO_JAVA });
   assert.equal(replay.status, 0, replay.stderr);
   assert.match(replay.lines[0] ?? "", REPLAYED);
+});
+
+test("a cache that cannot be written still lets a passing check pass; a cache write that throws fails it", (t) => {
+  const cache = cacheOn();
+  const results = join(cache.XDG_CACHE_HOME, "antelopejs-formal", "results");
+  mkdirSync(results, { recursive: true });
+  chmodSync(results, 0o555);
+  t.after(() => {
+    chmodSync(results, 0o755);
+    rmSync(cache.XDG_CACHE_HOME, { recursive: true, force: true });
+  });
+  const run = check({ findings: MATCHING }, cache);
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(resultEntries(cache.XDG_CACHE_HOME), []);
 });
