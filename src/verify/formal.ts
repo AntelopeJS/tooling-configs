@@ -14,7 +14,7 @@ import { operatorEnv, type RunState, type Workspace } from "./workspace.ts";
 
 const OUTPUT_LIMIT = 64 * 1024 * 1024;
 
-/** Each violated rule whose counterexample length the output gave once and unambiguously, as a number of states. */
+/** Each violated rule whose counterexample length every line naming it gave as the same run of decimal digits, as a number of states. */
 type Lengths = Readonly<Record<string, number>>;
 
 /** The rules a run of the check reported as broken and as holding. */
@@ -106,8 +106,11 @@ function counterexampleLengths(check: FormalCheck, output: string): Lengths {
   const seen = new Map<string, number | null>();
   for (const match of output.matchAll(check.violation)) {
     const states = match.groups?.states;
-    const length = states === undefined ? null : Number(states);
     const rule = match[1];
+    const length =
+      states === undefined || !/^\d+$/.test(states) || rule === states
+        ? null
+        : Number(states);
     seen.set(rule, seen.has(rule) && seen.get(rule) !== length ? null : length);
   }
   return Object.fromEntries(

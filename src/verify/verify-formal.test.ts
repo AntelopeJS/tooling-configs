@@ -370,3 +370,64 @@ test("a changed behaviour that drops a finding the base broke fails through miss
     "FAIL formal-add: rules the base broke are absent at HEAD: NegativeZero\n",
   );
 });
+
+/** A check that prints the line the covered code exports as `line`, or `baseLine` on the base, which exports none. */
+function lineCheck(baseLine: string) {
+  return `import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+const math = await import(pathToFileURL(join(process.cwd(), "src/math.js")).href);
+console.log(math.line ?? ${JSON.stringify(baseLine)});
+`;
+}
+
+function replaced(text: string, from: string, to: string) {
+  assert.ok(text.includes(from), from);
+  return text.replace(from, to);
+}
+
+function lineRepo(
+  t: TestContext,
+  violation: string,
+  line: string,
+  baseLine: string,
+) {
+  return formalRepo(
+    t,
+    { "src/math.js": `${ADD}export const line = ${JSON.stringify(line)};\n` },
+    {
+      ".agents/skills/formal-add/check.mjs": lineCheck(baseLine),
+      [`${SKILL}/verify.config.ts`]: replaced(
+        CONFIG,
+        "/^(?:finding|BROKEN) (\\w+)(?:: (?<states>\\d+) states)?/gm",
+        violation,
+      ),
+    },
+  );
+}
+
+test("a violation regex whose first group is states gives no length, so another rule with the same length fails; a gate that names rules by group 1 reads both as rule 3 and passes", (t) => {
+  const { root, tmp, run } = lineRepo(
+    t,
+    "/^finding \\w+: (?<states>\\d+) states/gm",
+    "finding Other: 3 states",
+    "finding NegativeZero: 3 states",
+  );
+  const formal = verify(root, tmp, ["formal", run]);
+  assert.equal(formal.status, 1, formal.stdout);
+  assert.match(formal.stdout, /^FAIL formal-add: covered behaviour changed/);
+});
+
+test("a states group that captures no digits gives no length; Number() would read an empty capture as 0 and pass it against a base that printed 0", (t) => {
+  const { root, tmp, run } = lineRepo(
+    t,
+    "/^finding (\\w+):(?: (?<states>\\d*))?/gm",
+    "finding NegativeZero: ",
+    "finding NegativeZero: 0",
+  );
+  const formal = verify(root, tmp, ["formal", run]);
+  assert.equal(formal.status, 1, formal.stdout);
+  assert.equal(
+    formal.stdout,
+    "FAIL formal-add: covered behaviour changed (emit), violated NegativeZero\n",
+  );
+});

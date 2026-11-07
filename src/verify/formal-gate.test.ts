@@ -86,3 +86,13 @@ test("a rule HEAD breaks that the base did not is new, even when the base printe
     true,
   );
 });
+
+test("a rule named after an Object.prototype key with no recorded length on either side fails; a lookup that reads inherited keys compares Object with Object and passes it", () => {
+  const empty = {
+    exitCode: 0,
+    violated: ["constructor"],
+    passing: [],
+    lengths: {},
+  };
+  assert.equal(formalGate(changed({ ...empty, base: empty })).fails, true);
+});
