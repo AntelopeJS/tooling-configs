@@ -203,9 +203,12 @@ export interface Plan {
 
 /** The files a change touches: committed since the merge base, staged, unstaged and untracked. */
 function changedFiles(workspace: Workspace, baseSha: string): string[] {
-  const committed = git(workspace.root, ["diff", "--name-only", baseSha]).split(
-    "\n",
-  );
+  const committed = git(workspace.root, [
+    "diff",
+    "--name-only",
+    "--no-renames",
+    baseSha,
+  ]).split("\n");
   const untracked = git(workspace.root, [
     "ls-files",
     "--others",

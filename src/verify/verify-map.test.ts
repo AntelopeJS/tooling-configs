@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -240,4 +241,22 @@ test("every shell block of every shared skill is one antelopejs-verify command p
         `${kind}: ${line}`,
       );
   }
+});
+
+test("moving a shared file away still counts its old path, where rename detection hides the source and runs one feature", (t) => {
+  const { root, tmp } = mapRepo(t, {
+    ...SPLIT,
+    "src/interfaces/demo/beta/index.ts": "export const api = 1;\n",
+  });
+  execFileSync(
+    "git",
+    ["mv", "src/interfaces/demo/beta/index.ts", "src/store/api.ts"],
+    { cwd: root },
+  );
+  const plan = JSON.parse(verify(root, tmp, ["plan"]).stdout);
+  assert.deepEqual(plan.full, {
+    reason: "shared",
+    files: ["src/interfaces/demo/beta/index.ts"],
+  });
+  assert.deepEqual(plan.run, ["smoke", "core", "store"]);
 });

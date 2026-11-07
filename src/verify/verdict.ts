@@ -196,7 +196,7 @@ function docsReasons(judgement: Judgement, plan: Plan): string[] {
   return plan.docs.flatMap((page) => {
     const docs = judgement.docs.find((entry) => entry.page === page);
     if (!docs)
-      return [`docs page ${page} of a touched feature has no judgement`];
+      return [`docs page ${page} of a feature the plan runs has no judgement`];
     return docs.matches ? [] : [`${page} no longer matches the behaviour`];
   });
 }
@@ -308,7 +308,7 @@ export function renderVerdict(
         (docs) =>
           `\`${docs.page}\`: ${docs.matches ? "matches" : "**stale**"}${docs.note ? `. ${docs.note}` : ""}`,
       ),
-      "No touched feature links a page.",
+      "No feature the plan runs links a page.",
     ),
     "",
     "### Not verified",
