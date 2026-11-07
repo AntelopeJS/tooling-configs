@@ -22,9 +22,10 @@ import type { Journey } from "./types.ts";
 import {
   git,
   removeTree,
-  saveRun,
+  recordProcesses,
   type RunState,
   type Workspace,
+  writeWhole,
 } from "./workspace.ts";
 
 /** Every journey id a feature file may name: the kind's built-in journeys and the repo's own. */
@@ -84,22 +85,32 @@ function statusOf(context: VerifyContext, failure: JourneyEnd): JourneyStatus {
   return failed || context.steps.length === 0 ? "FAIL" : "PASS";
 }
 
+/** Removes the empty folders from `folder` up to, not including, `top`; it stops at the first that another journey of the run filled or removed meanwhile. */
+function removeEmptyParents(folder: string, top: string): void {
+  try {
+    for (
+      let parent = dirname(folder);
+      parent !== top && readdirSync(parent).length === 0;
+      parent = dirname(parent)
+    )
+      rmdirSync(parent);
+  } catch {
+    return;
+  }
+}
+
 /** Deletes a journey's scratch folder and HOME, and their parents once empty; the evidence stays. A folder it cannot delete is reported on stderr and left for the next prune. */
 function discard(context: VerifyContext): void {
   for (const folder of [context.work, context.home]) {
     try {
       removeTree(folder);
-      for (
-        let parent = dirname(folder);
-        parent !== context.state.dir && readdirSync(parent).length === 0;
-        parent = dirname(parent)
-      )
-        rmdirSync(parent);
     } catch (error) {
       process.stderr.write(
         `could not delete ${folder}: ${error instanceof Error ? error.message : String(error)}\n`,
       );
+      continue;
     }
+    removeEmptyParents(folder, context.state.dir);
   }
 }
 
@@ -116,10 +127,7 @@ async function runOne(
     const own = state.processes.filter((record) => !others.has(record.pid));
     for (const record of own) killGroup(record.pid);
     discard(context);
-    state.processes = state.processes.filter((record) =>
-      others.has(record.pid),
-    );
-    saveRun(state);
+    recordProcesses(state, { drop: own.map((record) => record.pid) });
   });
   try {
     return await driveJourney(context, feature, id, journey);
@@ -379,7 +387,7 @@ export async function runFeature(
           : earlier.filter((result) => result.journey === id),
       ),
   );
-  writeFileSync(
+  writeWhole(
     join(state.evidence, feature, "feature.json"),
     `${JSON.stringify(merged, null, 2)}\n`,
   );

@@ -47,7 +47,7 @@ import type { JourneyEnd, StepRecord } from "./results.ts";
 import { StepClock } from "./timing.ts";
 import {
   isolatedEnv,
-  saveRun,
+  recordProcesses,
   type RunState,
   type Workspace,
 } from "./workspace.ts";
@@ -313,11 +313,9 @@ export class VerifyContext implements JourneyContext {
     });
     this.running.push(entry);
     this.started.push(entry);
-    this.state.processes.push({
-      name: `${name} (${project})`,
-      pid: handle.pid,
+    recordProcesses(this.state, {
+      add: [{ name: `${name} (${project})`, pid: handle.pid }],
     });
-    saveRun(this.state);
     await this.waitReady(app, handle, fixture !== undefined);
     return this.caches.observed(app);
   }
@@ -457,10 +455,7 @@ export class VerifyContext implements JourneyContext {
   private untrack(pid: number): void {
     const index = this.running.findIndex((entry) => entry.app.pid === pid);
     if (index !== -1) this.running.splice(index, 1);
-    this.state.processes = this.state.processes.filter(
-      (record) => record.pid !== pid,
-    );
-    saveRun(this.state);
+    recordProcesses(this.state, { drop: [pid] });
   }
 
   async scaffold(

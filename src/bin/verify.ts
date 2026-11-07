@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { runCliAsync } from "../guardrails/cli.ts";
@@ -11,6 +11,7 @@ import {
   runFormalCheck,
   touchedFormalChecks,
 } from "../verify/formal.ts";
+import { jobLimit, runConcurrently, type FeatureRun } from "../verify/jobs.ts";
 import { readJudgement } from "../verify/judgement.ts";
 import {
   isVerifyKind,
@@ -21,7 +22,11 @@ import {
 import { clean, createRun, doctor } from "../verify/lifecycle.ts";
 import { checkMap, planFor } from "../verify/map.ts";
 import { postComment, pushEvidence, setStatus } from "../verify/publish.ts";
-import { knownJourneys, runFeature } from "../verify/runner.ts";
+import {
+  featureJourneys,
+  knownJourneys,
+  runFeature,
+} from "../verify/runner.ts";
 import type { JourneyResult } from "../verify/results.ts";
 import { seconds } from "../verify/timing.ts";
 import { renderVerdict } from "../verify/verdict.ts";
@@ -40,8 +45,11 @@ const USAGE = `Usage: antelopejs-verify <command>
                                      build, prepare an isolated run, print its folder; --all runs every feature, before a release
   doctor <run>                       check the run is worth driving
   journey <run> <feature> [ids...]   run a feature's journeys and record evidence
-  journey <run> --plan               run every feature the run's plan lists, smoke first
-  journey <run> --features <a,b>     run the named features, each whole, in that order
+  journey <run> --plan [--jobs <n>]  run every feature the run's plan lists, smoke first
+  journey <run> --features <a,b> [--jobs <n>]
+                                     run the named features, each whole, in that order;
+                                     --jobs runs up to n features at once, each in its own process,
+                                     at most half the cores, never with services
   formal <run> [--all]               run the formal checks that cover the diff and gate them on changed behaviour
   doors [patch] [--base <ref>]       print the One-way-door line for a patch, or for the diff
   clean <run>                        stop what the run started, keep only the evidence
@@ -75,12 +83,6 @@ function printMap(workspace: Workspace): number {
   const problems = checkMap(workspace, [...knownJourneys(workspace).keys()]);
   for (const problem of problems) print(problem);
   return problems.length === 0 ? 0 : 1;
-}
-
-/** One feature a `journey` call runs and the journey ids it names; no ids runs every journey the feature registers. */
-interface FeatureRun {
-  feature: string;
-  ids: string[];
 }
 
 /**
@@ -164,8 +166,9 @@ async function journeyFeature(
  * feature. An uncaught error a journey leaves behind (a timer that throws, a
  * rejection nobody awaits) ends the call, as it would end a single call, and
  * names the features that did not run. Module-level state a repository's
- * verify.config.ts keeps is shared by the features of one call. This loop is
- * the one place a capped number of features would run at once.
+ * verify.config.ts keeps is shared by the features of one call. `--jobs`
+ * runs features at once in processes of their own instead, through
+ * {@link runConcurrently}.
  * @returns 1 when any feature had a journey that did not pass or could not run, else 0.
  */
 async function runJourneys(
@@ -202,6 +205,36 @@ function restoreEnv(saved: NodeJS.ProcessEnv): void {
   for (const key of Object.keys(process.env))
     if (!Object.hasOwn(saved, key)) delete process.env[key];
   Object.assign(process.env, saved);
+}
+
+/**
+ * How many features a `journey` call runs at once: 1 without `--jobs`, else
+ * `--jobs` capped by {@link jobLimit}. `--jobs` applies to `--plan` and
+ * `--features` only, and more than 1 is refused when verify.config.ts
+ * declares `services`: every journey resets them as it starts, which would
+ * wipe the data of a journey running beside it.
+ */
+function jobsFor(
+  workspace: Workspace,
+  runs: FeatureRun[],
+  flags: { plan?: boolean; features?: string[]; jobs?: string },
+): number {
+  if (flags.jobs === undefined) return 1;
+  if (flags.plan !== true && flags.features === undefined)
+    throw new Error(
+      "--jobs runs whole features at once: use it with --plan or --features",
+    );
+  if (!/^[1-9]\d*$/.test(flags.jobs))
+    throw new Error(
+      `--jobs takes a number of features, 1 or more, not ${flags.jobs}`,
+    );
+  const requested = Number(flags.jobs);
+  const services = Object.keys(workspace.config.services ?? {});
+  if (requested > 1 && services.length > 0)
+    throw new Error(
+      `--jobs ${requested} refused: verify.config.ts declares services (${services.join(", ")}), and each journey resets them as it starts, which would wipe the data of a journey running beside it. Run the features without --jobs.`,
+    );
+  return jobLimit(requested, runs.length);
 }
 
 function runFormal(workspace: Workspace, dir: string, all: boolean): number {
@@ -280,6 +313,7 @@ async function main(argv: string[]): Promise<number> {
       kind: { type: "string" },
       plan: { type: "boolean" },
       features: { type: "string", multiple: true },
+      jobs: { type: "string" },
     },
   });
   const [command, ...rest] = positionals;
@@ -312,13 +346,25 @@ async function main(argv: string[]): Promise<number> {
     for (const line of lines)
       print(`${line.ok ? "ok  " : "FAIL"} ${line.check}: ${line.detail}`);
     return lines.every((line) => line.ok) ? 0 : 1;
-  } else if (command === "journey")
-    return runJourneys(
-      workspace,
-      rest[0],
-      featureRuns(workspace, rest, values),
+  } else if (command === "journey") {
+    const runs = featureRuns(workspace, rest, values);
+    const jobs = jobsFor(workspace, runs, values);
+    if (jobs === 1) return runJourneys(workspace, rest[0], runs);
+    return runConcurrently(
+      runs,
+      jobs,
+      (name) => featureJourneys(workspace, name) ?? [],
+      ({ feature }) => [
+        ...process.execArgv,
+        process.argv[1],
+        "journey",
+        resolve(rest[0]),
+        feature,
+        "--kind",
+        workspace.kind,
+      ],
     );
-  else if (command === "formal")
+  } else if (command === "formal")
     return runFormal(workspace, rest[0], values.all === true);
   else if (command === "doors")
     return printDoors(
