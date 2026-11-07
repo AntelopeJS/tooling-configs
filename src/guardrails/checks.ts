@@ -23,6 +23,9 @@ const CHECK_STEPS = [
   "sync:check",
 ];
 
+/** The step that runs after the others, never beside them: tests often hold time limits that CPU contention would break. */
+const RUNS_ALONE = "test";
+
 /** The environment variable naming, comma-separated, the steps `runChecks` leaves to another CI job. */
 export const CHECKS_SKIP_ENV = "ANTELOPEJS_CHECKS_SKIP";
 
@@ -60,7 +63,15 @@ async function runSteps(
     });
     return result.status === 0 ? [] : [`[${step}]\n${result.output}`];
   };
-  return (await Promise.all(steps.map(runStep))).flat();
+  const failures = new Map<string, string[]>();
+  await Promise.all(
+    steps
+      .filter((step) => step !== RUNS_ALONE)
+      .map(async (step) => failures.set(step, await runStep(step))),
+  );
+  if (steps.includes(RUNS_ALONE))
+    failures.set(RUNS_ALONE, await runStep(RUNS_ALONE));
+  return steps.flatMap((step) => failures.get(step) ?? []);
 }
 
 function summary(failures: string[], passed: number, skipped: number): string {
@@ -68,8 +79,8 @@ function summary(failures: string[], passed: number, skipped: number): string {
 }
 
 /**
- * Runs every check step at the same time and reports only what failed, each step's output buffered and listed in step
- * order whichever step finishes first. `skipSetting` is the comma-separated value of
+ * Runs every check step except `test` at the same time, then `test` alone, and reports only what failed, each step's
+ * output buffered and listed in step order whichever step finishes first. `skipSetting` is the comma-separated value of
  * `ANTELOPEJS_CHECKS_SKIP`: the steps it names are not run and are counted as skipped, never as passed, and a name that
  * is not a step fails the run before any step starts so a typo cannot skip nothing. Unless `services` is false, the
  * services of `.github/compose.yml` are started before the steps when `test` runs, and removed after them if the run created them, also when a step fails or
