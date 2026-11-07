@@ -8,10 +8,11 @@ import {
 import { join, relative } from "node:path";
 
 import {
+  child,
   children,
-  isObject,
   num,
   object,
+  optStr,
   parseJson,
   str,
 } from "../garden/json.ts";
@@ -20,6 +21,7 @@ import { installedPackage } from "./fixture.ts";
 import { linkDependencies } from "./interface.ts";
 import { killGroup, runRecorded } from "./record.ts";
 import { seedSources, templateName } from "./sources.ts";
+import type { CommandResult } from "./types.ts";
 import {
   allocateRun,
   git,
@@ -43,12 +45,34 @@ function containerPrefix(): string {
   return process.env.VERIFY_CONTAINER_PREFIX ?? "verify";
 }
 
+/** The `prepack` values that do nothing but run the package's build script. */
+const BUILD_ONLY_PREPACKS = new Set([
+  "pnpm run build",
+  "pnpm build",
+  "npm run build",
+  "yarn build",
+  "yarn run build",
+]);
+
+function script(workspace: Workspace, name: string): string | undefined {
+  return optStr(child(workspace.manifest, "scripts"), name);
+}
+
+/** Whether `pnpm pack` builds the package itself, so a setup build before it would run the same build twice. */
+function packBuilds(workspace: Workspace): boolean {
+  const prepack = script(workspace, "prepack");
+  return (
+    workspace.kind === "interface" &&
+    prepack !== undefined &&
+    BUILD_ONLY_PREPACKS.has(prepack.trim())
+  );
+}
+
 function setupCommands(workspace: Workspace): string[][] {
   if (workspace.config.setup) return workspace.config.setup;
-  const scripts = workspace.manifest.scripts;
-  const build =
-    scripts !== undefined && isObject(scripts) && scripts.build !== undefined;
-  return build && workspace.kind !== "template"
+  return script(workspace, "build") !== undefined &&
+    workspace.kind !== "template" &&
+    !packBuilds(workspace)
     ? [["pnpm", "run", "build"]]
     : [];
 }
@@ -74,6 +98,17 @@ async function runSetup(workspace: Workspace, state: RunState): Promise<void> {
   }
 }
 
+/** The last 300 characters of each non-empty stream of a command, since a tool may print its message on either. */
+function outputTail(result: CommandResult): string {
+  return [
+    ["stdout", result.stdout],
+    ["stderr", result.stderr],
+  ]
+    .filter(([, text]) => text.trim() !== "")
+    .map(([name, text]) => `${name}: ${text.trim().slice(-300)}`)
+    .join("\n");
+}
+
 async function packInterface(
   workspace: Workspace,
   state: RunState,
@@ -89,7 +124,9 @@ async function packInterface(
   });
   const tarball = readdirSync(folder).find((file) => file.endsWith(".tgz"));
   if (packed.exitCode !== 0 || tarball === undefined)
-    throw new Error(`pnpm pack failed: ${packed.stderr.slice(-300)}`);
+    throw new Error(
+      `pnpm pack failed; see ${packed.folder}\n${outputTail(packed)}`,
+    );
   const extract = await runRecorded(join(state.evidence, "setup", "extract"), {
     program: "tar",
     args: ["-xzf", join(folder, tarball), "-C", folder],
