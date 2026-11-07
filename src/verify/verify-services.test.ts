@@ -70,7 +70,10 @@ for (const kind of ["interface", "template"] as const)
     const created = verify(root, tmp, ["new", "--kind", kind], env);
     assert.equal(created.status, 0, created.stdout + created.stderr);
     const run = created.stdout.trim().split("\n").at(-1) ?? "";
-    assert.match(read(tmp, "docker.log"), /^run -d --name verify-/m);
+    assert.match(
+      read(tmp, "docker.log"),
+      /^run -d --name verify-\S+ -p 127\.0\.0\.1::6379 --ulimit nofile=64000:64000 /m,
+    );
     const doctor = verify(root, tmp, ["doctor", run, "--kind", kind], env);
     assert.match(
       doctor.stdout,
