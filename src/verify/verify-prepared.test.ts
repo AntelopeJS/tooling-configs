@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -23,7 +24,7 @@ import {
 
 const SKILL = ".agents/skills/verify-module";
 
-/** Logs the build, writes `value.txt` with a relative `link` and an absolute `abs` to it, writes a file into HOME, makes a FIFO while the fifo marker exists, and exits 1 while the fail marker exists. */
+/** Logs the build, writes `value.txt` with a relative `link` and an absolute `abs` to it, makes the links `links.json` lists with `<folder>` standing for its folder, writes a file into HOME, makes a FIFO while the fifo marker exists, and exits 1 while the fail marker exists. */
 const BUILD = `const fs = require("fs");
 const path = require("path");
 const [folder, log, flags] = process.argv.slice(1);
@@ -31,6 +32,9 @@ fs.appendFileSync(log, "built\\n");
 fs.writeFileSync(path.join(folder, "value.txt"), "built\\n");
 fs.symlinkSync("value.txt", path.join(folder, "link"));
 fs.symlinkSync(path.join(folder, "value.txt"), path.join(folder, "abs"));
+const links = path.join(flags, "links.json");
+for (const [name, to] of Object.entries(fs.existsSync(links) ? JSON.parse(fs.readFileSync(links, "utf8")) : {}))
+  fs.symlinkSync(to.replace("<folder>", folder), path.join(folder, name));
 fs.writeFileSync(path.join(process.env.HOME, "from-build"), "");
 if (fs.existsSync(path.join(flags, "fifo")))
   require("child_process").execFileSync("mkfifo", [path.join(folder, "pipe")]);
@@ -83,8 +87,47 @@ export default {
         ]);
       },
     },
+    shape: {
+      title: "holds the links the build made",
+      entryPoint: "node",
+      async run(context) {
+        const folder = await prepare(context);
+        const made = JSON.parse(readFileSync(join(${JSON.stringify(flags)}, "links.json"), "utf8"));
+        const after = context.tree("shaped tree", folder);
+        context.expect(after.folder, Object.entries(made).map(([name, to]) =>
+          equal(\`\${name} points to \${to}\`, readlinkSync(join(folder, name)), to.replace("<folder>", folder))));
+      },
+    },
   },
 };
+`;
+}
+
+/** Wraps `cpSync` so a copy of what the run kept, once past its first entry, finds it deleted or replaced by an identical copy. */
+function memoHook(mode: "vanish" | "replace"): string {
+  const meddle = {
+    vanish: "fs.rmSync(memo, { recursive: true, force: true });",
+    replace: `fs.renameSync(memo, memo + ".old");
+copy(memo + ".old", memo, { recursive: true, verbatimSymlinks: true });`,
+  }[mode];
+  return `import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { dirname, join } from "node:path";
+const copy = fs.cpSync;
+fs.cpSync = (source, target, options) => {
+  if (!String(source).endsWith(join("prepared", "tree", "folder"))) return copy(source, target, options);
+  const memo = dirname(source);
+  let entries = 0;
+  const filter = () => {
+    entries += 1;
+    if (entries === 2) {
+      ${meddle}
+    }
+    return true;
+  };
+  return copy(source, target, { ...options, filter });
+};
+syncBuiltinESMExports();
 `;
 }
 
@@ -101,12 +144,20 @@ function preparedRepo(t: TestContext) {
     [`${SKILL}/features/smoke.md`]: feature([], ["reader"]),
     [`${SKILL}/features/tree.md`]: feature(["src/**"], ["writer", "reader"]),
     [`${SKILL}/features/links.md`]: feature([], ["linker"]),
+    [`${SKILL}/features/shape.md`]: feature([], ["shape"]),
   });
   const builds = () =>
     existsSync(log) ? read(tmp, "builds.log").split("\n").length - 1 : 0;
   const flag = (name: string) => writeFileSync(join(flags, name), "");
   const unflag = (name: string) => rmSync(join(flags, name));
-  return { root, tmp, builds, flag, unflag };
+  const links = (made: Record<string, string>) =>
+    writeFileSync(join(flags, "links.json"), JSON.stringify(made));
+  const hook = (mode: "vanish" | "replace") => {
+    const file = join(tmp, `${mode}.mjs`);
+    writeFileSync(file, memoHook(mode));
+    return { NODE_OPTIONS: `--import=${file}` };
+  };
+  return { root, tmp, builds, flag, unflag, links, hook };
 }
 
 test("a later journey command copies what the first journey built, with its build's evidence, and a build never touches the journey's HOME", (t) => {
@@ -220,4 +271,78 @@ test("clean deletes what the run kept, so a journey after it builds again", (t) 
   assert.deepEqual(runEntries(run), ["evidence", "run.json"]);
   assert.equal(verify(root, tmp, ["journey", run, "tree", "reader"]).status, 0);
   assert.equal(builds(), 2);
+});
+
+test("an absolute symlink to the build's folder itself is kept and points to each journey's own copy", (t) => {
+  const { root, tmp, builds, links } = preparedRepo(t);
+  links({ self: "<folder>" });
+  const run = newRun(root, tmp);
+  const built = verify(root, tmp, ["journey", run, "smoke"]);
+  assert.equal(built.status, 0, built.stdout);
+  const copied = verify(root, tmp, ["journey", run, "shape"]);
+  assert.equal(copied.status, 0, copied.stdout);
+  assert.equal(builds(), 1);
+});
+
+test("two relative links to the build's folder are kept and copied as they are", (t) => {
+  const { root, tmp, builds, links } = preparedRepo(t);
+  links({ a: ".", b: "." });
+  const run = newRun(root, tmp);
+  const built = verify(root, tmp, ["journey", run, "smoke"]);
+  assert.equal(built.status, 0, built.stdout);
+  const copied = verify(root, tmp, ["journey", run, "shape"]);
+  assert.equal(copied.status, 0, copied.stdout);
+  assert.equal(builds(), 1);
+});
+
+test("a link to an outside folder holding a FIFO is kept and copied as it is", (t) => {
+  const { root, tmp, builds, links } = preparedRepo(t);
+  const outside = join(tmp, "outside");
+  mkdirSync(outside);
+  execFileSync("mkfifo", [join(outside, "pipe")]);
+  links({ out: outside });
+  const run = newRun(root, tmp);
+  assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
+  const copied = verify(root, tmp, ["journey", run, "shape"]);
+  assert.equal(copied.status, 0, copied.stdout);
+  assert.equal(builds(), 1);
+});
+
+const COPIER = "evidence/tree/reader/01-prepared-tree";
+
+test("a journey whose copy fails as what the run kept vanishes removes the partial copy, builds itself and says so", (t) => {
+  const { root, tmp, builds, hook } = preparedRepo(t);
+  const run = newRun(root, tmp);
+  assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
+  const copier = verify(
+    root,
+    tmp,
+    ["journey", run, "tree", "reader"],
+    hook("vanish"),
+  );
+  assert.equal(copier.status, 0, copier.stdout);
+  assert.equal(builds(), 2);
+  assert.match(
+    read(run, `${COPIER}/prepared.txt`),
+    /^tree: copying what the run kept failed \(ENOENT[^)]*\), so \S+\/work\/tree\/reader\/tree was built here by the steps after this one; kept,/,
+  );
+  assert.equal(existsSync(join(run, COPIER, "build")), false);
+});
+
+test("a journey whose copy ends after what the run kept was replaced builds itself and says so", (t) => {
+  const { root, tmp, builds, hook } = preparedRepo(t);
+  const run = newRun(root, tmp);
+  assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
+  const copier = verify(
+    root,
+    tmp,
+    ["journey", run, "tree", "reader"],
+    hook("replace"),
+  );
+  assert.equal(copier.status, 0, copier.stdout);
+  assert.equal(builds(), 2);
+  assert.match(
+    read(run, `${COPIER}/prepared.txt`),
+    /^tree: copying what the run kept failed \(\S+ was replaced while it was copied\), so /,
+  );
 });

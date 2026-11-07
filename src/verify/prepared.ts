@@ -8,6 +8,7 @@ import {
   readlinkSync,
   realpathSync,
   renameSync,
+  statSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -40,25 +41,26 @@ interface Survey {
   special: string | null;
 }
 
-/** Surveys `folder` in one walk that follows no symlink; a target may name the folder by its real path. */
+/** Surveys `folder` in one walk that descends only into real directories, so it never follows a symlink; a target may name the folder by its real path. */
 function survey(folder: string): Survey {
   const real = realpathSync(folder);
   const found: Survey = { links: [], special: null };
-  for (const entry of readdirSync(folder, {
-    recursive: true,
-    withFileTypes: true,
-  })) {
-    const path = join(entry.parentPath, entry.name);
-    if (entry.isSymbolicLink()) {
-      const pointed = readlinkSync(path);
-      const target = isAbsolute(pointed)
-        ? (inside(folder, pointed) ?? inside(real, pointed))
-        : null;
-      if (target !== null)
-        found.links.push({ path: relative(folder, path), target });
-    } else if (!entry.isFile() && !entry.isDirectory())
-      found.special ??= relative(folder, path);
-  }
+  const walk = (at: string): void => {
+    for (const entry of readdirSync(join(folder, at), {
+      withFileTypes: true,
+    })) {
+      const path = join(at, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.isSymbolicLink()) {
+        const pointed = readlinkSync(join(folder, path));
+        const target = isAbsolute(pointed)
+          ? (inside(folder, pointed) ?? inside(real, pointed))
+          : null;
+        if (target !== null) found.links.push({ path, target });
+      } else if (!entry.isFile()) found.special ??= path;
+    }
+  };
+  walk("");
   return found;
 }
 
@@ -118,20 +120,46 @@ function builder(kept: string): string {
   return readFileSync(join(kept, "from.txt"), "utf8").trim();
 }
 
-/** Copies what the run kept into the journey, with one step that names the journey that built it and holds that build's evidence. */
-function reuse(
-  context: VerifyContext,
-  key: string,
-  kept: string,
-  folder: string,
-): void {
-  const step = context.step(`prepared ${key}`);
-  copyTree(join(kept, "evidence"), join(step, "build"));
-  copyTree(join(kept, "folder"), folder, readLinks(kept));
-  writeFileSync(
-    join(step, "prepared.txt"),
-    `${key}: ${folder} is a copy of what ${builder(kept)} prepared; build/ holds the evidence of that build\n`,
-  );
+/** Where a journey prepares `key`: the step `marker` that says how, what the run kept and the journey's own folder. */
+interface Where {
+  marker: string;
+  key: string;
+  kept: string;
+  folder: string;
+}
+
+/**
+ * Copies what the run kept into the journey, with the evidence of that build
+ * under the step `marker`, and returns `null`. When the copy fails, or what
+ * the run kept is gone or replaced once it ends, as when the journey that
+ * built reruns meanwhile, the partial copy is removed and this returns why.
+ */
+function reuse({ marker, key, kept, folder }: Where): string | null {
+  const evidence = join(marker, "build");
+  try {
+    const memo = statSync(kept).ino;
+    copyTree(join(kept, "evidence"), evidence);
+    copyTree(join(kept, "folder"), folder, readLinks(kept));
+    const from = builder(kept);
+    if (statSync(kept).ino !== memo)
+      throw new Error(`${kept} was replaced while it was copied`);
+    writeFileSync(
+      join(marker, "prepared.txt"),
+      `${key}: ${folder} is a copy of what ${from} prepared; build/ holds the evidence of that build\n`,
+    );
+    return null;
+  } catch (error) {
+    removeTree(evidence);
+    removeTree(folder);
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+/** Removes what the run kept by first renaming it away, so a journey copying it meanwhile fails instead of copying a half-deleted tree. */
+function drop(kept: string): void {
+  const trash = mkdtempSync(`${kept}.`);
+  renameSync(kept, join(trash, "dropped"));
+  removeTree(trash);
 }
 
 /** Keeps the built folder and the build's step evidence for the rest of the run, published by one rename; when another journey kept the key first, its copy stays and this returns `false`. */
@@ -190,19 +218,18 @@ async function buildAlone(
   }
 }
 
-/** Builds `key` in this journey, after a step that marks the steps after it as the build and says whether the run kept it. */
+/** Builds `key` in this journey after the step `marker`, which marks the steps after it as the build and says, after `before`, whether the run kept it. */
 async function buildHere(
   context: VerifyContext,
-  key: string,
-  kept: string,
-  folder: string,
+  where: Where,
   build: (folder: string) => Promise<void>,
+  before = "",
 ): Promise<void> {
-  const marker = context.step(`prepared ${key}`);
+  const { marker, key, kept, folder } = where;
   const note = (outcome: string) =>
     writeFileSync(
       join(marker, "prepared.txt"),
-      `${key}: ${folder} was built here by the steps after this one; ${outcome}\n`,
+      `${key}: ${before}${folder} was built here by the steps after this one; ${outcome}\n`,
     );
   const earlier = new Set(readdirSync(context.folder));
   const checked = context.steps.length;
@@ -246,8 +273,23 @@ export async function prepare(
     existsSync(kept) &&
     builder(kept) === relative(context.state.evidence, context.folder)
   )
-    removeTree(kept);
-  if (existsSync(kept)) reuse(context, key, kept, folder);
-  else await buildHere(context, key, kept, folder, build);
+    drop(kept);
+  const where: Where = {
+    marker: context.step(`prepared ${key}`),
+    key,
+    kept,
+    folder,
+  };
+  if (!existsSync(kept)) await buildHere(context, where, build);
+  else {
+    const failed = reuse(where);
+    if (failed !== null)
+      await buildHere(
+        context,
+        where,
+        build,
+        `copying what the run kept failed (${failed}), so `,
+      );
+  }
   return folder;
 }

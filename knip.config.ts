@@ -3,7 +3,7 @@ import { antelopeKnipConfig } from "./src/knip.ts";
 export default {
   ...antelopeKnipConfig({
     ignore: ["src/oxc/anti-slop/**"],
-    ignoreBinaries: ["script"],
+    ignoreBinaries: ["mkfifo", "script"],
   }),
   workspaces: {
     "actions/docs": {
