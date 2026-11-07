@@ -308,7 +308,7 @@ export function renderVerdict(
         (docs) =>
           `\`${docs.page}\`: ${docs.matches ? "matches" : "**stale**"}${docs.note ? `. ${docs.note}` : ""}`,
       ),
-      "No feature the plan runs links a page.",
+      "The plan lists no docs page to judge.",
     ),
     "",
     "### Not verified",
