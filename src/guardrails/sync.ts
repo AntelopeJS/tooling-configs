@@ -57,6 +57,7 @@ import {
   inScaffoldExcludedPath,
   planWritingSkills,
 } from "./template-agent-layer.ts";
+import { checkTypecheckCoverage } from "./typecheck-coverage.ts";
 import {
   applyVerifyActions,
   planVerify,
@@ -509,7 +510,10 @@ export function syncRepository(
     errors,
     notes,
     verifyNotes: options.check || errors.length ? [] : verify.notes,
-    advisories: entryOnly.advisories,
+    advisories: [
+      ...entryOnly.advisories,
+      ...checkTypecheckCoverage(root).map((finding) => `Note: ${finding}`),
+    ],
     dependenciesAdded,
   };
 }

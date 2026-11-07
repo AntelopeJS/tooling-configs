@@ -1,7 +1,5 @@
-import { defineConfig } from "tsdown";
-
-/** The lint tools and plugins are resolved from the consumer's node_modules at lint time, never bundled. */
-export default defineConfig({
+/** The lint tools and plugins are resolved from the consumer's node_modules at lint time, never bundled. A plain object: importing `defineConfig` would pull tsdown's declarations, which import optional peers this repository does not install, into the lib-checked program. */
+export default {
   entry: [
     "./src/oxc/lint.ts",
     "./src/oxc/fmt.ts",
@@ -44,4 +42,4 @@ export default defineConfig({
       "mongodb-memory-server",
     ],
   },
-});
+};
