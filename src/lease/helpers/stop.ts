@@ -3,7 +3,7 @@ import type { TestContext } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { accepting } from "../ports.ts";
-import { identify } from "../procs.ts";
+import { assertSignallable, identify } from "../procs.ts";
 import { firstLine, LEASE_ARGV, startCaptured, type Started } from "./cli.ts";
 
 /** Prints its pid, then idles. */
@@ -23,15 +23,28 @@ export function isLive(pid: number): boolean {
   return identify(pid) !== undefined;
 }
 
-function reap(t: TestContext, pid: number, group: boolean): void {
+/**
+ * Kills `pid`, with its process group when it leads one, after the test, only while it is still
+ * the process it was when this was called.
+ */
+export function reap(t: TestContext, pid: number, group: boolean): void {
+  assertSignallable(pid);
+  const start = identify(pid)?.start;
   t.after(() => {
-    if (!isLive(pid)) return;
+    if (start === undefined || identify(pid)?.start !== start) return;
     try {
       process.kill(group ? -pid : pid, "SIGKILL");
     } catch {
       return;
     }
   });
+}
+
+/** The pids a `down --stop` printed a `stopped pid` line for, in ascending order. */
+export function stoppedPids(stdout: string): number[] {
+  return [...stdout.matchAll(/^stopped pid (\d+) \(.*\)$/gmu)]
+    .map((match) => Number(match[1]))
+    .toSorted((a, b) => a - b);
 }
 
 /** A process that idles outside any lease, as its own process group, killed after the test. */
@@ -48,18 +61,21 @@ export function startWaiter(t: TestContext): number {
 
 /**
  * A server that listens on `port` from a process group of its own, as a dev server that
- * daemonized does, killed after the test. With `stubborn` it ignores SIGTERM.
+ * daemonized does, killed after the test. With `stubborn` it ignores SIGTERM. With `lease` its
+ * environment holds `ANTELOPEJS_LEASE=<lease>`, as a server a `run` of that lease started does.
  */
 export async function startDaemon(
   t: TestContext,
   port: number,
   stubborn: boolean,
+  lease?: string,
 ): Promise<number> {
   const child = spawn(process.execPath, ["-e", DAEMON], {
     detached: true,
     stdio: "ignore",
     env: {
       ...process.env,
+      ANTELOPEJS_LEASE: lease,
       LISTEN_PORT: String(port),
       IGNORE_TERM: stubborn ? "1" : "",
     },
@@ -94,9 +110,6 @@ export async function startRun(
     script,
   ];
   const started = startCaptured(file, args, { cwd, env, detached: true });
-  t.after(() => {
-    if (started.child.exitCode === null && started.child.signalCode === null)
-      process.kill(-(started.child.pid ?? 0), "SIGKILL");
-  });
+  reap(t, started.child.pid ?? 0, true);
   return { started, line: await firstLine(started) };
 }

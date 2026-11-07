@@ -6,27 +6,33 @@ import test from "node:test";
 import { assertSignallable } from "./procs.ts";
 import {
   externalEnv,
+  firstLine,
   gitInit,
   lease,
   LEASE_ARGV,
   leasedEnv,
   scratch,
+  startCaptured,
 } from "./helpers/cli.ts";
 import {
   isLive,
+  reap,
   startDaemon,
   startRun,
   startWaiter,
+  stoppedPids,
   TREE,
   WAITER,
 } from "./helpers/stop.ts";
 
-function lines(text: string): string[] {
-  return text.split("\n").filter(Boolean);
+const IDLE = "setInterval(() => {}, 1000)";
+
+function pidsOf(line: string): number[] {
+  return line.split(" ").map(Number);
 }
 
 test(
-  "down --stop ends the process group of a run and a daemonized listener that ignores SIGTERM, printing one line for each (fails when it signals only the run pid, skips listeners in other groups, or never escalates to SIGKILL)",
+  "down --stop ends a run, its child and a daemonized listener of the lease that ignores SIGTERM, printing one line for each (fails when it signals only the run pid, misses processes that left the run's group, or never escalates to SIGKILL)",
   { timeout: 60_000 },
   async (t) => {
     const root = scratch(t);
@@ -35,16 +41,19 @@ test(
     const printed = await leasedEnv(worktree, env);
     const api = Number(printed.DMS_BACK_PORT);
     const { started, line } = await startRun(t, worktree, env, TREE);
-    const [runPid = 0, kidPid = 0] = line.split(" ").map(Number);
-    const daemon = await startDaemon(t, api, true);
+    const daemon = await startDaemon(
+      t,
+      api,
+      true,
+      String(printed.ANTELOPEJS_LEASE),
+    );
     const outcome = await lease(["down", "--stop"], worktree, env);
     assert.equal(outcome.code, 0, outcome.stderr);
-    assert.deepEqual(lines(outcome.stdout), [
-      `stopped pid ${runPid} (run, process group)`,
-      `stopped pid ${daemon} (listening on api port ${api})`,
-    ]);
+    const expected = [...pidsOf(line), daemon].toSorted((a, b) => a - b);
+    assert.deepEqual(stoppedPids(outcome.stdout), expected);
+    assert.equal(outcome.stdout.split("\n").filter(Boolean).length, 3);
     await started.done;
-    assert.deepEqual([runPid, kidPid, daemon].filter(isLive), []);
+    assert.deepEqual(expected.filter(isLive), []);
     assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), false);
   },
 );
@@ -65,19 +74,157 @@ test(
       t,
       Number(otherLease.DMS_BACK_PORT),
       false,
+      String(otherLease.ANTELOPEJS_LEASE),
     );
     const lookalike = startWaiter(t);
     const outcome = await lease(["down", "--stop"], mine, env);
     assert.equal(outcome.code, 0, outcome.stderr);
-    assert.deepEqual(lines(outcome.stdout), [
-      `stopped pid ${own.line} (run, process group)`,
-    ]);
+    assert.deepEqual(stoppedPids(outcome.stdout), [Number(own.line)]);
     await own.started.done;
     assert.deepEqual(
       [theirs.line, theirDaemon, lookalike].map((pid) => isLive(Number(pid))),
       [true, true, true],
     );
     assert.equal(isLive(Number(own.line)), false);
+  },
+);
+
+test(
+  "down --stop leaves alone a listener on the lease's api port that another registry's lease or a process without the marker holds, and refuses naming it (fails when it signals whatever listens on a lease port, as two registries handing out one port made it kill another test's server in CI)",
+  { timeout: 30_000 },
+  async (t) => {
+    const root = scratch(t);
+    const worktree = gitInit(join(root, "w"));
+    const env = externalEnv(join(root, ".home"));
+    const printed = await leasedEnv(worktree, env);
+    const api = Number(printed.DMS_BACK_PORT);
+    const stranger = await startDaemon(t, api, false, "0000000000");
+    const outcome = await lease(["down", "--stop"], worktree, env);
+    assert.equal(outcome.code, 1);
+    assert.equal(outcome.stdout, "");
+    assert.match(
+      outcome.stderr,
+      new RegExp(
+        `port ${api} .*after --stop, held by pid ${stranger} without ANTELOPEJS_LEASE=${String(printed.ANTELOPEJS_LEASE)}`,
+        "u",
+      ),
+    );
+    assert.equal(isLive(stranger), true);
+    assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), true);
+  },
+);
+
+test(
+  "down --stop stops the child of a run whose leader already exited (fails when it finds a run's processes through the run's own pid or group leader, which is gone)",
+  { timeout: 30_000 },
+  async (t) => {
+    const root = scratch(t);
+    const worktree = gitInit(join(root, "w"));
+    const env = externalEnv(join(root, ".home"));
+    const printed = await leasedEnv(worktree, env);
+    const script = `"$0" -e '${IDLE}' >/dev/null 2>&1 & echo $!`;
+    const started = startCaptured(
+      LEASE_ARGV[0] ?? "",
+      [
+        ...LEASE_ARGV.slice(1),
+        "run",
+        "--",
+        "sh",
+        "-c",
+        script,
+        process.execPath,
+      ],
+      { cwd: worktree, env, detached: true },
+    );
+    const kid = Number(await firstLine(started));
+    reap(t, kid, false);
+    await started.done;
+    const outcome = await lease(["down", "--stop"], worktree, env);
+    assert.equal(outcome.code, 0, outcome.stderr);
+    assert.deepEqual(stoppedPids(outcome.stdout), [kid]);
+    assert.equal(isLive(kid), false);
+    assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), false);
+  },
+);
+
+test(
+  "down --stop counts a run that exited but that its parent never reaped as gone (fails when a zombie counts as alive, as a kill(-pid, 0) group probe does, so down reports it still running after SIGKILL and keeps the lease)",
+  { timeout: 30_000 },
+  async (t) => {
+    const root = scratch(t);
+    const worktree = gitInit(join(root, "w"));
+    const env = externalEnv(join(root, ".home"));
+    const printed = await leasedEnv(worktree, env);
+    const started = startCaptured(
+      "sh",
+      [
+        "-c",
+        'setsid "$0" "$@" & exec sleep 60',
+        ...LEASE_ARGV,
+        "run",
+        "--",
+        process.execPath,
+        "-e",
+        TREE,
+      ],
+      { cwd: worktree, env, detached: true },
+    );
+    reap(t, started.child.pid ?? 0, true);
+    const [run = 0, kid = 0] = pidsOf(await firstLine(started));
+    reap(t, run, true);
+    reap(t, kid, false);
+    const outcome = await lease(["down", "--stop"], worktree, env);
+    assert.equal(outcome.code, 0, outcome.stderr);
+    assert.deepEqual(stoppedPids(outcome.stdout), [run, kid]);
+    assert.deepEqual([run, kid].filter(isLive), []);
+    assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), false);
+  },
+);
+
+test(
+  "down --stop stops the child of a run that does not lead its process group, as a run started from a script does (fails when it signals a non-leading run alone, leaving its child behind)",
+  { timeout: 30_000 },
+  async (t) => {
+    const root = scratch(t);
+    const worktree = gitInit(join(root, "w"));
+    const env = externalEnv(join(root, ".home"));
+    const printed = await leasedEnv(worktree, env);
+    const started = startCaptured(
+      "sh",
+      ["-c", '"$0" "$1" run -- "$0" -e "$2"; :', ...LEASE_ARGV, TREE],
+      { cwd: worktree, env, detached: true },
+    );
+    reap(t, started.child.pid ?? 0, true);
+    const [run = 0, kid = 0] = pidsOf(await firstLine(started));
+    reap(t, run, false);
+    reap(t, kid, false);
+    const outcome = await lease(["down", "--stop"], worktree, env);
+    assert.equal(outcome.code, 0, outcome.stderr);
+    assert.deepEqual(stoppedPids(outcome.stdout), [run, kid]);
+    await started.done;
+    assert.deepEqual([run, kid].filter(isLive), []);
+    assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), false);
+  },
+);
+
+test(
+  "down --stop stops a live run that an earlier version recorded without a start time, before it deletes the lease's data (fails when it trusts only the run records, which skip such a run and delete the data under it)",
+  { timeout: 30_000 },
+  async (t) => {
+    const root = scratch(t);
+    const worktree = gitInit(join(root, "w"));
+    const env = externalEnv(join(root, ".home"));
+    const printed = await leasedEnv(worktree, env);
+    const { started, line } = await startRun(t, worktree, env, TREE);
+    const [run = 0, kid = 0] = pidsOf(line);
+    const dir = String(printed.ANTELOPEJS_LEASE_DIR);
+    writeFileSync(join(dir, "runs", String(run)), "");
+    const outcome = await lease(["down", "--stop"], worktree, env);
+    assert.equal(outcome.code, 0, outcome.stderr);
+    assert.deepEqual(stoppedPids(outcome.stdout), [run, kid]);
+    await started.done;
+    assert.deepEqual([run, kid].filter(isLive), []);
+    assert.equal(existsSync(dir), false);
   },
 );
 

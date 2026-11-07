@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
+import { unmarked } from "./env.ts";
 import { accepting, listenerPids, listensOn } from "./ports.ts";
 import { assertSignallable } from "./procs.ts";
 
@@ -205,7 +206,8 @@ async function ready(
  * With `--fork`, mongod daemonizes itself, and the process this call starts exits once the server
  * accepts connections. The server is never a child of this process, nor of the command `run`
  * becomes, which would keep it as a zombie after `down`. Two callers at once are safe: mongod locks its dbpath, so the second exits and both wait
- * for the first.
+ * for the first. mongod gets no `ANTELOPEJS_LEASE`, even when the caller runs under another
+ * worktree's lease, so only `down` of its own lease stops it.
  */
 export async function ensureMongod(
   port: number,
@@ -235,7 +237,7 @@ export async function ensureMongod(
       "0.25",
       "--fork",
     ],
-    { detached: true, stdio: "ignore" },
+    { detached: true, stdio: "ignore", env: unmarked(process.env) },
   );
   let exited = false;
   started.once("exit", () => (exited = true));

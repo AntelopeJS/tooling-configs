@@ -1,4 +1,4 @@
-import { leaseEnv, type ServerRole } from "./env.ts";
+import { leaseEnv, leaseMarker, type ServerRole } from "./env.ts";
 import { launch } from "./exec.ts";
 import { ensureMongod, mongodPid, stopMongod } from "./mongo.ts";
 import { accepting, listenerPids } from "./ports.ts";
@@ -16,7 +16,6 @@ import {
   mongodPaths,
   openLease,
   readEntries,
-  recordedRuns,
   removeLease,
   sweep,
   withRegistryLock,
@@ -151,12 +150,23 @@ export interface DownOptions {
   readonly stop?: (line: string) => void;
 }
 
-function stillListens(busy: readonly number[], stopped: boolean): Error {
+function stillListens(
+  record: LeaseRecord,
+  busy: readonly number[],
+  stopped: boolean,
+): Error {
   const ports = busy.join(" and ");
+  if (!stopped)
+    return new Error(
+      `antelopejs-lease: port ${ports} of this lease still listens; stop what this worktree started with antelopejs-lease down --stop, or pass --force to tear down anyway`,
+    );
+  const pids = busy.flatMap(listenerPids);
+  const holder =
+    pids.length > 0
+      ? `pid ${pids.join(", ")}`
+      : "a process this user cannot inspect";
   return new Error(
-    stopped
-      ? `antelopejs-lease: port ${ports} of this lease still listens after --stop, held by a process this user may not stop; pass --force to tear down anyway`
-      : `antelopejs-lease: port ${ports} of this lease still listens; stop what this worktree started with antelopejs-lease down --stop, or pass --force to tear down anyway`,
+    `antelopejs-lease: port ${ports} of this lease still listens after --stop, held by ${holder} without ${leaseMarker(record.id)} in its environment, so not started by this lease and left running; pass --force to tear down anyway`,
   );
 }
 
@@ -175,15 +185,16 @@ export async function down(
   );
   if (entry === undefined) return;
   if (entry.parsed?.kind === "foreign") throw foreignRecord(entry.dir);
-  const ports =
-    entry.parsed?.kind === "current" ? entry.parsed.record.ports : undefined;
-  if (ports !== undefined && options.stop !== undefined)
-    await stopOwn(recordedRuns(entry.dir), ports, options.stop);
-  if (ports !== undefined && !options.force) {
+  const record =
+    entry.parsed?.kind === "current" ? entry.parsed.record : undefined;
+  if (record !== undefined && options.stop !== undefined)
+    await stopOwn(record.id, options.stop);
+  if (record !== undefined && !options.force) {
     const busy = [];
-    for (const port of [ports.api, ports.web])
+    for (const port of [record.ports.api, record.ports.web])
       if (await accepting(port)) busy.push(port);
-    if (busy.length > 0) throw stillListens(busy, options.stop !== undefined);
+    if (busy.length > 0)
+      throw stillListens(record, busy, options.stop !== undefined);
   }
   await stopMongod(mongodPaths(entry.dir).dbpath, DOWN_GRACE_MS);
   await withRegistryLock(() => removeLease(entry.dir));

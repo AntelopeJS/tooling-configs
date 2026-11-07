@@ -1,6 +1,8 @@
 import { join } from "node:path";
 
-import type { LeaseRecord } from "./protocol.ts";
+import type { LeaseId, LeaseRecord } from "./protocol.ts";
+
+const LEASE_VARIABLE = "ANTELOPEJS_LEASE";
 
 /** A lease record and the directory that holds its data, logs and tmp. */
 export interface Lease {
@@ -10,6 +12,24 @@ export interface Lease {
 
 /** The server that gets `PORT` under `run --as`. */
 export type ServerRole = "api" | "web";
+
+/**
+ * The `environ` entry that `run` hands its command and every descendant inherits, which marks a
+ * process as the work of lease `id`.
+ */
+export function leaseMarker(id: LeaseId): string {
+  return `${LEASE_VARIABLE}=${id}`;
+}
+
+/**
+ * `env` without the lease marker, for a process that outlives the command that started it and
+ * belongs to no lease's `down --stop`, such as a lease's mongod started from inside another lease's
+ * `run`.
+ */
+export function unmarked(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const { [LEASE_VARIABLE]: _marker, ...rest } = env;
+  return rest;
+}
 
 export function isServerRole(value: string): value is ServerRole {
   return value === "api" || value === "web";
@@ -31,7 +51,7 @@ export function leaseEnv(
   const { ports } = record;
   const { PORT: _inherited, ...env } = parent;
   Object.assign(env, {
-    ANTELOPEJS_LEASE: record.id,
+    [LEASE_VARIABLE]: record.id,
     ANTELOPEJS_LEASE_DIR: dir,
     DMS_BACK_PORT: String(ports.api),
     DMS_FRONT_PORT: String(ports.web),
