@@ -67,7 +67,7 @@
     "checks": "node src/bin/checks.ts",
     "format:check": "oxfmt --check .",
     "size": "node src/bin/check-size.ts",
-    "prepare": "(unset GIT_DIR GIT_WORK_TREE; if [ \"$(git rev-parse --is-inside-work-tree --show-prefix 2>/dev/null)\" = true ] && command -v lefthook >/dev/null 2>&1; then lefthook install; fi)",
+    "prepare": "if [ -e .git ] && command -v git >/dev/null 2>&1 && command -v lefthook >/dev/null 2>&1; then lefthook install; fi",
     "sync": "node src/bin/sync.ts",
     "sync:check": "node src/bin/sync.ts --check",
     "knip": "knip",

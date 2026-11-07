@@ -116,9 +116,9 @@ export function repositoryTools(manifest: Manifest) {
   ];
 }
 
-/** Installs hooks only when the package folder is the git top level, so a package installed inside another checkout never writes that checkout's hooks. */
+/** Installs hooks only in a folder holding `.git`, the top of a checkout, worktree or submodule, so a package installed inside another checkout never writes that checkout's hooks; git's own lookup is avoided because `GIT_DIR` can point it at an outer repository. */
 export const PREPARE_INSTALL =
-  '(unset GIT_DIR GIT_WORK_TREE; if [ "$(git rev-parse --is-inside-work-tree --show-prefix 2>/dev/null)" = true ] && command -v lefthook >/dev/null 2>&1; then lefthook install; fi)';
+  "if [ -e .git ] && command -v git >/dev/null 2>&1 && command -v lefthook >/dev/null 2>&1; then lefthook install; fi";
 
 const PREVIOUS_PREPARE_INSTALLS = [
   "if git rev-parse --is-inside-work-tree >/dev/null 2>&1 && command -v lefthook >/dev/null 2>&1; then lefthook install; fi",
