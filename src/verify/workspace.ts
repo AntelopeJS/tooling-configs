@@ -224,7 +224,6 @@ export function isolatedEnv(
     XDG_CACHE_HOME: join(home, ".cache"),
     XDG_CONFIG_HOME: join(home, ".config"),
     npm_config_cache: join(CACHE_DIR, "npm"),
-    npm_config_prefer_offline: "true",
     GIT_CONFIG_NOSYSTEM: "1",
     ...workspace.config.env,
     ...extra,
