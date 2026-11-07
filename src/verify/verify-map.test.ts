@@ -61,6 +61,26 @@ test("map is silent on a complete map and names every gap of an incomplete one",
   );
 });
 
+test("map names each tracked dotfile no feature covers, one line per file, where a matcher that skips dotfiles stays silent", (t) => {
+  const { root, tmp } = mapRepo(t, {
+    ...SPLIT,
+    "src/.prettierrc": "{}\n",
+    "src/conf/.npmrc": "x=1\n",
+  });
+  const gaps = verify(root, tmp, ["map"]);
+  assert.equal(gaps.status, 1);
+  assert.deepEqual(
+    gaps.stdout
+      .trim()
+      .split("\n")
+      .filter((line) => line.includes("/.")),
+    [
+      "unmapped: src/.prettierrc matches no feature glob",
+      "unmapped: src/conf/.npmrc matches no feature glob",
+    ],
+  );
+});
+
 test("plan runs smoke plus every touched feature and fails on an unmapped user-facing file, never on a test", (t) => {
   const { root, tmp } = mapRepo(t, {
     [`${SKILL}/features/core.md`]: feature(
@@ -144,6 +164,16 @@ test("a single-interface module's src/interface is shared too, where a default n
   });
 });
 
+test("a dotfile under a covered folder plans its feature, where a matcher that skips dotfiles plans smoke alone with nothing touched", (t) => {
+  const { root, tmp } = mapRepo(t, SPLIT);
+  put(root, "src/store/.prettierrc", "{}\n");
+  const plan = planOf(root, tmp);
+  assert.deepEqual(plan.run, ["smoke", "store"]);
+  assert.deepEqual(plan.touched, [
+    { feature: "store", files: ["src/store/.prettierrc"] },
+  ]);
+});
+
 test("a diff touching only a covered source file plans that feature and smoke, never the rest, where an always-full plan runs every feature", (t) => {
   const { root, tmp } = mapRepo(t, SPLIT);
   put(root, "src/index.ts", "export const one = 2;\n");
@@ -204,6 +234,26 @@ test("doors flags a declared funnel, adds no default glob for a kind set to null
     doors.stdout,
     "One-way-door: data\n  data: src/store/delete.ts\n",
   );
+});
+
+test("doors flags a dotfile under a door's glob, where doors matched with path.matchesGlob let a change to it through silently", (t) => {
+  const { root, tmp } = mapRepo(t);
+  put(root, "src/store/.cache/rows.json", "[]\n");
+  const doors = verify(root, tmp, ["doors"]);
+  assert.equal(doors.status, 0, doors.stderr);
+  assert.equal(
+    doors.stdout,
+    "One-way-door: data\n  data: src/store/.cache/rows.json\n",
+  );
+});
+
+test("a covers glob whose only tracked file is a dotfile matches it, where map's tracked-file check with path.matchesGlob calls the glob dead", (t) => {
+  const { root, tmp } = mapRepo(t, {
+    "conf/.npmrc": "x=1\n",
+    [`${SKILL}/features/conf.md`]: feature(["conf/**"], ["module-dev"]),
+  });
+  const result = verify(root, tmp, ["map"]);
+  assert.doesNotMatch(result.stdout, /glob conf\/\*\* matches no tracked file/);
 });
 
 test("the bin names the missing repo-owned layer instead of running without it", (t) => {
