@@ -237,6 +237,16 @@ When every rule count is zero and `oversizeFiles` is empty, the ratchet is retir
 
 `antelopejs-sync --check` rejects an existing retired file and tells you to run `ratchet:update`. Plain sync reports the same note but leaves deletion to the update command.
 
+### Lib check coverage
+
+No repository sets `skipLibCheck` globally. `typecheck` runs a full `tsc --noEmit` over the program that covers the sources, and `build` may pass `--skipLibCheck` only over a program `typecheck` checks in full, so nothing `typecheck` skipped goes unchecked. `antelopejs-sync --check` fails a repository, naming the file, the script and the fix, when:
+
+- `build` passes `--skipLibCheck` to a `tsc` program (`-p`/`--project`, `tsconfig.json` when absent) that no `tsc` run of `typecheck` covers without `--skipLibCheck`. `./tsconfig.build.json` and `tsconfig.build.json`, `-p .` and no `-p` are the same program, and `&&` chains and scripts run through `pnpm run`, `npm run`, `yarn` or `bun run` are followed to five levels.
+- A tsconfig the scripts use through `tsc`, or the root `tsconfig.json`, ends up with `compilerOptions.skipLibCheck: true`, set directly or through a local `extends` chain. Presets extended from a package are not read.
+- A `release` script exists and does not run `typecheck`, directly or through a script it runs.
+
+A plain `antelopejs-sync` prints the same findings as notes and still writes the managed files.
+
 ### Suppression budget
 
 `guardrails.suppressions.json` caps the suppressions in authored code files. It is separate from the ratchet and permanent: it stays when its counts reach zero and when the ratchet is retired.

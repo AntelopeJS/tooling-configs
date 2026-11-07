@@ -175,6 +175,11 @@ const FULL_RULES = [
     "A DMS layer's `build/backend-boundary.ts` is the pack's plugin",
     "`antelopejs-sync --check`",
   ],
+  [
+    "No `skipLibCheck` in a tsconfig; `build` skips only what `typecheck` checks",
+    "`antelopejs-sync --check`",
+  ],
+  ["`release` runs `typecheck`", "`antelopejs-sync --check`"],
   ["A test names the wrong implementation it catches", "review; no tool"],
 ] as const;
 

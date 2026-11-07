@@ -57,6 +57,7 @@ import {
   inScaffoldExcludedPath,
   planWritingSkills,
 } from "./template-agent-layer.ts";
+import { checkTypecheckCoverage } from "./typecheck-coverage.ts";
 import {
   applyVerifyActions,
   planVerify,
@@ -467,7 +468,10 @@ export function syncRepository(
   const notes = plan.flatMap((artifact) =>
     artifact.kind === "migrated" ? artifact.notes : [],
   );
-  (options.check ? errors : notes).push(...repositoryNotices(root, context));
+  (options.check ? errors : notes).push(
+    ...repositoryNotices(root, context),
+    ...checkTypecheckCoverage(root),
+  );
   if (
     !errors.length &&
     profile === "full" &&

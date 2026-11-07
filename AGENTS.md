@@ -90,6 +90,8 @@ Verify a boundary against the imports a developer or agent would plausibly write
 | A CI gate reads `needs.<id>` only of jobs in its `needs`                       | `antelopejs-sync --check`                           |
 | Entry-only rules exempt no tracked outsider                                    | `antelopejs-sync --check`                           |
 | A DMS layer's `build/backend-boundary.ts` is the pack's plugin                 | `antelopejs-sync --check`                           |
+| No `skipLibCheck` in a tsconfig; `build` skips only what `typecheck` checks    | `antelopejs-sync --check`                           |
+| `release` runs `typecheck`                                                     | `antelopejs-sync --check`                           |
 | A test names the wrong implementation it catches                               | review; no tool                                     |
 
 <!-- antelopejs-guardrails:end -->
