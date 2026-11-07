@@ -199,7 +199,7 @@ const INHERITED_PREFIXES = ["ANTELOPEJS_", "npm_", "PNPM_", "XDG_"];
 /**
  * The environment every driven command gets: the journey's HOME, CI=1, no
  * update check, no colors and the shared caches. Variables that could leak
- * the operator's own settings into the run are dropped.
+ * the operator's own settings into the run are dropped; npm settings in any case, since npm also reads `NPM_CONFIG_*`. `NPM_TOKEN` and other uppercase variables a `.npmrc` interpolates are kept.
  */
 export function isolatedEnv(
   workspace: Workspace,
@@ -207,7 +207,9 @@ export function isolatedEnv(
   extra: { [name: string]: string } = {},
 ): NodeJS.ProcessEnv {
   const kept = Object.entries(process.env).filter(
-    ([key]) => !INHERITED_PREFIXES.some((prefix) => key.startsWith(prefix)),
+    ([key]) =>
+      !INHERITED_PREFIXES.some((prefix) => key.startsWith(prefix)) &&
+      !key.toLowerCase().startsWith("npm_config_"),
   );
   return {
     ...Object.fromEntries(kept),

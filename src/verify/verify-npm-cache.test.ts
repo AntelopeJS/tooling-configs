@@ -44,7 +44,7 @@ export default {
 `;
 }
 
-test("an exact version published after an earlier run cached the packument still packs", async (t) => {
+test("an exact version published after an earlier run cached the packument still packs, even with the operator exporting NPM_CONFIG_PREFER_OFFLINE", async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "verify-npm-cache-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   const registry = await startRegistry(t);
@@ -53,7 +53,10 @@ test("an exact version published after an earlier run cached the packument still
     [`${SKILL}/verify.config.ts`]: config(registry),
     [`${SKILL}/features/smoke.md`]: feature([], ["stale"]),
   });
-  const cache = { XDG_CACHE_HOME: join(tmp, "cache") };
+  const cache = {
+    XDG_CACHE_HOME: join(tmp, "cache"),
+    NPM_CONFIG_PREFER_OFFLINE: "true",
+  };
   const run = newRun(root, tmp, cache);
   const result = verify(root, tmp, ["journey", run, "smoke"], cache);
   assert.equal(result.status, 0, result.stdout);
