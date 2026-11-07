@@ -7,15 +7,23 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { isObject, parseJson, type JsonObject } from "../garden/json.ts";
+import {
+  DEV_STACK_VARIABLES,
+  LEASE_DIR,
+  LEASE_MARKER,
+  leaseTmpDir,
+  PARENT_TMPDIR,
+} from "../lease/env.ts";
 import { skillFolder, type VerifyKind } from "./kinds.ts";
 import type { VerifyConfig } from "./types.ts";
 
@@ -80,8 +88,20 @@ export const CACHE_DIR = join(
   "antelopejs-verify",
 );
 
+/**
+ * The temp folder the operator would have outside a lease: the `TMPDIR` of
+ * `operatorEnv()`, else the platform default, so a lease's own tmp never
+ * holds a run.
+ */
+export function operatorTmpdir(): string {
+  const { TMPDIR: tmp, TMP, TEMP } = operatorEnv();
+  if (tmp) return tmp;
+  if (process.platform === "win32") return tmpdir();
+  return TMP || TEMP || "/tmp";
+}
+
 /** The folder that holds every run, one subfolder per repository. */
-export const RUNS_DIR = join(tmpdir(), "antelopejs-verify");
+export const RUNS_DIR = join(operatorTmpdir(), "antelopejs-verify");
 
 function makeWritable(folder: string): void {
   chmodSync(folder, lstatSync(folder).mode | 0o700);
@@ -200,17 +220,64 @@ export function allocateRun(
 
 const INHERITED_PREFIXES = ["ANTELOPEJS_", "npm_", "PNPM_", "XDG_"];
 
+/** The real path of `path`, resolved through its nearest existing ancestor when the path itself is gone. */
+function canonical(path: string): string {
+  const full = resolve(path);
+  try {
+    return realpathSync(full);
+  } catch {
+    const parent = dirname(full);
+    return parent === full ? full : join(canonical(parent), basename(full));
+  }
+}
+
+function isLeaseTmp(tmp: string | undefined, leaseDir: string): boolean {
+  return !!tmp && canonical(tmp) === canonical(leaseTmpDir(leaseDir));
+}
+
+/**
+ * The environment the operator would have outside `antelopejs-lease run`. A
+ * lease is active only when `ANTELOPEJS_LEASE` and `ANTELOPEJS_LEASE_DIR` are
+ * both non-empty. Under one, the lease's dev-stack variables and its own
+ * `ANTELOPEJS_LEASE*` variables are dropped. `TMPDIR` is replaced only when
+ * it is the lease's own tmp: by the value the lease recorded, or removed when
+ * the operator had none, and kept as it is when the lease recorded nothing
+ * (an older pack). A `TMPDIR` set for the command is honoured. Outside a
+ * lease it is `process.env` unchanged, so the operator's own `PORT` or
+ * `MONGO_URL` still counts.
+ */
+export function operatorEnv(): NodeJS.ProcessEnv {
+  const leaseDir = process.env[LEASE_DIR];
+  if (!process.env[LEASE_MARKER] || !leaseDir) return process.env;
+  const dropped = new Set<string>([
+    ...DEV_STACK_VARIABLES.filter((name) => name !== "TMPDIR"),
+    LEASE_MARKER,
+    LEASE_DIR,
+    PARENT_TMPDIR,
+  ]);
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !dropped.has(key)),
+  );
+  const recorded = process.env[PARENT_TMPDIR];
+  if (recorded !== undefined && isLeaseTmp(env.TMPDIR, leaseDir)) {
+    if (recorded) env.TMPDIR = recorded;
+    else delete env.TMPDIR;
+  }
+  return env;
+}
+
 /**
  * The environment every driven command gets: the journey's HOME, CI=1, no
  * update check, no colors and the shared caches. Variables that could leak
- * the operator's own settings into the run are dropped; npm and pnpm settings in any case, since both also read their upper and lowercase spellings. `NPM_TOKEN` and other uppercase variables a `.npmrc` interpolates are kept.
+ * the operator's own settings or the lease's dev stack into the run are
+ * dropped; npm and pnpm settings in any case, since both also read their upper and lowercase spellings. `NPM_TOKEN` and other uppercase variables a `.npmrc` interpolates are kept. The config `env` can set any of them back on purpose.
  */
 export function isolatedEnv(
   workspace: Workspace,
   home: string,
   extra: { [name: string]: string } = {},
 ): NodeJS.ProcessEnv {
-  const kept = Object.entries(process.env).filter(
+  const kept = Object.entries(operatorEnv()).filter(
     ([key]) =>
       !INHERITED_PREFIXES.some((prefix) => key.startsWith(prefix)) &&
       !/^p?npm_config_/i.test(key),

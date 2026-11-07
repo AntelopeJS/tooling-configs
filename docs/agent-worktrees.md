@@ -70,6 +70,8 @@ Run each command from inside your worktree. Each step is one shell command, and 
 
    A process that listens on the api or web port without this lease's `ANTELOPEJS_LEASE` is not this lease's, even on its port: another user's lease, another registry that handed out the same port, or an unrelated server. `down --stop` leaves it running and fails, naming its pid. A process that cleared or rewrote its environment, as `env -i` or a supervisor with a fixed environment does, no longer holds the marker, and `down --stop` cannot find it. Stop it with its own stop command.
 
+   `antelopejs-verify` runs its setup commands, journeys, formal checks and their behaviour probes without the lease's variables, `ANTELOPEJS_LEASE` included, so `down --stop` does not reach them.
+
    `down --stop` reads `/proc`, so it runs on Linux only. On macOS, `ps` shows the environment of a process only appended to its command line, with no boundary between the two, so `down --stop` refuses there. Stop your servers with their own stop command, as in step 5, then run `down`.
 
    `down` then stops the mongod of the lease and deletes its data, logs and tmp directory. Without `--stop` it refuses while the api or web port still listens, and says to use `--stop`. `--force` skips that check. When the worktree has no lease, `down` does nothing.
@@ -86,21 +88,22 @@ Run each command from inside your worktree. Each step is one shell command, and 
 
 `run` passes its own environment to the command without `PORT`, and adds these variables. It does not set `DMS_API_BASE_URL`, because `ajs dms dev` would read it before `.antelope/dev.json` and miss a backend that fell back to another port.
 
-| Variable               | Value                                                                                                                     |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `ANTELOPEJS_LEASE`     | The lease id, the first ten hex digits of the sha256 of the worktree path. `down --stop` stops the processes that hold it |
-| `ANTELOPEJS_LEASE_DIR` | The lease directory                                                                                                       |
-| `DMS_BACK_PORT`        | The api port                                                                                                              |
-| `DMS_FRONT_PORT`       | The web port                                                                                                              |
-| `DMS_INSPECT_PORT`     | The Node inspector port                                                                                                   |
-| `DMS_SMTP_PORT`        | The SMTP port                                                                                                             |
-| `DMS_CLIENT_BASE_URL`  | `http://localhost:<web port>`                                                                                             |
-| `MONGO_URL`            | `mongodb://127.0.0.1:<mongo port>`, or `DMS_MONGO_URL` when it is set                                                     |
-| `MONGO_DATABASE`       | `dms_<lease id>`                                                                                                          |
-| `DMS_BACK_LOG`         | `<lease dir>/logs/back.log`                                                                                               |
-| `DMS_FRONT_LOG`        | `<lease dir>/logs/front.log`                                                                                              |
-| `TMPDIR`               | `<lease dir>/tmp`                                                                                                         |
-| `PORT`                 | Removed. With `--as api` or `--as web`, the api or web port                                                               |
+| Variable                         | Value                                                                                                                      |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `ANTELOPEJS_LEASE`               | The lease id, the first ten hex digits of the sha256 of the worktree path. `down --stop` stops the processes that hold it  |
+| `ANTELOPEJS_LEASE_DIR`           | The lease directory                                                                                                        |
+| `ANTELOPEJS_LEASE_PARENT_TMPDIR` | The `TMPDIR` the caller had, empty when it had none. `antelopejs-verify` keeps its runs there and hands it to its journeys |
+| `DMS_BACK_PORT`                  | The api port                                                                                                               |
+| `DMS_FRONT_PORT`                 | The web port                                                                                                               |
+| `DMS_INSPECT_PORT`               | The Node inspector port                                                                                                    |
+| `DMS_SMTP_PORT`                  | The SMTP port                                                                                                              |
+| `DMS_CLIENT_BASE_URL`            | `http://localhost:<web port>`                                                                                              |
+| `MONGO_URL`                      | `mongodb://127.0.0.1:<mongo port>`, or `DMS_MONGO_URL` when it is set                                                      |
+| `MONGO_DATABASE`                 | `dms_<lease id>`                                                                                                           |
+| `DMS_BACK_LOG`                   | `<lease dir>/logs/back.log`                                                                                                |
+| `DMS_FRONT_LOG`                  | `<lease dir>/logs/front.log`                                                                                               |
+| `TMPDIR`                         | `<lease dir>/tmp`                                                                                                          |
+| `PORT`                           | Removed. With `--as api` or `--as web`, the api or web port                                                                |
 
 To use a Mongo server you run yourself, set `DMS_MONGO_URL` before `run`. `run` then starts no mongod, and `MONGO_DATABASE` still gives each worktree its own database on that server. A mongod the lease started before keeps running for the servers that still use it, and `status` shows its pid. `down` stops it.
 

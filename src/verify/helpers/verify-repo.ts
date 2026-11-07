@@ -56,21 +56,25 @@ export function feature(
   return `---\n${list("covers", covers)}\n${list("docs", docs)}\n${list("journeys", journeys)}\n---\n\n# Feature\n\n${journeys.map((id) => `- \`${id}\``).join("\n")}\n`;
 }
 
-/** Runs `antelopejs-verify` in `root` with runs under `tmp`. */
+/** Runs `antelopejs-verify` in `root` with runs under `tmp`, outside any lease the test runner itself holds. */
 export function verify(
   root: string,
   tmp: string,
   args: string[],
-  env: Record<string, string> = {},
+  env: Record<string, string | undefined> = {},
 ) {
-  return bin(root, "verify", args, { TMPDIR: tmp, ...env });
+  return bin(root, "verify", args, {
+    TMPDIR: tmp,
+    ANTELOPEJS_LEASE: "",
+    ...env,
+  });
 }
 
 /** Creates a run and returns its folder, failing the test with the bin's output otherwise. */
 export function newRun(
   root: string,
   tmp: string,
-  env: Record<string, string> = {},
+  env: Record<string, string | undefined> = {},
 ): string {
   const created = verify(root, tmp, ["new"], env);
   if (created.status !== 0) throw new Error(created.stderr || created.stdout);

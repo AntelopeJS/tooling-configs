@@ -26,6 +26,7 @@ import {
   allocateRun,
   git,
   isolatedEnv,
+  operatorEnv,
   removeTree,
   RUNS_DIR,
   saveRun,
@@ -89,7 +90,7 @@ async function runSetup(workspace: Workspace, state: RunState): Promise<void> {
       program,
       args,
       cwd: workspace.root,
-      env: { ...process.env, ...workspace.config.env },
+      env: { ...operatorEnv(), ...workspace.config.env },
     });
     if (result.exitCode !== 0)
       throw new Error(

@@ -94,12 +94,12 @@ export function usePreset(root: string, typeAware = false): void {
   );
 }
 
-/** Runs a bin from source as CI would, without the caller's pull request base or checks skip, plus `env`. */
+/** Runs a bin from source as CI would, without the caller's pull request base or checks skip, plus `env`, where an `undefined` value unsets the inherited variable. */
 export function bin(
   root: string,
   name: string,
   args: string[] = [],
-  env: Record<string, string> = {},
+  env: Record<string, string | undefined> = {},
 ) {
   const {
     GITHUB_BASE_REF: _base,

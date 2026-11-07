@@ -9,7 +9,7 @@ import {
   type Commits,
 } from "./behaviour.ts";
 import type { FormalCheck } from "./types.ts";
-import type { RunState, Workspace } from "./workspace.ts";
+import { operatorEnv, type RunState, type Workspace } from "./workspace.ts";
 
 const OUTPUT_LIMIT = 64 * 1024 * 1024;
 
@@ -105,6 +105,7 @@ function runCommand(command: string[], cwd: string): SpawnSyncReturns<string> {
   const [program, ...args] = command;
   return spawnSync(program, args, {
     cwd,
+    env: operatorEnv(),
     encoding: "utf8",
     maxBuffer: OUTPUT_LIMIT,
   });

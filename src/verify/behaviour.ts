@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -9,7 +8,7 @@ import {
   type EmitItem,
 } from "./emit.ts";
 import type { FormalCheck } from "./types.ts";
-import { git } from "./workspace.ts";
+import { git, operatorEnv, operatorTmpdir } from "./workspace.ts";
 
 /** The base and head commits a formal check compares. */
 export interface Commits {
@@ -35,7 +34,9 @@ export function inWorktree<Result>(
   sha: string,
   action: (dir: string) => Result,
 ): Result {
-  const dir = mkdtempSync(join(tmpdir(), "antelopejs-verify-behaviour-"));
+  const dir = mkdtempSync(
+    join(operatorTmpdir(), "antelopejs-verify-behaviour-"),
+  );
   git(repo, ["worktree", "add", "--quiet", "--detach", "--force", dir, sha]);
   try {
     symlinkSync(join(repo, "node_modules"), join(dir, "node_modules"), "dir");
@@ -55,6 +56,7 @@ function probeFingerprint(
   return inWorktree(repo, sha, (dir) => {
     const run = spawnSync(program, [...args, dir], {
       cwd: repo,
+      env: operatorEnv(),
       encoding: "utf8",
       maxBuffer: OUTPUT_LIMIT,
     });
