@@ -5,7 +5,12 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { AGENTS_BLOCK_START } from "./agents-block.ts";
-import { managedPackage, parseManifest, toolingVersions } from "./package.ts";
+import {
+  managedPackage,
+  parseManifest,
+  PREPARE_INSTALL,
+  toolingVersions,
+} from "./package.ts";
 import { syncRepository } from "./sync.ts";
 import { bin, put, read, testRepo } from "./helpers/test-repo.ts";
 
@@ -90,9 +95,9 @@ test("prepare preserves a command mentioning lefthook and upgrades the previous 
   const mention = parseManifest(
     managedPackage(read(root, "package.json"), toolingVersions()),
   );
-  assert.match(
-    mention.scripts?.prepare ?? "",
-    /^echo lefthook install && if git /,
+  assert.equal(
+    mention.scripts?.prepare,
+    `echo lefthook install && ${PREPARE_INSTALL}`,
   );
   put(
     root,
@@ -102,8 +107,10 @@ test("prepare preserves a command mentioning lefthook and upgrades the previous 
   const upgraded = parseManifest(
     managedPackage(read(root, "package.json"), toolingVersions()),
   );
-  assert.match(upgraded.scripts?.prepare ?? "", /^printf existing && if git /);
-  assert.doesNotMatch(upgraded.scripts?.prepare ?? "", /pnpm exec/);
+  assert.equal(
+    upgraded.scripts?.prepare,
+    `printf existing && ${PREPARE_INSTALL}`,
+  );
 });
 
 for (const [file, target, specifier] of [

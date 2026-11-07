@@ -116,8 +116,13 @@ export function repositoryTools(manifest: Manifest) {
   ];
 }
 
+/** Installs hooks only when the package folder is the git top level, so a package installed inside another checkout never writes that checkout's hooks. */
 export const PREPARE_INSTALL =
-  "if git rev-parse --is-inside-work-tree >/dev/null 2>&1 && command -v lefthook >/dev/null 2>&1; then lefthook install; fi";
+  'if [ "$(git rev-parse --show-toplevel 2>/dev/null)" = "$(pwd -P)" ] && command -v lefthook >/dev/null 2>&1; then lefthook install; fi';
+
+const PREVIOUS_PREPARE_INSTALLS = [
+  "if git rev-parse --is-inside-work-tree >/dev/null 2>&1 && command -v lefthook >/dev/null 2>&1; then lefthook install; fi",
+];
 
 const DEFAULT_SCRIPTS = {
   typecheck: "tsc --noEmit",
@@ -129,6 +134,11 @@ const DEFAULT_SCRIPTS = {
 
 function prepareScript(current = ""): string {
   if (current.includes(PREPARE_INSTALL)) return current;
+  const previous = PREVIOUS_PREPARE_INSTALLS.find((script) =>
+    current.includes(script),
+  );
+  if (previous !== undefined)
+    return current.replaceAll(previous, () => PREPARE_INSTALL);
   const legacy =
     /(^|&&\s*|;\s*)(?:(?:pnpm exec|npm exec --|yarn exec|bun x --no-install)\s+)?lefthook\s+install(?=\s*(?:$|&&|;))/;
   if (legacy.test(current))
