@@ -48,16 +48,23 @@ Doctor checks that HEAD has not moved since \`new\`, \`ajs\` comes from the repo
 
 \`\`\`bash
 ${BIN} plan --base origin/main
-${BIN} journey <run> <feature> [journey...]
+${BIN} journey <run> --plan
 \`\`\`
 
-\`plan\` maps the diff to features and lists unmapped surfaces. \`journey\` runs a feature's journeys, or the ones named. The pack ships these journeys for this kind; a feature file names them next to the repository's own:
+\`plan\` maps the diff to features and lists unmapped surfaces. \`journey <run> --plan\` runs every feature \`plan\` lists as \`run\` for the run's base, \`smoke\` first, in one call: it prints each feature's lines in turn, keeps going after a feature fails, and exits 1 when any journey did not pass. Run it once instead of one call per feature. To rerun after a fix, run one feature, or only the journeys you name, or several features by name:
+
+\`\`\`bash
+${BIN} journey <run> <feature> [journey...]
+${BIN} journey <run> --features <feature>,<feature>
+\`\`\`
+
+The pack ships these journeys for this kind; a feature file names them next to the repository's own:
 
 ${text.builtins}
 
 ## Evidence
 
-Each step writes \`<run>/evidence/<feature>/<journey>/<NN-step>/\` with \`command.txt\`, \`stdout.txt\`, \`stderr.txt\`, \`exit-code.txt\`, \`pid.txt\` for background processes, \`tree.txt\`, \`http.json\` for every request, and \`checks.json\`. \`result.json\` holds a journey's result and \`feature.json\` the merged results of the feature. A journey id listed under two features runs once per run: when \`journey <run> <feature>\` names no ids and another feature of the run already passed that id at the same HEAD, the feature records a result with \`reusedFrom\` naming that evidence folder and runs nothing. Name the id to run it again. Read the evidence before you judge a PASS: a check proves only what it asserts.
+Each step writes \`<run>/evidence/<feature>/<journey>/<NN-step>/\` with \`command.txt\`, \`stdout.txt\`, \`stderr.txt\`, \`exit-code.txt\`, \`pid.txt\` for background processes, \`tree.txt\`, \`http.json\` for every request, and \`checks.json\`. \`result.json\` holds a journey's result and \`feature.json\` the merged results of the feature. A journey id listed under two features runs once per run: when a feature runs without named ids, from \`--plan\`, \`--features\` or \`journey <run> <feature>\`, and another feature of the run already passed that id at the same HEAD, the feature records a result with \`reusedFrom\` naming that evidence folder and runs nothing. Name the id to run it again. Read the evidence before you judge a PASS: a check proves only what it asserts.
 
 ## Cleanup
 
