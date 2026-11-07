@@ -39,6 +39,7 @@ import type {
   StopResult,
   TreeRecord,
 } from "./types.ts";
+import { registryFault } from "./registry.ts";
 import type { JourneyEnd, StepRecord } from "./results.ts";
 import {
   isolatedEnv,
@@ -496,9 +497,10 @@ export class VerifyContext implements JourneyContext {
    * or `null` when nothing points away from the product: a service that
    * still fails its readiness command after a few reruns, an app killed by
    * SIGKILL, SIGTERM, SIGHUP or SIGINT that the harness did not send, or the
-   * app the harness started failing to bind the driver's port. A break that
-   * takes its own service down reads as an outage. Call it after `cleanup`,
-   * when every app has exited.
+   * app the harness started failing to bind the driver's port, or the first
+   * failing step being a command that could not reach a container or package
+   * registry (see `registryFault`). A break that takes its own service down
+   * reads as an outage. Call it after `cleanup`, when every app has exited.
    */
   async environmentFault(): Promise<string | null> {
     for (const [name, service] of Object.entries(
@@ -524,7 +526,7 @@ export class VerifyContext implements JourneyContext {
       if (taken !== undefined)
         return `${label} could not bind port ${app.port}, which another process holds: ${taken.trim().slice(0, 300)}`;
     }
-    return null;
+    return registryFault(this.state.evidence, this.steps);
   }
 
   /** The last readiness failure of a service after the reruns, or `null` once one rerun passes. */

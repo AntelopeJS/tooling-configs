@@ -157,15 +157,81 @@ const JOURNEYS = `
       },
     },`;
 
+const REGISTRY_HELPERS = String.raw`
+async function failing(context, name, output) {
+  const run = await context.command(name, process.execPath, ["-e", "console.error(process.argv[1]); process.exit(1)", output]);
+  context.expect(run.folder, [{ name: "the command succeeds", pass: run.exitCode === 0, detail: run.stderr }]);
+}
+`;
+
+const REGISTRY_OUTPUT = {
+  dns: 'ERROR: failed to solve: node:22-alpine: failed to resolve source metadata for docker.io/library/node:22-alpine: failed to do request: Head "https://registry-1.docker.io/v2/library/node/manifests/22-alpine": dial tcp: lookup registry-1.docker.io on 127.0.0.53:53: server misbehaving',
+  rate: "ERROR: failed to solve: node:22-alpine: toomanyrequests: You have reached your unauthenticated pull rate limit.",
+  missing:
+    "ERROR: failed to solve: docker.io/acme/missing:1.0: failed to resolve source metadata for docker.io/acme/missing:1.0: docker.io/acme/missing:1.0: not found\nError response from daemon: manifest for acme/missing:1.0 not found: manifest unknown: manifest unknown",
+  timeout:
+    "Error: i/o timeout while reading the cache at 127.0.0.1:6379; the request timeout of 30000 ms elapsed",
+  npm: "npm error code ENOTFOUND\nnpm error network request to https://registry.npmjs.org/left-pad failed, reason: getaddrinfo ENOTFOUND registry.npmjs.org",
+  after:
+    "npm error network request to https://registry.npmjs.org/left-pad failed, reason: read ECONNRESET",
+};
+
+const REGISTRY_JOURNEYS = `
+    "pull-dns": {
+      title: "the base image pull cannot resolve Docker Hub",
+      entryPoint: "docker build",
+      async run(context) { await failing(context, "docker build", ${JSON.stringify(REGISTRY_OUTPUT.dns)}); },
+    },
+    "pull-rate-limited": {
+      title: "Docker Hub rate limits the pull",
+      entryPoint: "docker build",
+      async run(context) { await failing(context, "docker build", ${JSON.stringify(REGISTRY_OUTPUT.rate)}); },
+    },
+    "pull-missing-tag": {
+      title: "the base image tag does not exist",
+      entryPoint: "docker build",
+      async run(context) { await failing(context, "docker build", ${JSON.stringify(REGISTRY_OUTPUT.missing)}); },
+    },
+    "product-timeout": {
+      title: "the product reports a timeout of its own",
+      entryPoint: "node",
+      async run(context) { await failing(context, "start", ${JSON.stringify(REGISTRY_OUTPUT.timeout)}); },
+    },
+    "npm-unreachable": {
+      title: "the install cannot reach the npm registry",
+      entryPoint: "pnpm install",
+      async run(context) { await failing(context, "pnpm install", ${JSON.stringify(REGISTRY_OUTPUT.npm)}); },
+    },
+    "expected-failure": {
+      title: "a command that must fail does, then the product is wrong",
+      entryPoint: "pnpm install",
+      async run(context) {
+        const run = await context.command("expected failure", process.execPath, ["-e", "console.error(process.argv[1]); process.exit(1)", ${JSON.stringify(REGISTRY_OUTPUT.after)}]);
+        context.expect(run.folder, [{ name: "the command fails", pass: run.exitCode === 1, detail: run.stderr }]);
+        const wrong = await context.command("wrong answer", process.execPath, ["-e", "0"]);
+        context.expect(wrong.folder, [{ name: "the product is right", pass: false, detail: "wrong" }]);
+      },
+    },
+    "product-fails-first": {
+      title: "the product is wrong, then a later install hits an outage",
+      entryPoint: "pnpm install",
+      async run(context) {
+        const wrong = await context.command("wrong answer", process.execPath, ["-e", "0"]);
+        context.expect(wrong.folder, [{ name: "the product is right", pass: false, detail: "wrong" }]);
+        await failing(context, "pnpm install", ${JSON.stringify(REGISTRY_OUTPUT.after)});
+      },
+    },`;
+
 function config(dead: string): string {
   return `import { writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 const DEAD = ${JSON.stringify(dead)};
+${REGISTRY_HELPERS}
 export default {
   doors: ${PUBLISH_DOORS},
   setup: [["node", "-e", "0"]],
   services: { cache: { image: "redis:7", port: 6379, ready: ["redis-cli", "ping"] } },
-  journeys: {${JOURNEYS}
+  journeys: {${JOURNEYS}${REGISTRY_JOURNEYS}
   },
 };
 `;
@@ -187,6 +253,18 @@ function outageRepo(t: TestContext) {
     [`${SKILL}/features/services.md`]: feature(
       ["src/**"],
       ["service-up", "service-gone"],
+    ),
+    [`${SKILL}/features/registry.md`]: feature(
+      ["src/**"],
+      [
+        "pull-dns",
+        "pull-rate-limited",
+        "pull-missing-tag",
+        "product-timeout",
+        "npm-unreachable",
+        "expected-failure",
+        "product-fails-first",
+      ],
     ),
     [`${SKILL}/features/processes.md`]: feature(
       ["src/**"],
@@ -275,4 +353,45 @@ test("a product crash by SIGABRT, a product double bind and a logged EADDRINUSE 
   assert.equal(statuses["double-bind"], "FAIL");
   assert.equal(statuses.mention, "FAIL");
   assert.equal(statuses["transient-miss"], "FAIL");
+});
+
+test("a base image pull that cannot resolve Docker Hub is NOT VERIFIED and names the step and the cause", (t) => {
+  const { root, tmp, env } = outageRepo(t);
+  const { statuses } = journeys(root, tmp, env, "registry");
+  assert.match(
+    statuses["pull-dns"],
+    /^NOT VERIFIED: step 01-docker-build could not reach a container or package registry, an outage outside the code under test: .*lookup registry-1\.docker\.io.*server misbehaving/,
+  );
+});
+
+test("the Docker Hub rate limit is NOT VERIFIED", (t) => {
+  const { root, tmp, env } = outageRepo(t);
+  const { statuses } = journeys(root, tmp, env, "registry");
+  assert.match(
+    statuses["pull-rate-limited"],
+    /^NOT VERIFIED: step 01-docker-build .*toomanyrequests/,
+  );
+});
+
+test("an install that cannot resolve registry.npmjs.org is NOT VERIFIED", (t) => {
+  const { root, tmp, env } = outageRepo(t);
+  const { statuses } = journeys(root, tmp, env, "registry");
+  assert.match(
+    statuses["npm-unreachable"],
+    /^NOT VERIFIED: step 01-pnpm-install .*ENOTFOUND registry\.npmjs\.org/,
+  );
+});
+
+test("a missing image tag and a product timeout stay FAIL", (t) => {
+  const { root, tmp, env } = outageRepo(t);
+  const { statuses } = journeys(root, tmp, env, "registry");
+  assert.equal(statuses["pull-missing-tag"], "FAIL");
+  assert.equal(statuses["product-timeout"], "FAIL");
+});
+
+test("a registry error in a step whose checks passed, or after a product failure, does not hide the failure", (t) => {
+  const { root, tmp, env } = outageRepo(t);
+  const { statuses } = journeys(root, tmp, env, "registry");
+  assert.equal(statuses["expected-failure"], "FAIL");
+  assert.equal(statuses["product-fails-first"], "FAIL");
 });
