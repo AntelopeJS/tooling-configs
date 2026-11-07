@@ -117,12 +117,13 @@ export function workflowRun(value: JsonValue): WorkflowRun {
     updatedAt: time(source, "updated_at"),
     url: str(source, "html_url"),
     headSha: optStr(source, "head_sha") ?? "",
-    referencedWorkflows: children(source, "referenced_workflows").map(
-      (workflow) => ({
-        path: str(workflow, "path"),
-        sha: str(workflow, "sha"),
-      }),
-    ),
+    referencedWorkflows: (source.referenced_workflows === null
+      ? []
+      : children(source, "referenced_workflows")
+    ).map((workflow) => ({
+      path: str(workflow, "path"),
+      sha: optStr(workflow, "sha") ?? "",
+    })),
   };
 }
 

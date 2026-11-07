@@ -1,5 +1,5 @@
 import { perRepo, type Check } from "../check.ts";
-import { GardenContext, type GardenRepo } from "../context.ts";
+import { GardenContext, ORG, type GardenRepo } from "../context.ts";
 import type { WorkflowRun } from "../decode.ts";
 import { finding, type Finding } from "../types.ts";
 
@@ -61,24 +61,64 @@ async function red(
   ];
 }
 
-function signature(run: WorkflowRun): string {
+/** A reusable workflow path without its `@ref`, e.g. `AntelopeJS/.github/.github/workflows/ci-node.yml`. */
+function workflowPath(path: string): string {
+  return path.split("@")[0];
+}
+
+/** The repository's own file for a workflow it calls from itself; GitHub pins such a call to the run's head commit, so its sha changes on every push. */
+function ownFile(repo: GardenRepo, path: string): string | undefined {
+  const prefix = `${ORG}/${repo.name}/`;
+  const bare = workflowPath(path);
+  return bare.startsWith(prefix) ? bare.slice(prefix.length) : undefined;
+}
+
+function signature(repo: GardenRepo, run: WorkflowRun): string {
   return [
     ...new Set(
-      run.referencedWorkflows.map(
-        ({ path, sha }) => `${path.split("@")[0]} ${sha}`,
-      ),
+      run.referencedWorkflows
+        .filter(({ path }) => ownFile(repo, path) === undefined)
+        .map(({ path, sha }) => `${workflowPath(path)} ${sha}`),
     ),
   ]
     .sort()
     .join("\n");
 }
 
-/** The newest unbroken streak of runs that called the same reusable workflows at the same commits as the newest run. */
-function sameWorkflows(runs: readonly WorkflowRun[]): WorkflowRun[] {
-  if (runs.length === 0) return [];
-  const current = signature(runs[0]);
-  const end = runs.findIndex((run) => signature(run) !== current);
-  return runs.slice(0, end === -1 ? runs.length : end);
+/** The newest unbroken streak of runs that called the same other-repository workflows at the same commits as the newest run, and when that streak began if an older run called different ones. */
+interface Streak {
+  runs: WorkflowRun[];
+  since: number | undefined;
+}
+
+function sameWorkflows(repo: GardenRepo, runs: readonly WorkflowRun[]): Streak {
+  if (runs.length === 0) return { runs: [], since: undefined };
+  const current = signature(repo, runs[0]);
+  const end = runs.findIndex((run) => signature(repo, run) !== current);
+  if (end === -1) return { runs: [...runs], since: undefined };
+  return { runs: runs.slice(0, end), since: runs[end - 1].createdAt };
+}
+
+/** The newest commit time of the caller and of every workflow file of its own that the newest run called. */
+async function callerChange(
+  context: GardenContext,
+  repo: GardenRepo,
+  branch: string,
+  newest: WorkflowRun | undefined,
+): Promise<number> {
+  const files = new Set([
+    CALLER,
+    ...(newest?.referencedWorkflows ?? [])
+      .map(({ path }) => ownFile(repo, path))
+      .filter((file) => file !== undefined),
+  ]);
+  let latest = 0;
+  for (const file of files)
+    latest = Math.max(
+      latest,
+      (await context.lastChange(repo, file, branch)) ?? 0,
+    );
+  return latest;
 }
 
 async function slow(
@@ -88,16 +128,16 @@ async function slow(
   const branch = await context.targetBranch(repo);
   const runs = await context.workflowRuns(repo, WORKFLOW, branch);
   if (runs === undefined) return [];
-  const callerChange = await context.lastChange(repo, CALLER, branch);
-  const start = Math.max(
+  const passed = runs.filter((run) => run.conclusion === "success");
+  const cutoff = Math.max(
     context.api.now().getTime() - 30 * DAY,
-    callerChange ?? 0,
+    await callerChange(context, repo, branch, passed[0]),
   );
-  const window = sameWorkflows(
-    runs.filter(
-      (run) => run.conclusion === "success" && run.createdAt >= start,
-    ),
+  const streak = sameWorkflows(
+    repo,
+    passed.filter((run) => run.createdAt >= cutoff),
   );
+  const window = streak.runs;
   const baseline = window.slice(RECENT_RUNS).map(duration);
   if (window.length <= RECENT_RUNS || baseline.length < MIN_BASELINE) return [];
   const recent = median(window.slice(0, RECENT_RUNS).map(duration));
@@ -107,12 +147,12 @@ async function slow(
     recent <= usual + ABSOLUTE_LIMIT_SECONDS
   )
     return [];
-  const since = new Date(window[window.length - 1].createdAt).toISOString();
+  const since = new Date(Math.max(cutoff, streak.since ?? 0)).toISOString();
   return [
     finding(
       { repo: repo.name, check: "ci-duration", subject: branch },
-      `The median of the last ${RECENT_RUNS} ${WORKFLOW} runs on ${branch} is ${Math.round(recent)} s against ${Math.round(usual)} s over the earlier runs since ${since}, the later of 30 days ago and the last change to ${CALLER} or the workflows it calls.`,
-      `The median is within 20% and 60 s of the baseline since the last change to ${CALLER} or the workflows it calls.`,
+      `The median of the last ${RECENT_RUNS} ${WORKFLOW} runs on ${branch} is ${Math.round(recent)} s against ${Math.round(usual)} s over the earlier runs since ${since}, the latest of 30 days ago, the last change to ${CALLER} or a workflow file of this repository it calls, and the last change to the shared workflows it calls.`,
+      `The median is within 20% and 60 s of the baseline since the last change to what ${WORKFLOW} runs.`,
     ),
   ];
 }
