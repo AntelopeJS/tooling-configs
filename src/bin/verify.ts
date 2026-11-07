@@ -22,6 +22,7 @@ import { clean, createRun, doctor } from "../verify/lifecycle.ts";
 import { checkMap, planFor } from "../verify/map.ts";
 import { postComment, pushEvidence, setStatus } from "../verify/publish.ts";
 import { knownJourneys, runFeature } from "../verify/runner.ts";
+import type { JourneyResult } from "../verify/results.ts";
 import { seconds } from "../verify/timing.ts";
 import { renderVerdict } from "../verify/verdict.ts";
 import {
@@ -39,6 +40,8 @@ const USAGE = `Usage: antelopejs-verify <command>
                                      build, prepare an isolated run, print its folder; --all runs every feature, before a release
   doctor <run>                       check the run is worth driving
   journey <run> <feature> [ids...]   run a feature's journeys and record evidence
+  journey <run> --plan               run every feature the run's plan lists, smoke first
+  journey <run> --features <a,b>     run the named features, each whole, in that order
   formal <run> [--all]               run the formal checks that cover the diff and gate them on changed behaviour
   doors [patch] [--base <ref>]       print the One-way-door line for a patch, or for the diff
   clean <run>                        stop what the run started, keep only the evidence
@@ -74,13 +77,73 @@ function printMap(workspace: Workspace): number {
   return problems.length === 0 ? 0 : 1;
 }
 
-async function runJourneys(
+/** One feature a `journey` call runs and the journey ids it names; no ids runs every journey the feature registers. */
+interface FeatureRun {
+  feature: string;
+  ids: string[];
+}
+
+/**
+ * The features a `journey` call runs, in order.
+ *
+ * `journey <run> <feature> [ids...]` runs one feature, or the named journeys
+ * of it. `journey <run> --plan` runs every feature `plan` lists as `run` for
+ * the run's base and `--all`, `smoke` first. `journey <run> --features a,b`
+ * runs the named features whole, in that order. Several features take a flag
+ * rather than more positionals because a positional after the feature is a
+ * journey id: reading it as a feature whenever a feature file has that name
+ * would change what an existing call runs as soon as someone adds a feature
+ * named like one of its journeys.
+ */
+function featureRuns(
+  workspace: Workspace,
+  rest: string[],
+  flags: { plan?: boolean; features?: string[] },
+): FeatureRun[] {
+  const [dir, feature, ...ids] = rest;
+  if (flags.plan !== true && flags.features === undefined)
+    return [{ feature, ids }];
+  if (flags.plan === true && flags.features !== undefined)
+    throw new Error("journey takes --plan or --features, not both");
+  if (feature !== undefined)
+    throw new Error(
+      "--plan and --features run whole features; name journey ids after one feature: journey <run> <feature> [ids...]",
+    );
+  if (flags.plan === true) {
+    const state = loadRun(dir);
+    return planFor(workspace, state.baseRef, state.all).run.map((name) => ({
+      feature: name,
+      ids: [],
+    }));
+  }
+  const names = (flags.features ?? [])
+    .flatMap((list) => list.split(","))
+    .map((name) => name.trim())
+    .filter(Boolean);
+  if (names.length === 0) throw new Error("--features names no feature");
+  return names.map((name) => ({ feature: name, ids: [] }));
+}
+
+/**
+ * Runs one feature's journeys as its own `journey` call would, and prints its
+ * lines once it ends. A feature that cannot run, an unknown feature or
+ * journey for one, prints its error on stderr instead.
+ * @returns whether every journey it ran passed.
+ */
+async function journeyFeature(
   workspace: Workspace,
   dir: string,
-  feature: string,
-  ids: string[],
-): Promise<number> {
-  const results = await runFeature(workspace, loadRun(dir), feature, ids);
+  { feature, ids }: FeatureRun,
+): Promise<boolean> {
+  let results: JourneyResult[];
+  try {
+    results = await runFeature(workspace, loadRun(dir), feature, ids);
+  } catch (error) {
+    process.stderr.write(
+      `${error instanceof Error ? error.message : String(error)}\n`,
+    );
+    return false;
+  }
   for (const result of results) {
     print(
       `${result.status} ${feature}/${result.journey}${result.reusedFrom === undefined ? ` (${seconds(result.ms)})` : ` (reuses ${result.reusedFrom}, not run again)`}`,
@@ -91,7 +154,54 @@ async function runJourneys(
     if (result.error) print(`    ${result.error.split("\n")[0]}`);
     if (result.notVerified) print(`    ${result.notVerified}`);
   }
-  return results.every((result) => result.status === "PASS") ? 0 : 1;
+  return results.every((result) => result.status === "PASS");
+}
+
+/**
+ * Runs the features in order, each one as if by its own call: a feature
+ * whose journeys fail does not stop the next, a feature reuses the PASS of a
+ * journey an earlier one ran, and `process.env` is restored after each
+ * feature. An uncaught error a journey leaves behind (a timer that throws, a
+ * rejection nobody awaits) ends the call, as it would end a single call, and
+ * names the features that did not run. Module-level state a repository's
+ * verify.config.ts keeps is shared by the features of one call. This loop is
+ * the one place a capped number of features would run at once.
+ * @returns 1 when any feature had a journey that did not pass or could not run, else 0.
+ */
+async function runJourneys(
+  workspace: Workspace,
+  dir: string,
+  runs: FeatureRun[],
+): Promise<number> {
+  let current = 0;
+  const abort = (message: string) => {
+    const left = runs.slice(current + 1).map((run) => run.feature);
+    process.stderr.write(
+      `${runs[current]?.feature ?? "journey"}: a journey left an uncaught error: ${message}\n${left.length > 0 ? `not run: ${left.join(", ")}\n` : ""}`,
+    );
+    process.exit(1);
+  };
+  const onError = (error: Error) => abort(error.message);
+  const onRejection: NodeJS.UnhandledRejectionListener = (reason) =>
+    abort(reason instanceof Error ? reason.message : String(reason));
+  process.on("uncaughtException", onError);
+  process.on("unhandledRejection", onRejection);
+  const env = { ...process.env };
+  let passed = true;
+  for (; current < runs.length; current++) {
+    passed = (await journeyFeature(workspace, dir, runs[current])) && passed;
+    restoreEnv(env);
+  }
+  process.off("uncaughtException", onError);
+  process.off("unhandledRejection", onRejection);
+  return passed ? 0 : 1;
+}
+
+/** Puts `process.env` back to `saved`, so a journey that set a variable leaves the next feature the environment its own call would have. */
+function restoreEnv(saved: NodeJS.ProcessEnv): void {
+  for (const key of Object.keys(process.env))
+    if (!Object.hasOwn(saved, key)) delete process.env[key];
+  Object.assign(process.env, saved);
 }
 
 function runFormal(workspace: Workspace, dir: string, all: boolean): number {
@@ -168,6 +278,8 @@ async function main(argv: string[]): Promise<number> {
       pr: { type: "string" },
       all: { type: "boolean" },
       kind: { type: "string" },
+      plan: { type: "boolean" },
+      features: { type: "string", multiple: true },
     },
   });
   const [command, ...rest] = positionals;
@@ -201,7 +313,11 @@ async function main(argv: string[]): Promise<number> {
       print(`${line.ok ? "ok  " : "FAIL"} ${line.check}: ${line.detail}`);
     return lines.every((line) => line.ok) ? 0 : 1;
   } else if (command === "journey")
-    return runJourneys(workspace, rest[0], rest[1], rest.slice(2));
+    return runJourneys(
+      workspace,
+      rest[0],
+      featureRuns(workspace, rest, values),
+    );
   else if (command === "formal")
     return runFormal(workspace, rest[0], values.all === true);
   else if (command === "doors")
