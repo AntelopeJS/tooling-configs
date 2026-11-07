@@ -16,6 +16,26 @@ export function stopwatch(): () => number {
   return () => Math.round(performance.now() - start);
 }
 
+/** Runs `phase` and records how long it took on the run, also when it throws, so a run whose `new` failed still shows the time it spent; a failed phase is labelled as such. */
+export async function timed<T>(
+  state: { timings: PhaseTiming[] },
+  phase: string,
+  run: () => T | Promise<T>,
+): Promise<T> {
+  const elapsed = stopwatch();
+  let failed = true;
+  try {
+    const value = await run();
+    failed = false;
+    return value;
+  } finally {
+    state.timings.push({
+      phase: failed ? `${phase} (failed)` : phase,
+      ms: elapsed(),
+    });
+  }
+}
+
 /**
  * Times the step folders of one journey: a step lasts from the `start` call
  * that names it to the next `start` call, or to `finish` for the last one.

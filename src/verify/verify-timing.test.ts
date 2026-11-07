@@ -208,3 +208,30 @@ test("a service reset is timed inside its own step; a reset run before its step 
   assert.equal(stepMs[0].step, "01-reset-cache");
   assert.ok(stepMs[0].ms >= 550, `reset step ${stepMs[0].ms} ms`);
 });
+
+test("a run whose new failed keeps the time of every phase it ran, the failed one labelled; a new that loses its timings on failure fails", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "verify-timing-failed-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const root = verifyRepo(t, {
+    "README.md": "# Demo\n",
+    [`${SKILL}/verify.config.ts`]: `export default {
+  doors: ${PUBLISH_DOORS},
+  setup: [["node", "-e", "setTimeout(() => {}, 300)"], ["node", "-e", "setTimeout(() => process.exit(1), 300)"]],
+  journeys: {},
+};
+`,
+    [`${SKILL}/features/smoke.md`]: feature([], ["module-dev"]),
+  });
+  const created = verify(root, tmp, ["new"]);
+  assert.equal(created.status, 1, created.stdout + created.stderr);
+  const run = /see (\S+)\/evidence\/setup\//.exec(created.stderr)?.[1] ?? "";
+  const { timings } = JSON.parse(read(run, "run.json"));
+  assert.deepEqual(
+    timings.map((entry: { phase: string }) => entry.phase),
+    ["prune old runs", "setup/01-node", "setup/02-node (failed)"],
+  );
+  assert.ok(
+    timings[1].ms >= 250 && timings[2].ms >= 250,
+    JSON.stringify(timings),
+  );
+});

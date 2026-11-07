@@ -89,25 +89,30 @@ export function startServices(
     ];
     const folder = join(state.evidence, "services", service);
     const elapsed = stopwatch();
-    const started = docker(args);
-    record(join(folder, "01-run"), args, started);
-    if (started.status !== 0)
-      throw new Error(`docker ${args.join(" ")} failed: ${started.stderr}`);
-    const container: ContainerRecord = {
-      service,
-      name,
-      host: "127.0.0.1",
-      port: 0,
-    };
-    state.containers.push(container);
-    saveRun(state);
-    container.port = publishedPort(name, definition.port);
-    saveRun(state);
-    waitReady(name, definition.ready, join(folder, "02-ready"));
-    state.timings.push({
-      phase: `service ${service} (start and ready)`,
-      ms: elapsed(),
-    });
+    let failed = true;
+    try {
+      const started = docker(args);
+      record(join(folder, "01-run"), args, started);
+      if (started.status !== 0)
+        throw new Error(`docker ${args.join(" ")} failed: ${started.stderr}`);
+      const container: ContainerRecord = {
+        service,
+        name,
+        host: "127.0.0.1",
+        port: 0,
+      };
+      state.containers.push(container);
+      saveRun(state);
+      container.port = publishedPort(name, definition.port);
+      saveRun(state);
+      waitReady(name, definition.ready, join(folder, "02-ready"));
+      failed = false;
+    } finally {
+      state.timings.push({
+        phase: `service ${service} (start and ready)${failed ? " (failed)" : ""}`,
+        ms: elapsed(),
+      });
+    }
   }
 }
 
