@@ -312,12 +312,21 @@ export function isolatedEnv(
 
 /**
  * `path` with the repository's `node_modules/.bin` first, as `pnpm exec`
- * would put it, so setup commands, journeys and formal checks find the
+ * puts it, so setup commands, journeys and formal checks find the
  * repository's own bins whether the CLI was started through `pnpm exec` or
- * through `node_modules/.bin/antelopejs-verify`.
+ * through `node_modules/.bin/antelopejs-verify`. A `path` that already lists
+ * that folder, as `pnpm exec` from a package of a workspace does after the
+ * package's own, is kept as it is, and so is an unset or empty one, which
+ * leaves children the system's default search path.
  */
-export function withLocalBins(root: string, path: string | undefined): string {
-  const bins = join(root, "node_modules", ".bin");
-  const entries = (path ?? "").split(delimiter).filter((entry) => entry !== "");
-  return [bins, ...entries.filter((entry) => entry !== bins)].join(delimiter);
+export function withLocalBins(
+  root: string,
+  path: string | undefined,
+): string | undefined {
+  if (!path) return path;
+  const bins = resolve(root, "node_modules", ".bin");
+  const listed = path
+    .split(delimiter)
+    .some((entry) => entry !== "" && resolve(root, entry) === bins);
+  return listed ? path : `${bins}${delimiter}${path}`;
 }

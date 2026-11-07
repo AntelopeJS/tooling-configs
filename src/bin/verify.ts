@@ -176,7 +176,8 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
   const root = repositoryRoot();
-  process.env.PATH = withLocalBins(root, process.env.PATH);
+  const path = withLocalBins(root, process.env.PATH);
+  if (path !== undefined) process.env.PATH = path;
   const workspace = await openWorkspace(root, detectKind(root, values.kind));
   if (command === "new")
     print(
