@@ -223,12 +223,6 @@ test("a packed tarball whose integrity is not the published one fails the journe
   const run = journey(state);
   assert.doesNotMatch(run.result.stdout, /^PASS smoke\/minor-bump$/m);
   assert.deepEqual(entries(join(state.cached, "..")), []);
-  console.log(
-    "DBG",
-    run.result.stdout,
-    stepNames(run.folder),
-    run.result.stderr,
-  );
   const step = stepNames(run.folder).find((name) => /check-packed/.test(name));
   const [check] = evidence(run.folder, `smoke/minor-bump/${step}/checks.json`);
   assert.equal(check.pass, false);
@@ -274,4 +268,19 @@ test("an interrupt during the pack deletes the staging folder, where an implemen
   child.kill("SIGTERM");
   assert.equal(await exited, 143);
   assert.deepEqual(entries(parent), []);
+});
+
+test("an integrity that lists sha1 before sha512 reuses the cache on the second run, where a comparison of the whole value fails every run", async (t) => {
+  const state = await setup(t);
+  await fetch(`${state.registry}/integrity-sha1-sha512`, { method: "POST" });
+  assert.match(journey(state).result.stdout, /^PASS smoke\/minor-bump$/m);
+  assert.match(journey(state).result.stdout, /^PASS smoke\/minor-bump$/m);
+  assert.equal(await tarballRequests(state.registry), 1);
+});
+
+test("a sha1-only integrity passes and writes nothing to the cache, where an implementation that caches what it cannot check discards it on every run", async (t) => {
+  const state = await setup(t);
+  await fetch(`${state.registry}/integrity-sha1`, { method: "POST" });
+  assert.match(journey(state).result.stdout, /^PASS smoke\/minor-bump$/m);
+  assert.deepEqual(entries(join(state.cached, "..")), []);
 });

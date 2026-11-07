@@ -54,9 +54,22 @@ function tarball(version: string): Buffer {
   });
 }
 
-function integrity(version: string, lying: boolean): string {
+type IntegrityFormat = "sha512" | "sha1" | "sha1 sha512";
+
+function hash(algorithm: "sha512" | "sha1", version: string): string {
+  return `${algorithm}-${createHash(algorithm).update(tarball(version)).digest("base64")}`;
+}
+
+function integrity(
+  version: string,
+  lying: boolean,
+  format: IntegrityFormat,
+): string {
   if (lying) return `sha512-${"A".repeat(86)}==`;
-  return `sha512-${createHash("sha512").update(tarball(version)).digest("base64")}`;
+  if (format === "sha1") return hash("sha1", version);
+  if (format === "sha1 sha512")
+    return `${hash("sha1", version)} ${hash("sha512", version)}`;
+  return hash("sha512", version);
 }
 
 function serve(port: number): void {
@@ -64,6 +77,15 @@ function serve(port: number): void {
   const requests: string[] = [];
   let tarballs: "served" | "broken" | "hung" = "served";
   let lying = false;
+  let format: IntegrityFormat = "sha512";
+  const controls = new Map<string, () => void>([
+    ["/break-tarballs", () => (tarballs = "broken")],
+    ["/hang-tarballs", () => (tarballs = "hung")],
+    ["/lie-about-integrity", () => (lying = true)],
+    ["/integrity-sha1", () => (format = "sha1")],
+    ["/integrity-sha1-sha512", () => (format = "sha1 sha512")],
+    ["/publish", () => versions.push(LATER)],
+  ]);
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     if (request.method === "GET" && url.pathname === "/requests") {
@@ -71,24 +93,11 @@ function serve(port: number): void {
       return;
     }
     requests.push(`${request.method} ${url.pathname}`);
-    if (request.method === "POST" && url.pathname === "/break-tarballs") {
-      tarballs = "broken";
-      response.end("broken");
-      return;
-    }
-    if (request.method === "POST" && url.pathname === "/hang-tarballs") {
-      tarballs = "hung";
-      response.end("hung");
-      return;
-    }
-    if (request.method === "POST" && url.pathname === "/lie-about-integrity") {
-      lying = true;
-      response.end("lying");
-      return;
-    }
-    if (request.method === "POST" && url.pathname === "/publish") {
-      versions.push(LATER);
-      response.end("published");
+    const control =
+      request.method === "POST" ? controls.get(url.pathname) : undefined;
+    if (control !== undefined) {
+      control();
+      response.end(url.pathname);
       return;
     }
     const download = /^\/tarballs\/(.+)\.tgz$/.exec(url.pathname);
@@ -127,7 +136,7 @@ function serve(port: number): void {
                 version,
                 dist: {
                   tarball: `${origin}/tarballs/${version}.tgz`,
-                  integrity: integrity(version, lying && !abbreviated),
+                  integrity: integrity(version, lying && !abbreviated, format),
                 },
               },
             ]),
@@ -148,7 +157,9 @@ function serve(port: number): void {
  * bin still gets answers, and returns its URL. It lists `FIRST` until a
  * `POST /publish`, which adds `LATER` and changes the packument's etag.
  * `POST /break-tarballs` makes every tarball download answer 500 and
- * `POST /hang-tarballs` makes it never answer. Every version lists the
+ * `POST /hang-tarballs` makes it never answer. `POST /integrity-sha1` and
+ * `POST /integrity-sha1-sha512` make `dist.integrity` a sha1 hash alone, or a
+ * sha1 hash followed by the sha512 one. Every version lists the
  * `dist.integrity` of its tarball. After `POST /lie-about-integrity` the full
  * document, which `npm view` reads, lists one that no tarball has, while the
  * install document, which `npm pack` reads, stays true.

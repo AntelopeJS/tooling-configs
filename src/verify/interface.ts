@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -293,8 +294,17 @@ function publishedView(output: string): PublishedView {
   if (!isObject(parsed)) return { version: null, integrity: null };
   return {
     version: optStr(parsed, "version") ?? null,
-    integrity: optStr(parsed, "dist.integrity") ?? null,
+    integrity: sha512Token(optStr(parsed, "dist.integrity")),
   };
+}
+
+/** The `sha512-` token of a Subresource Integrity value, which may list several hashes; `null` when it has none, which npm also checks but this cache cannot. */
+function sha512Token(integrity: string | undefined): string | null {
+  return (
+    (integrity ?? "")
+      .split(/\s+/)
+      .find((token) => token.startsWith("sha512-")) ?? null
+  );
 }
 
 const ONLINE = {
@@ -352,6 +362,11 @@ async function packPublished(
         { critical: true },
       );
     }
+    if (integrity === null) {
+      const uncached = join(context.work, basename(staged));
+      copyFileSync(staged, uncached);
+      return uncached;
+    }
     mkdirSync(folder, { recursive: true });
     const cached = join(folder, basename(staged));
     renameSync(staged, cached);
@@ -381,14 +396,27 @@ async function extractPublished(
   return root;
 }
 
-/** The cached tarball of a version, only when it is the folder's single tarball and its integrity is the published one. */
+/**
+ * A private copy, under the journey's work folder, of the cached tarball of a
+ * version, only when it is the folder's single tarball and the copy's
+ * integrity is the published one. Hashing and extracting the same copy keeps
+ * another run that replaces the cached file in between from changing what
+ * this journey reads.
+ */
 function trustedTarball(
   files: string[],
   integrity: string | null,
+  work: string,
 ): string | undefined {
   const [only] = files;
   if (files.length !== 1 || integrity === null) return undefined;
-  return integrityOf(only) === integrity ? only : undefined;
+  const copy = join(work, basename(only));
+  try {
+    copyFileSync(only, copy);
+  } catch {
+    return undefined;
+  }
+  return integrityOf(copy) === integrity ? copy : undefined;
 }
 
 /** Extracts a published version from the cache when its one tarball has the published integrity, and packs it again otherwise. */
@@ -400,13 +428,14 @@ async function fetchPublished(
   const { version, integrity } = published;
   const folder = join(CACHE_DIR, "published", name.replace("/", "+"), version);
   const files = tarballsIn(folder);
-  const trusted = trustedTarball(files, integrity);
+  mkdirSync(context.work, { recursive: true });
+  const trusted = trustedTarball(files, integrity, context.work);
   if (trusted !== undefined) {
     context.expect(context.step(`reuse cached ${name}@${version}`), [
       {
         name: `the cached tarball of ${name}@${version} has the published integrity, so it is reused and no npm pack ran`,
         pass: true,
-        detail: `${trusted}: ${integrity}`,
+        detail: `${files[0]}: ${integrity}`,
       },
     ]);
     return extractPublished(context, trusted);
