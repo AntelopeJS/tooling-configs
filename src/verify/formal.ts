@@ -224,7 +224,7 @@ function renamedFromBase(
     (field, index) =>
       field.startsWith("R") &&
       (check.files ?? []).some((glob) =>
-        matchesGlob(fields[index + 2] ?? "", glob),
+        matchesPath(fields[index + 2] ?? "", glob),
       ),
   );
 }
