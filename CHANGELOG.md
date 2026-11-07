@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.3.7
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.6...v0.3.7)
+
+### 🔥 Performance
+
+- **verify:** Run features concurrently with journey --jobs ([#215](https://github.com/AntelopeJS/tooling-configs/pull/215))
+
+### 🩹 Fixes
+
+- **verify:** Fail a formal check whose own edit breaks a rule the base did not ([#206](https://github.com/AntelopeJS/tooling-configs/pull/206))
+- **verify:** Match dotfiles in verify globs ([#213](https://github.com/AntelopeJS/tooling-configs/pull/213))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.3.6
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.5...v0.3.6)
