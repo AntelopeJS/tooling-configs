@@ -48,14 +48,18 @@ Doctor checks that HEAD has not moved since \`new\`, \`ajs\` comes from the repo
 
 \`\`\`bash
 ${BIN} plan --base origin/main
-${BIN} journey <run> --plan
+${BIN} journey <run> --plan --jobs 4
 \`\`\`
 
-\`plan\` maps the diff to features and lists unmapped surfaces. \`journey <run> --plan\` runs every feature \`plan\` lists as \`run\` for the run's base, \`smoke\` first, in one call: it prints each feature's lines in turn, keeps going after a feature fails, and exits 1 when any journey did not pass. A journey that leaves an uncaught error behind ends the call and the line \`not run: <features>\` names what to rerun. Run it once instead of one call per feature. To rerun after a fix, run one feature, or only the journeys you name, or several features by name:
+\`plan\` maps the diff to features and lists unmapped surfaces. \`journey <run> --plan\` runs every feature \`plan\` lists as \`run\` for the run's base, \`smoke\` first, in one call: it prints each feature's lines in turn, keeps going after a feature fails, and exits 1 when any journey did not pass. Run it once instead of one call per feature.
+
+When verify.config.ts declares no \`services\`, pass \`--jobs 4\`: up to four features run at once, each in a process of its own, capped at half the machine's cores. The output, the evidence and the exit code are those of the call without \`--jobs\`, and a feature that lists a journey an earlier feature lists waits for it, so it still reuses that PASS. A feature whose process dies or leaves an uncaught error is named on stderr, and the others still run. \`--jobs\` above 1 is refused when verify.config.ts declares \`services\`, because each journey resets them as it starts, which would wipe the data of a journey running beside it. Without \`--jobs\`, a journey that leaves an uncaught error behind ends the call and the line \`not run: <features>\` names what to rerun.
+
+To rerun after a fix, run one feature, or only the journeys you name, or several features by name, with \`--jobs\` too:
 
 \`\`\`bash
 ${BIN} journey <run> <feature> [journey...]
-${BIN} journey <run> --features <feature>,<feature>
+${BIN} journey <run> --features <feature>,<feature> [--jobs 4]
 \`\`\`
 
 The pack ships these journeys for this kind; a feature file names them next to the repository's own:

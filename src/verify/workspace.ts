@@ -8,6 +8,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -186,9 +187,88 @@ export function loadRun(dir: string): RunState {
   return { ...stored, timings: stored.timings ?? [], all: stored.all === true };
 }
 
+/** Writes `text` to `file` through a sibling temporary file and one rename, so a reader in another process sees the old content or the new, never part of it. */
+export function writeWhole(file: string, text: string): void {
+  const staging = `${file}.${randomBytes(6).toString("hex")}.tmp`;
+  try {
+    writeFileSync(staging, text);
+    renameSync(staging, file);
+  } finally {
+    rmSync(staging, { force: true });
+  }
+}
+
 /** Persists the run state. */
 export function saveRun(state: RunState): void {
-  writeFileSync(stateFile(state.dir), `${JSON.stringify(state, null, 2)}\n`);
+  writeWhole(stateFile(state.dir), `${JSON.stringify(state, null, 2)}\n`);
+}
+
+/** Whether the process `pid` still runs. */
+function running(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "EPERM";
+  }
+}
+
+/**
+ * Runs `body` holding the run's lock, a file created exclusively that names
+ * its holder. A lock whose holder no longer runs, as after a crash, is taken
+ * over.
+ */
+function withRunLock(dir: string, body: () => void): void {
+  const lock = join(dir, "run.json.lock");
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    try {
+      writeFileSync(lock, String(process.pid), { flag: "wx" });
+      break;
+    } catch (error) {
+      if (
+        !(error instanceof Error && "code" in error && error.code === "EEXIST")
+      )
+        throw error;
+    }
+    let holder = Number.NaN;
+    try {
+      holder = Number(readFileSync(lock, "utf8"));
+    } catch {
+      continue;
+    }
+    if (Number.isInteger(holder) && holder > 0 && !running(holder))
+      rmSync(lock, { force: true });
+    else Atomics.wait(pause, 0, 0, 2);
+  }
+  try {
+    body();
+  } finally {
+    rmSync(lock, { force: true });
+  }
+}
+
+/**
+ * Adds `add` to the processes the run records and drops the records of the
+ * PIDs in `drop`, in `state` and in run.json. Several `journey` commands of
+ * one run may start and stop processes at once, so run.json changes under a
+ * lock, from what it holds then: writing back `state` whole would drop the
+ * records another command made since this one loaded the run. `state` keeps
+ * only the records this command loaded or made.
+ */
+export function recordProcesses(
+  state: RunState,
+  change: { add?: ProcessRecord[]; drop?: number[] },
+): void {
+  const apply = (records: ProcessRecord[]) => [
+    ...records.filter((record) => !change.drop?.includes(record.pid)),
+    ...(change.add ?? []),
+  ];
+  state.processes = apply(state.processes);
+  withRunLock(state.dir, () => {
+    const stored = loadRun(state.dir);
+    saveRun({ ...stored, processes: apply(stored.processes) });
+  });
 }
 
 /** Allocates the folders of a new run under the system temp folder. */

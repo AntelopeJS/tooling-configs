@@ -34,3 +34,19 @@ test("a project with the default cache folder gets the largest kept cache, where
     true,
   );
 });
+
+test("a seed ignores a staging copy another journey is still publishing to the store, even one listing more modules; a seed that reads every entry copies a half-written cache", (t) => {
+  const { tmp, store } = storeWithKeptCache(t);
+  put(
+    store,
+    ".staging-0a1b2c/manifest.json",
+    '{"@acme/api":"1.0.0","@acme/extra":"1.0.0"}\n',
+  );
+  const project = join(tmp, "default");
+  put(project, "package.json", "{}\n");
+  new ProjectCaches(store).seed(project);
+  assert.equal(
+    existsSync(join(project, ".antelope/cache/@acme/api/value.txt")),
+    true,
+  );
+});
