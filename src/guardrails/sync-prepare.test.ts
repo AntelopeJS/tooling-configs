@@ -110,3 +110,32 @@ test("sync reports the previous prepare install as drift and rewrites it, keepin
     assert.equal(bin(root, "sync", ["--check"]).status, 0);
   }
 });
+
+test("GIT_DIR pointing at the outer repository, as inside a git hook, still leaves its hooks alone; a guard that trusts GIT_DIR installs them", (t) => {
+  const outer = syncedRepo(t);
+  const prepare = preparedScript(outer);
+  const stubs = stubLefthook(outer);
+  const nested = join(outer, "cache", "module");
+  mkdirSync(nested, { recursive: true });
+  const result = spawnSync("/bin/sh", ["-c", prepare], {
+    cwd: nested,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${stubs}:${process.env.PATH}`,
+      GIT_DIR: join(outer, ".git"),
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(join(outer, HOOK_MARKER)), false);
+  assert.equal(existsSync(join(nested, HOOK_MARKER)), false);
+});
+
+test("a prepare holding both the current and an earlier install keeps only the current one; a migration that stops at the current one leaves the unguarded install", (t) => {
+  const root = syncedRepo(t);
+  const manifest = JSON.parse(read(root, "package.json"));
+  manifest.scripts.prepare = `${PREPARE_INSTALL} && ${PREVIOUS_PREPARE}`;
+  put(root, "package.json", `${JSON.stringify(manifest, null, 2)}\n`);
+  assert.equal(bin(root, "sync").status, 0);
+  assert.equal(preparedScript(root), PREPARE_INSTALL);
+});

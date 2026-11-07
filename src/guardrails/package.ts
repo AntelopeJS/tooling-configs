@@ -118,11 +118,20 @@ export function repositoryTools(manifest: Manifest) {
 
 /** Installs hooks only when the package folder is the git top level, so a package installed inside another checkout never writes that checkout's hooks. */
 export const PREPARE_INSTALL =
-  'if [ "$(git rev-parse --is-inside-work-tree --show-prefix 2>/dev/null)" = true ] && command -v lefthook >/dev/null 2>&1; then lefthook install; fi';
+  '(unset GIT_DIR GIT_WORK_TREE; if [ "$(git rev-parse --is-inside-work-tree --show-prefix 2>/dev/null)" = true ] && command -v lefthook >/dev/null 2>&1; then lefthook install; fi)';
 
 const PREVIOUS_PREPARE_INSTALLS = [
   "if git rev-parse --is-inside-work-tree >/dev/null 2>&1 && command -v lefthook >/dev/null 2>&1; then lefthook install; fi",
+  'if [ "$(git rev-parse --is-inside-work-tree --show-prefix 2>/dev/null)" = true ] && command -v lefthook >/dev/null 2>&1; then lefthook install; fi',
 ];
+
+/** Every earlier install in one pass, so text a replacement inserts is never scanned again. */
+const PREVIOUS_INSTALL = new RegExp(
+  PREVIOUS_PREPARE_INSTALLS.map((script) =>
+    script.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+  ).join("|"),
+  "g",
+);
 
 const DEFAULT_SCRIPTS = {
   typecheck: "tsc --noEmit",
@@ -132,13 +141,21 @@ const DEFAULT_SCRIPTS = {
   knip: "knip",
 };
 
+/** Rewrites every earlier synced install to the current one, leaving the current one, which contains the last earlier text, untouched. */
+function migratePrepare(current: string): string {
+  const doubled = `${PREPARE_INSTALL} && ${PREPARE_INSTALL}`;
+  let migrated = current
+    .split(PREPARE_INSTALL)
+    .map((part) => part.replace(PREVIOUS_INSTALL, () => PREPARE_INSTALL))
+    .join(PREPARE_INSTALL);
+  while (migrated.includes(doubled))
+    migrated = migrated.replaceAll(doubled, () => PREPARE_INSTALL);
+  return migrated;
+}
+
 function prepareScript(current = ""): string {
-  if (current.includes(PREPARE_INSTALL)) return current;
-  const previous = PREVIOUS_PREPARE_INSTALLS.find((script) =>
-    current.includes(script),
-  );
-  if (previous !== undefined)
-    return current.replaceAll(previous, () => PREPARE_INSTALL);
+  const migrated = migratePrepare(current);
+  if (migrated.includes(PREPARE_INSTALL)) return migrated;
   const legacy =
     /(^|&&\s*|;\s*)(?:(?:pnpm exec|npm exec --|yarn exec|bun x --no-install)\s+)?lefthook\s+install(?=\s*(?:$|&&|;))/;
   if (legacy.test(current))
