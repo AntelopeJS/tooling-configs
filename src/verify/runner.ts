@@ -158,12 +158,19 @@ async function driveJourney(
     const fault = await context.environmentFault();
     if (fault !== null) failure = { ...failure, notVerified: fault };
   }
+  const status = statusOf(context, failure);
+  const skipped = status === "PASS" ? context.caches.keep() : [];
+  if (skipped.length > 0)
+    writeFileSync(
+      join(context.step("module cache not kept"), "note.txt"),
+      `${skipped.map((reason) => `${reason}; a later journey installs its modules again`).join("\n")}\n`,
+    );
   const result: JourneyResult = {
     feature,
     journey: id,
     title: journey.title,
     entryPoint: journey.entryPoint,
-    status: statusOf(context, failure),
+    status,
     steps: context.steps,
     ...failure,
     folder: relative(state.evidence, context.folder),
