@@ -245,6 +245,11 @@ export class ProjectCaches {
     this.passClock(bound);
   }
 
+  /** The projects whose caches it follows: every project it seeded. */
+  followed(): string[] {
+    return [...this.projects.keys()];
+  }
+
   /**
    * Records the bound of each module that appeared in a project's manifest
    * since the last call, and refuses the cache of a project whose recorded
