@@ -240,16 +240,20 @@ function lengthOf(lengths: Lengths | undefined, rule: string) {
     : undefined;
 }
 
-function sameFindingsAsBase(result: FormalResult): boolean {
+function knownFindingsOfBase(result: FormalResult): boolean {
   const { base } = result;
   if (!base || base.exitCode !== 0) return false;
   const atHead = new Set(result.violated);
+  const fixed = new Set(result.fixed ?? []);
   return (
-    atHead.size === base.violated.length &&
-    base.violated.every((rule) => atHead.has(rule)) &&
+    base.violated.every((rule) => atHead.has(rule) || fixed.has(rule)) &&
     result.violated.every((rule) => {
       const length = lengthOf(result.lengths, rule);
-      return length !== undefined && length === lengthOf(base.lengths, rule);
+      return (
+        base.violated.includes(rule) &&
+        length !== undefined &&
+        length === lengthOf(base.lengths, rule)
+      );
     })
   );
 }
@@ -261,10 +265,11 @@ function sameFindingsAsBase(result: FormalResult): boolean {
  * is a recorded finding. A rule the base broke that HEAD does not report at
  * all fails. Recorded findings are known when the diff left the covered
  * code's behaviour unchanged. When it changed them, they are known only when
- * the base run exited 0 and broke exactly the same rules, each with the same
- * counterexample length at HEAD as on the base; any other set, a changed
- * length, or a length either run did not report fails. A rule the base broke
- * and HEAD reports passing is reported as fixed.
+ * the base run exited 0 and broke every one of them, each with the same
+ * counterexample length at HEAD as on the base, and every other rule the
+ * base broke is fixed at HEAD; a new rule, a changed length, or a length
+ * either run did not report fails. A rule the base broke and HEAD reports
+ * passing is reported as fixed.
  */
 export function formalGate(result: FormalResult): FormalGate {
   if (result.exitCode !== 0) {
@@ -299,10 +304,10 @@ export function formalGate(result: FormalResult): FormalGate {
       fails: false,
       outcome: `covered behaviour changed (${how}), no violated rule${fixed}`,
     };
-  if (sameFindingsAsBase(result))
+  if (knownFindingsOfBase(result))
     return {
       fails: false,
-      outcome: `covered behaviour changed (${how}), same known findings as base: ${result.violated.join(", ")}`,
+      outcome: `covered behaviour changed (${how}), same known findings as base: ${result.violated.join(", ")}${fixed}`,
     };
   return {
     fails: true,

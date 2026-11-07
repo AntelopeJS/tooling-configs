@@ -52,15 +52,37 @@ test("the same findings fail when the base recorded no length for one of them", 
   assert.equal(formalGate(changed({ base })).fails, true);
 });
 
-test("a base that broke one more rule than HEAD reports passing is not the same set", () => {
+test("a PR that fixes one finding and keeps the others with their base lengths passes, naming the fix; a gate that demands the base's exact set fails it", () => {
   const base = {
     ...SAME,
     violated: [...SAME.violated, "Fifo"],
     lengths: { ...SAME.lengths, Fifo: 3 },
   };
   assert.deepEqual(formalGate(changed({ base, fixed: ["Fifo"] })), {
-    fails: true,
+    fails: false,
     outcome:
-      "covered behaviour changed (emit), violated NoOverlapOnInstance, NoLostTask; fixed: Fifo",
+      "covered behaviour changed (emit), same known findings as base: NoOverlapOnInstance, NoLostTask; fixed: Fifo",
   });
+});
+
+test("a rule the base broke that HEAD neither breaks nor reports fixed is not known; a gate that only checks HEAD's rules against the base passes it", () => {
+  const base = {
+    ...SAME,
+    violated: [...SAME.violated, "Fifo"],
+    lengths: { ...SAME.lengths, Fifo: 3 },
+  };
+  assert.equal(formalGate(changed({ base })).fails, true);
+});
+
+test("a rule HEAD breaks that the base did not is new, even when the base printed the same length for it; a gate that compares lengths alone passes it", () => {
+  assert.equal(
+    formalGate(
+      changed({
+        violated: [...SAME.violated, "Fifo"],
+        lengths: { ...SAME.lengths, Fifo: 3 },
+        base: { ...SAME, lengths: { ...SAME.lengths, Fifo: 3 } },
+      }),
+    ).fails,
+    true,
+  );
 });
