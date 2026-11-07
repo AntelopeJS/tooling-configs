@@ -1,15 +1,25 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import test, { after, before, describe, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
+
+import { resultEntries, scratchCache } from "./helpers/cache.ts";
 
 const RUNNER = new URL("index.ts", import.meta.url).href;
 const FIXTURES = fileURLToPath(new URL("fixtures", import.meta.url));
 
 interface Check {
+  dir?: string;
   config?: string;
   findings: Record<string, number>;
 }
@@ -25,6 +35,7 @@ function check(options: Check, env: Record<string, string> = {}) {
       env: {
         ...process.env,
         TLC_DOCKER_PREFIX: "tooling-configs-formal-test",
+        ANTELOPEJS_FORMAL_CACHE: "off",
         ...env,
       },
     },
@@ -142,4 +153,119 @@ test("a cached jar with another hash is downloaded again, then reused", (t) => {
     second.lines[0],
     "TLC 1.7.4 on Counter.tla (Counter.cfg) with Limit = 4",
   );
+});
+
+const MATCHING = { BelowThree: 4, NotTwo: 3 };
+const NO_JAVA = { JAVA: "/nonexistent/java" };
+const CANNOT_RUN = /^check: cannot run \/nonexistent\/java: /;
+const REPLAYED =
+  /^TLC result [0-9a-f]{12} replayed from the cache; ANTELOPEJS_FORMAL_CACHE=off reruns TLC$/;
+
+function cacheOn() {
+  return { ANTELOPEJS_FORMAL_CACHE: "on", XDG_CACHE_HOME: scratchCache() };
+}
+
+function fixturesCopy(t: TestContext): string {
+  const dir = mkdtempSync(join(tmpdir(), "formal-spec-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  cpSync(FIXTURES, dir, { recursive: true });
+  return dir;
+}
+
+interface Miss {
+  input: string;
+  edit?: (dir: string) => void;
+  findings?: Record<string, number>;
+  env?: Record<string, string>;
+}
+
+const MISSES: Miss[] = [
+  {
+    input: "the spec module",
+    edit: (dir) => appendFileSync(join(dir, "Counter.tla"), "\n"),
+  },
+  {
+    input: "a module the spec does not extend",
+    edit: (dir) =>
+      writeFileSync(join(dir, "Unused.tla"), "---- MODULE Unused ----\n====\n"),
+  },
+  {
+    input: "a bound of the configuration",
+    edit: (dir) =>
+      writeFileSync(
+        join(dir, "Counter.cfg"),
+        "SPECIFICATION Spec\nCONSTANTS\n  Limit = 4\nCONSTRAINT Small\nINVARIANT Bounded\nINVARIANT BelowThree\nINVARIANT NotTwo\n",
+      ),
+  },
+  {
+    input: "a recorded counterexample length",
+    findings: { BelowThree: 4, NotTwo: 5 },
+  },
+  { input: "the JVM options", env: { JAVA_TOOL_OPTIONS: "-Xss4m" } },
+];
+
+describe("a cached result", () => {
+  const cache = cacheOn();
+  let first: ReturnType<typeof check>;
+  before(() => {
+    first = check({ findings: MATCHING }, cache);
+  });
+  after(() => rmSync(cache.XDG_CACHE_HOME, { recursive: true, force: true }));
+
+  test("replays from another folder with the same files without starting Java", (t) => {
+    const replay = check(
+      { dir: fixturesCopy(t), findings: MATCHING },
+      { ...cache, ...NO_JAVA },
+    );
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(replay.status, 0, replay.stderr);
+    assert.match(replay.lines[0] ?? "", REPLAYED);
+    assert.deepEqual(replay.lines.slice(1), rules(first.lines));
+  });
+
+  for (const { input, edit, findings = MATCHING, env = {} } of MISSES)
+    test(`is not replayed after a change to ${input}`, (t) => {
+      const dir = fixturesCopy(t);
+      edit?.(dir);
+      const run = check({ dir, findings }, { ...cache, ...env, ...NO_JAVA });
+      assert.equal(run.status, 2, run.lines.join("\n"));
+      assert.match(run.stderr, CANNOT_RUN);
+    });
+
+  test("is not replayed with ANTELOPEJS_FORMAL_CACHE=off", () => {
+    const run = check(
+      { findings: MATCHING },
+      { ...cache, ...NO_JAVA, ANTELOPEJS_FORMAL_CACHE: "off" },
+    );
+    assert.equal(run.status, 2, run.lines.join("\n"));
+    assert.match(run.stderr, CANNOT_RUN);
+  });
+});
+
+test("a replayed CHANGED still exits 1", (t) => {
+  const cache = cacheOn();
+  t.after(() => rmSync(cache.XDG_CACHE_HOME, { recursive: true, force: true }));
+  const findings = { BelowThree: 4, NotTwo: 5 };
+  const first = check({ findings }, cache);
+  const replay = check({ findings }, { ...cache, ...NO_JAVA });
+  assert.equal(first.status, 1, first.stderr);
+  assert.equal(replay.status, 1, replay.stderr);
+  assert.match(replay.lines[0] ?? "", REPLAYED);
+  assert.deepEqual(replay.lines.slice(1), rules(first.lines));
+});
+
+test("a corrupt cached result reruns TLC, which replaces it", (t) => {
+  const cache = cacheOn();
+  t.after(() => rmSync(cache.XDG_CACHE_HOME, { recursive: true, force: true }));
+  assert.equal(check({ findings: MATCHING }, cache).status, 0);
+  const entries = resultEntries(cache.XDG_CACHE_HOME);
+  assert.equal(entries.length, 1);
+  for (const entry of entries) writeFileSync(entry, '{"exit":0,"output":"TLC');
+  const corrupt = check({ findings: MATCHING }, { ...cache, ...NO_JAVA });
+  assert.equal(corrupt.status, 2, corrupt.lines.join("\n"));
+  assert.match(corrupt.stderr, CANNOT_RUN);
+  assert.equal(check({ findings: MATCHING }, cache).status, 0);
+  const replay = check({ findings: MATCHING }, { ...cache, ...NO_JAVA });
+  assert.equal(replay.status, 0, replay.stderr);
+  assert.match(replay.lines[0] ?? "", REPLAYED);
 });

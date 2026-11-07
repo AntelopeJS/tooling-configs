@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
-  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -13,12 +12,19 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { num, object, parseJson, str } from "../garden/json.ts";
 
 const TLC_VERSION = "1.7.4";
 const TLC_URL = `https://github.com/tlaplus/tlaplus/releases/download/v${TLC_VERSION}/tla2tools.jar`;
 const TLC_SHA256 =
   "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88";
 const DOCKER_IMAGE = "eclipse-temurin:21-jre";
+const JVM_OPTIONS = ["-XX:+UseParallelGC"];
+const TLC_FLAGS = ["-deadlock"];
+const JVM_ENV = ["JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"];
+const CACHE_ENV = "ANTELOPEJS_FORMAL_CACHE";
 
 /** Exit codes of a check: 0 when every rule matches its record, 1 when a rule changed, 2 when TLC could not run. */
 export const EXIT = { ok: 0, changed: 1, tool: 2 } as const;
@@ -44,13 +50,47 @@ interface Config {
   bounds: string[];
 }
 
+interface Module {
+  name: string;
+  bytes: Buffer;
+}
+
 interface TlcRun {
+  name: string;
+  workers: "auto" | "1";
+  cfg: string;
+}
+
+interface Finding {
+  rule: string;
+  expected: number;
+  run: TlcRun;
+}
+
+interface Holding {
+  rules: string[];
+  run: TlcRun;
+}
+
+/** Everything one check reads besides the runner's constants and the JVM environment; the cache key covers all of it. */
+interface Plan {
+  spec: string;
+  header: string;
+  modules: Module[];
+  holds: Holding | undefined;
+  findings: Finding[];
+}
+
+interface Workspace {
   jar: string;
   work: string;
   spec: string;
-  name: string;
-  config: Config;
-  workers: string;
+}
+
+/** A finished check as the result cache keeps it: what it printed and how it exits. */
+interface Outcome {
+  output: string;
+  exit: typeof EXIT.ok | typeof EXIT.changed;
 }
 
 function fail(message: string): never {
@@ -58,23 +98,27 @@ function fail(message: string): never {
   process.exit(EXIT.tool);
 }
 
-function sha256(file: string): string {
-  return createHash("sha256").update(readFileSync(file)).digest("hex");
+function sha256(data: string | Buffer): string {
+  return createHash("sha256").update(data).digest("hex");
+}
+
+function cacheDir(): string {
+  const cacheRoot =
+    process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache");
+  return path.join(cacheRoot, "antelopejs-formal");
 }
 
 async function ensureJar(): Promise<string> {
-  const cacheRoot =
-    process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache");
-  const dir = path.join(cacheRoot, "antelopejs-formal");
+  const dir = cacheDir();
   const jar = path.join(dir, `tla2tools-${TLC_VERSION}.jar`);
-  if (existsSync(jar) && sha256(jar) === TLC_SHA256) return jar;
+  if (existsSync(jar) && sha256(readFileSync(jar)) === TLC_SHA256) return jar;
   mkdirSync(dir, { recursive: true });
   console.log(`Downloading ${TLC_URL}`);
   const response = await fetch(TLC_URL);
   if (!response.ok) fail(`download failed: HTTP ${response.status}`);
   const partial = `${jar}.${process.pid}.part`;
   writeFileSync(partial, Buffer.from(await response.arrayBuffer()));
-  const actual = sha256(partial);
+  const actual = sha256(readFileSync(partial));
   if (actual !== TLC_SHA256) {
     rmSync(partial, { force: true });
     fail(`tla2tools.jar has SHA-256 ${actual}, expected ${TLC_SHA256}`);
@@ -139,26 +183,35 @@ function readConfig(dir: string, config: string, findings: Findings): Config {
   return { constants, invariants, bounds };
 }
 
-function runTlc(run: TlcRun, invariants: string[]) {
-  const { jar, work, spec, name, config, workers } = run;
+function cfgText(config: Config, invariants: string[]): string {
+  return [
+    "SPECIFICATION Spec",
+    "CONSTANTS",
+    ...config.constants,
+    ...config.bounds,
+    ...invariants.map((rule) => `INVARIANT ${rule}`),
+    "",
+  ].join("\n");
+}
+
+function readModules(dir: string): Module[] {
+  return readdirSync(dir)
+    .filter((name) => name.endsWith(".tla"))
+    .sort()
+    .map((name) => ({ name, bytes: readFileSync(path.join(dir, name)) }));
+}
+
+function runTlc(workspace: Workspace, run: TlcRun) {
+  const { jar, work, spec } = workspace;
+  const { name, workers } = run;
   const cfg = path.join(work, `${name}.cfg`);
-  writeFileSync(
-    cfg,
-    [
-      "SPECIFICATION Spec",
-      "CONSTANTS",
-      ...config.constants,
-      ...config.bounds,
-      ...invariants.map((rule) => `INVARIANT ${rule}`),
-      "",
-    ].join("\n"),
-  );
+  writeFileSync(cfg, run.cfg);
   const java = javaInvocation(jar, work);
   const result = spawnSync(
     java.program,
     [
       ...java.prefix,
-      "-XX:+UseParallelGC",
+      ...JVM_OPTIONS,
       "-cp",
       jar,
       "tlc2.TLC",
@@ -166,7 +219,7 @@ function runTlc(run: TlcRun, invariants: string[]) {
       cfg,
       "-workers",
       workers,
-      "-deadlock",
+      ...TLC_FLAGS,
       "-metadir",
       path.join(work, `states-${name}`),
       `${spec}.tla`,
@@ -191,6 +244,83 @@ function runTlc(run: TlcRun, invariants: string[]) {
   return { violated, distinct, steps };
 }
 
+function resultKey(plan: Plan): string {
+  return sha256(
+    JSON.stringify({
+      runner: sha256(readFileSync(fileURLToPath(import.meta.url))),
+      tlc: TLC_VERSION,
+      jar: TLC_SHA256,
+      jvm: JVM_OPTIONS,
+      jvmEnv: JVM_ENV.map((name) => process.env[name] ?? null),
+      flags: TLC_FLAGS,
+      ...plan,
+      modules: plan.modules.map(({ name, bytes }) => [name, sha256(bytes)]),
+    }),
+  );
+}
+
+function readOutcome(file: string): Outcome | undefined {
+  try {
+    const entry = object(parseJson(readFileSync(file, "utf8")), file);
+    const exit = num(entry, "exit");
+    if (exit === EXIT.ok || exit === EXIT.changed)
+      return { output: str(entry, "output"), exit };
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeOutcome(entry: string, outcome: Outcome): void {
+  mkdirSync(path.dirname(entry), { recursive: true });
+  const temp = `${entry}.${randomUUID()}.tmp`;
+  writeFileSync(temp, JSON.stringify(outcome));
+  renameSync(temp, entry);
+}
+
+async function modelCheck(plan: Plan): Promise<Outcome & { work: string }> {
+  const { spec, header, modules, holds, findings } = plan;
+  const jar = await ensureJar();
+  const work = mkdtempSync(path.join(os.tmpdir(), `formal-${spec}-`));
+  for (const { name, bytes } of modules)
+    writeFileSync(path.join(work, name), bytes);
+  const workspace = { jar, work, spec };
+  const lines: string[] = [];
+  const print = (line: string) => {
+    lines.push(line);
+    console.log(line);
+  };
+  print(header);
+  let changed = false;
+  if (holds) {
+    const held = runTlc(workspace, holds.run);
+    if (held.violated) {
+      changed = true;
+      print(`BROKEN ${held.violated}: ${held.steps.join(" -> ")}`);
+    } else print(`holds  ${holds.rules.join(", ")} (${held.distinct} states)`);
+  }
+  for (const { rule, expected, run } of findings) {
+    const found = runTlc(workspace, run);
+    if (!found.violated) {
+      changed = true;
+      print(`HOLDS  ${rule}: the finding is gone (${found.distinct} states)`);
+      continue;
+    }
+    const length = found.steps.length;
+    const tag = length === expected ? "finding" : "CHANGED";
+    changed ||= length !== expected;
+    print(
+      `${tag} ${rule}: ${length} states (recorded ${expected}): ${found.steps.join(" -> ")}`,
+    );
+  }
+  if (!changed) print("Every rule matches the record in SKILL.md.");
+  return {
+    output: lines.join("\n"),
+    exit: changed ? EXIT.changed : EXIT.ok,
+    work,
+  };
+}
+
 /**
  * Model-checks `<dir>/<spec>.tla` with TLC under the constants, bounds and
  * invariants of `<dir>/<config>.cfg`. Every invariant must hold except the
@@ -207,50 +337,66 @@ function runTlc(run: TlcRun, invariants: string[]) {
  * PATH, else the `eclipse-temurin:21-jre` Docker image, run with `--rm` in a
  * container named after `$TLC_DOCKER_PREFIX` (default
  * `antelopejs-formal-tlc`).
+ *
+ * The printed lines and the exit code of a check TLC finished are kept in
+ * `results/<key>.json` under that folder, and a later check with the same key
+ * replays them without starting Java, after one line naming the key. The key
+ * is a SHA-256 of this runner's own source, the TLC version, the jar's
+ * SHA-256, the JVM options and TLC flags with `$JAVA_TOOL_OPTIONS`,
+ * `$JDK_JAVA_OPTIONS` and `$_JAVA_OPTIONS`, the spec and configuration
+ * names, the printed header, the bytes of every `.tla` file in `dir`, the
+ * configuration and worker count of each TLC run, and `findings`. A replay keeps no TLC output
+ * folder. `ANTELOPEJS_FORMAL_CACHE=off` neither reads nor writes the cache.
+ * Entries are never pruned; each is a few hundred bytes, one per distinct
+ * input.
  */
 export async function checkSpec(options: CheckSpecOptions): Promise<void> {
   const { dir, spec, config = spec, findings } = options;
   const parsed = readConfig(dir, config, findings);
-  const jar = await ensureJar();
-  const work = mkdtempSync(path.join(os.tmpdir(), `formal-${spec}-`));
-  for (const file of readdirSync(dir).filter((name) => name.endsWith(".tla")))
-    copyFileSync(path.join(dir, file), path.join(work, file));
-  const run = { jar, work, spec, config: parsed };
   const holding = parsed.invariants.filter(
     (rule) => !Object.hasOwn(findings, rule),
   );
-  console.log(
-    `TLC ${TLC_VERSION} on ${spec}.tla (${config}.cfg) with ${parsed.constants.map((line) => line.trim()).join(", ")}`,
-  );
-  let changed = false;
-  if (holding.length > 0) {
-    const held = runTlc({ ...run, name: "holds", workers: "auto" }, holding);
-    if (held.violated) {
-      changed = true;
-      console.log(`BROKEN ${held.violated}: ${held.steps.join(" -> ")}`);
-    } else
-      console.log(`holds  ${holding.join(", ")} (${held.distinct} states)`);
-  }
-  for (const [rule, expected] of Object.entries(findings)) {
-    const found = runTlc({ ...run, name: rule, workers: "1" }, [rule]);
-    if (!found.violated) {
-      changed = true;
-      console.log(
-        `HOLDS  ${rule}: the finding is gone (${found.distinct} states)`,
-      );
-      continue;
-    }
-    const length = found.steps.length;
-    const tag = length === expected ? "finding" : "CHANGED";
-    changed ||= length !== expected;
+  const plan: Plan = {
+    spec,
+    header: `TLC ${TLC_VERSION} on ${spec}.tla (${config}.cfg) with ${parsed.constants.map((line) => line.trim()).join(", ")}`,
+    modules: readModules(dir),
+    holds:
+      holding.length > 0
+        ? {
+            rules: holding,
+            run: {
+              name: "holds",
+              workers: "auto",
+              cfg: cfgText(parsed, holding),
+            },
+          }
+        : undefined,
+    findings: Object.entries(findings).map(([rule, expected]) => ({
+      rule,
+      expected,
+      run: { name: rule, workers: "1", cfg: cfgText(parsed, [rule]) },
+    })),
+  };
+  const key = resultKey(plan);
+  const entry =
+    process.env[CACHE_ENV] === "off"
+      ? undefined
+      : path.join(cacheDir(), "results", `${key}.json`);
+  const replayed = entry === undefined ? undefined : readOutcome(entry);
+  if (replayed) {
     console.log(
-      `${tag} ${rule}: ${length} states (recorded ${expected}): ${found.steps.join(" -> ")}`,
+      `TLC result ${key.slice(0, 12)} replayed from the cache; ${CACHE_ENV}=off reruns TLC`,
     );
+    console.log(replayed.output);
+    if (replayed.exit !== EXIT.ok) process.exit(replayed.exit);
+    return;
   }
-  if (changed) {
-    console.log(`TLC output kept in ${work}`);
-    process.exit(EXIT.changed);
+  const outcome = await modelCheck(plan);
+  if (entry !== undefined)
+    writeOutcome(entry, { output: outcome.output, exit: outcome.exit });
+  if (outcome.exit !== EXIT.ok) {
+    console.log(`TLC output kept in ${outcome.work}`);
+    process.exit(outcome.exit);
   }
-  rmSync(work, { recursive: true, force: true });
-  console.log("Every rule matches the record in SKILL.md.");
+  rmSync(outcome.work, { recursive: true, force: true });
 }
