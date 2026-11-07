@@ -49,7 +49,7 @@ import {
   hasChecksWorkflow,
   MISSING_CHECKS_WORKFLOW,
 } from "./workflow.ts";
-import { CI_PATH, ciWorkflow } from "./ci-workflow.ts";
+import { CI_PATH, ciWorkflow, placeholderTestScript } from "./ci-workflow.ts";
 import { backendBoundaryArtifacts } from "./backend-boundary.ts";
 import { checkEntryOnlyConfiguration } from "./entry-only.ts";
 import { planDocs, type DocsPlan } from "./docs-compat.ts";
@@ -77,6 +77,8 @@ export interface RepoContext extends AgentsBlockContext {
   managesCi: boolean;
   /** The docs-compat READMEs and caller `docs-files` lines, planned under the full profile only. */
   docs: DocsPlan | undefined;
+  /** Whether package.json's `test` script only stands in for tests, so the CI caller turns its test job off. */
+  placeholderTests: boolean;
 }
 
 interface ArtifactContent {
@@ -164,6 +166,7 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
         current === undefined ? [] : ciNodeCallers(current),
         current === undefined ? [] : ciRenovateSyncCallers(current),
         context.docs,
+        context.placeholderTests,
       ),
       notes: [],
     }),
@@ -391,6 +394,9 @@ function repositoryContext(
       profile === "full" && current.has("package.json")
         ? planDocs(root, manager)
         : undefined,
+    placeholderTests:
+      current.has("package.json") &&
+      placeholderTestScript(manifest.scripts?.test),
   };
 }
 
