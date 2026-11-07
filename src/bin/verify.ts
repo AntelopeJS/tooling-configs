@@ -28,8 +28,9 @@ import { loadRun, openWorkspace, type Workspace } from "../verify/workspace.ts";
 const USAGE = `Usage: antelopejs-verify <command>
 
   map                                check every user-facing file is covered and every feature is complete
-  plan [--base <ref>]                map the diff to features; list unmapped surfaces
-  new [--base <ref>] [--title <t>]   build, prepare an isolated run, print its folder
+  plan [--base <ref>] [--all]        map the diff to features; list unmapped surfaces; every feature runs when a shared file changed or with --all
+  new [--base <ref>] [--title <t>] [--all]
+                                     build, prepare an isolated run, print its folder; --all runs every feature, before a release
   doctor <run>                       check the run is worth driving
   journey <run> <feature> [ids...]   run a feature's journeys and record evidence
   formal <run> [--all]               run the formal checks that cover the diff and gate them on changed behaviour
@@ -169,10 +170,19 @@ async function main(argv: string[]): Promise<number> {
   const root = repositoryRoot();
   const workspace = await openWorkspace(root, detectKind(root, values.kind));
   if (command === "new")
-    print((await createRun(workspace, values.base, values.title)).dir);
+    print(
+      (
+        await createRun(
+          workspace,
+          values.base,
+          values.title,
+          values.all === true,
+        )
+      ).dir,
+    );
   else if (command === "map") return printMap(workspace);
   else if (command === "plan") {
-    const plan = planFor(workspace, values.base);
+    const plan = planFor(workspace, values.base, values.all === true);
     print(JSON.stringify(plan, null, 2));
     return plan.unmapped.length === 0 ? 0 : 1;
   } else if (command === "doctor") {

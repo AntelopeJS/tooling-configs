@@ -5,7 +5,7 @@ import type { JourneyResult } from "./results.ts";
 import { flaggedDoors } from "./doors.ts";
 import { formalGate, readFormalResult, touchedFormalChecks } from "./formal.ts";
 import type { Judgement } from "./judgement.ts";
-import { planFor, SMOKE_FEATURE, type Plan } from "./map.ts";
+import { planFor, SMOKE_FEATURE, type FullReason, type Plan } from "./map.ts";
 import { featureJourneys, readResults } from "./runner.ts";
 import { git, type RunState, type Workspace } from "./workspace.ts";
 
@@ -196,9 +196,15 @@ function docsReasons(judgement: Judgement, plan: Plan): string[] {
   return plan.docs.flatMap((page) => {
     const docs = judgement.docs.find((entry) => entry.page === page);
     if (!docs)
-      return [`docs page ${page} of a touched feature has no judgement`];
+      return [`docs page ${page} of a feature the plan runs has no judgement`];
     return docs.matches ? [] : [`${page} no longer matches the behaviour`];
   });
+}
+
+function fullLine(full: FullReason): string {
+  return full.reason === "all"
+    ? "Every feature must run: the run was created with `--all`, before a release."
+    : `Every feature must run: the diff changes shared files ${full.files.map((file) => `\`${file}\``).join(", ")}.`;
 }
 
 function resultOf(
@@ -222,7 +228,7 @@ export function renderVerdict(
   pr: number,
   judgement: Judgement,
 ): Verdict {
-  const plan = planFor(workspace, state.baseRef);
+  const plan = planFor(workspace, state.baseRef, state.all);
   const repository = originRepository(workspace.root);
   const skillSha =
     git(workspace.root, [
@@ -273,6 +279,7 @@ export function renderVerdict(
     "### Touched features",
     ...bullets(touched, "none"),
     `- ${SMOKE_FEATURE}: runs on every verdict`,
+    ...(plan.full ? [`- ${fullLine(plan.full)}`] : []),
     "",
     ...(plan.unmapped.length > 0
       ? [
@@ -301,7 +308,7 @@ export function renderVerdict(
         (docs) =>
           `\`${docs.page}\`: ${docs.matches ? "matches" : "**stale**"}${docs.note ? `. ${docs.note}` : ""}`,
       ),
-      "No touched feature links a page.",
+      "The plan lists no docs page to judge.",
     ),
     "",
     "### Not verified",

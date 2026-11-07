@@ -183,9 +183,10 @@ export async function createRun(
   workspace: Workspace,
   baseRef: string,
   title: string,
+  all: boolean,
 ): Promise<RunState> {
   pruneRuns();
-  const state = allocateRun(workspace, baseRef, title);
+  const state = allocateRun(workspace, baseRef, title, all);
   saveRun(state);
   await runSetup(workspace, state);
   if (workspace.kind === "interface")

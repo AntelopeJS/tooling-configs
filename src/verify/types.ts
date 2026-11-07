@@ -248,6 +248,8 @@ export interface VerifyConfig<Api = never> {
   formal?: FormalCheck[];
   /** Files whose change a user can observe; replaces the kind's default. */
   userFacing?: string[];
+  /** Files whose change runs every feature, not only the touched ones; replaces the kind's default. */
+  shared?: string[];
   services?: { [name: string]: ServiceDefinition };
   /** Extra environment for every driven command. */
   env?: { [name: string]: string };

@@ -58,6 +58,8 @@ export interface RunState {
   baseRef: string;
   /** The change title the interface minor rule reads; empty means the commit subjects since the base. */
   title: string;
+  /** Created with `new --all`: the plan runs every feature whatever the diff. An older run.json without it reads as false. */
+  all: boolean;
   processes: ProcessRecord[];
   containers: ContainerRecord[];
   /** Interface kind: the packed head package, extracted. */
@@ -154,8 +156,8 @@ export function loadRun(dir: string): RunState {
     );
   const now = new Date();
   utimesSync(file, now, now);
-  const state: RunState = JSON.parse(readFileSync(file, "utf8"));
-  return state;
+  const stored: RunState = JSON.parse(readFileSync(file, "utf8"));
+  return { ...stored, all: stored.all === true };
 }
 
 /** Persists the run state. */
@@ -168,6 +170,7 @@ export function allocateRun(
   workspace: Workspace,
   baseRef: string,
   title: string,
+  all: boolean,
 ): RunState {
   const id = `${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}-${randomBytes(3).toString("hex")}`;
   const dir = join(RUNS_DIR, workspace.name, id);
@@ -183,6 +186,7 @@ export function allocateRun(
     headSha: git(workspace.root, ["rev-parse", "HEAD"]),
     baseRef,
     title,
+    all,
     processes: [],
     containers: [],
     pack: "",

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -82,6 +83,102 @@ test("plan runs smoke plus every touched feature and fails on an unmapped user-f
   ]);
 });
 
+const SPLIT = {
+  [`${SKILL}/features/core.md`]: feature(
+    ["src/index.ts"],
+    ["module-dev", "own"],
+  ),
+  [`${SKILL}/features/store.md`]: feature(["src/store/**"], ["module-dev"]),
+};
+
+function configWithShared(shared: string) {
+  return {
+    ...SPLIT,
+    [`${SKILL}/verify.config.ts`]: `export default { doors: ${DOORS}, shared: ${shared}, journeys: { own: { title: "", entryPoint: "", async run() {} } } };\n`,
+  };
+}
+
+function planOf(root: string, tmp: string, args: string[] = []) {
+  const result = verify(root, tmp, ["plan", ...args]);
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+}
+
+test("a diff touching only package.json plans every feature and names the shared file, where a covers-only plan runs smoke alone", (t) => {
+  const { root, tmp } = mapRepo(t, SPLIT);
+  put(
+    root,
+    "package.json",
+    '{"name":"guardrails-test","type":"module","version":"2.0.0"}\n',
+  );
+  const plan = planOf(root, tmp);
+  assert.deepEqual(plan.run, ["smoke", "core", "store"]);
+  assert.deepEqual(plan.full, { reason: "shared", files: ["package.json"] });
+  assert.deepEqual(plan.touched, []);
+  assert.deepEqual(plan.docs, ["README.md"]);
+});
+
+test("a module's interfaces and antelope lock are shared, where a list of root manifests alone runs one feature on an interface change", (t) => {
+  const { root, tmp } = mapRepo(t, SPLIT);
+  put(root, "src/interfaces/demo/beta/index.ts", "export {};\n");
+  put(root, "antelope-lock/demo@1.0.0/pnpm-lock.yaml", "lockfileVersion: 9\n");
+  const plan = JSON.parse(verify(root, tmp, ["plan"]).stdout);
+  assert.deepEqual(plan.run, ["smoke", "core", "store"]);
+  assert.deepEqual(plan.full, {
+    reason: "shared",
+    files: [
+      "antelope-lock/demo@1.0.0/pnpm-lock.yaml",
+      "src/interfaces/demo/beta/index.ts",
+    ],
+  });
+});
+
+test("a diff touching only a covered source file plans that feature and smoke, never the rest, where an always-full plan runs every feature", (t) => {
+  const { root, tmp } = mapRepo(t, SPLIT);
+  put(root, "src/index.ts", "export const one = 2;\n");
+  const plan = planOf(root, tmp);
+  assert.deepEqual(plan.run, ["smoke", "core"]);
+  assert.equal(plan.full, null);
+});
+
+test("plan --all runs every feature whatever the diff, and says so", (t) => {
+  const { root, tmp } = mapRepo(t, SPLIT);
+  const plan = planOf(root, tmp, ["--all"]);
+  assert.deepEqual(plan.run, ["smoke", "core", "store"]);
+  assert.deepEqual(plan.full, { reason: "all" });
+});
+
+test("shared in verify.config.ts replaces the default list, where a merged list still runs everything on package.json", (t) => {
+  const { root, tmp } = mapRepo(t, configWithShared('["config/**"]'));
+  put(
+    root,
+    "package.json",
+    '{"name":"guardrails-test","type":"module","version":"2.0.0"}\n',
+  );
+  const bumped = planOf(root, tmp);
+  assert.deepEqual(bumped.run, ["smoke"]);
+  assert.equal(bumped.full, null);
+  put(root, "config/app.json", "{}\n");
+  const configured = planOf(root, tmp);
+  assert.deepEqual(configured.run, ["smoke", "core", "store"]);
+  assert.deepEqual(configured.full, {
+    reason: "shared",
+    files: ["config/app.json"],
+  });
+});
+
+test("a shared glob never pulls in the verification layer, where a glob match alone would run everything on a skill edit", (t) => {
+  const { root, tmp } = mapRepo(t, configWithShared('["**/*.yml", "**/*.md"]'));
+  put(root, ".github/workflows/ci.yml", "jobs: {}\n");
+  put(root, `${SKILL}/SKILL.md`, "edited\n");
+  assert.equal(planOf(root, tmp).full, null);
+  put(root, "deploy.yml", "a: 1\n");
+  assert.deepEqual(planOf(root, tmp).full, {
+    reason: "shared",
+    files: ["deploy.yml"],
+  });
+});
+
 test("doors flags a declared funnel, adds no default glob for a kind set to null", (t) => {
   const { root, tmp } = mapRepo(t);
   put(root, "src/store/delete.ts", "export const drop = 2;\n");
@@ -144,4 +241,22 @@ test("every shell block of every shared skill is one antelopejs-verify command p
         `${kind}: ${line}`,
       );
   }
+});
+
+test("moving a shared file away still counts its old path, where rename detection hides the source and runs one feature", (t) => {
+  const { root, tmp } = mapRepo(t, {
+    ...SPLIT,
+    "src/interfaces/demo/beta/index.ts": "export const api = 1;\n",
+  });
+  execFileSync(
+    "git",
+    ["mv", "src/interfaces/demo/beta/index.ts", "src/store/api.ts"],
+    { cwd: root },
+  );
+  const plan = JSON.parse(verify(root, tmp, ["plan"]).stdout);
+  assert.deepEqual(plan.full, {
+    reason: "shared",
+    files: ["src/interfaces/demo/beta/index.ts"],
+  });
+  assert.deepEqual(plan.run, ["smoke", "core", "store"]);
 });
