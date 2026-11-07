@@ -234,10 +234,49 @@ const ownRecords = new Map<
 /**
  * The processes the commands of the run in `dir` recorded in their own
  * files: every command's, or only those of the command whose PID is
- * `command`. A file that does not hold a list of records records nothing,
- * and a temporary file a crashed command left is not read.
+ * `command` in files written at or after `since` (milliseconds), so a stale
+ * file of an earlier command with the same reused PID is left out. A file
+ * that does not hold a list of records records nothing, a record whose PID is
+ * not an integer above 1 is dropped, and a temporary file a crashed command
+ * left is not read.
  */
-export function commandRecords(dir: string, command?: number): ProcessRecord[] {
+export function commandRecords(
+  dir: string,
+  command?: number,
+  since = 0,
+): ProcessRecord[] {
+  return commandFiles(dir, command, since).flatMap((file) => {
+    try {
+      return list(parseJson(readFileSync(file, "utf8")), file).flatMap(
+        (entry) => {
+          const record = object(entry, file);
+          const pid = num(record, "pid");
+          return Number.isInteger(pid) && pid > 1
+            ? [{ name: str(record, "name"), pid }]
+            : [];
+        },
+      );
+    } catch {
+      return [];
+    }
+  });
+}
+
+/** Deletes the records files `commandRecords(dir, command, since)` reads, once the processes they name are gone. */
+export function dropCommandRecords(
+  dir: string,
+  command: number,
+  since: number,
+): void {
+  for (const file of commandFiles(dir, command, since))
+    rmSync(file, { force: true });
+}
+
+function commandFiles(
+  dir: string,
+  command: number | undefined,
+  since: number,
+): string[] {
   let names: string[];
   try {
     names = readdirSync(dir);
@@ -251,13 +290,9 @@ export function commandRecords(dir: string, command?: number): ProcessRecord[] {
       (command !== undefined && Number(match[1]) !== command)
     )
       return [];
+    const file = join(dir, name);
     try {
-      return list(parseJson(readFileSync(join(dir, name), "utf8")), name).map(
-        (entry) => {
-          const record = object(entry, name);
-          return { name: str(record, "name"), pid: num(record, "pid") };
-        },
-      );
+      return lstatSync(file).mtimeMs >= since ? [file] : [];
     } catch {
       return [];
     }

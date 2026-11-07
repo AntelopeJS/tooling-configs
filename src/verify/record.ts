@@ -185,8 +185,9 @@ function killOwnGroup(pid: number): void {
   }
 }
 
-/** Kills the process group of `pid`, or `pid` alone, ignoring a process already gone. */
+/** Kills the process group of `pid`, or `pid` alone, ignoring a process already gone and any PID that is not an integer above 1, so a corrupt record can never signal every process (`-1`) or the caller's own group (`0`). */
 export function killGroup(pid: number): void {
+  if (!Number.isInteger(pid) || pid <= 1) return;
   try {
     process.kill(-pid, "SIGKILL");
   } catch {

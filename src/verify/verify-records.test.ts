@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import test, { type TestContext } from "node:test";
 
-import { loadRun } from "./workspace.ts";
+import { put, read } from "../guardrails/helpers/test-repo.ts";
+import { commandRecords, loadRun, saveRun } from "./workspace.ts";
 
 const WORKSPACE = pathToFileURL(join(import.meta.dirname, "workspace.ts")).href;
 
@@ -83,4 +84,42 @@ test("a crashed command's half-written temporary file, unreadable records file a
   writeFileSync(join(dir, "run.json.lock.tmp"), "");
   assert.equal(await command(dir, 1, 5), 0);
   assert.deepEqual(names(dir), ["app 1-1", "app 1-2", "app 1-3", "app 1-4"]);
+});
+
+test("a command's records come only from files no older than its start, and a PID that is not an integer above 1 is dropped; a lookup by PID alone also returns a crashed earlier command's file and the parent kills its stale PIDs", (t) => {
+  const dir = runFolder(t);
+  put(
+    dir,
+    "processes-777-aaaaaa.json",
+    JSON.stringify([{ name: "old", pid: 4242 }]),
+  );
+  const old = new Date(Date.now() - 60_000);
+  utimesSync(join(dir, "processes-777-aaaaaa.json"), old, old);
+  const start = Date.now() - 1000;
+  put(
+    dir,
+    "processes-777-bbbbbb.json",
+    JSON.stringify([
+      { name: "new", pid: 4343 },
+      { name: "everyone", pid: -1 },
+      { name: "own group", pid: 0 },
+      { name: "init", pid: 1 },
+    ]),
+  );
+  assert.deepEqual(commandRecords(dir, 777, start), [
+    { name: "new", pid: 4343 },
+  ]);
+});
+
+test("saving a run loaded with other commands' records keeps those records out of run.json; a saveRun that writes the loaded union counts them twice once their files go", (t) => {
+  const dir = runFolder(t, [{ name: "own", pid: 5151 }]);
+  put(
+    dir,
+    "processes-888-cccccc.json",
+    JSON.stringify([{ name: "other", pid: 6161 }]),
+  );
+  saveRun(loadRun(dir));
+  assert.deepEqual(JSON.parse(read(dir, "run.json")).processes, [
+    { name: "own", pid: 5151 },
+  ]);
 });

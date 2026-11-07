@@ -2,7 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { availableParallelism, constants } from "node:os";
 
 import { killGroup } from "./record.ts";
-import { commandRecords } from "./workspace.ts";
+import { commandRecords, dropCommandRecords } from "./workspace.ts";
 
 /** One feature a `journey` call runs and the journey ids it names; no ids runs every journey the feature registers. */
 export interface FeatureRun {
@@ -19,6 +19,8 @@ interface Slot {
   stdout: Buffer[];
   stderr: Buffer[];
   passed: boolean;
+  /** When the child was spawned, in milliseconds: its records file is no older. */
+  startedAt: number;
 }
 
 const INTERRUPTS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"] as const;
@@ -80,6 +82,7 @@ function runProcess(slot: Slot, args: string[]): Promise<void> {
       detached: true,
     });
     slot.child = child;
+    slot.startedAt = Date.now();
     child.stdout.on("data", (chunk: Buffer) => slot.stdout.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => slot.stderr.push(chunk));
     const end = (passed: boolean, note?: string) => {
@@ -134,6 +137,7 @@ export async function runConcurrently(
     stdout: [],
     stderr: [],
     passed: false,
+    startedAt: 0,
   }));
   const printed = new Set<Slot>();
   const print = (slot: Slot) => {
@@ -162,7 +166,9 @@ export async function runConcurrently(
       const pid = slot.child?.pid;
       if (slot.state !== "running" || pid === undefined) continue;
       killGroup(pid);
-      for (const record of commandRecords(dir, pid)) killGroup(record.pid);
+      for (const record of commandRecords(dir, pid, slot.startedAt))
+        killGroup(record.pid);
+      dropCommandRecords(dir, pid, slot.startedAt);
     }
   };
   let deadline: NodeJS.Timeout | undefined;
