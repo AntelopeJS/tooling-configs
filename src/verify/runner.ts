@@ -1,9 +1,11 @@
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   rmdirSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -15,6 +17,7 @@ import { killGroup, onInterrupt } from "./record.ts";
 import type { JourneyEnd, JourneyResult, JourneyStatus } from "./results.ts";
 import type { Journey } from "./types.ts";
 import {
+  git,
   removeTree,
   saveRun,
   type RunState,
@@ -179,9 +182,62 @@ export function readResults(
   return results;
 }
 
+/** The PASS of journey `id` that another feature of this run recorded by running it, if any. */
+function passElsewhere(
+  state: RunState,
+  feature: string,
+  id: string,
+): JourneyResult | undefined {
+  const features = readdirSync(state.evidence, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name !== feature)
+    .map((entry) => entry.name)
+    .sort();
+  for (const other of features) {
+    const source = readResults(state, other)?.find(
+      (result) =>
+        result.journey === id &&
+        result.status === "PASS" &&
+        result.reusedFrom === undefined,
+    );
+    if (source !== undefined) return source;
+  }
+  return undefined;
+}
+
+/** Records `source` as the result of `id` under `feature` without running the journey: its own result.json names the folder it reuses. */
+function reuse(
+  state: RunState,
+  feature: string,
+  id: string,
+  source: JourneyResult,
+): JourneyResult {
+  const folder = join(state.evidence, feature, id);
+  rmSync(folder, { recursive: true, force: true });
+  mkdirSync(folder, { recursive: true });
+  const result: JourneyResult = {
+    ...source,
+    feature,
+    folder: relative(state.evidence, folder),
+    reusedFrom: source.folder,
+  };
+  writeFileSync(
+    join(folder, "result.json"),
+    `${JSON.stringify(result, null, 2)}\n`,
+  );
+  return result;
+}
+
 /**
  * Runs the named journeys of a feature, or all of them, and merges their
  * results into feature.json so partial runs add up instead of overwriting.
+ *
+ * A journey id is the same code whichever feature lists it. When no ids are
+ * named, a journey that another feature of this run already ran and passed
+ * is not run again: the feature records a result that reuses that PASS and
+ * names its evidence folder. Only a PASS is reused, only while HEAD is still
+ * the commit the run was created at, never across runs, and never for a
+ * journey this feature already has a result for. Naming ids runs them even
+ * when a PASS exists.
  */
 export async function runFeature(
   workspace: Workspace,
@@ -198,6 +254,10 @@ export async function runFeature(
       `${feature} registers no journey ${unknown.join(", ")}; it registers ${registered.join(", ")}`,
     );
   const known = knownJourneys(workspace);
+  const earlier = readResults(state, feature) ?? [];
+  const mayReuse =
+    ids.length === 0 &&
+    git(workspace.root, ["rev-parse", "HEAD"]) === state.headSha;
   const results: JourneyResult[] = [];
   for (const id of ids.length > 0 ? ids : registered) {
     const journey = known.get(id);
@@ -205,9 +265,16 @@ export async function runFeature(
       throw new Error(
         `${feature} names journey ${id}, which is neither built in nor in verify.config.ts journeys`,
       );
-    results.push(await runOne(workspace, state, feature, id, journey));
+    const source =
+      mayReuse && !earlier.some((result) => result.journey === id)
+        ? passElsewhere(state, feature, id)
+        : undefined;
+    results.push(
+      source === undefined
+        ? await runOne(workspace, state, feature, id, journey)
+        : reuse(state, feature, id, source),
+    );
   }
-  const earlier = readResults(state, feature) ?? [];
   const merged = registered.flatMap((id) =>
     results
       .filter((result) => result.journey === id)

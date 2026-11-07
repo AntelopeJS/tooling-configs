@@ -50,7 +50,11 @@ function journeyRow(
       : result.status === "FAIL"
         ? "**fail**"
         : "**not verified**";
-  return `| ${label} | \`${result.journey}\`: ${result.entryPoint} | ${outcome}: ${result.title} | [${result.folder}](${link(result.folder)}) |`;
+  const reused =
+    result.reusedFrom === undefined
+      ? ""
+      : ` (not run again: reuses [${result.reusedFrom}](${link(result.reusedFrom)}))`;
+  return `| ${label} | \`${result.journey}\`: ${result.entryPoint} | ${outcome}: ${result.title}${reused} | [${result.folder}](${link(result.folder)}) |`;
 }
 
 /** The features outside the plan that have journey results in the run's evidence, in name order. */
