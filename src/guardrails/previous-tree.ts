@@ -31,7 +31,7 @@ function revisionEntries(root: string, revision: string): Map<string, string> {
   return entries;
 }
 
-/** Links each gitignored entry of the working tree, such as `node_modules` or a generated tsconfig a tracked one extends, into `tree`, so the checkout loads its configuration and resolves dependencies as the real one does. */
+/** Links each entry a `.gitignore` of the working tree ignores, such as `node_modules` or a generated tsconfig a tracked one extends, into `tree`, so the checkout loads its configuration and resolves dependencies as the real one does, while its own `.gitignore` keeps a whole-tree lint off them. */
 function linkIgnored(root: string, tree: string): void {
   const entries = git(
     root,
@@ -40,7 +40,7 @@ function linkIgnored(root: string, tree: string): void {
       "-z",
       "--others",
       "--ignored",
-      "--exclude-standard",
+      "--exclude-per-directory=.gitignore",
       "--directory",
     ],
     {},
@@ -65,8 +65,7 @@ function linkIgnored(root: string, tree: string): void {
  * not exist, so the files are linted under the staged configuration. The
  * checkout is deleted afterwards. With `wholeIndex`, files the index marks
  * skip-worktree (a sparse checkout) are written too, so the tree is the commit,
- * and a `.git` holding only the repository's `info/exclude` stops ignore-file
- * lookups at the tree, not above `TMPDIR`, and skips what the real one skips.
+ * and an empty `.git` stops ignore-file lookups at the tree, not above `TMPDIR`.
  */
 export function withPreviousTree<Result>(
   root: string,
@@ -123,16 +122,7 @@ export function withPreviousTree<Result>(
       ],
       env,
     );
-    if (wholeIndex) {
-      mkdirSync(join(tree, ".git/info"), { recursive: true });
-      const exclude = git(
-        root,
-        ["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"],
-        {},
-      ).trim();
-      if (existsSync(exclude))
-        copyFileSync(exclude, join(tree, ".git/info/exclude"));
-    }
+    if (wholeIndex) mkdirSync(join(tree, ".git"), { recursive: true });
     linkIgnored(root, tree);
     return use(tree);
   } finally {
