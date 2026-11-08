@@ -96,6 +96,11 @@ jsTester.run(
       { filename: "values.mjs", code: "const id = /** @satisfies {UserId} */ (value);" },
       { filename: "values.mjs", code: "const id = /* @type {UserId} */ (value);" },
       { filename: "values.ts", code: "const id = /** @type {UserId} */ (value);" },
+      {
+        name: "a JSDoc type on an arrow function annotates it, it does not cast",
+        filename: "handlers.js",
+        code: "const handler = /** @type {Handler} */ (request, response) => response.end();\nitems.map(/** @type {Mapper} */ (item) => item);",
+      },
     ],
     invalid: [
       {
@@ -112,6 +117,12 @@ jsTester.run(
       {
         filename: "values.cjs",
         code: "function parse() {\nreturn /** @type {UserId} */ (value);\n}",
+        errors: [error],
+      },
+      {
+        name: "a parenthesized arrow function after a JSDoc type is a cast",
+        filename: "handlers.js",
+        code: "const handler = /** @type {Handler} */ ((request) => request);",
         errors: [error],
       },
       {

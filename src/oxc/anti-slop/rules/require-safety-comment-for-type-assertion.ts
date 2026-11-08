@@ -46,13 +46,26 @@ export function markerPattern(markers: readonly string[]): RegExp {
   );
 }
 
-/** Return the `(` a JSDoc `@type {T}` block casts, unless `T` is `const`. */
-function jsDocCastParen(sourceCode: SourceCode, comment: Comment): Token | null {
+/** A JSDoc cast: its `(` and the innermost node containing that `(`. */
+interface JsDocCast {
+  readonly paren: Token;
+  readonly owner: ESTree.Node;
+}
+
+/**
+ * Return the cast a JSDoc `@type {T}` block makes of the parenthesized expression after it,
+ * unless `T` is `const` or the `(` opens the parameters of an annotated arrow function.
+ */
+function jsDocCast(sourceCode: SourceCode, comment: Comment): JsDocCast | null {
   if (comment.type !== "Block" || !comment.value.startsWith("*")) return null;
   const type = jsDocTagType(comment.value, "type");
   if (type === null || type.trim() === "const") return null;
-  const next = sourceCode.getTokenAfter(comment);
-  return next?.type === "Punctuator" && next.value === "(" ? next : null;
+  const paren = sourceCode.getTokenAfter(comment);
+  if (paren?.type !== "Punctuator" || paren.value !== "(") return null;
+  const owner = sourceCode.getNodeByRangeIndex(paren.start);
+  if (owner === null) return null;
+  const annotatesArrow = owner.type === "ArrowFunctionExpression" && owner.start === paren.start;
+  return annotatesArrow ? null : { paren, owner };
 }
 
 /**
@@ -134,17 +147,15 @@ export const requireSafetyCommentForTypeAssertionRule = defineRule({
       context.report({ node, messageId: "missingSafetyComment", data });
     };
 
-    const checkJsDocCasts = (program: ESTree.Program) => {
+    const checkJsDocCasts = () => {
       if (!JSDOC_TYPED_FILE.test(context.filename)) return;
       const { sourceCode } = context;
       const { pattern, data } = markerSettings();
       for (const comment of sourceCode.getAllComments()) {
-        const paren = jsDocCastParen(sourceCode, comment);
-        if (paren === null) continue;
-        const owner = sourceCode.getNodeByRangeIndex(paren.start) ?? program;
-        if (hasSafetyComment(sourceCode, comment, owner, pattern)) continue;
+        const cast = jsDocCast(sourceCode, comment);
+        if (cast === null || hasSafetyComment(sourceCode, comment, cast.owner, pattern)) continue;
         context.report({
-          loc: { start: comment.loc.start, end: paren.loc.end },
+          loc: { start: comment.loc.start, end: cast.paren.loc.end },
           messageId: "missingSafetyComment",
           data,
         });
