@@ -61,8 +61,10 @@ test("clean refuses a run another checkout created and leaves its scratch folder
 
 test("clean refuses the shared runs folder and a repository's folder of runs, where a clean that walks the folder it is given deletes every session's runs", (t) => {
   const { mine, tmp, run } = twoCheckouts(t);
-  for (const shared of [dirname(run), dirname(dirname(run))]) {
-    writeFileSync(join(shared, "run.json"), "{}\n");
+  const runs = dirname(dirname(run));
+  writeFileSync(join(runs, "run.json"), "{}\n");
+  writeFileSync(join(dirname(run), "run.json"), "{}\n");
+  for (const shared of [dirname(run), runs, `${dirname(run)}/..`]) {
     const cleaned = verify(mine, tmp, ["clean", shared]);
     assert.equal(cleaned.status, 1, shared);
     assert.match(cleaned.stderr, /not one run/);

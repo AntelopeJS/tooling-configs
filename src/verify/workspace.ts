@@ -208,7 +208,8 @@ export function loadRun(dir: string): RunState {
  */
 export function ownRun(workspace: Workspace, dir: string): RunState {
   const runs = join(RUNS_DIR, workspace.name);
-  if (canonical(dirname(dir)) !== canonical(runs))
+  const folder = canonical(dir);
+  if (dirname(folder) !== canonical(runs))
     throw new Error(
       `${dir} is not one run of ${workspace.name}: pass the folder \`new\` printed, one level under ${runs}.`,
     );
@@ -219,7 +220,7 @@ export function ownRun(workspace: Workspace, dir: string): RunState {
     );
   const stored = object(parseJson(readFileSync(file, "utf8")), file);
   const recordedDir = str(stored, "dir");
-  if (canonical(recordedDir) !== canonical(dir))
+  if (canonical(recordedDir) !== folder)
     throw new Error(
       `${file} records the folder ${recordedDir}, not ${dir}: it was copied from another run.`,
     );
