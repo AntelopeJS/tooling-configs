@@ -269,6 +269,33 @@ test("a rewritten caller passes the pack's own formatter check, whether old-shap
   }
 });
 
+test("comments under an empty trigger keep their lines through a rewrite, where the yaml default moves the first onto the trigger's line", () => {
+  const triggers = [
+    "on:",
+    "  pull_request:",
+    "    branches: [main]",
+    "  workflow_dispatch:",
+    "  # Upstream documentation changes without a commit in this repository.",
+    "  # Rebuild and validate it daily; this workflow does not deploy the sites.",
+    "  schedule:",
+    '    - cron: "17 3 * * *"',
+    "  push: # on every branch",
+    "  # kept under the inline comment",
+    "",
+    "  # after a blank line",
+    "  merge_group:",
+    "  # under the last trigger",
+    "",
+  ].join("\n");
+  const rewritten = rewrite(
+    `name: CI\n\n${triggers}\njobs:\n  checks:\n    uses: ${CI_NODE_REF}\n`,
+  );
+  assert.equal(
+    rewritten.slice(rewritten.indexOf("on:"), rewritten.indexOf("jobs:")),
+    `${triggers}\n`,
+  );
+});
+
 test("a renamed caller still gets a renovate-sync job and keeps its dependents", () => {
   const parsed = jobs(rewrite(LEGACY));
   assert.deepEqual(Object.keys(parsed), [
