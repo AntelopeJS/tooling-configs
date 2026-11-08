@@ -42,10 +42,20 @@ function outsideProblems(lines: BodyLine[]): string[] {
   });
 }
 
-function tableRows(lines: BodyLine[]): Map<string, string> {
+function suppressionTable(lines: BodyLine[]): string[] | undefined {
+  const texts = lines.map(({ text }) => text.trim());
+  const header = texts.findIndex((text) => SUPPRESSION_HEADER.test(text));
+  if (header === -1) return undefined;
+  const end = texts.findIndex(
+    (text, index) => index > header && !text.startsWith("|"),
+  );
+  return texts.slice(header + 1, end === -1 ? undefined : end);
+}
+
+function tableRows(lines: string[]): Map<string, string> {
   const rows = new Map<string, string>();
-  for (const { text } of lines) {
-    const cells = text
+  for (const line of lines) {
+    const cells = line
       .trim()
       .replace(/^\|/u, "")
       .replace(/\|$/u, "")
@@ -58,16 +68,11 @@ function tableRows(lines: BodyLine[]): Map<string, string> {
 }
 
 function suppressionProblems(root: string, block: BodyBlock, rerun: string) {
-  if (!block.lines.some(({ text }) => SUPPRESSION_HEADER.test(text.trim())))
-    return [];
-  const base = block.stamp?.base ?? "HEAD";
-  const copied = tableRows(block.lines);
+  const table = suppressionTable(block.lines);
+  if (table === undefined) return [];
+  const copied = tableRows(table);
   const current = tableRows(
-    revisionCountRows(root, base).map((text) => ({
-      number: 0,
-      text,
-      inFindingsSection: false,
-    })),
+    revisionCountRows(root, block.stamp?.base ?? "HEAD"),
   );
   return [...new Set([...copied.keys(), ...current.keys()])].flatMap((label) =>
     copied.get(label) === current.get(label)

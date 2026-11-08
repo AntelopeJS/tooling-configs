@@ -15,6 +15,7 @@ import {
   testRepo,
 } from "./helpers/test-repo.ts";
 import { stampProof } from "./proof-stamp.ts";
+import { revisionCounts } from "./revisions.ts";
 
 const FIXTURES = "src/guardrails/fixtures";
 
@@ -354,6 +355,22 @@ test("an api-diff block stamped before a later commit fails, and one stamped at 
     checkBody(root, `Printed ${output}`).join("\n"),
     /outside a stamped proof block/,
   );
+});
+
+test("#165: a three-member union in an api-diff declaration hunk is not read as a suppression row", (t) => {
+  const root = testRepo(t);
+  const output = [
+    "API: differences against HEAD (committed HEAD).",
+    "```diff",
+    " type UserWeekStart = 0 | 1 | 6;",
+    "-export declare function withPageRecord(): void;",
+    "+export declare function withPageRecord(id: string): void;",
+    "```",
+    revisionCounts(root, "HEAD"),
+    "| Not | 1 | a suppression row |",
+  ].join("\n");
+  const proof = stampProof(root, "antelopejs-api-diff HEAD", "HEAD", output);
+  assert.deepEqual(checkBody(root, proof), []);
 });
 
 test("an api-diff stamp whose base is HEAD itself fails against the pull request base, and one stamped against that base passes", (t) => {
