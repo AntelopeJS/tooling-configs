@@ -174,7 +174,7 @@ function statementName(
   return statement.getText(source);
 }
 
-/** Prints a bundle in canonical form: top-level statements by name and object members in a fixed order. Statements of one name, such as merged interface blocks, which the bundler emits in an order that varies between runs, are ordered by their normalized text. Function declarations of one name are overloads and keep their order. */
+/** Prints a bundle in canonical form: top-level statements by name and object members in a fixed order. Statements of one name, such as merged interface blocks, which the bundler emits in an order that varies between runs, are ordered by their normalized text. Merged blocks that declare the same method therefore compare equal in either block order, though TypeScript resolves the later block's overloads first. Function declarations of one name are overloads, come first among their name, and keep their order. */
 export function normalizeBundle(compiler: typeof ts, text: string): string {
   const source = compiler.createSourceFile(
     "bundle.d.ts",
@@ -198,8 +198,9 @@ export function normalizeBundle(compiler: typeof ts, text: string): string {
   });
   keyed.sort((a, b) => {
     const byName = a.name.localeCompare(b.name);
-    if (byName !== 0 || (a.overload && b.overload) || a.text === b.text)
-      return byName;
+    if (byName !== 0) return byName;
+    if (a.overload !== b.overload) return a.overload ? -1 : 1;
+    if (a.overload || a.text === b.text) return 0;
     return a.text < b.text ? -1 : 1;
   });
   return printer.printFile(
