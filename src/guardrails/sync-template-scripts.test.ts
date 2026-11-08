@@ -2,15 +2,24 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { formatCeilings } from "./ceilings.ts";
-import { parseManifest } from "./package.ts";
+import { parseManifest, toolingVersions } from "./package.ts";
 import { syncRepository } from "./sync.ts";
-import { bin, commit, put, read, testRepo } from "./helpers/test-repo.ts";
+import {
+  bin,
+  commit,
+  linkOxlint,
+  put,
+  read,
+  testRepo,
+} from "./helpers/test-repo.ts";
 
 const TEMPLATE_SCRIPTS = {
   checks: "antelopejs-checks",
   sync: "antelopejs-sync --profile template",
   "sync:check": "antelopejs-sync --profile template --check",
 };
+
+const VERSIONS = toolingVersions();
 
 const DEBT = formatCeilings({
   rules: { "typescript/no-unsafe-assignment": 3 },
@@ -21,12 +30,13 @@ function templateRepo(
   t: Parameters<typeof testRepo>[0],
   scripts: Record<string, string>,
   ratchetFile = false,
+  devDependencies: Record<string, string> = {},
 ): string {
   const root = testRepo(t);
   put(
     root,
     "package.json",
-    `${JSON.stringify({ name: "template-test", type: "module", packageManager: "npm@11.0.0", scripts }, null, 2)}\n`,
+    `${JSON.stringify({ name: "template-test", type: "module", packageManager: "npm@11.0.0", scripts, devDependencies }, null, 2)}\n`,
   );
   if (ratchetFile) put(root, "guardrails.ratchet.json", DEBT);
   commit(root);
@@ -107,8 +117,15 @@ test("template sync keeps the template profile's own scripts and leaves a comple
       "ratchet:update": "antelopejs-ratchet --update",
       suppressions: "antelopejs-suppressions",
       "suppressions:update": "antelopejs-suppressions --update",
+      size: "antelopejs-check-size",
+      typecheck: "tsc --noEmit -p tsconfig.build.json",
+      lint: "oxlint && pnpm --dir frontend lint",
+      format: "oxfmt .",
+      "format:check": "oxfmt --check .",
+      knip: "knip --workspace .",
     },
     true,
+    { knip: VERSIONS.knip, "oxlint-tsgolint": VERSIONS.tsgolint },
   );
   const before = read(root, "package.json");
   syncRepository(root, { profile: "template" });
@@ -122,4 +139,35 @@ test("template sync keeps the template profile sync scripts while it adds the mi
   assert.equal(scripts.sync, TEMPLATE_SCRIPTS.sync);
   assert.equal(scripts["sync:check"], TEMPLATE_SCRIPTS["sync:check"]);
   assert.equal(scripts.checks, TEMPLATE_SCRIPTS.checks);
+});
+
+test("a fresh template synced with the template profile has every script and file its checks steps run (#41)", (t) => {
+  const root = testRepo(t);
+  linkOxlint(root);
+  const sync = bin(root, "sync", ["--profile", "template"]);
+  assert.equal(sync.status, 0, sync.stderr);
+  const scripts = scriptsOf(root);
+  for (const step of [
+    "checks",
+    "typecheck",
+    "lint",
+    "format:check",
+    "knip",
+    "size",
+    "suppressions",
+    "sync:check",
+  ])
+    assert.ok(scripts[step], `missing script ${step}`);
+  assert.equal(
+    scripts["sync:check"],
+    "antelopejs-sync --profile template --check",
+  );
+  assert.ok(
+    parseManifest(read(root, "package.json")).devDependencies?.knip,
+    "knip devDependency",
+  );
+  const suppressions = bin(root, "suppressions");
+  assert.equal(suppressions.status, 0, suppressions.stderr);
+  const check = bin(root, "sync", ["--check", "--profile", "template"]);
+  assert.equal(check.status, 0, check.stdout);
 });

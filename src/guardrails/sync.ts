@@ -178,7 +178,7 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
       content:
         context.profile === "full"
           ? managedPackage(current, context.versions, context)
-          : templatePackage(current, context),
+          : templatePackage(current, context.versions, context),
       notes: [],
     }),
   },
