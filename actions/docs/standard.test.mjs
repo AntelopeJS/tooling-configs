@@ -133,6 +133,40 @@ it("fails a Node version range in prose and allows it in code and in the generat
   ]);
 });
 
+it("fails a framework or tool version in prose and allows it in code and without a version", (t) => {
+  const { failures } = run(t, {
+    "README.md": README,
+    "docs/bad.md": PAGE(
+      [
+        "Only AdonisJS 6 is tested.",
+        "",
+        "The page builds on Vue 3.5 components.",
+        "",
+        "Install pnpm v10 first, then TypeScript >= 5.6.",
+        "",
+        "It also runs on Nuxt 4 and Vue.js 3.",
+      ].join("\n"),
+    ),
+    "docs/good.md": PAGE(
+      [
+        "AdonisJS apps load the module at start.",
+        "",
+        "Run `pnpm add vue@3.5` in a shell.",
+        "",
+        "Vue components render in 2 steps, and TypeScript checks 12 files.",
+      ].join("\n"),
+    ),
+  });
+  assert.deepEqual(failures, [
+    'docs/bad.md:7: "AdonisJS 6" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:9: "Vue 3.5" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:11: "pnpm v10" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:11: "TypeScript >= 5.6" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:13: "Nuxt 4" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:13: "Vue.js 3" states a version in prose, point at the pin in package.json or .nvmrc',
+  ]);
+});
+
 it("passes an image that is a capture output or marked illustration, and fails any other", (t) => {
   const { failures } = run(t, {
     "README.md": README,
