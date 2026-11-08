@@ -45,6 +45,7 @@ function checksOwnKey(node: ESTree.CallExpression, read: OwnKey): boolean {
 const EQUALITY = new Set(["==", "==="]);
 const INEQUALITY = new Set(["!=", "!=="]);
 const MAX_DEPTH = 8;
+const ASSERTS = new Set(["assert", "assert.ok", "assert.strict"]);
 
 /** The initializer of a `const` the identifier names, such as `has` in `const has = Object.hasOwn(t, k)`. */
 function constValue(
@@ -132,14 +133,50 @@ function exits(statement: ESTree.Statement): boolean {
   return EXITS.has(statement.type);
 }
 
-/** An `if` that leaves the block on the branch where the check fails, so later statements run only when it holds. */
-function isEarlyExit(statement: ESTree.Node, read: OwnKey): boolean {
+/** Whether a statement ends by storing `table[key]`, which makes the key own. */
+function storesKey(statement: ESTree.Statement, read: OwnKey): boolean {
+  if (statement.type === "BlockStatement") {
+    const last = statement.body.at(-1);
+    return last !== undefined && storesKey(last, read);
+  }
+  if (statement.type !== "ExpressionStatement") return false;
+  const assignment = statement.expression;
+  return (
+    assignment.type === "AssignmentExpression" &&
+    assignment.operator === "=" &&
+    assignment.left.type === "MemberExpression" &&
+    assignment.left.computed &&
+    read.source.getText(assignment.left.object) === read.table &&
+    read.source.getText(assignment.left.property) === read.key
+  );
+}
+
+function settles(statement: ESTree.Statement, read: OwnKey): boolean {
+  return exits(statement) || storesKey(statement, read);
+}
+
+/**
+ * A statement after which the key is own: an `assert` of the check, or an `if` whose branch where
+ * the check fails leaves the block or stores the key.
+ */
+function establishes(statement: ESTree.Node, read: OwnKey): boolean {
+  if (
+    statement.type === "ExpressionStatement" &&
+    statement.expression.type === "CallExpression"
+  ) {
+    const [condition] = statement.expression.arguments;
+    return (
+      ASSERTS.has(callName(statement.expression.callee) ?? "") &&
+      condition !== undefined &&
+      holds(condition, true, read)
+    );
+  }
   if (statement.type !== "IfStatement") return false;
-  if (exits(statement.consequent) && holds(statement.test, false, read))
+  if (settles(statement.consequent, read) && holds(statement.test, false, read))
     return true;
   return (
     statement.alternate !== null &&
-    exits(statement.alternate) &&
+    settles(statement.alternate, read) &&
     holds(statement.test, true, read)
   );
 }
@@ -184,14 +221,14 @@ function guardsChild(
   const index = statements.indexOf(child);
   return statements
     .slice(0, Math.max(index, 0))
-    .some((statement) => isEarlyExit(statement, read));
+    .some((statement) => establishes(statement, read));
 }
 
 /**
  * Whether an own-key check of `table` and `key` (`Object.hasOwn`, `hasOwnProperty.call`,
  * `table.hasOwnProperty`, directly, negated, compared with a boolean or held in a `const`) guards
  * `node`: it holds in the branch of a conditional, `if`, `&&`/`||`, `while` or `for` that holds
- * `node`, or an earlier `if` leaves the block on the branch where it fails.
+ * `node`, or an earlier statement asserts it, or leaves the block or stores the key where it fails.
  */
 export function isOwnKeyGuarded(
   node: ESTree.Node,

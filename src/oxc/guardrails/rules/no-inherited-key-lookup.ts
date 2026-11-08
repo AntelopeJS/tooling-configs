@@ -201,7 +201,18 @@ function variableKind(
     !isOpaqueAnnotation(annotation)
   )
     return declared;
-  return tableKind(definition.node.init, environment, depth + 1);
+  return tableKind(widened(definition.node.init), environment, depth + 1);
+}
+
+/** The value under `as unknown` and `as any` casts, which widen the type without changing the value. */
+function widened(init: ESTree.Expression): ESTree.Expression {
+  let value = init;
+  while (
+    value.type === "TSAsExpression" &&
+    isOpaqueAnnotation(value.typeAnnotation)
+  )
+    value = value.expression;
+  return value;
 }
 
 /** No annotation, `unknown` or `any`: the alias holds whatever its initializer holds. */
@@ -302,6 +313,16 @@ function destructuredValue(
     : null;
 }
 
+/** A destructured binding nothing reads, such as `_removed` in `const { [key]: _removed, ...rest } = table`. */
+function isDiscarded(value: ESTree.Node, source: SourceCode): boolean {
+  if (value.type !== "Identifier") return false;
+  const variable = resolveVariable(source, value);
+  return (
+    variable !== null &&
+    !variable.references.some((reference) => reference.isRead())
+  );
+}
+
 /** Lookups into string-keyed object tables must not answer inherited `Object.prototype` keys. */
 export const noInheritedKeyLookupRule = defineRule({
   meta: {
@@ -370,7 +391,11 @@ export const noInheritedKeyLookupRule = defineRule({
         const object = destructuredValue(node);
         if (object === null) return;
         for (const property of node.properties)
-          if (property.type === "Property" && property.computed)
+          if (
+            property.type === "Property" &&
+            property.computed &&
+            !isDiscarded(property.value, context.sourceCode)
+          )
             lookup(property, object, property.key);
       },
       BinaryExpression(node) {
