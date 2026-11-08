@@ -154,3 +154,36 @@ test("a version 6 lockfile in a nested folder holding two copies fails, caught b
       "  Set the direct specifier that locks the older copy to the newer version, run `pnpm install --lockfile-only`, then restore the specifier.\n",
   );
 });
+
+test("a copy an importer pulls through an npm: alias names that importer, caught by matching dependency keys against interface names only", (t) => {
+  const root = testRepo(t);
+  put(
+    root,
+    "pnpm-lock.yaml",
+    stringify({
+      lockfileVersion: "9.0",
+      importers: {
+        ".": {
+          dependencies: {
+            "@antelopejs/interface-core": {
+              specifier: "^0.2.6",
+              version: "0.2.6",
+            },
+            "old-core": {
+              specifier: "npm:@antelopejs/interface-core@^0.1.1",
+              version: "@antelopejs/interface-core@0.1.1",
+            },
+          },
+        },
+      },
+      packages: {
+        "@antelopejs/interface-core@0.1.1": {},
+        "@antelopejs/interface-core@0.2.6": {},
+      },
+    }),
+  );
+  assert.match(
+    checkSingletonPackages(root),
+    /\n {2}0\.1\.1, pulled by importer "\."\n {2}0\.2\.6, pulled by importer "\."\n/,
+  );
+});

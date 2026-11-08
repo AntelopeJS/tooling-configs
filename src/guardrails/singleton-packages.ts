@@ -43,6 +43,7 @@ function packageKey(
     : undefined;
 }
 
+/** Records `by` as a puller of the copy a dependency resolves to: `version`, or the `name@version` an `npm:` alias resolves to. */
 function pull(
   copies: Copies,
   name: string,
@@ -50,7 +51,11 @@ function pull(
   by: string,
 ): void {
   if (version === undefined) return;
-  copies.get(name)?.get(withoutPeers(version))?.add(by);
+  const target = packageKey(version) ?? {
+    name,
+    version: withoutPeers(version),
+  };
+  copies.get(target.name)?.get(target.version)?.add(by);
 }
 
 function addPullers(
@@ -61,7 +66,7 @@ function addPullers(
 ): void {
   for (const field of fields) {
     const entries = mapping(node, field);
-    for (const name of keys(entries).filter((key) => copies.has(key)))
+    for (const name of keys(entries))
       pull(
         copies,
         name,
