@@ -372,7 +372,7 @@ export default defineScenes([
 ]);
 ```
 
-A screenshot scene sets an `id` in kebab-case, a `route`, an `output` path ending in `.webp`, and optionally a `viewport` (default 1440 by 900), `steps` and a `crop` selector. A setup scene sets `setup: true`, takes no `output`, and runs once before any screenshot. The setup scenes share one browser context. Each screenshot scene opens a fresh context with the cookies and storage the setup scenes left, so a scene that signs out or clears storage changes no other scene. A screenshot scene with `signedOut: true` opens an empty context instead, for a page such as the sign-in form. The steps are `click`, `fill`, `press` and `wait`.
+A screenshot scene sets an `id` in kebab-case, a `route`, an `output` path ending in `.webp`, and optionally a `viewport` (default 1440 by 900), `steps` and a `crop` selector. A setup scene sets `setup: true`, takes no `output`, and runs once before any screenshot. The setup scenes share one browser context. Each screenshot scene opens a fresh context with the cookies, `localStorage` and IndexedDB the setup scenes left (Playwright does not save `sessionStorage`), so a scene that signs out or clears storage changes no other scene. A screenshot scene with `signedOut: true` opens an empty context instead, for a page such as the sign-in form. The steps are `click`, `fill`, `press` and `wait`.
 
 A run does this:
 
