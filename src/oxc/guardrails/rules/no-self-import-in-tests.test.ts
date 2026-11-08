@@ -52,6 +52,15 @@ const ajsLinked = packageAt(
   }),
   true,
 );
+const linkedWithoutAjsTest = packageAt(
+  join(base, "ajs-no-test"),
+  JSON.stringify({
+    name: NAME,
+    exports: EXPORTS,
+    antelopeJs: { imports: [], test: ["src/antelope.test.ts"] },
+  }),
+  true,
+);
 const nested = join(base, "workspace");
 mkdirSync(join(nested, "packages/inner/src"), { recursive: true });
 writeFileSync(
@@ -88,6 +97,16 @@ tester.run("antelopejs/no-self-import-in-tests", noSelfImportInTestsRule, {
       filename: linked,
     },
     { code: `const { run } = require("${NAME}");`, filename: linked },
+    {
+      name: "an antelopeJs block without a string test path keeps the self-link exemption",
+      code: `import { run } from "${NAME}";`,
+      filename: linkedWithoutAjsTest,
+    },
+    { code: `import { run } from "../index";`, filename: ajsLinked },
+    {
+      code: `import { other } from "@antelopejs/interface-other";`,
+      filename: ajsLinked,
+    },
     {
       code: `import { run } from "@antelopejs/interface-demo";`,
       filename: "/nonexistent/dir/a.test.ts",
