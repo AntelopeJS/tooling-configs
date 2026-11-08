@@ -27,14 +27,20 @@ import {
 } from "./typescript.ts";
 
 const DESCRIBE = `
-const { readFileSync, existsSync } = require("node:fs");
+const { readFileSync, writeFileSync, existsSync } = require("node:fs");
 const { dirname, join, extname } = require("node:path");
 const { pathToFileURL } = require("node:url");
-const file = process.argv[2];
+const [file, destination] = process.argv.slice(2);
 let directory = dirname(file);
 while (!existsSync(join(directory, "package.json")) && dirname(directory) !== directory) directory = dirname(directory);
 const manifest = existsSync(join(directory, "package.json")) ? JSON.parse(readFileSync(join(directory, "package.json"), "utf8")) : {};
 const esm = extname(file) === ".mjs" || (extname(file) === ".js" && manifest.type === "module");
+let settled = false;
+function record(description) {
+  settled = true;
+  writeFileSync(destination, JSON.stringify(description));
+}
+process.on("exit", code => { if (!settled) record({ kind: esm ? "esm" : "cjs", exit: code }); });
 const seen = new Map();
 function functionInfo(fn) {
   let constructible = true;
@@ -60,8 +66,8 @@ function properties(object, observe) {
 }
 (async () => {
   const value = esm ? await import(pathToFileURL(file).href) : require(file);
-  process.stdout.write(JSON.stringify({ kind: esm ? "esm" : "cjs", value: valueInfo(value), properties: typeof value === "function" ? [] : properties(value, true) }));
-})().catch(error => { process.stderr.write(String(error.stack)); process.exitCode = 1; });
+  record({ kind: esm ? "esm" : "cjs", value: valueInfo(value), properties: typeof value === "function" ? [] : properties(value, true) });
+})().catch(error => { settled = true; process.stderr.write(String(error.stack)); process.exitCode = 1; });
 `;
 
 interface RuntimeTarget {
@@ -159,7 +165,7 @@ function builtEntries(
   return { entries, skipped };
 }
 
-function childJson(args: string[], cwd: string): string {
+function runChild(args: string[], cwd: string) {
   const result = spawnSync(process.execPath, args, {
     cwd,
     encoding: "utf8",
@@ -168,12 +174,37 @@ function childJson(args: string[], cwd: string): string {
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (result.error) throw result.error;
-  if (result.status !== 0)
-    throw new Error(
-      result.stderr ||
-        `Runtime child exited with ${result.status ?? result.signal}.`,
-    );
-  return `${JSON.stringify(JSON.parse(result.stdout), null, 2)}\n`;
+  return result;
+}
+
+function childFailure(result: ReturnType<typeof runChild>): Error {
+  return new Error(
+    result.stderr ||
+      `Runtime child exited with ${result.status ?? result.signal}.`,
+  );
+}
+
+function formatJson(json: string): string {
+  return `${JSON.stringify(JSON.parse(json), null, 2)}\n`;
+}
+
+function childJson(args: string[], cwd: string): string {
+  const result = runChild(args, cwd);
+  if (result.status !== 0) throw childFailure(result);
+  return formatJson(result.stdout);
+}
+
+/** Describes one built entry into `destination`, away from the entry's own stdout, and records the exit code of an entry that exits while it loads. */
+function describeEntry(
+  describe: string,
+  file: string,
+  destination: string,
+  cwd: string,
+): void {
+  rmSync(destination, { force: true });
+  const result = runChild([describe, file, destination], cwd);
+  if (!existsSync(destination)) throw childFailure(result);
+  writeFileSync(destination, formatJson(readFileSync(destination, "utf8")));
 }
 
 function buildPackage(
@@ -210,9 +241,8 @@ function buildPackage(
   const { entries, skipped } = built;
   for (const { entry, file } of entries) {
     const destination = join(output, `${encodeURIComponent(entry)}.json`);
-    const metadata = childJson([describe, file], directory);
     mkdirSync(dirname(destination), { recursive: true });
-    writeFileSync(destination, metadata);
+    describeEntry(describe, file, destination, directory);
   }
   return { count: entries.length, entries, skipped };
 }
