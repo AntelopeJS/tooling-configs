@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { admits } from "../garden/semver.ts";
+
 export interface Manifest {
   name?: string;
   version?: string;
@@ -25,6 +27,16 @@ export interface Manifest {
 }
 
 export type PackageManager = "pnpm" | "npm" | "yarn" | "bun";
+
+/** The capture tool's optional peers, which a repository with `docs/captures.ts` declares as devDependencies at the ranges the pack tests against. */
+const CAPTURE_PEERS = [
+  "mongodb-memory-server",
+  "pixelmatch",
+  "playwright-core",
+  "sharp",
+] as const;
+
+type CapturePeer = (typeof CAPTURE_PEERS)[number];
 
 export function parseManifest(text: string): Manifest {
   /* SAFETY: package.json is written by package managers; every Manifest field is optional and read with a fallback. */
@@ -69,7 +81,16 @@ export function toolingVersions() {
           throw new Error(
             "tooling-configs must declare its version and lefthook, knip and oxlint-tsgolint devDependencies.",
           );
-        return { lefthook, knip, tsgolint, pack: manifest.version };
+        const tested = manifest.devDependencies ?? {};
+        const capture = CAPTURE_PEERS.map((name): [CapturePeer, string] => {
+          const range = tested[name];
+          if (!range)
+            throw new Error(
+              `tooling-configs must declare ${name} as a devDependency.`,
+            );
+          return [name, range];
+        });
+        return { lefthook, knip, tsgolint, capture, pack: manifest.version };
       }
     }
     const parent = dirname(directory);
@@ -185,10 +206,44 @@ function prepareScript(current = ""): string {
   return current ? `${current} && ${PREPARE_INSTALL}` : PREPARE_INSTALL;
 }
 
+interface DependencyOptions {
+  typeAware?: boolean;
+  /** Whether `docs/captures.ts` exists, so the capture tool's peers are declared. */
+  captures?: boolean;
+}
+
+/** Whether `range`'s lowest named version is one the pack's `tested` range admits. */
+function withinTested(range: string | undefined, tested: string): boolean {
+  const floor = /\d+\.\d+\.\d+/.exec(range ?? "")?.[0];
+  return floor !== undefined && admits(tested, floor);
+}
+
+/** The devDependencies, with their ranges, that sync writes into `manifest`: tools it lacks, and capture peers it lacks or declares below the pack's tested range. */
+export function addedDevDependencies(
+  manifest: Manifest,
+  versions: ReturnType<typeof toolingVersions>,
+  options: DependencyOptions,
+): [string, string][] {
+  const declared = manifest.devDependencies ?? {};
+  const tools: [string, string][] = [
+    ["lefthook", versions.lefthook],
+    ["knip", versions.knip],
+  ];
+  if (options.typeAware) tools.push(["oxlint-tsgolint", versions.tsgolint]);
+  return [
+    ...tools.filter(([name]) => !declared[name]),
+    ...(options.captures
+      ? versions.capture.filter(
+          ([name, tested]) => !withinTested(declared[name], tested),
+        )
+      : []),
+  ];
+}
+
 export function managedPackage(
   current: string | undefined,
   versions: ReturnType<typeof toolingVersions>,
-  options: { typeAware?: boolean; nuxt?: boolean; ratchet?: boolean } = {},
+  options: DependencyOptions & { nuxt?: boolean; ratchet?: boolean } = {},
 ): string {
   if (current === undefined) throw new Error("package.json is missing.");
   const manifest = parseManifest(current);
@@ -206,11 +261,10 @@ export function managedPackage(
   }
   for (const [name, command] of Object.entries(defaultScripts(options.nuxt)))
     scripts[name] ??= command;
-  const dependencies = (manifest.devDependencies ??= {});
-  dependencies.lefthook ??= versions.lefthook;
-  dependencies.knip ??= versions.knip;
-  if (options.typeAware) dependencies["oxlint-tsgolint"] ??= versions.tsgolint;
-  manifest.devDependencies = sortedEntries(dependencies);
+  manifest.devDependencies = sortedEntries({
+    ...manifest.devDependencies,
+    ...Object.fromEntries(addedDevDependencies(manifest, versions, options)),
+  });
   return serializeManifest(manifest, current);
 }
 
