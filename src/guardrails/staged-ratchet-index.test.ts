@@ -141,3 +141,17 @@ test("staged ratchet does not count findings inside a staged submodule bump", (t
   const result = bin(root, "ratchet", ["--staged"]);
   assert.equal(result.status, 0, result.stderr);
 });
+
+test("staged ratchet measures staged files under the staged lint configuration when the working copy turns the rule off", (t) => {
+  const root = legacyRepo(t);
+  put(root, "extra.ts", ADDED);
+  stage(root, "extra.ts");
+  put(
+    root,
+    ".oxlintrc.json",
+    JSON.stringify({ categories: { correctness: "off" }, rules: {} }),
+  );
+  const result = bin(root, "ratchet", ["--staged"]);
+  assert.equal(result.status, 1, result.stderr);
+  assert.ok(result.stderr.includes("\n  extra.ts:3:"), result.stderr);
+});

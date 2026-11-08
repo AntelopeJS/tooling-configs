@@ -239,8 +239,9 @@ function higherPerFile(
  * The findings in `targets` as the index holds them. Each file the working
  * tree has is linted there, where untracked generated types resolve; a file
  * whose working copy differs, is deleted, or is hidden from git (skip-worktree,
- * assume-unchanged) is also linted in a checkout of the index, and keeps, per
- * rule, the run that reports more.
+ * assume-unchanged), or every file when a lint configuration does, is also
+ * linted in a checkout of the index, and keeps, per rule, the run that reports
+ * more.
  */
 function stagedDiagnostics(root: string, targets: string[]): Diagnostic[] {
   const unstaged = new Set([...unstagedNames(root), ...hiddenTracked(root)]);
@@ -248,7 +249,10 @@ function stagedDiagnostics(root: string, targets: string[]): Diagnostic[] {
   const inTree = present.length
     ? lintDiagnostics(root, undefined, present, STAGED_LINT)
     : [];
-  const inIndex = targets.filter((file) => unstaged.has(file));
+  const configChanged = [...unstaged].some((file) => LINT_CONFIG.test(file));
+  const inIndex = configChanged
+    ? targets
+    : targets.filter((file) => unstaged.has(file));
   if (!inIndex.length) return inTree;
   return higherPerFile(
     inTree,
