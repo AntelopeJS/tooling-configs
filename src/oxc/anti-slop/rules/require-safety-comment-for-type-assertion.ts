@@ -151,9 +151,12 @@ export const requireSafetyCommentForTypeAssertionRule = defineRule({
       if (!JSDOC_TYPED_FILE.test(context.filename)) return;
       const { sourceCode } = context;
       const { pattern, data } = markerSettings();
+      const castParens = new Set<number>();
       for (const comment of sourceCode.getAllComments()) {
         const cast = jsDocCast(sourceCode, comment);
-        if (cast === null || hasSafetyComment(sourceCode, comment, cast.owner, pattern)) continue;
+        if (cast === null || castParens.has(cast.paren.start)) continue;
+        castParens.add(cast.paren.start);
+        if (hasSafetyComment(sourceCode, comment, cast.owner, pattern)) continue;
         context.report({
           loc: { start: comment.loc.start, end: cast.paren.loc.end },
           messageId: "missingSafetyComment",

@@ -106,7 +106,19 @@ jsTester.run(
       {
         name: "agent-skills#28 bare JSDoc cast in an .mjs file",
         filename: "values.mjs",
-        code: "const manifest = /** @type {Manifest} */ (JSON.parse(text));",
+        code: "const manifest = /** @type {Manifest} */ (\n  JSON.parse(text)\n);",
+        errors: [{ ...error, line: 1, column: 17, endLine: 1, endColumn: 42 }],
+      },
+      {
+        name: "two JSDoc types before one parenthesis are one cast",
+        filename: "values.mjs",
+        code: "const id = /** @type {Raw} */ /** @type {UserId} */ (value);",
+        errors: [error],
+      },
+      {
+        name: "a SAFETY comment above the enclosing function does not cover a cast in its body",
+        filename: "values.mjs",
+        code: "// SAFETY: The function validates its input.\nfunction parse() {\nreturn /** @type {UserId} */ (value);\n}",
         errors: [error],
       },
       {
