@@ -30,17 +30,19 @@ const DESCRIBE = `
 const { readFileSync, writeFileSync, existsSync } = require("node:fs");
 const { dirname, join, extname } = require("node:path");
 const { pathToFileURL } = require("node:url");
-const [file, destination] = process.argv.slice(2);
+const [file, destination] = process.argv.splice(2);
 let directory = dirname(file);
 while (!existsSync(join(directory, "package.json")) && dirname(directory) !== directory) directory = dirname(directory);
 const manifest = existsSync(join(directory, "package.json")) ? JSON.parse(readFileSync(join(directory, "package.json"), "utf8")) : {};
 const esm = extname(file) === ".mjs" || (extname(file) === ".js" && manifest.type === "module");
-let settled = false;
-function record(description) {
-  settled = true;
-  writeFileSync(destination, JSON.stringify(description));
-}
-process.on("exit", code => { if (!settled) record({ kind: esm ? "esm" : "cjs", exit: code }); });
+let description;
+let failed = false;
+process.on("uncaughtExceptionMonitor", () => { failed = true; });
+process.on("exit", code => {
+  if (failed) return;
+  const recorded = description ?? { kind: esm ? "esm" : "cjs" };
+  writeFileSync(destination, JSON.stringify(code === 0 && description ? recorded : { ...recorded, exit: code }));
+});
 const seen = new Map();
 function functionInfo(fn) {
   let constructible = true;
@@ -66,8 +68,8 @@ function properties(object, observe) {
 }
 (async () => {
   const value = esm ? await import(pathToFileURL(file).href) : require(file);
-  record({ kind: esm ? "esm" : "cjs", value: valueInfo(value), properties: typeof value === "function" ? [] : properties(value, true) });
-})().catch(error => { settled = true; process.stderr.write(String(error.stack)); process.exitCode = 1; });
+  description = { kind: esm ? "esm" : "cjs", value: valueInfo(value), properties: typeof value === "function" ? [] : properties(value, true) };
+})().catch(error => { failed = true; process.stderr.write(String(error.stack)); process.exitCode = 1; });
 `;
 
 interface RuntimeTarget {
@@ -194,7 +196,7 @@ function childJson(args: string[], cwd: string): string {
   return formatJson(result.stdout);
 }
 
-/** Describes one built entry into `destination`, away from the entry's own stdout, and records the exit code of an entry that exits while it loads. */
+/** Describes one built entry into `destination`, away from the entry's own stdout, with the exit code of an entry that ends with a non-zero code or exits while it loads; an uncaught error is a failure. */
 function describeEntry(
   describe: string,
   file: string,
