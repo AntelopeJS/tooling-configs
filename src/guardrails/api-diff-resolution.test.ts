@@ -87,3 +87,48 @@ test("api-diff prints no fallback notice for a package that resolves its own typ
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.doesNotMatch(result.stdout, /declares no typescript/);
 });
+
+test("api-diff resolves a workspace package's types from its own node_modules, as tsc -p does, not from the repository root", (t) => {
+  const root = apiRepo(t);
+  put(
+    root,
+    "package.json",
+    JSON.stringify({ name: "workspace", private: true }),
+  );
+  put(
+    root,
+    "packages/lib/package.json",
+    JSON.stringify({
+      name: "lib",
+      type: "module",
+      exports: { ".": "./dist/index.js" },
+    }),
+  );
+  put(
+    root,
+    "packages/lib/tsconfig.json",
+    JSON.stringify({
+      compilerOptions: {
+        module: "NodeNext",
+        rootDir: "src",
+        outDir: "dist",
+        types: ["ambient"],
+        strict: true,
+      },
+    }),
+  );
+  put(
+    root,
+    "packages/lib/src/index.ts",
+    "export const value: AmbientValue = 1;\n",
+  );
+  put(
+    root,
+    "packages/lib/node_modules/@types/ambient/index.d.ts",
+    "declare type AmbientValue = number;\n",
+  );
+  commit(root);
+  const result = bin(root, "api-diff", ["HEAD"]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /^API: 1 packages, 1 entries unchanged/m);
+});
