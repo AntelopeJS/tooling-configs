@@ -1,5 +1,6 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { isMap, parseAllDocuments, type YAMLMap } from "yaml";
 
 import { gitFiles } from "./files.ts";
 import {
@@ -8,7 +9,6 @@ import {
   Unreadable,
   keys,
   mapping,
-  readMapping,
   scalar,
 } from "./verify-lockfiles.ts";
 
@@ -76,10 +76,24 @@ function addPullers(
   }
 }
 
-function lockfileCopies(path: string): Copies {
-  const lockfile = readMapping(path);
-  if (Number(scalar(lockfile, "lockfileVersion") ?? "0") < 6)
-    throw new Unreadable(path);
+/** Each document of a lockfile: pnpm 11 writes its config dependencies, installed apart from the project, as a document before the project's. */
+function lockfileDocuments(path: string): YAMLMap[] {
+  return parseAllDocuments(readFileSync(path, "utf8"), {
+    schema: "failsafe",
+    uniqueKeys: false,
+  }).map((document) => {
+    const { contents } = document;
+    if (
+      document.errors.length > 0 ||
+      !isMap(contents) ||
+      !(Number.parseFloat(scalar(contents, "lockfileVersion") ?? "") >= 6)
+    )
+      throw new Unreadable(path);
+    return contents;
+  });
+}
+
+function documentCopies(lockfile: YAMLMap): Copies {
   const copies: Copies = new Map();
   const packages = mapping(lockfile, "packages");
   for (const parsed of keys(packages).map(packageKey))
@@ -144,7 +158,9 @@ export function checkSingletonPackages(root: string): string {
   return pnpmLockfiles(root)
     .map((file) => {
       try {
-        return report(file, lockfileCopies(join(root, file)));
+        return lockfileDocuments(join(root, file))
+          .map((document) => report(file, documentCopies(document)))
+          .join("");
       } catch (error) {
         if (error instanceof Unreadable)
           return `${file}: could not read it as a lockfile version this check knows.\n`;

@@ -187,3 +187,55 @@ test("a copy an importer pulls through an npm: alias names that importer, caught
     /\n {2}0\.1\.1, pulled by importer "\."\n {2}0\.2\.6, pulled by importer "\."\n/,
   );
 });
+
+const CONFIG_DOCUMENT = stringify({
+  lockfileVersion: "9.0",
+  importers: {
+    ".": {
+      configDependencies: {
+        "@pnpm/plugin-better-defaults": {
+          specifier: "0.3.0",
+          version: "0.3.0",
+        },
+      },
+    },
+  },
+  packages: { "@pnpm/plugin-better-defaults@0.3.0": {} },
+});
+
+test("a pnpm 11 lockfile, its config dependencies in a document of their own, is read document by document, caught by reading only single-document lockfiles", (t) => {
+  const root = testRepo(t);
+  put(root, "pnpm-lock.yaml", `---\n${CONFIG_DOCUMENT}---\n${TWO_CORES}`);
+  assert.match(
+    checkSingletonPackages(root),
+    /^pnpm-lock\.yaml resolves "@antelopejs\/interface-core" at 2 versions/,
+  );
+  put(
+    root,
+    "pnpm-lock.yaml",
+    `---\n${CONFIG_DOCUMENT}---\n${stringify({ lockfileVersion: "9.0", packages: { "@antelopejs/interface-core@0.2.6": {} } })}`,
+  );
+  assert.equal(checkSingletonPackages(root), "");
+});
+
+test("a version 5 lockfile fails as unreadable, a suffixed version string included, caught by a guard that lets a version Number cannot parse through", (t) => {
+  const root = testRepo(t);
+  for (const version of ["5.4", "5.4-inlineSpecifiers"]) {
+    put(
+      root,
+      "pnpm-lock.yaml",
+      stringify({
+        lockfileVersion: version,
+        packages: {
+          "/@antelopejs/interface-core/0.1.1": {},
+          "/@antelopejs/interface-core/0.2.6": {},
+        },
+      }),
+    );
+    assert.equal(
+      checkSingletonPackages(root),
+      "pnpm-lock.yaml: could not read it as a lockfile version this check knows.\n",
+      version,
+    );
+  }
+});

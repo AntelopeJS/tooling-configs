@@ -43,7 +43,7 @@ export interface InstallFolder {
 export class Unreadable extends Error {}
 
 /** Parses a JSON or YAML file whose top level is a mapping; throws `Unreadable` otherwise. */
-export function readMapping(path: string): YAMLMap {
+function readMapping(path: string): YAMLMap {
   const document = parseDocument(readFileSync(path, "utf8"), {
     schema: "failsafe",
     uniqueKeys: false,
