@@ -98,6 +98,13 @@ function interfaceLinks(workspace: Workspace, state: RunState) {
   const links = new Map([["@antelopejs/interface-core", core]]);
   const entries: JsonObject = {};
   for (const name of implementedInterfaces(workspace.manifest)) {
+    if (name === workspace.manifest.name) {
+      links.set(name, realpathSync(workspace.root));
+      entries[name] = runtimeEntries(workspace.manifest).filter(
+        (entry) => entry !== ".",
+      );
+      continue;
+    }
     const folder = installedPackage(workspace.root, name);
     links.set(name, folder);
     entries[name] = runtimeEntries(readPackage(folder));
@@ -110,8 +117,10 @@ function interfaceLinks(workspace: Workspace, state: RunState) {
  * the driver module and, for the interface kind, the stub provider, or, for
  * the module kind, the module under verification as a `local` source. Every
  * interface the driver calls is linked to the copy the repository resolves,
- * so the project shares one copy per interface as core requires. Each of
- * `companions` is loaded too, but never in place of the module or the driver.
+ * so the project shares one copy per interface as core requires. An
+ * interface of the module's own package links the repository root, whose
+ * non-`.` runtime subpaths are its entries. Each of `companions` is loaded
+ * too, but never in place of the module or the driver.
  */
 export function writeFixture(
   workspace: Workspace,

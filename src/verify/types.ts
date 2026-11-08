@@ -134,7 +134,7 @@ export interface DriveOptions {
 export interface CallRequest {
   /** The interface package; defaults to the interface under verification, or the module's only implemented interface. */
   interface?: string;
-  /** The export subpath, `.` by default. */
+  /** The export subpath; defaults to the interface's only entry, else `.`. */
   entry?: string;
   /** The member path inside the entry, for example `["GetClient"]`. */
   path: string[];

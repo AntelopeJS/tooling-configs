@@ -72,7 +72,8 @@ function serializable(value) {
 function target(body) {
   const name = body.interface || interfaces[0];
   let owner;
-  let value = load(name, body.entry || ".");
+  const list = entries[name] || ["."];
+  let value = load(name, body.entry || (list.length === 1 ? list[0] : "."));
   for (const key of body.path) {
     owner = value;
     value = value[key];
