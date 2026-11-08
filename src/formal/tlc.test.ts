@@ -15,15 +15,12 @@ import test, { after, before, describe, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { resultEntries, scratchCache } from "./helpers/cache.ts";
+import type { CheckSpecOptions } from "./index.ts";
 
 const RUNNER = new URL("index.ts", import.meta.url).href;
 const FIXTURES = fileURLToPath(new URL("fixtures", import.meta.url));
 
-interface Check {
-  dir?: string;
-  config?: string;
-  findings: Record<string, number>;
-}
+type Check = Partial<CheckSpecOptions> & Pick<CheckSpecOptions, "findings">;
 
 function check(options: Check, env: Record<string, string> = {}) {
   const spec = { dir: FIXTURES, spec: "Counter", ...options };
@@ -112,6 +109,43 @@ test("another configuration keeps its constraint", () => {
   ]);
 });
 
+test("a rule broken in the several-worker run prints the same shortest trace on every run", () => {
+  const grid = { spec: "Grid", findings: {} };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const run = check(grid);
+    assert.equal(run.status, 1, run.stderr);
+    assert.deepEqual(rules(run.lines), [
+      "TLC 1.7.4 on Grid.tla (Grid.cfg) with N = 12",
+      `BROKEN NoCorner: Initial -> ${Array(12).fill("IncA").join(" -> ")} -> ${Array(11).fill("IncB").join(" -> ")}`,
+    ]);
+  }
+});
+
+const RECORDED_PATHS = { findings: { NotBad: 2 }, violating: { NotBad: 1 } };
+
+test("a finding recorded with its violating states matches while no new path breaks the rule", () => {
+  const run = check({ spec: "Paths", ...RECORDED_PATHS });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(rules(run.lines), [
+    "TLC 1.7.4 on Paths.tla (Paths.cfg) with Detour = FALSE",
+    "finding NotBad: 2 states (recorded 2), 1 violating (recorded 1): Initial -> Jump",
+    "Every rule matches the record in SKILL.md.",
+  ]);
+});
+
+test("a longer new path to a recorded finding exits 1 with CHANGED", () => {
+  const run = check({
+    spec: "Paths",
+    config: "Paths.detour",
+    ...RECORDED_PATHS,
+  });
+  assert.equal(run.status, 1, run.stderr);
+  assert.deepEqual(rules(run.lines), [
+    "TLC 1.7.4 on Paths.tla (Paths.detour.cfg) with Detour = TRUE",
+    "CHANGED NotBad: 2 states (recorded 2), 2 violating (recorded 1): Initial -> Jump",
+  ]);
+});
+
 test("a finding that is not an invariant of the configuration exits 2", () => {
   const run = check({ findings: { Missing: 1 } });
   assert.equal(run.status, 2);
@@ -119,6 +153,13 @@ test("a finding that is not an invariant of the configuration exits 2", () => {
     run.stderr,
     "check: finding Missing is not an INVARIANT in Counter.cfg\n",
   );
+  assert.deepEqual(run.lines, []);
+});
+
+test("a violating count for a rule that is not a finding exits 2", () => {
+  const run = check({ findings: { NotTwo: 3 }, violating: { Bounded: 1 } });
+  assert.equal(run.status, 2);
+  assert.equal(run.stderr, "check: violating Bounded is not a finding\n");
   assert.deepEqual(run.lines, []);
 });
 

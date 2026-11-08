@@ -32,6 +32,9 @@ export const EXIT = { ok: 0, changed: 1, tool: 2 } as const;
 /** Each recorded finding: the invariant a spec breaks today, with the number of states in TLC's shortest counterexample. */
 export type Findings = Readonly<Record<string, number>>;
 
+/** Recorded findings with the number of distinct reachable states that break each one. */
+export type Violating = Readonly<Record<string, number>>;
+
 /** What {@link checkSpec} model-checks. */
 export interface CheckSpecOptions {
   /** The folder holding `<spec>.tla`, the modules it extends and `<config>.cfg`. */
@@ -42,6 +45,12 @@ export interface CheckSpecOptions {
   config?: string;
   /** The invariants of the configuration expected to break. */
   findings: Findings;
+  /**
+   * The violating-state count of some `findings`. A finding without one is
+   * judged by its length alone, so a new path that breaks it in at least as
+   * many states goes unnoticed.
+   */
+  violating?: Violating;
 }
 
 interface Config {
@@ -58,12 +67,15 @@ interface Module {
 interface TlcRun {
   name: string;
   workers: "auto" | "1";
+  /** Explore past each violation, so every violating state is counted. */
+  continue: boolean;
   cfg: string;
 }
 
 interface Finding {
   rule: string;
-  expected: number;
+  states: number;
+  violating: number | undefined;
   run: TlcRun;
 }
 
@@ -220,6 +232,7 @@ function runTlc(workspace: Workspace, run: TlcRun) {
       "-workers",
       workers,
       ...TLC_FLAGS,
+      ...(run.continue ? ["-continue"] : []),
       "-metadir",
       path.join(work, `states-${name}`),
       `${spec}.tla`,
@@ -229,7 +242,11 @@ function runTlc(workspace: Workspace, run: TlcRun) {
   if (result.error) fail(`cannot run ${java.program}: ${result.error.message}`);
   const output = `${result.stdout}${result.stderr}`;
   writeFileSync(path.join(work, `${name}.out`), output);
-  const violated = /Invariant (\w+) is violated/.exec(output)?.[1];
+  const violations = Array.from(
+    output.matchAll(/Invariant (\w+) is violated/g),
+  );
+  const [first, second] = violations;
+  const violated = first?.[1];
   const distinct = /([\d,]+) distinct states found, 0 states left/.exec(
     output,
   )?.[1];
@@ -238,10 +255,10 @@ function runTlc(workspace: Workspace, run: TlcRun) {
       `TLC did not finish ${name}; output in ${path.join(work, `${name}.out`)}\n${output.slice(-2000)}`,
     );
   const steps = Array.from(
-    output.matchAll(/^State \d+: <(\w+)/gm),
+    output.slice(first?.index, second?.index).matchAll(/^State \d+: <(\w+)/gm),
     ([, action]) => action,
   );
-  return { violated, distinct, steps };
+  return { violated, violating: violations.length, distinct, steps };
 }
 
 function resultKey(plan: Plan): string {
@@ -305,10 +322,15 @@ async function modelCheck(plan: Plan): Promise<Outcome & { work: string }> {
     const held = runTlc(workspace, holds.run);
     if (held.violated) {
       changed = true;
-      print(`BROKEN ${held.violated}: ${held.steps.join(" -> ")}`);
+      const shortest = runTlc(workspace, {
+        ...holds.run,
+        name: "holds-shortest",
+        workers: "1",
+      });
+      print(`BROKEN ${shortest.violated}: ${shortest.steps.join(" -> ")}`);
     } else print(`holds  ${holds.rules.join(", ")} (${held.distinct} states)`);
   }
-  for (const { rule, expected, run } of findings) {
+  for (const { rule, states, violating, run } of findings) {
     const found = runTlc(workspace, run);
     if (!found.violated) {
       changed = true;
@@ -316,10 +338,16 @@ async function modelCheck(plan: Plan): Promise<Outcome & { work: string }> {
       continue;
     }
     const length = found.steps.length;
-    const tag = length === expected ? "finding" : "CHANGED";
-    changed ||= length !== expected;
+    const same =
+      length === states &&
+      (violating === undefined || found.violating === violating);
+    changed ||= !same;
+    const counted =
+      violating === undefined
+        ? ""
+        : `, ${found.violating} violating (recorded ${violating})`;
     print(
-      `${tag} ${rule}: ${length} states (recorded ${expected}): ${found.steps.join(" -> ")}`,
+      `${same ? "finding" : "CHANGED"} ${rule}: ${length} states (recorded ${states})${counted}: ${found.steps.join(" -> ")}`,
     );
   }
   if (!changed) print("Every rule matches the record in SKILL.md.");
@@ -334,8 +362,13 @@ async function modelCheck(plan: Plan): Promise<Outcome & { work: string }> {
  * Model-checks `<dir>/<spec>.tla` with TLC under the constants, bounds and
  * invariants of `<dir>/<config>.cfg`. Every invariant must hold except the
  * `findings`, each of which must still break with a shortest counterexample
- * of exactly its recorded number of states. Prints one line per rule
- * (`holds`, `finding`, `BROKEN`, `CHANGED` or `HOLDS`) and exits the process
+ * of exactly its recorded number of states and, when `violating` names it,
+ * in exactly that many distinct reachable states, which TLC counts with
+ * `-continue`. The rules expected to hold are checked on every core; when one
+ * breaks, a one-worker rerun picks the rule and the shortest trace that
+ * `BROKEN` prints, so both are the same on every run. Prints one line per
+ * rule (`holds`, `finding`, `BROKEN`, `CHANGED` or `HOLDS`) and exits the
+ * process
  * with {@link EXIT}`.changed` when a rule differs from its record, or
  * {@link EXIT}`.tool` when TLC could not run; returns when everything
  * matches.
@@ -354,14 +387,18 @@ async function modelCheck(plan: Plan): Promise<Outcome & { work: string }> {
  * SHA-256, the JVM options and TLC flags with `$JAVA_TOOL_OPTIONS`,
  * `$JDK_JAVA_OPTIONS` and `$_JAVA_OPTIONS`, the spec and configuration
  * names, the printed header, the bytes of every `.tla` file in `dir`, the
- * configuration and worker count of each TLC run, and `findings`. A replay keeps no TLC output
+ * configuration, worker count and `-continue` of each TLC run, `findings` and
+ * `violating`. A replay keeps no TLC output
  * folder. `ANTELOPEJS_FORMAL_CACHE=off` neither reads nor writes the cache.
  * Entries are never pruned; each is a few hundred bytes, one per distinct
  * input.
  */
 export async function checkSpec(options: CheckSpecOptions): Promise<void> {
-  const { dir, spec, config = spec, findings } = options;
+  const { dir, spec, config = spec, findings, violating = {} } = options;
   const parsed = readConfig(dir, config, findings);
+  for (const rule of Object.keys(violating))
+    if (!Object.hasOwn(findings, rule))
+      fail(`violating ${rule} is not a finding`);
   const holding = parsed.invariants.filter(
     (rule) => !Object.hasOwn(findings, rule),
   );
@@ -376,15 +413,25 @@ export async function checkSpec(options: CheckSpecOptions): Promise<void> {
             run: {
               name: "holds",
               workers: "auto",
+              continue: false,
               cfg: cfgText(parsed, holding),
             },
           }
         : undefined,
-    findings: Object.entries(findings).map(([rule, expected]) => ({
-      rule,
-      expected,
-      run: { name: rule, workers: "1", cfg: cfgText(parsed, [rule]) },
-    })),
+    findings: Object.entries(findings).map(([rule, states]) => {
+      const counted = Object.hasOwn(violating, rule);
+      return {
+        rule,
+        states,
+        violating: counted ? violating[rule] : undefined,
+        run: {
+          name: rule,
+          workers: "1",
+          continue: counted,
+          cfg: cfgText(parsed, [rule]),
+        },
+      };
+    }),
   };
   const key = resultKey(plan);
   const entry =
