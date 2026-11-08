@@ -239,3 +239,37 @@ test("a version 5 lockfile fails as unreadable, a suffixed version string includ
     );
   }
 });
+
+test("a copy an importer locks by tarball URL names that importer, caught by reading every version holding an @ as an npm: alias", (t) => {
+  const root = testRepo(t);
+  const tarball =
+    "https://registry.npmjs.org/@antelopejs/interface-core/-/interface-core-0.2.6.tgz";
+  put(
+    root,
+    "pnpm-lock.yaml",
+    stringify({
+      lockfileVersion: "9.0",
+      importers: {
+        ".": {
+          dependencies: {
+            "@antelopejs/interface-core": {
+              specifier: tarball,
+              version: tarball,
+            },
+          },
+        },
+      },
+      packages: {
+        "@antelopejs/interface-core@0.1.1": {},
+        [`@antelopejs/interface-core@${tarball}`]: {},
+      },
+    }),
+  );
+  assert.match(
+    checkSingletonPackages(root),
+    new RegExp(
+      `\\n {2}${tarball.replaceAll(".", "\\.")}, pulled by importer "\\."\\n`,
+      "u",
+    ),
+  );
+});

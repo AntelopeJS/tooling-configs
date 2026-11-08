@@ -51,10 +51,11 @@ function pull(
   by: string,
 ): void {
   if (version === undefined) return;
-  const target = packageKey(version) ?? {
-    name,
-    version: withoutPeers(version),
-  };
+  const alias = packageKey(version);
+  const target =
+    alias && copies.has(alias.name)
+      ? alias
+      : { name, version: withoutPeers(version) };
   copies.get(target.name)?.get(target.version)?.add(by);
 }
 
