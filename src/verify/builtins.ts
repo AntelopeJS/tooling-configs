@@ -43,11 +43,7 @@ async function scaffoldInto(
   project: string,
 ): Promise<void> {
   const init = await context.scaffold("ajs project init", project);
-  context.expect(
-    init.folder,
-    [exitIs(init, 0), exists(join(project, "antelope.config.ts"))],
-    { critical: true },
-  );
+  context.expect(init.folder, [exitIs(init, 0)], { critical: true });
   context.tree("scaffolded tree", project);
   const install = await context.command(
     "pnpm install",
@@ -61,14 +57,19 @@ async function scaffoldInto(
 /**
  * The journey's copy of the project scaffolded from the template and
  * installed, built once per run under the key `scaffolded`, which a repo
- * journey shares by preparing it with the same init and install. The build's
- * HOME is gone, so the journey's own HOME is pointed at the offline manifest
- * again.
+ * journey shares by preparing it with the same init and install. The copy is
+ * checked for its project config whichever journey built it, and the
+ * journey's own HOME is pointed at the offline manifest again, since the
+ * build's HOME is gone.
  */
 async function scaffoldProject(context: VerifyContext): Promise<string> {
   const project = await context.prepared("scaffolded", (folder) =>
     scaffoldInto(context, folder),
   );
+  const tree = context.tree("scaffolded project", project);
+  context.expect(tree.folder, [exists(join(project, "antelope.config.ts"))], {
+    critical: true,
+  });
   await context.configureGit();
   return project;
 }

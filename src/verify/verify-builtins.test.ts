@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 
 import { put, read } from "../guardrails/helpers/test-repo.ts";
 import {
@@ -15,7 +15,7 @@ import {
 
 const SKILL = ".agents/skills/verify-template";
 
-/** A fake `ajs`: `config set git` writes the URL into HOME, `project init` writes a project and logs it, `project dev` prints its ready line until SIGINT. */
+/** A fake `ajs`: `config set git` writes the URL into HOME, `project init` writes a project, with no config when `NO_CONFIG` is set, and logs it, `project dev` prints its ready line until SIGINT. */
 const AJS = String.raw`const { appendFileSync, mkdirSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 const [command, sub, target] = process.argv.slice(2);
@@ -23,7 +23,7 @@ if (command === "config") writeFileSync(join(process.env.HOME, "git.txt"), proce
 else if (sub === "init") {
   appendFileSync(process.env.SCAFFOLD_LOG, "init\n");
   mkdirSync(target, { recursive: true });
-  writeFileSync(join(target, "antelope.config.ts"), "export default {};\n");
+  if (!process.env.NO_CONFIG) writeFileSync(join(target, "antelope.config.ts"), "export default {};\n");
 } else {
   process.on("SIGINT", () => process.exit(130));
   console.log("ready");
@@ -62,7 +62,12 @@ const CONFIG = `export default {
 };
 `;
 
-test("scaffold-dev and scaffold-checks copy the project a repo journey prepared as `scaffolded`, so the run scaffolds and installs once, and each still points ajs at the offline manifest in its own HOME", (t) => {
+/** Runs the smoke feature, listing `journeys`, of a template repo whose `files` journey prepares `scaffolded`, and returns each journey's status and the scaffold log. */
+function runSmoke(
+  t: TestContext,
+  journeys: string[],
+  extra: Record<string, string> = {},
+) {
   const tmp = mkdtempSync(join(tmpdir(), "verify-builtins-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   const root = verifyRepo(t, {
@@ -70,10 +75,7 @@ test("scaffold-dev and scaffold-checks copy the project a repo journey prepared 
     "package.json": '{"name":"demo","type":"module","version":"1.0.0"}\n',
     [`${SKILL}/SKILL.md`]: "synced\n",
     [`${SKILL}/verify.config.ts`]: CONFIG,
-    [`${SKILL}/features/smoke.md`]: feature(
-      [],
-      ["files", "scaffold-dev", "scaffold-checks"],
-    ),
+    [`${SKILL}/features/smoke.md`]: feature([], journeys),
   });
   put(
     root,
@@ -86,24 +88,37 @@ test("scaffold-dev and scaffold-checks copy the project a repo journey prepared 
   const env = {
     PATH: `${join(tmp, "bin")}:${process.env.PATH}`,
     SCAFFOLD_LOG: join(tmp, "scaffold.log"),
+    ...extra,
   };
   const created = verify(root, tmp, ["new", "--kind", "template"], env);
   assert.equal(created.status, 0, created.stdout + created.stderr);
   const run = created.stdout.trim().split("\n").at(-1) ?? "";
-  const journey = verify(
-    root,
-    tmp,
-    ["journey", run, "smoke", "--kind", "template"],
-    env,
-  );
+  verify(root, tmp, ["journey", run, "smoke", "--kind", "template"], env);
   verify(root, tmp, ["clean", run, "--kind", "template"], env);
-  assert.equal(journey.status, 0, journey.stdout + journey.stderr);
-  assert.deepEqual(
-    evidence(run, "smoke/feature.json").map(
-      (result: { journey: string; status: string }) =>
-        `${result.journey} ${result.status}`,
-    ),
-    ["files PASS", "scaffold-dev PASS", "scaffold-checks PASS"],
+  const statuses = evidence(run, "smoke/feature.json").map(
+    (result: { journey: string; status: string }) =>
+      `${result.journey} ${result.status}`,
   );
-  assert.equal(read(tmp, "scaffold.log"), "init\ninstall\n");
+  return { statuses, log: read(tmp, "scaffold.log") };
+}
+
+test("scaffold-dev and scaffold-checks copy the project a repo journey prepared as `scaffolded`, so the run scaffolds and installs once, and each still points ajs at the offline manifest in its own HOME", (t) => {
+  const { statuses, log } = runSmoke(t, [
+    "files",
+    "scaffold-dev",
+    "scaffold-checks",
+  ]);
+  assert.deepEqual(statuses, [
+    "files PASS",
+    "scaffold-dev PASS",
+    "scaffold-checks PASS",
+  ]);
+  assert.equal(log, "init\ninstall\n");
+});
+
+test("scaffold-checks fails on a copied project without antelope.config.ts, though the repo journey that built it checks no config", (t) => {
+  const { statuses } = runSmoke(t, ["files", "scaffold-checks"], {
+    NO_CONFIG: "1",
+  });
+  assert.deepEqual(statuses, ["files FAIL", "scaffold-checks FAIL"]);
 });
