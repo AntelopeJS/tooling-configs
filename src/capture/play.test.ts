@@ -80,3 +80,15 @@ test("a scene after one that signs out still sees the session the setup scenes m
     dashboard: "admin",
   });
 });
+
+test("a signed-out scene opens with no session, and the scenes after it keep the setup session", async () => {
+  const scenes = parseScenes([
+    SIGN_IN,
+    shot("sign-in-page", { signedOut: true }),
+    shot("dashboard"),
+  ]);
+  assert.deepEqual(await shots(scenes), {
+    "sign-in-page": "signed out",
+    dashboard: "admin",
+  });
+});
