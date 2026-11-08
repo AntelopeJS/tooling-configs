@@ -69,37 +69,50 @@ export function demoEnvironment(
   };
 }
 
-function manifestName(dir: string): string | undefined {
+/** A package of the capturing repository that the demo resolves to its working tree. */
+export interface PublishedPackage {
+  name: string;
+  folder: string;
+  manifest: JsonObject;
+}
+
+function publishedPackage(folder: string): PublishedPackage | undefined {
   try {
     const manifest = object(
-      parseJson(readFileSync(join(dir, "package.json"), "utf8")),
+      parseJson(readFileSync(join(folder, "package.json"), "utf8")),
       "package.json",
     );
-    return flag(manifest, "private") ? undefined : optStr(manifest, "name");
+    const name = optStr(manifest, "name");
+    if (flag(manifest, "private") || name === undefined) return undefined;
+    return { name, folder, manifest };
   } catch {
     return undefined;
   }
 }
 
-/**
- * The pnpm overrides that make a checkout of the demo run the capturing repository's own packages:
- * every published package of `root` (the root itself and each `packages/*` folder) mapped to its folder.
- */
-export function packageOverrides(root: string): JsonObject {
+/** Every published package of `root`: the root itself, then each `packages/*` folder in name order, private ones left out. */
+export function publishedPackages(root: string): PublishedPackage[] {
   const folders = [root];
   try {
-    for (const entry of readdirSync(join(root, "packages"), {
+    const entries = readdirSync(join(root, "packages"), {
       withFileTypes: true,
-    }))
+    });
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name)))
       if (entry.isDirectory()) folders.push(join(root, "packages", entry.name));
   } catch {
     folders.length = 1;
   }
+  return folders.flatMap((folder) => publishedPackage(folder) ?? []);
+}
+
+/**
+ * The pnpm overrides that make a checkout of the demo run the capturing repository's own packages:
+ * every published package of `root` mapped to its folder.
+ */
+export function packageOverrides(root: string): JsonObject {
   const overrides: JsonObject = {};
-  for (const folder of folders) {
-    const name = manifestName(folder);
-    if (name !== undefined) overrides[name] = `file:${folder}`;
-  }
+  for (const { name, folder } of publishedPackages(root))
+    overrides[name] = `file:${folder}`;
   return overrides;
 }
 

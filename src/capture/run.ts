@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { MongoMemoryServer } from "mongodb-memory-server";
@@ -21,7 +21,9 @@ import sharp from "sharp";
 
 import { child, object, parseJson, type JsonObject } from "../garden/json.ts";
 import { playwrightScenes } from "./browser.ts";
+import { assertBuilt } from "./built.ts";
 import { type CaptureArgs, checkoutSettings, demoEnvironment } from "./demo.ts";
+import { keepDemoLogs } from "./logs.ts";
 import { playScenes } from "./play.ts";
 import { settle } from "./settle.ts";
 import { stopProcessGroup } from "./stop.ts";
@@ -56,13 +58,12 @@ function run(command: string, args: string[], cwd: string): void {
 }
 
 /** A checkout of the demo whose dependencies on this repository's packages are overridden to the working tree. Never committed: it lives in a throwaway directory. */
-function checkoutDemo(root: string, ref: string, into: string): string {
-  const demo = join(into, "demo");
+function checkoutDemo(root: string, ref: string, demo: string): void {
   const url = process.env.ANTELOPEJS_CAPTURE_DEMO_URL ?? DEMO_URL;
   run(
     "git",
     ["clone", "--quiet", "--depth", "1", "--branch", ref, url, demo],
-    into,
+    dirname(demo),
   );
   const manifestPath = join(demo, "package.json");
   const manifest = object(
@@ -79,7 +80,6 @@ function checkoutDemo(root: string, ref: string, into: string): string {
   writeFileSync(manifestPath, `${JSON.stringify(patched, null, 2)}\n`);
   writeFileSync(workspacePath, settings.workspace);
   run("pnpm", ["install", "--no-frozen-lockfile"], demo);
-  return demo;
 }
 
 /** Starts the demo's capture script and resolves with its URL once the script prints `ready <url>`. */
@@ -145,17 +145,17 @@ function captureAll(
   );
 }
 
-/** Runs the scenes against the demo and writes, or with `check` compares, their WebP files. Answers the failures, one line per scene. */
-export async function capture(
+/** Checks the demo out into `checkout`, starts it on an empty MongoDB and captures the scenes, then stops both. */
+async function captureFromDemo(
   root: string,
   args: CaptureArgs,
+  scenes: CaptureScene[],
+  checkout: string,
 ): Promise<string[]> {
-  const scenes = selectScenes(loadScenes(root), args.scene);
-  const scratch = mkdtempSync(join(tmpdir(), "antelopejs-capture-"));
   const mongo = await MongoMemoryServer.create();
   let demo: ChildProcess | undefined;
   try {
-    const checkout = checkoutDemo(root, args.demoRef, scratch);
+    checkoutDemo(root, args.demoRef, checkout);
     const started = await startDemo(
       checkout,
       demoEnvironment({
@@ -177,9 +177,34 @@ export async function capture(
   } finally {
     try {
       if (demo) await stopProcessGroup(demo, STOP);
-      rmSync(scratch, { recursive: true, force: true });
     } finally {
       await mongo.stop();
     }
+  }
+}
+
+/**
+ * Runs the scenes against the demo and writes, or with `check` compares, their WebP files. Answers the failures,
+ * one line per scene. Refuses a module whose build output is missing before it starts anything. On a failure the
+ * demo's logs outlive the deleted checkout, and the failures or the error name where they are.
+ */
+export async function capture(
+  root: string,
+  args: CaptureArgs,
+): Promise<string[]> {
+  const scenes = selectScenes(loadScenes(root), args.scene);
+  assertBuilt(root);
+  const scratch = mkdtempSync(join(tmpdir(), "antelopejs-capture-"));
+  const checkout = join(scratch, "demo");
+  try {
+    const failures = await captureFromDemo(root, args, scenes, checkout);
+    return failures.length ? [...failures, ...keepDemoLogs(checkout)] : [];
+  } catch (error) {
+    const kept = keepDemoLogs(checkout);
+    if (kept.length === 0) throw error;
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error([reason, ...kept].join("\n"), { cause: error });
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
   }
 }
