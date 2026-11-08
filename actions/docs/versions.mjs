@@ -317,7 +317,26 @@ const OWN_PACKAGE =
   /(?<![\w$])(["']?)package\1\s*:\s*(["'])(@antelopejs\/[^"'\s]+)\2/g;
 const OWN_VERSION = /(?<![\w$])(["']?)version\1\s*:\s*(["'])([^"'\n]*)\2/;
 
-/** The `{...}` span enclosing `index`, or null outside any object literal. */
+/** The 0-based line range of the fenced block or paragraph holding `line`, so an example never borrows braces from elsewhere. */
+function regionAround(doc, lines, line) {
+  const fence = doc.code.find(
+    ([from, to]) => from <= doc.firstLine + line && doc.firstLine + line <= to,
+  );
+  if (fence) return [fence[0] - doc.firstLine, fence[1] - doc.firstLine];
+  const prose = (index) =>
+    lines[index]?.trim() &&
+    !doc.code.some(
+      ([from, to]) =>
+        from <= doc.firstLine + index && doc.firstLine + index <= to,
+    );
+  let from = line;
+  let to = line;
+  while (prose(from - 1)) from -= 1;
+  while (prose(to + 1)) to += 1;
+  return [from, to];
+}
+
+/** The `{...}` enclosing `index` in `text` with nested objects blanked, or null outside any object. */
 function objectAround(text, index) {
   let depth = 0;
   let start = index;
@@ -327,14 +346,15 @@ function objectAround(text, index) {
     start -= 1;
   }
   if (start < 0) return null;
-  let end = start;
+  let body = "";
   depth = 0;
-  do {
-    if (text[end] === "{") depth += 1;
-    if (text[end] === "}") depth -= 1;
-    end += 1;
-  } while (depth > 0 && end < text.length);
-  return { start, end };
+  for (const char of text.slice(start)) {
+    if (char === "}") depth -= 1;
+    body += depth > 1 ? blank(char) : char;
+    if (char === "{") depth += 1;
+    if (depth === 0) break;
+  }
+  return { start, body };
 }
 
 /** The `@antelopejs/*` name and version of the package.json nearest each document, up to the checkout root. */
@@ -356,21 +376,31 @@ function ownManifests(documents, root) {
 
 /**
  * Fails a config example, fenced or not, whose `package` names an
- * `@antelopejs/*` package documented in this checkout and whose `version` in
- * the same object is not a range that selects that package's own version.
+ * `@antelopejs/*` package documented in this checkout and whose `version`
+ * beside it in the same object, inside one fence or paragraph, is a range that
+ * does not select that package's own version. A dist-tag such as `latest` passes.
  */
 export function checkOwnVersions(documents, { root, fail }) {
   const own = ownManifests(documents, root);
   for (const doc of documents) {
     if (CHANGELOG.test(basename(doc.path))) continue;
+    const lines = doc.text.split("\n");
     for (const match of doc.text.matchAll(OWN_PACKAGE)) {
       const version = own.get(match[3]);
-      const object = objectAround(doc.text, match.index);
-      if (!version || !object) continue;
-      const span = doc.text.slice(object.start, object.end);
-      const spec = span.match(OWN_VERSION);
-      if (!spec || semver.satisfies(version, spec[3])) continue;
-      const line = doc.firstLine + lineAt(doc.text, object.start + spec.index);
+      if (!version) continue;
+      const [from, to] = regionAround(
+        doc,
+        lines,
+        lineAt(doc.text, match.index),
+      );
+      const offset = lines.slice(0, from).join("\n").length + (from && 1);
+      const region = lines.slice(from, to + 1).join("\n");
+      const object = objectAround(region, match.index - offset);
+      const spec = object?.body.match(OWN_VERSION);
+      if (!spec || !semver.validRange(spec[3])) continue;
+      if (semver.satisfies(version, spec[3])) continue;
+      const line =
+        doc.firstLine + from + lineAt(region, object.start + spec.index);
       fail(
         `${relative(root, doc.path)}:${line}: version "${spec[3]}" of ${match[3]} does not select its package.json version ${version}; use a range such as "^${version}"`,
       );

@@ -262,6 +262,11 @@ it("fails a config example whose version does not select the documented module's
     '```json\n{ "package": "@antelopejs/a", "version": ">=0.5.0 <1.0.0" }\n```',
     '```js\nsource: { package: "@antelopejs/b", version: "^0.1.0" }\n```',
     '```js\nsource: { package: "@antelopejs/a" }\n```',
+    "Open a block with `{`.",
+    '```yaml\npackage: "@antelopejs/a"\n```',
+    '```json\n{ "version": "9.9.9" }\n```',
+    '`source: { package: "@antelopejs/a", config: { version: "v2" } }`',
+    '`source: { package: "@antelopejs/a", version: "latest" }`',
   ].join("\n\n");
   const { root } = fixture(t, {
     "package.json": JSON.stringify({ name: "workspace", private: true }),
