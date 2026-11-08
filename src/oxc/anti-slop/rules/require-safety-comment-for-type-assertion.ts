@@ -1,6 +1,8 @@
 import { defineRule } from "@oxlint/plugins";
 
-import type { ESTree, SourceCode } from "@oxlint/plugins";
+import { JSDOC_TYPED_FILE, jsDocTagType } from "../shared/type-guards.ts";
+
+import type { Comment, ESTree, SourceCode, Token } from "@oxlint/plugins";
 
 type TypeAssertion = ESTree.TSAsExpression | ESTree.TSTypeAssertion;
 
@@ -44,47 +46,53 @@ export function markerPattern(markers: readonly string[]): RegExp {
   );
 }
 
-function hasSafetyJustificationBefore(
-  sourceCode: SourceCode,
-  owner: ESTree.Node,
-  assertion: TypeAssertion,
-  pattern: RegExp,
-): boolean {
-  return sourceCode
-    .getCommentsBefore(owner)
-    .some(
-      (comment) => comment.end <= assertion.start && pattern.test(comment.value),
-    );
+/** Return the `(` a JSDoc `@type {T}` block casts, unless `T` is `const`. */
+function jsDocCastParen(sourceCode: SourceCode, comment: Comment): Token | null {
+  if (comment.type !== "Block" || !comment.value.startsWith("*")) return null;
+  const type = jsDocTagType(comment.value, "type");
+  if (type === null || type.trim() === "const") return null;
+  const next = sourceCode.getTokenAfter(comment);
+  return next?.type === "Punctuator" && next.value === "(" ? next : null;
 }
 
+/**
+ * Return whether a marker comment ends before `assertion` starts, either right before it
+ * or before a node between `owner` and its statement or class property.
+ */
 function hasSafetyComment(
   sourceCode: SourceCode,
-  node: TypeAssertion,
+  assertion: TypeAssertion | Comment,
+  owner: ESTree.Node,
   pattern: RegExp,
 ): boolean {
-  let current: ESTree.Node = node;
-  while (true) {
-    if (hasSafetyJustificationBefore(sourceCode, current, node, pattern)) return true;
+  const justifies = (target: ESTree.Node | Comment): boolean =>
+    sourceCode
+      .getCommentsBefore(target)
+      .some((comment) => comment.end <= assertion.start && pattern.test(comment.value));
+  if (justifies(assertion)) return true;
+  let current = owner;
+  while (current.type !== "Program") {
+    if (justifies(current)) return true;
     if (commentOwnerKinds.has(current.type)) {
       const exportDeclaration = current.parent;
       return (
         exportDeclaration.type === "ExportNamedDeclaration" &&
         exportDeclaration.declaration === current &&
-        hasSafetyJustificationBefore(sourceCode, exportDeclaration, node, pattern)
+        justifies(exportDeclaration)
       );
     }
-    if (current.parent.type === "Program") return false;
     current = current.parent;
   }
+  return false;
 }
 
-/** Require every non-const type assertion to state the invariant TypeScript cannot express. */
+/** Require every non-const type assertion, JSDoc casts in JavaScript files included, to state the invariant TypeScript cannot express. */
 export const requireSafetyCommentForTypeAssertionRule = defineRule({
   meta: {
     type: "problem",
     docs: {
       description:
-        "Require a nearby SAFETY comment for every TypeScript type assertion except const assertions.",
+        "Require a nearby SAFETY comment for every type assertion, TypeScript or JSDoc cast, except const assertions.",
     },
     messages: {
       missingSafetyComment:
@@ -109,21 +117,42 @@ export const requireSafetyCommentForTypeAssertionRule = defineRule({
   createOnce(context) {
     const patterns = new Map<string, RegExp>();
 
-    const checkAssertion = (node: TypeAssertion) => {
-      if (isConstAssertion(node)) return;
+    const markerSettings = () => {
       const markers = configuredSafetyMarkers(context.options?.[0]);
       const patternKey = markers.join("\u0000");
       const pattern = patterns.get(patternKey) ?? markerPattern(markers);
       patterns.set(patternKey, pattern);
-      if (hasSafetyComment(context.sourceCode, node, pattern)) return;
-      context.report({
-        node,
-        messageId: "missingSafetyComment",
-        data: { marker: markers[0] ?? DEFAULT_SAFETY_MARKERS[0] },
-      });
+      return { pattern, data: { marker: markers[0] ?? DEFAULT_SAFETY_MARKERS[0] } };
+    };
+
+    const checkAssertion = (node: TypeAssertion) => {
+      if (isConstAssertion(node)) return;
+      const { pattern, data } = markerSettings();
+      if (node.parent === null || hasSafetyComment(context.sourceCode, node, node.parent, pattern)) {
+        return;
+      }
+      context.report({ node, messageId: "missingSafetyComment", data });
+    };
+
+    const checkJsDocCasts = (program: ESTree.Program) => {
+      if (!JSDOC_TYPED_FILE.test(context.filename)) return;
+      const { sourceCode } = context;
+      const { pattern, data } = markerSettings();
+      for (const comment of sourceCode.getAllComments()) {
+        const paren = jsDocCastParen(sourceCode, comment);
+        if (paren === null) continue;
+        const owner = sourceCode.getNodeByRangeIndex(paren.start) ?? program;
+        if (hasSafetyComment(sourceCode, comment, owner, pattern)) continue;
+        context.report({
+          loc: { start: comment.loc.start, end: paren.loc.end },
+          messageId: "missingSafetyComment",
+          data,
+        });
+      }
     };
 
     return {
+      Program: checkJsDocCasts,
       TSAsExpression: checkAssertion,
       TSTypeAssertion: checkAssertion,
     };

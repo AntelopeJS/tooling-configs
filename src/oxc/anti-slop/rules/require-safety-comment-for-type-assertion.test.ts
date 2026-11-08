@@ -70,3 +70,70 @@ tester.run(
     ],
   },
 );
+
+const jsTester = new RuleTester();
+
+jsTester.run(
+  "anti-slop/require-safety-comment-for-type-assertion (JSDoc casts)",
+  requireSafetyCommentForTypeAssertionRule,
+  {
+    valid: [
+      {
+        name: "agent-skills scripts/lib/*.mjs JSDoc cast with its SAFETY comment",
+        filename: "values.mjs",
+        code: "// SAFETY: JSON.parse of a manifest the loader validated.\nconst manifest = /** @type {Manifest} */ (JSON.parse(text));",
+      },
+      {
+        filename: "values.js",
+        code: "const id = /* SAFETY: Validation established the invariant. */ /** @type {UserId} */ (value);",
+      },
+      {
+        filename: "values.cjs",
+        code: "function parse() {\n// SAFETY: Validation above established the UserId invariant.\nreturn /** @type {UserId} */ (value);\n}",
+      },
+      { filename: "values.mjs", code: "const values = /** @type {const} */ ([1, 2]);" },
+      { filename: "values.mjs", code: "/** @type {UserId} */\nconst id = value;" },
+      { filename: "values.mjs", code: "const id = /** @satisfies {UserId} */ (value);" },
+      { filename: "values.mjs", code: "const id = /* @type {UserId} */ (value);" },
+      { filename: "values.ts", code: "const id = /** @type {UserId} */ (value);" },
+    ],
+    invalid: [
+      {
+        name: "agent-skills#28 bare JSDoc cast in an .mjs file",
+        filename: "values.mjs",
+        code: "const manifest = /** @type {Manifest} */ (JSON.parse(text));",
+        errors: [error],
+      },
+      {
+        filename: "values.js",
+        code: "export const id = /** @type {UserId} */ (value);",
+        errors: [error],
+      },
+      {
+        filename: "values.cjs",
+        code: "function parse() {\nreturn /** @type {UserId} */ (value);\n}",
+        errors: [error],
+      },
+      {
+        filename: "values.mjs",
+        code: "const name = /** @type {User} */ (value).name;",
+        errors: [error],
+      },
+      {
+        filename: "values.mjs",
+        code: "use(/** @type {UserId} */ (first), /** @type {UserId} */ (second));",
+        errors: [error, error],
+      },
+      {
+        filename: "values.mjs",
+        code: "// SAFETY:\nconst id = /** @type {UserId} */ (value);",
+        errors: [error],
+      },
+      {
+        filename: "values.mjs",
+        code: "const id = /** @type {UserId} SAFETY: inside the cast. */ (value);",
+        errors: [error],
+      },
+    ],
+  },
+);

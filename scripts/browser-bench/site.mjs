@@ -85,9 +85,11 @@ export function startSite() {
   });
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => {
-      const { port } = /** @type {import("node:net").AddressInfo} */ (
-        server.address()
-      );
+      const address = server.address();
+      if (!(address instanceof Object)) {
+        throw new Error(`site server is not on a TCP port: ${address}`);
+      }
+      const { port } = address;
       resolve({
         baseUrl: `http://127.0.0.1:${port}`,
         close: () =>
