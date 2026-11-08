@@ -153,13 +153,7 @@ export class VerifyContext implements JourneyContext {
     args: string[],
     options: DriveOptions = {},
   ): Promise<CommandResult> {
-    return runRecorded(this.step(name), {
-      program,
-      args,
-      cwd: options.cwd ?? this.work,
-      env: this.env(options.env),
-      timeoutMs: options.timeoutMs,
-    }).then((result) => this.caches.observed(result));
+    return this.run(name, program, args, options, false);
   }
 
   /** Runs `ajs <args>` of the repository's `@antelopejs/core`. */
@@ -168,12 +162,29 @@ export class VerifyContext implements JourneyContext {
     args: string[],
     options: DriveOptions = {},
   ): Promise<CommandResult> {
-    return this.command(
+    return this.run(
       name,
       process.execPath,
       [ajsEntry(this.repo), ...args],
       options,
+      true,
     );
+  }
+
+  private run(
+    name: string,
+    program: string,
+    args: string[],
+    options: DriveOptions,
+    ajs: boolean,
+  ): Promise<CommandResult> {
+    return runRecorded(this.step(name), {
+      program,
+      args,
+      cwd: options.cwd ?? this.work,
+      env: this.env(options.env),
+      timeoutMs: options.timeoutMs,
+    }).then((result) => this.caches.observed(result, ajs));
   }
 
   edit(name: string, file: string, content: string): string {
@@ -317,7 +328,7 @@ export class VerifyContext implements JourneyContext {
       add: [{ name: `${name} (${project})`, pid: handle.pid }],
     });
     await this.waitReady(app, handle, fixture !== undefined);
-    return this.caches.observed(app);
+    return this.caches.observed(app, true);
   }
 
   private async probe(
