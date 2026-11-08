@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.4.1
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.4.0...v0.4.1)
+
+### 🩹 Fixes
+
+- **checks:** Find tsc on TypeScript 7 through its package.json ([#276](https://github.com/AntelopeJS/tooling-configs/pull/276))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.4.0
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.8...v0.4.0)
