@@ -16,7 +16,12 @@ import { marked } from "marked";
 
 import { checkStandard, readStandard } from "./standard.mjs";
 import { checkTypescript } from "./typescript.mjs";
-import { checkVersionClaims, plain, sameRange } from "./versions.mjs";
+import {
+  checkOwnVersions,
+  checkVersionClaims,
+  plain,
+  sameRange,
+} from "./versions.mjs";
 
 const markdown = /\.(md|mdc)$/i;
 
@@ -316,6 +321,7 @@ export function checkDocs({
     blocks += checkVersionClaims(doc, context);
     for (const entry of doc.api) localPath(resolve(dirname(doc.path), entry));
   }
+  checkOwnVersions(documents, context);
   if (standard ?? readStandard(root)) {
     checkStandard({
       root,

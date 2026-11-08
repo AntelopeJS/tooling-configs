@@ -248,3 +248,43 @@ it("treats a legacy docs-compat table as manifest-checked, not as prose", (t) =>
   });
   assert.deepEqual(checkDocs({ root, files: ["README.md"] }).failures, []);
 });
+
+it("fails a config example whose version does not select the documented module's own package.json version", (t) => {
+  const manifest = JSON.stringify({ name: "@antelopejs/a", version: "0.8.1" });
+  const source = (version) =>
+    `source: { type: "package", package: "@antelopejs/a", version: "${version}" }`;
+  const examples = [
+    `\`\`\`js\n${source("^0.6.0")}\n\`\`\``,
+    "```js\nsource: { version: '^0.5.0', package: '@antelopejs/a' }\n```",
+    '```json\n{ "package": "@antelopejs/a",\n  "version": "~0.8.0-0 <0.8.1" }\n```',
+    `Configure \`${source("0.6.0")}\`.`,
+    `\`\`\`js\n${source("^0.8.0")}\n\`\`\``,
+    '```json\n{ "package": "@antelopejs/a", "version": ">=0.5.0 <1.0.0" }\n```',
+    '```js\nsource: { package: "@antelopejs/b", version: "^0.1.0" }\n```',
+    '```js\nsource: { package: "@antelopejs/a" }\n```',
+  ].join("\n\n");
+  const { root } = fixture(t, {
+    "package.json": JSON.stringify({ name: "workspace", private: true }),
+    "README.md": `# Workspace\n\n${examples}\n`,
+    "packages/a/package.json": manifest,
+    "packages/a/docs/setup.md": `# Setup\n\n${examples}\n`,
+  });
+  const { failures } = checkDocs({
+    root,
+    files: ["README.md", "packages/a/docs"],
+  });
+  assert.deepEqual(lines(failures), [
+    ["README.md", "4"],
+    ["README.md", "8"],
+    ["README.md", "13"],
+    ["README.md", "16"],
+    ["packages/a/docs/setup.md", "4"],
+    ["packages/a/docs/setup.md", "8"],
+    ["packages/a/docs/setup.md", "13"],
+    ["packages/a/docs/setup.md", "16"],
+  ]);
+  assert.match(
+    failures[0],
+    /version "\^0\.6\.0" of @antelopejs\/a does not select its package\.json version 0\.8\.1/,
+  );
+});
