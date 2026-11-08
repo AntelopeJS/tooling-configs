@@ -54,7 +54,7 @@ test("api-diff describes wildcard entries that print on import, set an exit code
   );
 });
 
-test("api-diff reports an entry that loads and then fails asynchronously as an execution error", (t) => {
+test("api-diff reports an entry that loads and then fails asynchronously as an execution error, whatever NODE_OPTIONS says about unhandled rejections", (t) => {
   const root = apiRepo(t);
   put(
     root,
@@ -62,7 +62,9 @@ test("api-diff reports an entry that loads and then fails asynchronously as an e
     'export const value = 1;\nvoid Promise.reject(new Error("late failure"));\n',
   );
   commit(root);
-  const result = bin(root, "api-diff", ["HEAD"]);
+  const result = bin(root, "api-diff", ["HEAD"], {
+    NODE_OPTIONS: "--unhandled-rejections=warn",
+  });
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(result.stdout, /Execution error:[^]*Error: late failure/);
   assert.doesNotMatch(result.stdout, /"exit"/);
