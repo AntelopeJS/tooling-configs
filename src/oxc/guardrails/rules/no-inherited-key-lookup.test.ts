@@ -99,6 +99,30 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       code: "const T: Record<string, number> = { a: 1 }; const has = 'a' in T;",
     },
     {
+      name: "Object.hasOwn guards the right side of &&, and the else branch of a negated test",
+      code: "const T: Record<string, number> = { a: 1 }; function f(key: string) { if (!Object.hasOwn(T, key)) use(0); else use(T[key]); return ready && Object.hasOwn(T, key) && T[key]; }",
+    },
+    {
+      name: "an early continue on a failed Object.hasOwn guards the rest of the loop body",
+      code: "const T: Record<string, number> = { a: 1 }; function f(keys: string[]) { for (const key of keys) { if (!Object.hasOwn(T, key)) { skip(key); continue; } use(T[key]); } }",
+    },
+    {
+      name: "a computed destructure guarded by Object.hasOwn",
+      code: "function f(table: Record<string, unknown>, key: string) { if (!Object.hasOwn(table, key)) return; const { [key]: value } = table; return value; }",
+    },
+    {
+      name: "a computed destructure with a literal key, and of a table that is not string-keyed",
+      code: "function f(table: Record<string, unknown>, other: Options, key: string) { const { ['a']: a } = table; const { [key]: b } = other; return [a, b]; }",
+    },
+    {
+      name: "an unknown-annotated alias guarded by Object.hasOwn",
+      code: "function f(table: Record<string, unknown>, key: string) { const holder: unknown = table; return isRecord(holder) && Object.hasOwn(holder, key) ? holder[key] : undefined; }",
+    },
+    {
+      name: "a let alias is not followed, and an alias annotated with a closed type keeps that type",
+      code: "function f(table: Record<string, unknown>, key: string) { let holder: unknown = table; holder = other; const options: Options = table; return [isRecord(holder) ? holder[key] : undefined, options[key]]; }",
+    },
+    {
       name: "a shadowing Map binding",
       code: "const T: Record<string, number> = { a: 1 }; function f(key: string) { const T = new Map<string, number>(); return T.get(key) ?? T.size; }",
     },
@@ -323,6 +347,42 @@ class ControllerProto {
       name: "a guard on a different key does not cover the read",
       code: "const T: Record<string, number> = { a: 1 }; function f(key: string, other: string) { return Object.hasOwn(T, other) ? T[key] : undefined; }",
       errors: [lookup],
+    },
+    {
+      name: "interface-core#58 form a (tooling-configs#121), a computed destructure",
+      code: `
+type UnparsedRecord = Record<string, unknown>;
+function a(implementation: UnparsedRecord, key: string) {
+  const { [key]: implemented } = implementation;
+  ({ [key]: implemented } = implementation);
+  return implemented;
+}`,
+      errors: [lookup, lookup],
+    },
+    {
+      name: "interface-core#58 form b (tooling-configs#121), a read through an unknown-annotated alias",
+      code: `
+type UnparsedRecord = Record<string, unknown>;
+function b(implementation: UnparsedRecord, key: string) {
+  const holder: unknown = implementation;
+  const alias = holder;
+  return isRecord(holder) ? holder[key] ?? alias[key] : undefined;
+}`,
+      errors: [lookup, lookup],
+    },
+    {
+      name: "interface-core#58 form c (tooling-configs#121), a read the Object.hasOwn result does not guard",
+      code: `
+type UnparsedRecord = Record<string, unknown>;
+function c(implementation: UnparsedRecord, key: string) {
+  return Object.hasOwn(implementation, key) ? implementation[key] : implementation[key];
+}`,
+      errors: [lookup],
+    },
+    {
+      name: "a read before the Object.hasOwn check, and one after a check whose failure does not exit",
+      code: "const T: Record<string, number> = { a: 1 }; function f(key: string) { const before = T[key]; if (!Object.hasOwn(T, key)) log(key); return [before, T[key], Object.hasOwn(T, key) || T[key]]; }",
+      errors: [lookup, lookup, lookup],
     },
   ],
 });
