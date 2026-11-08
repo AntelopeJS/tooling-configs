@@ -268,24 +268,25 @@ export function extendedConfigs(directory: string): string[] {
   return (source.extendedSourceFiles ?? []).map((path) => resolve(path));
 }
 
-/** TypeScript records on parsed options, untyped, the directory `paths` targets resolve against: `baseUrl`, else the directory of the config that declares `paths`. */
+/** TypeScript records on parsed options, untyped, the directory of the config that declares `paths`, which its targets resolve against when no `baseUrl` is set. */
 function isRecordedDirectory(
   value: ts.CompilerOptions[string],
 ): value is string {
   return typeof value === "string";
 }
 
-/** The configured `paths`, each target made absolute. */
+/** The configured `paths`, each target made absolute against `baseUrl`, else the directory of the config that declares `paths`. */
 function absolutePaths(
   options: ts.CompilerOptions,
 ): Record<string, string[]> | undefined {
-  const { paths, pathsBasePath } = options;
+  const { paths, baseUrl, pathsBasePath } = options;
   if (paths === undefined || !isRecordedDirectory(pathsBasePath))
     return undefined;
+  const base = baseUrl ?? pathsBasePath;
   return Object.fromEntries(
     Object.entries(paths).map(([key, targets]) => [
       key,
-      targets.map((target) => resolve(pathsBasePath, target)),
+      targets.map((target) => resolve(base, target)),
     ]),
   );
 }

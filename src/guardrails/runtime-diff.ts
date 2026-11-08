@@ -33,7 +33,7 @@ import {
 } from "./typescript.ts";
 
 const DESCRIBE = `
-const { readFileSync, writeFileSync, existsSync } = require("node:fs");
+const { readFileSync, writeFileSync, existsSync, realpathSync } = require("node:fs");
 const { dirname, join, extname, sep } = require("node:path");
 const { pathToFileURL } = require("node:url");
 const [file, destination] = process.argv.splice(2);
@@ -54,10 +54,11 @@ const aliases = Object.entries(manifest.antelopeJs?.paths ?? {}).map(([key, valu
   key: key.replace(/\\*$/, ""),
   values: values.map(value => join(directory, manifest.antelopeJs.baseUrl ?? "", value.replace(/\\*$/, ""))),
 }));
+const packageDirectory = realpathSync(directory);
 const resolveFilename = Module._resolveFilename;
 Module._resolveFilename = function (request, parent, ...rest) {
   const caller = parent?.filename ?? "";
-  if (caller.startsWith(directory + sep) && !caller.includes(sep + "node_modules" + sep))
+  if (caller.startsWith(packageDirectory + sep) && !caller.includes(sep + "node_modules" + sep))
     for (const { key, values } of aliases)
       if (request.startsWith(key))
         for (const value of values) {
