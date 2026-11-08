@@ -62,6 +62,23 @@ test("template sync writes the suppressions scripts that checks requires (#88)",
   );
 });
 
+test("template sync adopts the suppression budget that antelopejs-suppressions requires (#92)", (t) => {
+  const root = templateRepo(t, TEMPLATE_SCRIPTS);
+  put(
+    root,
+    "src/index.ts",
+    "// @ts-expect-error untyped fixture\nexport const value: number = '1';\n",
+  );
+  commit(root);
+  assert.equal(bin(root, "sync", ["--profile", "template"]).status, 0);
+  const suppressions = bin(root, "suppressions");
+  assert.equal(suppressions.status, 0, suppressions.stderr);
+  assert.equal(
+    bin(root, "sync", ["--check", "--profile", "template"]).status,
+    0,
+  );
+});
+
 test("template sync --check reports a missing script and writes nothing (#88)", (t) => {
   const root = templateRepo(t, TEMPLATE_SCRIPTS, true);
   const before = read(root, "package.json");
