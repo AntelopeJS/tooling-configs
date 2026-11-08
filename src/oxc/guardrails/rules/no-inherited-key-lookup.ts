@@ -313,12 +313,16 @@ function destructuredValue(
     : null;
 }
 
-/** A destructured binding nothing reads, such as `_removed` in `const { [key]: _removed, ...rest } = table`. */
+/** A destructured binding nothing reads or exports, such as `_removed` in `const { [key]: _removed, ...rest } = table`. */
 function isDiscarded(value: ESTree.Node, source: SourceCode): boolean {
   if (value.type !== "Identifier") return false;
   const variable = resolveVariable(source, value);
   return (
     variable !== null &&
+    variable.defs.every(
+      (definition) =>
+        definition.parent?.parent?.type !== "ExportNamedDeclaration",
+    ) &&
     !variable.references.some((reference) => reference.isRead())
   );
 }

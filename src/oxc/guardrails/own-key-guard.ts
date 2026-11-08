@@ -80,6 +80,25 @@ function comparedOutcome(
   return { operand, outcome: (outcome === equal) === value };
 }
 
+/** A value that is `true` or `false`, so comparing it with a boolean literal tests its truth: a call, a `!`, or a `const` of one. */
+function isBooleanValued(
+  node: ESTree.Node,
+  read: OwnKey,
+  depth: number,
+): boolean {
+  if (depth > MAX_DEPTH) return false;
+  if (node.type === "ParenthesizedExpression")
+    return isBooleanValued(node.expression, read, depth);
+  if (node.type === "Identifier") {
+    const value = constValue(node, read);
+    return value !== null && isBooleanValued(value, read, depth + 1);
+  }
+  return (
+    node.type === "CallExpression" ||
+    (node.type === "UnaryExpression" && node.operator === "!")
+  );
+}
+
 /** Whether the own-key check holds whenever `node` evaluates to `outcome`. */
 function holds(
   node: ESTree.Node,
@@ -105,6 +124,7 @@ function holds(
       const compared = comparedOutcome(node, outcome);
       return (
         compared !== null &&
+        isBooleanValued(compared.operand, read, depth) &&
         holds(compared.operand, compared.outcome, read, depth)
       );
     }

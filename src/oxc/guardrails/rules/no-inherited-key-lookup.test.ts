@@ -372,6 +372,11 @@ function b(implementation: UnparsedRecord, key: string) {
       errors: [lookup, lookup],
     },
     {
+      name: "a computed binding exported in its own declaration is read by importers",
+      code: "const T: Record<string, number> = { a: 1 }; declare const k: string; export const { [k]: v } = T; export let x: number; ({ [k]: x } = T);",
+      errors: [lookup, lookup],
+    },
+    {
       name: "an alias widened with as unknown, and a computed binding that is read beside a rest",
       code: "function f(t: Record<string, unknown>, key: string) { const holder = t as unknown; const { [key]: taken, ...rest } = t; return [isRecord(holder) ? holder[key] : undefined, taken, rest]; }",
       errors: [lookup, lookup],
