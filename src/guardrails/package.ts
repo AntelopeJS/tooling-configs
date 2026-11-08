@@ -212,8 +212,10 @@ interface DependencyOptions {
   captures?: boolean;
 }
 
-/** Whether `range`'s lowest named version is one the pack's `tested` range admits. */
+/** Whether `range`'s lowest named version is one the pack's `tested` range admits. A `workspace:` or `catalog:` spec resolves elsewhere and is kept as declared. */
 function withinTested(range: string | undefined, tested: string): boolean {
+  if (range?.startsWith("workspace:") || range?.startsWith("catalog:"))
+    return true;
   const floor = /\d+\.\d+\.\d+/.exec(range ?? "")?.[0];
   return floor !== undefined && admits(tested, floor);
 }

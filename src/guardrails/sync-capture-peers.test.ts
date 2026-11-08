@@ -65,20 +65,26 @@ test("adding docs/captures.ts makes check fail until sync adds the capture peers
   assert.equal(after.status, 0, after.stdout + after.stderr);
 });
 
-test("a declared capture peer inside the tested range is kept, and one outside it fails check and is replaced", (t) => {
+test("a declared capture peer inside the tested range or from a pnpm catalog is kept, and one below or above it fails check and is replaced", (t) => {
   const root = syncedRepo(t);
   put(root, "docs/captures.ts", "export default [];\n");
   const tested = packRanges();
   const floor = /(\d+)\.(\d+)\.(\d+)/.exec(tested.sharp ?? "");
   assert.ok(floor);
   const inside = `^${floor[1]}.${floor[2]}.${Number(floor[3]) + 1}`;
-  declare(root, { sharp: inside, "playwright-core": "^1.0.0" });
+  declare(root, {
+    sharp: inside,
+    "playwright-core": "^1.0.0",
+    pixelmatch: "^999.0.0",
+    "mongodb-memory-server": "catalog:",
+  });
   const outside = bin(root, "sync", ["--check"]);
   assert.equal(outside.status, 1, outside.stdout);
   bin(root, "sync");
   assert.deepEqual(capturePeers(root), {
     ...tested,
     sharp: inside,
+    "mongodb-memory-server": "catalog:",
   });
   const after = bin(root, "sync", ["--check"]);
   assert.equal(after.status, 0, after.stdout + after.stderr);
