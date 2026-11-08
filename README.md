@@ -9,7 +9,7 @@
 The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the commands that install and enforce them in a repository, and a check for the version ranges of interface dependencies.
 
 - [oxlint](https://oxc.rs) and [oxfmt](https://oxc.rs) replace Biome: lint, format and Tailwind class sorting, `.vue` included.
-- ESLint stays for the Nuxt front ends, from a shared config: oxlint lints `.vue` script blocks only with the rules that need no type information.
+- ESLint stays for the Nuxt front ends, from a shared config: oxlint runs no Vue template rule and no type-aware rule on `.vue` files.
 - [Knip](https://knip.dev) learns the entry points of an AntelopeJS module.
 - Every preset is a function: options adjust it without copying it.
 - `antelopejs-sync` writes the configs, hooks, scripts and agent instructions into a repository, and `antelopejs-sync --check` fails CI when they drift.
@@ -377,7 +377,7 @@ Delete `biome.json` and the `@biomejs/biome` dependency, point `lint`, `lint:fix
 
 ## ESLint (Nuxt front ends)
 
-oxlint lints `.vue` script blocks only with the rules that need no type information, so the front end stays on ESLint:
+oxlint runs no Vue template rule and no type-aware rule on `.vue` files, so the front end stays on ESLint:
 
 ```js
 // frontend-vue/eslint.config.mjs
@@ -389,7 +389,7 @@ export default antelopeNuxtConfig({
 });
 ```
 
-`typeAware` runs the oxlint preset's type-aware rules, as `@typescript-eslint/<rule>`, on the script blocks of `.vue` files, which `oxlint-tsgolint` cannot read. Types flow from the `.ts` files they import. `tsconfigRootDir` is the directory of the tsconfig whose `include` lists the `.vue` files, such as the one Nuxt generates. TypeScript files are left to oxlint, so nothing is type-checked twice. Off when omitted.
+`typeAware` runs the oxlint preset's type-aware rules, as `@typescript-eslint/<rule>`, on the script blocks of `.vue` files, which `oxlint-tsgolint` cannot read. Off when omitted. TypeScript files are left to oxlint, so nothing is type-checked twice. `tsconfigRootDir` is the project root. Each `.vue` file must be listed by its nearest `tsconfig.json`, as the root one that extends or references `.nuxt/` lists the app; a file outside it, such as a playground no tsconfig includes, fails to parse. Types flow from the `.ts` files a component imports. Without Volar, a type imported from another `.vue` file is an error type: `no-unsafe-*` reports code that uses it, which `rules` can switch off, and a `lang="tsx"` block fails to parse.
 
 `@nuxt/eslint-config` supplies the Vue and TypeScript rules. The preset only records where AntelopeJS layers differ: single-word page components, `any` and `{}` allowed, `_`-prefixed unused bindings, and import order left alone. It sets no formatting rule, since oxfmt formats `.vue`. Every rule the resolved config sets to warn becomes an error, so no rule warns there either. Pass `rules` to layer your own on top, and declare `@nuxt/eslint-config` in the front end's `package.json`.
 

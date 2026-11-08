@@ -57,9 +57,7 @@ test("Nuxt resolves every warning severity to error while preserving options and
   }
 });
 
-async function lintVueProject(
-  options: (root: string) => Parameters<typeof antelopeNuxtConfig>[0],
-) {
+async function lintVueProject(typeAware: boolean) {
   const root = mkdtempSync(join(tmpdir(), "antelope-eslint-"));
   try {
     writeFileSync(
@@ -81,10 +79,16 @@ async function lintVueProject(
       join(root, "Subject.vue"),
       '<script setup lang="ts">\nimport { load } from "./load";\nconst parsed: number = JSON.parse("1");\nload();\n</script>\n\n<template><div>{{ parsed }}</div></template>\n',
     );
+    const cwd = process.cwd();
+    if (typeAware) process.chdir(root);
+    const config = antelopeNuxtConfig(
+      typeAware ? { typeAware: { tsconfigRootDir: root } } : {},
+    );
+    process.chdir(cwd);
     const eslint = new ESLint({
       cwd: root,
       overrideConfigFile: true,
-      overrideConfig: await antelopeNuxtConfig(options(root)),
+      overrideConfig: await config,
     });
     const results = await eslint.lintFiles(["load.ts", "Subject.vue"]);
     return results.flatMap((result) =>
@@ -98,18 +102,13 @@ async function lintVueProject(
   }
 }
 
-test("typeAware runs the type-aware rules on .vue script blocks with types from sibling files, and leaves .ts files to oxlint", async () => {
-  assert.deepEqual(
-    await lintVueProject((root) => ({
-      typeAware: { tsconfigRootDir: root },
-    })),
-    [
-      "Subject.vue:3 @typescript-eslint/no-unsafe-assignment",
-      "Subject.vue:4 @typescript-eslint/no-floating-promises",
-    ],
-  );
+test("typeAware runs the type-aware rules on .vue script blocks with types from sibling files, from a directory without typescript, and leaves .ts files to oxlint", async () => {
+  assert.deepEqual(await lintVueProject(true), [
+    "Subject.vue:3 @typescript-eslint/no-unsafe-assignment",
+    "Subject.vue:4 @typescript-eslint/no-floating-promises",
+  ]);
 });
 
 test("without typeAware no rule needs type information", async () => {
-  assert.deepEqual(await lintVueProject(() => ({})), []);
+  assert.deepEqual(await lintVueProject(false), []);
 });

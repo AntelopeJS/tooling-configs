@@ -14,18 +14,20 @@ export interface AntelopeNuxtConfigOptions {
   rules?: NuxtRules;
   /**
    * Runs the type-aware rules of the oxlint preset on `.vue` script blocks,
-   * which oxlint-tsgolint cannot read. `tsconfigRootDir` is the directory of
-   * the tsconfig whose `include` lists the `.vue` files, usually
-   * `import.meta.dirname`. TypeScript files stay with oxlint and are not
-   * type-checked twice.
+   * which oxlint-tsgolint cannot read; TypeScript files stay with oxlint.
+   * `tsconfigRootDir` is the project root, usually `import.meta.dirname`.
+   * Each `.vue` file must be listed by its nearest `tsconfig.json`, or it
+   * fails to parse. Without Volar, a type imported from another `.vue` file
+   * is an error type, which the `no-unsafe-*` rules report, and a
+   * `lang="tsx"` block fails to parse.
    */
   typeAware?: { tsconfigRootDir: string };
 }
 
 /**
- * The shared rules for a Nuxt layer. oxlint lints `.vue` script blocks only
- * with rules that need no type information, so the front end stays on ESLint,
- * and `@nuxt/eslint` supplies the Vue and TypeScript rules; this only records
+ * The shared rules for a Nuxt layer. oxlint runs no Vue template rule and no
+ * type-aware rule on `.vue` files, so the front end stays on ESLint, and
+ * `@nuxt/eslint` supplies the Vue and TypeScript rules; this only records
  * where AntelopeJS layers differ from it.
  *
  * Formatting rules are deliberately absent. oxfmt formats `.vue`, and a lint
@@ -75,7 +77,10 @@ export function antelopeNuxtConfig(
 ): ReturnType<typeof createConfigForNuxt> {
   const overrides = { ...ANTELOPE_NUXT_RULES, ...options.rules };
   const composer = createConfigForNuxt({
-    features: { tooling: true },
+    features:
+      options.typeAware === undefined
+        ? { tooling: true }
+        : { tooling: true, typescript: true },
     dirs: { src: options.dirs ?? [] },
   });
   if (options.typeAware !== undefined) {
