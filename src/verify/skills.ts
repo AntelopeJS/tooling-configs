@@ -127,14 +127,13 @@ Write your judgement to \`<run>/evidence/judgement.json\`:
 }
 \`\`\`
 
-A door row is \`{ "kind", "location", "irreversible", "containment" }\`, where \`containment\` says what limits the damage. Then render and publish:
+A door row is \`{ "kind", "location", "irreversible", "containment" }\`, where \`containment\` says what limits the damage. Then render the verdict:
 
 \`\`\`bash
 ${BIN} verdict <run> --pr <n>
-${BIN} publish <run> --pr <n>
 \`\`\`
 
-\`verdict\` writes \`evidence/verdict.md\` and exits 1 unless the result is PASS or PASS+NOTES. \`publish\` commits the evidence to the orphan branch \`verify-evidence\` under \`pr-<n>/<sha>/\` from a temporary worktree, posts the verdict as a PR comment, sets commit status \`verify\` on the head SHA (\`success\` for PASS and PASS+NOTES, \`error\` for NOT VERIFIED, \`failure\` for FAIL) and reads it back. It prints the error GitHub answers when the token cannot write statuses. A new push voids the status. Post a verdict only from a thread that did not write the change.
+\`verdict\` writes \`evidence/verdict.md\` and exits 1 unless the result is PASS or PASS+NOTES. Report the verdict and what you saw in your own reply, from a thread that did not write the change.
 
 ## Trust
 

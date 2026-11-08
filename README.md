@@ -66,7 +66,7 @@ Both profiles of `antelopejs-sync` keep the shared CI caller on the job id `ci`,
 
 `antelopejs-sync` also installs the `technical-writing` and `unslop` skills in every full-profile repository and in a template source. Each is `.agents/skills/<name>/SKILL.md` with a `.claude/skills/<name>` link. The text is vendored unchanged from Upd4ting/agent-config `claude/skills/<name>/SKILL.md` at commit 4e0a848, and `--check` reports an edited file as drift. Write documentation with them: `technical-writing` picks the page's mode and sets the sentence rules, and `unslop` lists the patterns to cut.
 
-Every deterministic step of a verification is an `antelopejs-verify` command: `map`, `plan`, `new`, `doctor`, `journey`, `formal`, `doors`, `clean`, `verdict` and `publish`. The synced `SKILL.md` documents each one for the agent that verifies.
+Every deterministic step of a verification is an `antelopejs-verify` command: `map`, `plan`, `new`, `doctor`, `journey`, `formal`, `doors`, `clean` and `verdict`. The synced `SKILL.md` documents each one for the agent that verifies.
 
 The verify skills drive a browser with `playwright-core`. [Browser driver for the verify skills](./docs/browser-driver.md) records why, with the measured speed, CPU and memory.
 

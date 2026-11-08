@@ -21,7 +21,6 @@ import {
 } from "../verify/kinds.ts";
 import { clean, createRun, doctor } from "../verify/lifecycle.ts";
 import { checkMap, planFor } from "../verify/map.ts";
-import { postComment, pushEvidence, setStatus } from "../verify/publish.ts";
 import {
   featureJourneys,
   knownJourneys,
@@ -54,7 +53,6 @@ const USAGE = `Usage: antelopejs-verify <command>
   doors [patch] [--base <ref>]       print the One-way-door line for a patch, or for the diff
   clean <run>                        stop what the run started, keep only the evidence
   verdict <run> --pr <n>             render evidence/verdict.md from the results and evidence/judgement.json
-  publish <run> --pr <n>             push the evidence to verify-evidence, comment the verdict, set status verify
 `;
 
 function print(text: string): void {
@@ -274,14 +272,9 @@ function printDoors(workspace: Workspace, files: string[]): number {
   return 0;
 }
 
-function judge(
-  workspace: Workspace,
-  command: "verdict" | "publish",
-  dir: string,
-  pr: number,
-): number {
+function judge(workspace: Workspace, dir: string, pr: number): number {
   if (!Number.isInteger(pr) || pr <= 0)
-    throw new Error(`${command} needs --pr <number>`);
+    throw new Error("verdict needs --pr <number>");
   const state = loadRun(dir);
   const verdict = renderVerdict(
     workspace,
@@ -290,14 +283,6 @@ function judge(
     readJudgement(join(state.evidence, "judgement.json")),
   );
   print(verdict.markdown);
-  if (command === "publish") {
-    print(`evidence commit ${pushEvidence(workspace.root, state, verdict)}`);
-    const comment = postComment(workspace.root, verdict);
-    print(`comment ${comment}`);
-    const status = setStatus(workspace.root, verdict, comment);
-    print(status.detail);
-    if (!status.ok) return 1;
-  }
   return verdict.result === "PASS" || verdict.result === "PASS+NOTES" ? 0 : 1;
 }
 
@@ -376,8 +361,8 @@ async function main(argv: string[]): Promise<number> {
     );
   else if (command === "clean")
     for (const line of clean(loadRun(rest[0]))) print(line);
-  else if (command === "verdict" || command === "publish")
-    return judge(workspace, command, rest[0], Number(values.pr));
+  else if (command === "verdict")
+    return judge(workspace, rest[0], Number(values.pr));
   else {
     print(USAGE);
     return 2;

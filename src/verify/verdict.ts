@@ -20,7 +20,7 @@ import {
 import { git, type RunState, type Workspace } from "./workspace.ts";
 
 /** The overall result a verdict carries; NOT VERIFIED when a journey could not reach the product, never PASS. */
-export type VerdictResult = "PASS" | "PASS+NOTES" | "NOT VERIFIED" | "FAIL";
+type VerdictResult = "PASS" | "PASS+NOTES" | "NOT VERIFIED" | "FAIL";
 
 /** A rendered verdict and the facts it was computed from. */
 export interface Verdict {
@@ -28,17 +28,8 @@ export interface Verdict {
   headSha: string;
   skillSha: string;
   pr: number;
-  repository: string;
   markdown: string;
   reasons: string[];
-}
-
-/** The GitHub `owner/repo` of the origin remote. */
-function originRepository(root: string): string {
-  const url = git(root, ["remote", "get-url", "origin"]);
-  const match = /github\.com[:/](.+?)(?:\.git)?$/.exec(url);
-  if (!match) throw new Error(`origin ${url} is not a GitHub repository`);
-  return match[1];
 }
 
 function short(sha: string): string {
@@ -49,11 +40,7 @@ function bullets(entries: string[], empty: string): string[] {
   return (entries.length > 0 ? entries : [empty]).map((entry) => `- ${entry}`);
 }
 
-function journeyRow(
-  label: string,
-  result: JourneyResult,
-  link: (path: string) => string,
-): string {
+function journeyRow(label: string, result: JourneyResult): string {
   const outcome =
     result.status === "PASS"
       ? "pass"
@@ -63,8 +50,8 @@ function journeyRow(
   const reused =
     result.reusedFrom === undefined
       ? ""
-      : ` (not run again: reuses [${result.reusedFrom}](${link(result.reusedFrom)}))`;
-  return `| ${label} | \`${result.journey}\`: ${result.entryPoint} | ${outcome}: ${result.title}${reused} | [${result.folder}](${link(result.folder)}) |`;
+      : ` (not run again: reuses [${result.reusedFrom}](${result.reusedFrom}))`;
+  return `| ${label} | \`${result.journey}\`: ${result.entryPoint} | ${outcome}: ${result.title}${reused} | [${result.folder}](${result.folder}) |`;
 }
 
 /** For a reused result, the status of its source when that is no longer PASS (`missing` when gone); otherwise null. */
@@ -89,12 +76,7 @@ function featuresOutsidePlan(state: RunState, plan: Plan): string[] {
     .sort();
 }
 
-function journeyRows(
-  workspace: Workspace,
-  state: RunState,
-  plan: Plan,
-  link: (path: string) => string,
-) {
+function journeyRows(workspace: Workspace, state: RunState, plan: Plan) {
   const rows: string[] = [];
   const reasons: string[] = [];
   const notVerified: string[] = [];
@@ -122,7 +104,7 @@ function journeyRows(
         reasons.push(
           `${feature}/${result.journey} reuses ${result.reusedFrom}, which is now ${stale}`,
         );
-      rows.push(journeyRow(feature, result, link));
+      rows.push(journeyRow(feature, result));
     }
   }
   for (const feature of featuresOutsidePlan(state, plan)) {
@@ -142,9 +124,7 @@ function journeyRows(
         outsideNotVerified.push(
           `${feature}/${result.journey}: ${result.notVerified}`,
         );
-      rows.push(
-        journeyRow(`${feature} (outside the diff's features)`, result, link),
-      );
+      rows.push(journeyRow(`${feature} (outside the diff's features)`, result));
     }
   }
   return { rows, reasons, notVerified, outsideNotVerified, listed };
@@ -190,12 +170,7 @@ function doorsSection(judgement: Judgement): string[] {
   ];
 }
 
-function formalSection(
-  workspace: Workspace,
-  state: RunState,
-  plan: Plan,
-  link: (path: string) => string,
-) {
+function formalSection(workspace: Workspace, state: RunState, plan: Plan) {
   const reasons: string[] = [];
   const lines: string[] = [];
   const ran: FormalResult[] = [];
@@ -226,7 +201,7 @@ function formalSection(
         ? `violated: ${result.violated.join(", ")}`
         : `exit ${result.exitCode}, no violated rule`;
     lines.push(
-      `\`${check.name}\` (${gate ? "covers the diff, gates the verdict" : "does not cover the diff, informational"}): ${summary}. [evidence](${link(result.folder)})`,
+      `\`${check.name}\` (${gate ? "covers the diff, gates the verdict" : "does not cover the diff, informational"}): ${summary}. [evidence](${result.folder})`,
     );
   }
   return { reasons, lines, ran };
@@ -282,7 +257,6 @@ export function renderVerdict(
   judgement: Judgement,
 ): Verdict {
   const plan = planFor(workspace, state.baseRef, state.all);
-  const repository = originRepository(workspace.root);
   const skillSha =
     git(workspace.root, [
       "log",
@@ -291,15 +265,13 @@ export function renderVerdict(
       "--",
       relative(workspace.root, workspace.skill),
     ]) || plan.headSha;
-  const link = (path: string) =>
-    `https://github.com/${repository}/tree/verify-evidence/pr-${pr}/${plan.headSha}/${path}`;
   const reasons: string[] = [];
   if (plan.headSha !== state.headSha)
     reasons.push(
       `the run was created at ${short(state.headSha)} but HEAD is ${short(plan.headSha)}`,
     );
-  const journeys = journeyRows(workspace, state, plan, link);
-  const formal = formalSection(workspace, state, plan, link);
+  const journeys = journeyRows(workspace, state, plan);
+  const formal = formalSection(workspace, state, plan);
   reasons.push(
     ...journeys.reasons,
     ...plan.unmapped.map((file) => `unmapped surface ${file}`),
@@ -365,8 +337,6 @@ export function renderVerdict(
     "### Timing",
     ...timingTable(timings),
     "",
-    `Evidence: \`verify-evidence\` branch, [\`pr-${pr}/${plan.headSha}/\`](${link("")})`,
-    "",
   ].join("\n");
   writeFileSync(join(state.evidence, "verdict.md"), markdown);
   writeFileSync(
@@ -382,7 +352,6 @@ export function renderVerdict(
     headSha: plan.headSha,
     skillSha,
     pr,
-    repository,
     markdown,
     reasons,
   };

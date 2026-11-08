@@ -198,7 +198,7 @@ test("the verdict passes only when every registered journey ran and passed, with
   );
   assert.match(
     passed.stdout,
-    /\| smoke \| `ok`: node \| pass: ok exits 0 \| \[smoke\/ok\]\(https:\/\/github\.com\/acme\/demo\/tree\/verify-evidence\/pr-7\/[0-9a-f]{40}\/smoke\/ok\) \|/,
+    /\| smoke \| `ok`: node \| pass: ok exits 0 \| \[smoke\/ok\]\(smoke\/ok\) \|/,
   );
   put(root, "src/store.ts", "export const store = 2;\n");
   const changed = verify(root, tmp, ["verdict", run, "--pr", "7"]);
