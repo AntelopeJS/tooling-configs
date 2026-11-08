@@ -6,11 +6,12 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, sep } from "node:path";
+import { basename, dirname, join, sep } from "node:path";
 
 import { isObject, parseJson } from "../garden/json.ts";
 import { removeTree } from "./workspace.ts";
@@ -19,6 +20,9 @@ import { removeTree } from "./workspace.ts";
 const PROJECT_CACHE = join(".antelope", "cache");
 
 const MANIFEST = "manifest.json";
+
+/** Stands in a kept cache for the path of the project cache it was kept from, which pnpm 10 and 11 write into the `NODE_PATH` of each `.bin` shim. */
+const KEPT_CACHE = `${sep}@antelopejs-verify-kept-cache@${sep}`;
 
 /** Where `ajs` keeps a project's lock records, one folder per `<package>@<version>`. */
 const LOCK_FOLDER = "antelope-lock";
@@ -109,13 +113,38 @@ function namesCacheFolder(project: string): boolean {
   }
 }
 
+/** The path a module installed into `cache` finds it at, with its symbolic links resolved as the working directory of `pnpm` resolves them, ending with a separator. */
+function cachePath(cache: string): string {
+  return join(realpathSync(dirname(cache)), basename(cache)) + sep;
+}
+
+/** Replaces each of `from`, in order, by `to` in every `.bin` shim under `folder`. */
+function retarget(folder: string, from: string[], to: string): void {
+  for (const { path, directory } of entries(folder)) {
+    if (directory || basename(dirname(path)) !== ".bin") continue;
+    const file = join(folder, path);
+    if (!lstatSync(file).isFile()) continue;
+    const text = readFileSync(file, "utf8");
+    const shim = from.reduce(
+      (current, old) => current.replaceAll(old, to),
+      text,
+    );
+    if (shim !== text) writeFileSync(file, shim);
+  }
+}
+
 /**
- * Copies `source` into a staging entry next to `target` and renames it onto
- * `target`, so a reader sees all of the copy or none of it. A failed copy, a
- * deleted source or a `target` another writer filled first leaves `target`
- * as it was.
+ * Copies `source` into a staging entry next to `target`, replaces each of
+ * `from` by `to` in its `.bin` shims, and renames it onto `target`, so a
+ * reader sees all of the copy or none of it. A failed copy, a deleted source
+ * or a `target` another writer filled first leaves `target` as it was.
  */
-function publish(source: string, target: string): void {
+function publish(
+  source: string,
+  target: string,
+  from: string[],
+  to: string,
+): void {
   const staging = join(
     dirname(target),
     `.staging-${randomBytes(6).toString("hex")}`,
@@ -126,6 +155,7 @@ function publish(source: string, target: string): void {
       verbatimSymlinks: true,
       preserveTimestamps: true,
     });
+    retarget(staging, from, to);
     renameSync(staging, target);
   } catch {
     return;
@@ -227,7 +257,7 @@ export class ProjectCaches {
     }
     if (largest === undefined) return;
     mkdirSync(dirname(cache), { recursive: true });
-    publish(largest.folder, cache);
+    publish(largest.folder, cache, [KEPT_CACHE], cachePath(cache));
     const copied = manifestOf(cache);
     if (copied === undefined) return;
     let bound = copied.mtime;
@@ -341,7 +371,7 @@ export class ProjectCaches {
         continue;
       }
       mkdirSync(this.store, { recursive: true });
-      publish(cache, target);
+      publish(cache, target, [cachePath(cache), cache + sep], KEPT_CACHE);
     }
     return skipped;
   }
