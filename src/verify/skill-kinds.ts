@@ -53,7 +53,7 @@ const MODULE: KindText = {
   smoke: "`module-dev` and one write read back through the native client",
   gotchas: [
     "Every container is the run's own. Never point a journey at a shared instance such as a developer's local database.",
-    "A sandbox key missing from the environment is a NOT VERIFIED verdict, which sets status `verify` to `error`.",
+    "A sandbox key missing from the environment is a NOT VERIFIED verdict.",
   ],
 };
 

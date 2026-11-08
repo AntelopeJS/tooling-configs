@@ -92,7 +92,7 @@ test("the verdict times every phase and names a journey's three slowest steps, s
   assert.equal(verdict.status, 0, verdict.stderr);
   assert.match(
     verdict.stdout,
-    /\n### Attention\n- Nothing\.\n\n### Timing\n\| Phase \| Time \|\n\|---\|---\|\n\| prune old runs \| \d+\.\d s \|\n\| setup\/01-node \| \d+\.\d s \|\n\| journey smoke\/steps \| \d+\.\d s \(slowest steps: `02-wait-600` \d+\.\d s, `04-wait-350` \d+\.\d s, `01-wait-100` \d+\.\d s\) \|\n\| \*\*Total measured\*\* \(commands only; agent time between commands is not included\) \| \d+\.\d s \|\n\nEvidence:/,
+    /\n### Attention\n- Nothing\.\n\n### Timing\n\| Phase \| Time \|\n\|---\|---\|\n\| prune old runs \| \d+\.\d s \|\n\| setup\/01-node \| \d+\.\d s \|\n\| journey smoke\/steps \| \d+\.\d s \(slowest steps: `02-wait-600` \d+\.\d s, `04-wait-350` \d+\.\d s, `01-wait-100` \d+\.\d s\) \|\n\| \*\*Total measured\*\* \(commands only; agent time between commands is not included\) \| \d+\.\d s \|\n$/,
   );
   assert.doesNotMatch(verdict.stdout, /03-wait-0/);
   const { timings } = evidence(run, "verdict.json");

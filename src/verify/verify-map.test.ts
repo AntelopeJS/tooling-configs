@@ -283,16 +283,7 @@ test("every shell block of every shared skill is one antelopejs-verify command p
     const lines = commandBlocks(text).flat();
     assert.deepEqual(
       [...new Set(lines.map((line) => line.split(" ")[1]))].sort(),
-      [
-        "clean",
-        "doctor",
-        "journey",
-        "map",
-        "new",
-        "plan",
-        "publish",
-        "verdict",
-      ],
+      ["clean", "doctor", "journey", "map", "new", "plan", "verdict"],
       `${kind} shows its commands`,
     );
     for (const line of lines)

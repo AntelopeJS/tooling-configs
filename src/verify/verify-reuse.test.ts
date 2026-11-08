@@ -185,7 +185,7 @@ test("the verdict still requires every registered journey and marks each reused 
   assert.match(passed.stdout, /^## Verify: PASS\n/);
   assert.match(
     passed.stdout,
-    /\| store \| `shared`: node \| pass: shared exits 0 \(not run again: reuses \[smoke\/shared\]\(https:\/\/github\.com\/acme\/demo\/tree\/verify-evidence\/pr-7\/[0-9a-f]{40}\/smoke\/shared\)\) \| \[store\/shared\]\(/,
+    /\| store \| `shared`: node \| pass: shared exits 0 \(not run again: reuses \[smoke\/shared\]\(smoke\/shared\)\) \| \[store\/shared\]\(/,
   );
 });
 
