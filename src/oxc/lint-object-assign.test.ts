@@ -10,7 +10,12 @@ export interface QueryStage { kind: string }
 export interface ValueProxy<T> {
   stages: QueryStage[];
   value?: T;
+  status: "idle" | "loading";
   add(amount: T): ValueProxy<T>;
+}
+export class Box {
+  get size(): number { return 0; }
+  set size(next: number | string) {}
 }
 `;
 
@@ -42,10 +47,33 @@ export function merge(patch: unknown): ValueProxy<number> {
 export function mislabel(): ValueProxy<number> {
   return Object.assign(receiver.add(0), {}, { value: "one" });
 }
+
+declare const loose: any;
+declare const flag: boolean;
+
+/** An optional source property that may hold null, over a field that does not take null. */
+export function nullable(update: { stages?: QueryStage[] | null }): ValueProxy<number> {
+  return Object.assign(receiver.add(0), update);
+}
+
+/** The seeded write behind a condition. */
+export function conditional(): ValueProxy<number> {
+  return Object.assign(receiver.add(0), flag && { stages: [junk] });
+}
+
+/** An any element inside the written value, which no-unsafe-assignment reports on a direct write. */
+export function nested(): ValueProxy<number> {
+  return Object.assign(receiver.add(0), { stages: [loose] });
+}
+
+/** Unknown values under an index signature overwrite every field. */
+export function entries(pairs: [string, unknown][]): ValueProxy<number> {
+  return Object.assign(receiver.add(0), Object.fromEntries(pairs));
+}
 `;
 
 const checked = `
-import type { ValueProxy } from "./proxy.ts";
+import { Box, type ValueProxy } from "./proxy.ts";
 
 declare class Client { connect(): void }
 declare const query: (sql: string) => Promise<void>;
@@ -68,6 +96,29 @@ export function rebuild(target: ValueProxy<number>, extra: object[]): ValueProxy
   const copy = Object.assign({}, target);
   Object.assign(copy, ...extra);
   return Object.assign(target, { value: 1, stages: [{ kind: "match" }] });
+}
+
+/** A literal written over a literal-union field, and a string through a setter that takes one. */
+export function literal(target: ValueProxy<number>): Box {
+  Object.assign(target, { status: "loading" });
+  return Object.assign(new Box(), { size: "3" });
+}
+
+/** A record of numbers, an optional undefined, and an any field that takes any. */
+export function loose(target: { stages: unknown[]; extra?: any }, counts: Record<string, number>, update: { stages?: unknown[] }): object {
+  Object.assign(target, update, { extra: JSON.parse("1") });
+  return Object.assign({ total: 0 }, counts);
+}
+
+/** A class filled from a partial of itself, whose methods return \`this\`. */
+export class Model {
+  count = 0;
+  constructor(init: Partial<Model>) {
+    Object.assign(this, init);
+  }
+  update(patch: Partial<this>): this {
+    return Object.assign(this, patch);
+  }
 }
 `;
 
@@ -97,6 +148,10 @@ test("Object.assign writing unknown, any or a mistyped value over a typed field 
     "holes.ts:17",
     "holes.ts:22",
     "holes.ts:27",
+    "holes.ts:35",
+    "holes.ts:40",
+    "holes.ts:45",
+    "holes.ts:50",
     "holes.ts:8",
   ]);
 });
