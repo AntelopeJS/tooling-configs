@@ -1,25 +1,15 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { resolve } from "node:path";
 
 import { runCli } from "../guardrails/cli.ts";
 import { CEILINGS_FILE } from "../guardrails/ceilings.ts";
-import {
-  repositoryPath,
-  repositoryRoot,
-  resolveRevision,
-} from "../guardrails/files.ts";
+import { repositoryRoot, resolveRevision } from "../guardrails/files.ts";
 import { ratchet } from "../guardrails/ratchet.ts";
 import { suppressionBase } from "../guardrails/suppression-base.ts";
 import { stagedRatchet } from "../guardrails/staged-ratchet.ts";
 
-function stagedResult(root: string, files: string[]) {
-  const staged = stagedRatchet(
-    root,
-    files.length
-      ? files.map((file) => repositoryPath(root, resolve(file)))
-      : undefined,
-  );
+function stagedResult(root: string) {
+  const staged = stagedRatchet(root);
   return {
     failures: staged.failures,
     accepted: staged.accepted,
@@ -47,7 +37,7 @@ runCli(() => {
   if (positionals.length && !values.staged)
     throw new Error("File arguments require --staged.");
   const result = values.staged
-    ? stagedResult(root, positionals)
+    ? stagedResult(root)
     : {
         ...ratchet(
           root,

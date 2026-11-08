@@ -203,18 +203,45 @@ function hiddenTracked(root: string): string[] {
     .map((line) => line.slice(2));
 }
 
+/** Tracked files whose working copy differs from the index, deleted ones included. */
+function unstagedNames(root: string): string[] {
+  return execFileSync("git", ["diff", "--name-only", "-z"], {
+    cwd: root,
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter(Boolean);
+}
+
+/**
+ * The findings in `targets` as the index holds them: a file whose working
+ * copy matches is linted in the real tree, where untracked generated types
+ * resolve; one whose working copy differs or is deleted, in a checkout of the
+ * index.
+ */
+function stagedDiagnostics(root: string, targets: string[]): Diagnostic[] {
+  const unstaged = new Set(unstagedNames(root));
+  const inTree = targets.filter((file) => !unstaged.has(file));
+  const inIndex = targets.filter((file) => unstaged.has(file));
+  return [
+    ...(inTree.length
+      ? lintDiagnostics(root, undefined, inTree, STAGED_LINT)
+      : []),
+    ...(inIndex.length
+      ? withPreviousTree(root, "HEAD", [], (tree) =>
+          lintDiagnostics(tree, undefined, inIndex, STAGED_LINT),
+        )
+      : []),
+  ];
+}
+
 function approvalRefusal(
   root: string,
   rule: string,
   max: number,
   holds: number,
 ): string | undefined {
-  const unstaged = execFileSync("git", ["diff", "--name-only", "-z"], {
-    cwd: root,
-    encoding: "utf8",
-  })
-    .split("\0")
-    .filter(Boolean);
+  const unstaged = unstagedNames(root);
   if (unstaged.length)
     return `${rule}: an approved raise is refused while ${unstaged.length} tracked file(s) have unstaged changes (${unstaged[0]}); stage or stash them first.`;
   const hidden = hiddenTracked(root);
@@ -283,7 +310,8 @@ function inRanges(
 }
 
 /**
- * Fails each ceilinged rule whose findings in the staged files outnumber both
+ * Fails each ceilinged rule whose findings in the staged files, as the index
+ * holds them, outnumber both
  * what the same files, rename sources and deleted files had at HEAD and the
  * staged findings that sit, on a line unchanged since the merge-base of HEAD
  * with the pull request base (`GITHUB_BASE_REF`, else `origin/HEAD`), where
@@ -296,17 +324,14 @@ function inRanges(
  * rise above both fails, and lists the findings on the lines that differ from
  * HEAD and from the base.
  */
-export function stagedRatchet(
-  root: string,
-  files?: string[],
-): StagedRatchetResult {
+export function stagedRatchet(root: string): StagedRatchetResult {
   const approved = parseApprovedRaises();
   const raised = unlistedRaises(root, approved);
   const accepted: string[] = [];
-  const targets = files ?? stagedNames(root, "ACMR");
+  const targets = stagedNames(root, "ACMR");
   if (!targets.length) return { failures: raised, accepted };
   const ceilings = readCeilings(root);
-  const after = lintDiagnostics(root, undefined, targets, STAGED_LINT).filter(
+  const after = stagedDiagnostics(root, targets).filter(
     ({ rule }) => Object.hasOwn(ceilings.rules, rule) || approved.has(rule),
   );
   if (!after.length) return { failures: raised, accepted };

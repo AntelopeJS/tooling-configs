@@ -105,7 +105,7 @@ export function lefthook(
       },
       "antelopejs-ratchet": {
         glob,
-        run: `${tools.hookPrefix}${tools.commands.ratchet} --staged {staged_files}`,
+        run: `${tools.hookPrefix}${tools.commands.ratchet} --staged`,
       },
       "antelopejs-suppressions": {
         glob,
