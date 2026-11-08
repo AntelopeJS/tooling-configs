@@ -268,6 +268,28 @@ export function extendedConfigs(directory: string): string[] {
   return (source.extendedSourceFiles ?? []).map((path) => resolve(path));
 }
 
+/** TypeScript records on parsed options, untyped, the directory `paths` targets resolve against: `baseUrl`, else the directory of the config that declares `paths`. */
+function isRecordedDirectory(
+  value: ts.CompilerOptions[string],
+): value is string {
+  return typeof value === "string";
+}
+
+/** The configured `paths`, each target made absolute. */
+function absolutePaths(
+  options: ts.CompilerOptions,
+): Record<string, string[]> | undefined {
+  const { paths, pathsBasePath } = options;
+  if (paths === undefined || !isRecordedDirectory(pathsBasePath))
+    return undefined;
+  return Object.fromEntries(
+    Object.entries(paths).map(([key, targets]) => [
+      key,
+      targets.map((target) => resolve(pathsBasePath, target)),
+    ]),
+  );
+}
+
 /** The configured `outDir`, the root under which the declaration half already judges a built path as test output. */
 export function outputRoot(directory: string): string {
   return resolve(
@@ -276,7 +298,7 @@ export function outputRoot(directory: string): string {
   );
 }
 
-/** Emits with the package's compiler and config, or for JavaScript alone with the pack's when the package's has no compiler API; test roots and outputs never enter either proof. `modules` maps each emitted file to its source module. */
+/** Emits with the package's compiler and config, or for JavaScript alone with the pack's when the package's has no compiler API; test roots and outputs never enter either proof. `modules` maps each emitted file to its source module; `paths` is the configured `paths` with absolute targets. */
 export function emitPackage(
   directory: string,
   output: string,
@@ -344,5 +366,6 @@ export function emitPackage(
     files,
     modules,
     options: parsed.options,
+    paths: absolutePaths(parsed.options),
   };
 }

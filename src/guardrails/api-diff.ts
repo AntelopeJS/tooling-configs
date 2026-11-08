@@ -7,7 +7,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
   allowedByGlob,
@@ -228,6 +228,33 @@ function bundleDependencies(directory: string, scratch: string): void {
   );
 }
 
+/** The emit mirrors its source root into `scratch`, so each `paths` target under that root is pointed at the emitted declarations rather than the worktree's sources, which lie outside the bundle's `rootDir`. */
+function emittedPaths(
+  emitted: ReturnType<typeof emitPackage>,
+  scratch: string,
+): Record<string, string[]> | undefined {
+  const [module] = emitted.modules;
+  if (emitted.paths === undefined || module === undefined) return undefined;
+  const [file, source] = module;
+  const depth = relative(scratch, dirname(file))
+    .split(sep)
+    .filter(Boolean).length;
+  let sourceRoot = dirname(source);
+  for (let level = 0; level < depth; level += 1)
+    sourceRoot = dirname(sourceRoot);
+  return Object.fromEntries(
+    Object.entries(emitted.paths).map(([key, targets]) => [
+      key,
+      targets.map((target) => {
+        const inner = relative(sourceRoot, target);
+        return inner.startsWith(`..${sep}`) || isAbsolute(inner)
+          ? target
+          : join(scratch, inner);
+      }),
+    ]),
+  );
+}
+
 /** dts-bundle-generator 9 remaps a .d.mts/.d.cts root twice; a source-named copy preserves its declaration text. */
 function generatorEntry(file: string): string {
   const alias = file.replace(/\.d\.([cm]ts)$/u, ".$1");
@@ -266,6 +293,7 @@ function bundlePackage(
         incremental: false,
         noEmit: false,
         rootDir: scratch,
+        paths: emittedPaths(emitted, scratch),
       },
       files: entries.map(({ file }) => join(scratch, file)),
       include: [],
