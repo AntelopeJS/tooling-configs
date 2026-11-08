@@ -7,6 +7,7 @@ import { emitPackage, packagesAt } from "./typescript.ts";
 
 /** Proves comment-free JavaScript emit matches, including private packages and excluding tests. */
 export function commentProof(root: string, baseRef: string) {
+  const notices = new Set<string>();
   const result = compareRevisions(
     root,
     baseRef,
@@ -22,6 +23,7 @@ export function commentProof(root: string, baseRef: string) {
           emittedRoot,
           false,
         );
+        if (emitted.notice !== undefined) notices.add(emitted.notice);
         for (const file of emitted.files) {
           const path = join(output, key, relative(emittedRoot, file));
           mkdirSync(dirname(path), { recursive: true });
@@ -38,7 +40,9 @@ export function commentProof(root: string, baseRef: string) {
       root,
       `antelopejs-comment-proof ${baseRef}`,
       baseRef,
-      result.output + revisionCounts(root, baseRef),
+      result.output +
+        [...notices].sort().join("") +
+        revisionCounts(root, baseRef),
     ),
   };
 }

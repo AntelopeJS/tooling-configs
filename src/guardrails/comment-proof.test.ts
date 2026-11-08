@@ -85,3 +85,45 @@ test("comment-proof strips comments, ignores type errors and test deletions, inc
   assert.match(missing.stdout, /deleted file mode/);
   assert.match(missing.stdout, /spare\.js/);
 });
+
+test("comment-proof emits a package whose TypeScript has no compiler API with the pack's TypeScript and says so", (t) => {
+  const root = testRepo(t);
+  put(
+    root,
+    "package.json",
+    JSON.stringify({
+      private: true,
+      type: "module",
+      devDependencies: { typescript: "7.0.2" },
+    }),
+  );
+  put(
+    root,
+    "node_modules/typescript/package.json",
+    JSON.stringify({ name: "typescript", version: "7.0.2", main: "index.js" }),
+  );
+  put(
+    root,
+    "node_modules/typescript/index.js",
+    'module.exports = { version: "7.0.2" };\n',
+  );
+  put(
+    root,
+    "tsconfig.json",
+    JSON.stringify({
+      compilerOptions: { module: "NodeNext", rootDir: "src", types: [] },
+      include: ["src/**/*.ts"],
+    }),
+  );
+  put(root, "src/index.ts", "// old\nexport const value = 1;\n");
+  commit(root);
+  put(root, "src/index.ts", "// new\nexport const value = 1;\n");
+  commit(root);
+  const result = bin(root, "comment-proof", ["HEAD~1"]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /1 packages, 1 entries unchanged/);
+  assert.match(
+    result.stdout,
+    /^\.: TypeScript 7\.0\.2 has no programmatic compiler API; emitting JavaScript with the pack's TypeScript \d/m,
+  );
+});
