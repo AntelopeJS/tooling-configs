@@ -122,8 +122,11 @@ test("comment-proof emits a package whose TypeScript has no compiler API with th
   const result = bin(root, "comment-proof", ["HEAD~1"]);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /1 packages, 1 entries unchanged/);
-  assert.match(
+  assert.equal(
+    result.stdout.match(
+      /^\.: TypeScript 7\.0\.2 has no programmatic compiler API; emitting JavaScript with the pack's TypeScript \d/gm,
+    )?.length,
+    1,
     result.stdout,
-    /^\.: TypeScript 7\.0\.2 has no programmatic compiler API; emitting JavaScript with the pack's TypeScript \d/m,
   );
 });

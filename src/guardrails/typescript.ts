@@ -73,7 +73,7 @@ export function unpublishedAt(root: string) {
   });
 }
 
-/** A TypeScript installation and the directory of its package; `notice` says the package declares none and the pack's was used. */
+/** A TypeScript installation and the directory of its package; `notice` says the pack's was used, because the package declares none or, for a JavaScript-only emit, because its own has no compiler API. */
 interface PackageCompiler {
   compiler: typeof ts;
   root: string;
@@ -125,7 +125,7 @@ function requireTypeScript(file: string) {
   return { root, compiler };
 }
 
-/** Loads the compiler a package builds with, including a package-local installation in a workspace. A package that declares `typescript` (itself or through its workspace root) but cannot resolve it is an error; only a package that declares none falls back to the one `dts-bundle-generator` brings, with a `notice`. A TypeScript without the programmatic API (7 and later) is an error, unless `javascriptOnly` says the caller only strips comments and emits JavaScript, which the pack's TypeScript does the same way, with a `notice`. */
+/** Loads the compiler a package builds with, including a package-local installation in a workspace. A package that declares `typescript` (itself or through its workspace root) but cannot resolve it is an error; only a package that declares none falls back to the one `dts-bundle-generator` brings, with a `notice`. A TypeScript without the programmatic API (7 and later) is an error, unless `javascriptOnly` says the caller only strips comments and emits JavaScript, so the pack's TypeScript emits both revisions instead, with a `notice`. */
 export function loadTypeScript(
   directory: string,
   javascriptOnly = false,
