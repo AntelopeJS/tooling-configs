@@ -51,7 +51,7 @@ test("a seed ignores a staging copy another journey is still publishing to the s
   );
 });
 
-test("a seeded project's .bin shims put its own module folders on NODE_PATH, where a seed that copies shims verbatim points them at the project the cache was kept from", (t) => {
+test("a seeded project's .bin shims put its own module folders on NODE_PATH, where a seed that copies shims verbatim points them at the project the cache was kept from and one that reads the path as a replacement pattern mangles its $&", (t) => {
   const tmp = realpathSync(mkdtempSync(join(tmpdir(), "verify-caches-shim-")));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   const caches = new ProjectCaches(join(tmp, "store"));
@@ -62,7 +62,7 @@ test("a seeded project's .bin shims put its own module folders on NODE_PATH, whe
   put(first, ".antelope/cache/@acme/api/node_modules/.bin/tool", shim(first));
   put(first, ".antelope/cache/manifest.json", '{"@acme/api":"1.0.0"}\n');
   assert.deepEqual(caches.keep(), []);
-  const second = join(tmp, "second");
+  const second = join(tmp, "second$&");
   put(second, "package.json", "{}\n");
   caches.seed(second);
   assert.equal(

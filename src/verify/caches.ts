@@ -126,7 +126,7 @@ function retarget(folder: string, from: string[], to: string): void {
     if (!lstatSync(file).isFile()) continue;
     const text = readFileSync(file, "utf8");
     const shim = from.reduce(
-      (current, old) => current.replaceAll(old, to),
+      (current, old) => current.replaceAll(old, () => to),
       text,
     );
     if (shim !== text) writeFileSync(file, shim);
