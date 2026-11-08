@@ -31,21 +31,31 @@ function revisionEntries(root: string, revision: string): Map<string, string> {
   return entries;
 }
 
-/** Links the `node_modules` of the repository root and of each tracked package into `tree`, so the checkout resolves dependencies as the real one does. */
-function linkModules(root: string, tree: string, env: NodeJS.ProcessEnv): void {
-  const manifests = git(
+/** Links each gitignored entry of the working tree, such as `node_modules` or a generated tsconfig a tracked one extends, into `tree`, so the checkout loads its configuration and resolves dependencies as the real one does. */
+function linkIgnored(root: string, tree: string): void {
+  const entries = git(
     root,
-    ["ls-files", "-z", "--", "package.json", ":(glob)**/package.json"],
-    env,
+    [
+      "ls-files",
+      "-z",
+      "--others",
+      "--ignored",
+      "--exclude-standard",
+      "--directory",
+    ],
+    {},
   )
     .split("\0")
     .filter(Boolean);
-  for (const manifest of manifests) {
-    const directory = dirname(manifest);
-    const modules = join(root, directory, "node_modules");
-    const target = join(tree, directory, "node_modules");
-    if (existsSync(modules) && !existsSync(target))
-      symlinkSync(modules, target, "dir");
+  for (const entry of entries) {
+    const path = entry.replace(/\/$/u, "");
+    const target = join(tree, path);
+    if (existsSync(dirname(target)) && !existsSync(target))
+      symlinkSync(
+        join(root, path),
+        target,
+        entry.endsWith("/") ? "dir" : "file",
+      );
   }
 }
 
@@ -113,7 +123,7 @@ export function withPreviousTree<Result>(
       env,
     );
     if (wholeIndex) mkdirSync(join(tree, ".git"), { recursive: true });
-    linkModules(root, tree, env);
+    linkIgnored(root, tree);
     return use(tree);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
