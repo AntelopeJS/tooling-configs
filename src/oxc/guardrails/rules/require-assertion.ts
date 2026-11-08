@@ -37,7 +37,7 @@ export const requireAssertionRule = defineRule({
       node: ESTree.CallExpression | ESTree.MemberExpression,
     ) {
       const frame = frames.at(-1);
-      if (frame !== undefined && isInCallback(node, frame) && isAssertion(node))
+      if (frame !== undefined && isAssertion(node) && isInCallback(node, frame))
         frame.hasAssertion = true;
     }
     return {
