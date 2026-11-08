@@ -26,7 +26,14 @@ const STAGED_LINT: LintOptions = { rejectBrokenProject: true };
 function stagedNames(root: string, filter: string): string[] {
   return execFileSync(
     "git",
-    ["diff", "--cached", "--name-only", `--diff-filter=${filter}`, "-z"],
+    [
+      "diff",
+      "--cached",
+      "--name-only",
+      "--ignore-submodules=all",
+      `--diff-filter=${filter}`,
+      "-z",
+    ],
     { cwd: root, encoding: "utf8" },
   )
     .split("\0")
@@ -205,7 +212,7 @@ function hiddenTracked(root: string): string[] {
 
 /** Tracked files whose working copy differs from the index, deleted ones included. */
 function unstagedNames(root: string): string[] {
-  return execFileSync("git", ["diff", "--name-only", "-z"], {
+  return execFileSync("git", ["diff", "--name-only", "--no-renames", "-z"], {
     cwd: root,
     encoding: "utf8",
   })
@@ -213,26 +220,46 @@ function unstagedNames(root: string): string[] {
     .filter(Boolean);
 }
 
+/** Per file and rule, the findings of whichever run reports more of them. */
+function higherPerFile(
+  first: Diagnostic[],
+  second: Diagnostic[],
+): Diagnostic[] {
+  const key = ({ file, rule }: Diagnostic) => `${file}\0${rule}`;
+  const left = Map.groupBy(first, key);
+  const right = Map.groupBy(second, key);
+  return [...new Set([...left.keys(), ...right.keys()])].flatMap((group) => {
+    const a = left.get(group) ?? [];
+    const b = right.get(group) ?? [];
+    return a.length >= b.length ? a : b;
+  });
+}
+
 /**
- * The findings in `targets` as the index holds them: a file whose working
- * copy matches is linted in the real tree, where untracked generated types
- * resolve; one whose working copy differs or is deleted, in a checkout of the
- * index.
+ * The findings in `targets` as the index holds them. Each file the working
+ * tree has is linted there, where untracked generated types resolve; a file
+ * whose working copy differs, is deleted, or is hidden from git (skip-worktree,
+ * assume-unchanged) is also linted in a checkout of the index, and keeps, per
+ * rule, the run that reports more.
  */
 function stagedDiagnostics(root: string, targets: string[]): Diagnostic[] {
-  const unstaged = new Set(unstagedNames(root));
-  const inTree = targets.filter((file) => !unstaged.has(file));
+  const unstaged = new Set([...unstagedNames(root), ...hiddenTracked(root)]);
+  const present = targets.filter((file) => existsSync(join(root, file)));
+  const inTree = present.length
+    ? lintDiagnostics(root, undefined, present, STAGED_LINT)
+    : [];
   const inIndex = targets.filter((file) => unstaged.has(file));
-  return [
-    ...(inTree.length
-      ? lintDiagnostics(root, undefined, inTree, STAGED_LINT)
-      : []),
-    ...(inIndex.length
-      ? withPreviousTree(root, "HEAD", [], (tree) =>
-          lintDiagnostics(tree, undefined, inIndex, STAGED_LINT),
-        )
-      : []),
-  ];
+  if (!inIndex.length) return inTree;
+  return higherPerFile(
+    inTree,
+    withPreviousTree(
+      root,
+      "HEAD",
+      [],
+      (tree) => lintDiagnostics(tree, undefined, inIndex, STAGED_LINT),
+      { wholeIndex: true },
+    ),
+  );
 }
 
 function approvalRefusal(

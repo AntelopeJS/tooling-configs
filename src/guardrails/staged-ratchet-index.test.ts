@@ -6,6 +6,7 @@ import test, { type TestContext } from "node:test";
 import { formatCeilings } from "./ceilings.ts";
 import { git, stage } from "./helpers/staged-ratchet-repo.ts";
 import { bin, commit, linkOxlint, put, testRepo } from "./helpers/test-repo.ts";
+import { calls, TSGOLINT, typedRepo } from "./helpers/typed-ratchet-repo.ts";
 
 const LEGACY = "export const keep = 0;\nexport const first: any = 1;\n";
 const ADDED = `${LEGACY}export const second: any = 2;\nexport const third: any = 3;\n`;
@@ -35,7 +36,7 @@ function legacyRepo(t: TestContext): string {
   return root;
 }
 
-const DELETED_AFTER_STAGING: Record<string, (root: string) => string> = {
+const DELETED_AFTER_STAGING = {
   "an added file (AD)": (root) => {
     put(root, "extra.ts", ADDED);
     stage(root, "extra.ts");
@@ -52,7 +53,7 @@ const DELETED_AFTER_STAGING: Record<string, (root: string) => string> = {
     stage(root, "moved.ts");
     return "moved.ts";
   },
-};
+} satisfies Record<string, (root: string) => string>;
 
 for (const [name, setUp] of Object.entries(DELETED_AFTER_STAGING))
   test(`staged ratchet fails findings in ${name} staged and then deleted in the working tree`, (t) => {
@@ -75,6 +76,30 @@ test("staged ratchet measures the staged content, not a working copy that droppe
   assert.match(result.stderr, /adds 2 to the staged files/u);
 });
 
+for (const flag of ["--assume-unchanged", "--skip-worktree"])
+  test(`staged ratchet measures the staged content of a file marked ${flag}`, (t) => {
+    const root = legacyRepo(t);
+    put(root, "source.ts", ADDED);
+    stage(root, "source.ts");
+    git(root, "update-index", flag, "source.ts");
+    put(root, "source.ts", LEGACY);
+    const result = bin(root, "ratchet", ["--staged"]);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /adds 2 to the staged files/u);
+  });
+
+test("staged ratchet measures a deleted file git diff pairs with an intent-to-add file as a rename", (t) => {
+  const root = legacyRepo(t);
+  put(root, "extra.ts", ADDED);
+  stage(root, "extra.ts");
+  rmSync(join(root, "extra.ts"));
+  put(root, "other.ts", ADDED);
+  git(root, "add", "-N", "other.ts");
+  const result = bin(root, "ratchet", ["--staged"]);
+  assert.equal(result.status, 1, result.stderr);
+  assert.ok(result.stderr.includes("\n  extra.ts:3:"), result.stderr);
+});
+
 test("staged ratchet measures every staged file when the hook names only some", (t) => {
   const root = legacyRepo(t);
   put(root, "extra.ts", ADDED);
@@ -84,4 +109,35 @@ test("staged ratchet measures every staged file when the hook names only some", 
   const result = bin(root, "ratchet", ["--staged", "other.ts"]);
   assert.equal(result.status, 1, result.stderr);
   assert.match(result.stderr, /extra\.ts:3:/u);
+});
+
+test("staged ratchet keeps type-aware findings that need untracked generated types in a partly staged file", (t) => {
+  const root = typedRepo(t);
+  put(root, "sub/legacy.ts", calls(3));
+  stage(root, "sub/legacy.ts");
+  put(root, "sub/legacy.ts", `${calls(3)}// unstaged\n`);
+  const result = bin(root, "ratchet", ["--staged"], {
+    OXLINT_TSGOLINT_PATH: TSGOLINT,
+  });
+  assert.equal(result.status, 1, result.stderr);
+  assert.ok(result.stderr.includes("\n  sub/legacy.ts:5:3"), result.stderr);
+});
+
+test("staged ratchet does not count findings inside a staged submodule bump", (t) => {
+  const library = testRepo(t);
+  put(library, "lib.ts", "export const lib: any = 1;\n");
+  commit(library);
+  const root = legacyRepo(t);
+  git(
+    root,
+    "-c",
+    "protocol.file.allow=always",
+    "submodule",
+    "add",
+    "-q",
+    library,
+    "vendor/lib",
+  );
+  const result = bin(root, "ratchet", ["--staged"]);
+  assert.equal(result.status, 0, result.stderr);
 });
