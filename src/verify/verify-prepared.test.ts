@@ -103,6 +103,15 @@ export default {
         context.expect(after.folder, [equal("shared.txt is as stored", readFileSync(shared, "utf8"), "stored\\n")]);
       },
     },
+    editor: {
+      title: "edits the prepared hard link",
+      entryPoint: "node",
+      async run(context) {
+        const folder = await prepare(context);
+        const edited = context.edit("edit shared", join(folder, "shared.txt"), "edited\\n");
+        context.expect(edited, [equal("shared.txt took the edit", readFileSync(join(folder, "shared.txt"), "utf8"), "edited\\n")]);
+      },
+    },
     shape: {
       title: "holds the links the build made",
       entryPoint: "node",
@@ -168,6 +177,7 @@ function preparedRepo(t: TestContext) {
     [`${SKILL}/features/links.md`]: feature([], ["linker"]),
     [`${SKILL}/features/shape.md`]: feature([], ["shape"]),
     [`${SKILL}/features/shared.md`]: feature([], ["sharer"]),
+    [`${SKILL}/features/edits.md`]: feature([], ["editor"]),
   });
   const builds = () =>
     existsSync(log) ? read(tmp, "builds.log").split("\n").length - 1 : 0;
@@ -418,4 +428,17 @@ test("two hard links the build made inside its folder are copied, so a write thr
   const wrote = verify(root, tmp, ["journey", run, "tree"]);
   assert.equal(wrote.status, 0, wrote.stdout);
   assert.equal(builds(), 1);
+});
+
+test("an edit of a linked file in one journey's copy reaches neither the file it was linked from nor a later journey's copy", (t) => {
+  const { root, tmp, builds, store, seen } = preparedRepo(t);
+  const stored = store();
+  const run = newRun(root, tmp);
+  assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
+  const edited = verify(root, tmp, ["journey", run, "edits"]);
+  assert.equal(edited.status, 0, edited.stdout);
+  const copied = verify(root, tmp, ["journey", run, "shared"]);
+  assert.equal(copied.status, 0, copied.stdout);
+  assert.equal(builds(), 1);
+  assert.equal(seen().ino, stored);
 });

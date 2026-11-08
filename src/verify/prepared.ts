@@ -143,6 +143,19 @@ function copyTree(
   }
 }
 
+/** Writes `content` to `file`, through a new inode when the file has other hard links, so the write reaches no other path, such as a copy `prepared` linked or pnpm's store. */
+export function writeOwn(file: string, content: string): void {
+  const before = existsSync(file) ? statSync(file) : null;
+  if (before === null || before.nlink < 2) {
+    writeFileSync(file, content);
+    return;
+  }
+  const real = realpathSync(file);
+  unlinkSync(real);
+  writeFileSync(real, content);
+  chmodSync(real, before.mode);
+}
+
 /** Whether the run keeps a build: only one that recorded a check, passed every check and holds nothing a copy would drop. */
 type Verdict = { kept: true; links: Link[] } | { kept: false; reason: string };
 
