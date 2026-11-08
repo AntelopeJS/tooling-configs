@@ -116,6 +116,22 @@ test("the probe asks every registry host the failing requests named, once each, 
   ]);
 });
 
+test("a URL with no port is probed on 80 for http and 443 for https (catches probing a port the request never used)", async (t) => {
+  const { asked } = await faultOf(t, [
+    {
+      name: "install",
+      command: "npm install",
+      exit: "1",
+      stderr:
+        "npm error network request to http://registry.npmjs.org/a failed, reason: getaddrinfo EAI_AGAIN registry.npmjs.org\nnpm error network request to https://registry.yarnpkg.com/b failed, reason: getaddrinfo EAI_AGAIN registry.yarnpkg.com",
+    },
+  ]);
+  assert.deepEqual(asked, [
+    { host: "registry.npmjs.org", port: 80 },
+    { host: "registry.yarnpkg.com", port: 443 },
+  ]);
+});
+
 test("one named registry that answers the probe keeps the journey FAIL (catches NOT VERIFIED when only some targets fail)", async (t) => {
   const { fault } = await faultOf(
     t,
@@ -132,13 +148,16 @@ test("one named registry that answers the probe keeps the journey FAIL (catches 
   assert.equal(fault, null);
 });
 
-test("a failing request to anything but a known public registry on port 80 or 443 is FAIL without a probe (catches dropping the registry allowlist)", async (t) => {
+test("a failing request to anything but a fixed public registry name on port 80 or 443, or a network cause naming no target, is FAIL without a probe (catches dropping the registry allowlist, a wildcard a product typo can match, or skipping untargeted causes)", async (t) => {
   for (const line of [
     "request to https://registry.npmjs.org/x failed, reason: connect ECONNREFUSED 127.0.0.1:9",
     " ERR_PNPM_META_FETCH_FAIL  GET http://localhost:4873/left-pad: request to http://localhost:4873/left-pad failed, reason: connect ECONNREFUSED",
     "npm error network request to https://npm.internal.example/x failed, reason: getaddrinfo ENOTFOUND npm.internal.example",
     "npm error network request to https://registry.npmjs.org:4873/x failed, reason: socket hang up",
     "ERROR: dial tcp 203.0.113.7:443: connect: connection refused",
+    'ERROR: failed to do request: Head "https://123456789012.dkr.ecr.us-eest-1.amazonaws.com/v2/app/manifests/1": dial tcp: lookup 123456789012.dkr.ecr.us-eest-1.amazonaws.com: no such host',
+    "Error: getaddrinfo ENOTFOUND db",
+    "connect ECONNREFUSED ::1:5432",
   ]) {
     const { fault, asked } = await faultOf(t, [
       {

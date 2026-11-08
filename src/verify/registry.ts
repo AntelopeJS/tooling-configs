@@ -81,28 +81,31 @@ function fetchesDependencies(folder: string): boolean {
 const NETWORK_CAUSE =
   /\b(?:ENOTFOUND|EAI_AGAIN|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH|ERR_SOCKET_TIMEOUT|socket hang up|no such host|server misbehaving|i\/o timeout|TLS handshake timeout|context deadline exceeded|Temporary failure in name resolution|Client\.Timeout exceeded while awaiting headers|connection refused|network is unreachable)\b/i;
 
-/** The public npm, Docker Hub and container registries a fetch may name, and nothing a product configures. */
-const REGISTRY_HOST = new RegExp(
-  `^(?:${[
-    String.raw`registry\.npmjs\.org`,
-    String.raw`registry\.yarnpkg\.com`,
-    String.raw`registry\.npmmirror\.com`,
-    String.raw`(?:registry-1|auth|index)\.docker\.io`,
-    String.raw`docker\.io`,
-    String.raw`production\.cloudflare\.docker\.com`,
-    String.raw`(?:[\w-]+\.)+r2\.cloudflarestorage\.com`,
-    String.raw`ghcr\.io`,
-    String.raw`quay\.io`,
-    String.raw`(?:[\w-]+\.)?gcr\.io`,
-    String.raw`(?:[\w-]+\.)+pkg\.dev`,
-    String.raw`public\.ecr\.aws`,
-    String.raw`[\w-]+\.dkr\.ecr\.[\w-]+\.amazonaws\.com`,
-  ].join("|")})\\.?$`,
-  "i",
-);
+/** The public npm, Docker Hub and container registries a fetch may name: fixed names only, since a name the product picks can fail DNS for the product's own reasons. */
+const REGISTRY_HOSTS = new Set([
+  "registry.npmjs.org",
+  "registry.yarnpkg.com",
+  "registry.npmmirror.com",
+  "registry-1.docker.io",
+  "auth.docker.io",
+  "index.docker.io",
+  "docker.io",
+  "production.cloudflare.docker.com",
+  "ghcr.io",
+  "quay.io",
+  "gcr.io",
+  "public.ecr.aws",
+]);
+
+/** The npm summary lines that repeat the error code with no request, such as `npm error code ENOTFOUND`. */
+const NPM_SUMMARY = /^npm (?:error|ERR!) (?:code|errno|syscall) [\w-]+\s*$/;
 
 /** A host with its optional port, in a URL or after a network cause. */
 const URL_HOST = String.raw`(\[[^\]\s]+\]|[^\s"/:?#\[\]]+)(?::(\d+))?`;
+
+/** The address after a network error code, which takes the port of a URL naming the same host on the line. */
+const BARE_TARGET =
+  /\b(?:ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|ECONNRESET)\s+(\[[^\]\s]+\]|[\w-]+(?:\.[\w-]+)+)(?::(\d+))?/gi;
 
 /**
  * The places where a line names the target of a request: the URL after
@@ -117,7 +120,7 @@ const TARGETS = [
   ),
   /\bdial tcp (\[[^\]\s]+\]|[\w.-]+):(\d+)/gi,
   /\blookup ([\w.-]+)/gi,
-  /\b(?:ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|ECONNRESET)\s+(\[[^\]\s]+\]|[\w-]+(?:\.[\w-]+)+)(?::(\d+))?/gi,
+  BARE_TARGET,
 ];
 
 /** The host and port a failing request was sent to. */
@@ -135,15 +138,18 @@ function registryTargets(line: string): Target[] | null {
   for (const pattern of TARGETS)
     for (const match of line.matchAll(pattern)) {
       const host = (match[1] ?? "").toLowerCase().replace(/\.$/, "");
-      const port = match[2] === undefined ? 443 : Number(match[2]);
-      if (!REGISTRY_HOST.test(host) || (port !== 80 && port !== 443))
+      const defaultPort = /http:\/\//i.test(match[0]) ? 80 : 443;
+      const port = match[2] === undefined ? defaultPort : Number(match[2]);
+      if (!REGISTRY_HOSTS.has(host) || (port !== 80 && port !== 443))
         return null;
-      targets.push({ host, port });
+      const named = targets.some((target) => target.host === host);
+      if (pattern !== BARE_TARGET || match[2] !== undefined || !named)
+        targets.push({ host, port });
     }
   return targets;
 }
 
-/** The registry targets of every line with a network cause, or `null` when a failing request went anywhere else. */
+/** The registry targets of every line with a network cause, or `null` when a failing request went anywhere else or a line names no target. */
 function failingTargets(texts: readonly string[]): Target[] | null {
   const found = new Map<string, Target>();
   for (const text of texts)
@@ -151,8 +157,9 @@ function failingTargets(texts: readonly string[]): Target[] | null {
       if (Buffer.byteLength(raw) > MAX_LINE_BYTES) continue;
       const line = stripVTControlCharacters(raw);
       if (!NETWORK_CAUSE.test(line)) continue;
+      if (NPM_SUMMARY.test(line)) continue;
       const targets = registryTargets(line);
-      if (targets === null) return null;
+      if (targets === null || targets.length === 0) return null;
       for (const target of targets)
         found.set(`${target.host}:${target.port}`, target);
     }
@@ -238,9 +245,8 @@ export async function probeTarget({
  * not be reached, or `null` when the product, not the network, explains it.
  *
  * The output decides only which registry to ask; a live probe decides the
- * outage. A missed outage stays FAIL, and a product failure is never
- * softened: when the registry answers the probe, the failure is the
- * product's, whatever the output says.
+ * outage. A missed outage stays FAIL, and when the registry answers the
+ * probe the failure is the product's, whatever the output says.
  *
  * It reads only the first step with a failing check, and only when that
  * step's command exited non-zero or was signalled. The step's `command.txt`
@@ -259,15 +265,17 @@ export async function probeTarget({
  * timeout` or `Temporary failure in name resolution`. Their targets are the
  * URL after `GET`, `HEAD`, `POST`, `PUT`, `DELETE` or `request to`, the host
  * after `lookup`, the host before the port after `dial tcp`, and the address
- * after a network error code. Every target must be a known public registry
- * on port 80 or 443: `registry.npmjs.org`, `registry.yarnpkg.com`,
- * `registry.npmmirror.com`, `registry-1.docker.io`, `docker.io`,
- * `auth.docker.io`, `index.docker.io`, `production.cloudflare.docker.com`,
- * `*.r2.cloudflarestorage.com`, `ghcr.io`, `quay.io`, `gcr.io` and
- * `<label>.gcr.io`, `*.pkg.dev`, `public.ecr.aws` and
- * `*.dkr.ecr.*.amazonaws.com`. One other target, such as an address, a
- * private mirror or `localhost`, means FAIL, and so does output that names
- * no target.
+ * after a network error code, on port 443, or 80 for an `http://` URL, when
+ * no port is named. Every line with a network cause must name a target, npm's
+ * `code`, `errno` and `syscall` summary lines aside, and every target must be
+ * one of these public registries on port 80 or 443: `registry.npmjs.org`,
+ * `registry.yarnpkg.com`, `registry.npmmirror.com`, `registry-1.docker.io`,
+ * `auth.docker.io`, `index.docker.io`, `docker.io`,
+ * `production.cloudflare.docker.com`, `ghcr.io`, `quay.io`, `gcr.io` and
+ * `public.ecr.aws`. Only fixed names count: a name the product picks, such as
+ * an ECR account registry or a regional `pkg.dev` host, can fail DNS for the
+ * product's own reasons, so it stays FAIL, and so do an address, a private
+ * mirror and `localhost`.
  *
  * Each target then gets a fresh probe: a DNS lookup and a TCP connect to
  * every address it resolves to, each bounded to 3 s, and one connect that
