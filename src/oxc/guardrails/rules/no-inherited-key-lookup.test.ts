@@ -107,6 +107,18 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       code: "const T: Record<string, number> = { a: 1 }; function f(keys: string[]) { for (const key of keys) { if (!Object.hasOwn(T, key)) { skip(key); continue; } use(T[key]); } }",
     },
     {
+      name: "a check held in a const, compared with a boolean, or failing into a throw or a switch-case break",
+      code: "const T: Record<string, number> = { a: 1 }; function f(key: string, mode: number) { const has = Object.hasOwn(T, key); if (!has) throw new Error(key); use(T[key]); if (Object.hasOwn(T, key) === false) return; use(Object.hasOwn(T, key) !== false ? T[key] : 0); switch (mode) { case 1: if (!T.hasOwnProperty(key)) break; use(T[key]); } }",
+    },
+    {
+      name: "a while or for test guards its body and update",
+      code: "const T: Record<string, string> = { a: 'b' }; function f(start: string) { let key = start; while (Object.hasOwn(T, key)) key = T[key]; for (let k = start; Object.hasOwn(T, k); k = T[k]) use(k); }",
+    },
+    {
+      name: "a failed check whose branch exits through both arms of an inner if, or exits beside an else",
+      code: "const T: Record<string, number> = { a: 1 }; function f(key: string, x: boolean) { if (!Object.hasOwn(T, key)) { if (x) return 1; else return 2; } use(T[key]); if (!Object.hasOwn(T, key)) { return 0; } else { log(); } return T[key]; }",
+    },
+    {
       name: "a computed destructure guarded by Object.hasOwn",
       code: "function f(table: Record<string, unknown>, key: string) { if (!Object.hasOwn(table, key)) return; const { [key]: value } = table; return value; }",
     },
@@ -383,6 +395,16 @@ function c(implementation: UnparsedRecord, key: string) {
       name: "a read before the Object.hasOwn check, and one after a check whose failure does not exit",
       code: "const T: Record<string, number> = { a: 1 }; function f(key: string) { const before = T[key]; if (!Object.hasOwn(T, key)) log(key); return [before, T[key], Object.hasOwn(T, key) || T[key]]; }",
       errors: [lookup, lookup, lookup],
+    },
+    {
+      name: "a read before an early exit, a check either side of ||, a check on another table, and an exit on success",
+      code: "const T: Record<string, number> = { a: 1 }; const U: Record<string, number> = {}; function f(key: string) { const before = T[key]; if (!Object.hasOwn(T, key)) return; return before; } function g(key: string, x: boolean) { if (Object.hasOwn(T, key) || x) use(T[key]); use(Object.hasOwn(U, key) ? T[key] : 0); if (U.hasOwnProperty(key)) return; return U[key]; }",
+      errors: [lookup, lookup, lookup, lookup],
+    },
+    {
+      name: "an any-annotated alias, and a computed destructure beside a plain one",
+      code: "function f(table: Record<string, unknown>, key: string) { const holder: any = table; const { a, [key]: b } = table; return [holder[key], a, b]; }",
+      errors: [lookup, lookup],
     },
   ],
 });
