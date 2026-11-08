@@ -15,6 +15,7 @@ const ECHOED = ["authorization", "content-type", "if-none-match"];
 async function echoServer(t: TestContext): Promise<string> {
   const server = createServer((request, response) => {
     response.setHeader("etag", '"v1"');
+    response.setHeader("set-cookie", "session=secret");
     response.end(
       ECHOED.map((name) => `${name}: ${request.headers[name]}`).join("\n"),
     );
@@ -61,15 +62,45 @@ test("a body sent without headers still goes as JSON", async (t) => {
   );
 });
 
-test("the result and http.json record the request headers and the response headers", async (t) => {
+test("a body sent with headers that name no content type still goes as JSON", async (t) => {
+  const url = await echoServer(t);
+  const result = await httpRecorded(folder(t), url, {
+    method: "POST",
+    body: "{}",
+    headers: { "if-none-match": "*" },
+  });
+  assert.equal(
+    result.body,
+    "authorization: undefined\ncontent-type: application/json\nif-none-match: *",
+  );
+});
+
+test("a header value the request cannot carry ends as the result's error with http.json written, not as a throw", async (t) => {
   const url = await echoServer(t);
   const dir = folder(t);
   const result = await httpRecorded(dir, url, {
-    headers: { "x-amz-meta-owner": "journey" },
+    headers: { "x-broken": "line\nbreak" },
+  });
+  assert.equal(result.status, null);
+  assert.match(result.error ?? "", /header/i);
+  assert.partialDeepStrictEqual(readJson(join(dir, "http.json")), {
+    response: { status: null },
+  });
+});
+
+test("http.json records the headers sent and answered with credentials redacted, while the result keeps them", async (t) => {
+  const url = await echoServer(t);
+  const dir = folder(t);
+  const result = await httpRecorded(dir, url, {
+    headers: { "X-Amz-Meta-Owner": "journey", Authorization: "Bearer token" },
   });
   assert.equal(result.headers["etag"], '"v1"');
+  assert.equal(result.headers["set-cookie"], "session=secret");
   assert.partialDeepStrictEqual(readJson(join(dir, "http.json")), {
-    request: { headers: { "x-amz-meta-owner": "journey" } },
-    response: { headers: { etag: '"v1"' } },
+    request: {
+      method: "GET",
+      headers: { "x-amz-meta-owner": "journey", authorization: "<redacted>" },
+    },
+    response: { headers: { etag: '"v1"', "set-cookie": "<redacted>" } },
   });
 });
