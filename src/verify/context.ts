@@ -37,6 +37,7 @@ import type {
   CommandResult,
   DevOptions,
   DriveOptions,
+  HttpInit,
   HttpResult,
   JourneyContext,
   ServiceEndpoint,
@@ -189,11 +190,7 @@ export class VerifyContext implements JourneyContext {
     return { folder, lines: recordTree(folder, root) };
   }
 
-  http(
-    name: string,
-    url: string,
-    init: { method?: string; body?: string } = {},
-  ): Promise<HttpResult> {
+  http(name: string, url: string, init: HttpInit = {}): Promise<HttpResult> {
     return httpRecorded(this.step(name), url, init);
   }
 

@@ -13,7 +13,7 @@ import { constants } from "node:os";
 import { join, relative } from "node:path";
 
 import { parseJson, type JsonValue } from "../garden/json.ts";
-import type { CommandResult, HttpResult } from "./types.ts";
+import type { CommandResult, HttpInit, HttpResult } from "./types.ts";
 
 /** A command to drive: a program, its arguments and where it runs. */
 export interface CommandSpec {
@@ -252,19 +252,24 @@ function reason(error: Error): string {
   return error.cause instanceof Error ? error.cause.message : error.message;
 }
 
-/** Sends one request and writes http.json with the status and body. */
+/** Sends one request and writes http.json with the request, and the status, headers and body of the answer. */
 export async function httpRecorded(
   folder: string,
   url: string,
-  init: { method?: string; body?: string; timeoutMs?: number } = {},
+  init: HttpInit & { timeoutMs?: number } = {},
 ): Promise<HttpResult> {
   mkdirSync(folder, { recursive: true });
+  const headers = new Headers(
+    init.body ? { "content-type": "application/json" } : {},
+  );
+  for (const [name, value] of Object.entries(init.headers ?? {}))
+    headers.set(name, value);
   let result: HttpResult;
   try {
     const response = await fetch(url, {
       method: init.method ?? "GET",
       body: init.body,
-      headers: init.body ? { "content-type": "application/json" } : undefined,
+      headers,
       signal: AbortSignal.timeout(init.timeoutMs ?? 5000),
     });
     const body = await response.text();
@@ -274,12 +279,21 @@ export async function httpRecorded(
     } catch {
       json = undefined;
     }
-    result = { folder, url, status: response.status, body, json, error: null };
+    result = {
+      folder,
+      url,
+      status: response.status,
+      headers: Object.fromEntries(response.headers),
+      body,
+      json,
+      error: null,
+    };
   } catch (error) {
     result = {
       folder,
       url,
       status: null,
+      headers: {},
       body: "",
       json: undefined,
       error: error instanceof Error ? reason(error) : String(error),

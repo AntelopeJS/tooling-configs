@@ -88,11 +88,20 @@ export interface CommandResult {
   stderr: string;
 }
 
+/** A journey's HTTP request. `headers` win over the `content-type: application/json` a `body` gets by default. */
+export interface HttpInit {
+  method?: string;
+  body?: string;
+  headers?: { [name: string]: string };
+}
+
 /** The answer of an HTTP request, or the network error when nothing answered. */
 export interface HttpResult {
   folder: string;
   url: string;
   status: number | null;
+  /** The response headers, names lower-cased; empty when nothing answered. */
+  headers: { [name: string]: string };
   body: string;
   json: JsonValue | undefined;
   error: string | null;
@@ -171,11 +180,7 @@ export interface JourneyContext {
   ): Promise<CommandResult>;
   edit(name: string, file: string, content: string): string;
   tree(name: string, root: string): TreeRecord;
-  http(
-    name: string,
-    url: string,
-    init?: { method?: string; body?: string },
-  ): Promise<HttpResult>;
+  http(name: string, url: string, init?: HttpInit): Promise<HttpResult>;
   /** Records the checks of a step. A failing `critical` step ends the journey. */
   expect(
     folder: string,
