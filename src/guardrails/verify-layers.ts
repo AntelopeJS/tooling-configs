@@ -2,13 +2,15 @@ import {
   existsSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 
+import { parseManifest } from "./package.ts";
 import { runCommand } from "./run-command.ts";
 
 const SKILLS_FOLDER = ".agents/skills";
@@ -64,12 +66,18 @@ function isLayerCode(layer: string, file: string): boolean {
   );
 }
 
-/** The repository's own `tsc` entry, run with Node so no shell parses its path. */
+/**
+ * The repository's own `tsc` entry, run with Node so no shell parses its path. It is found through the `bin.tsc` field of
+ * `typescript/package.json`, a subpath every TypeScript version exports, because TypeScript 7 declares an `exports` map that
+ * leaves `typescript/bin/tsc` out.
+ */
 function compilerOf(root: string): string | undefined {
   try {
-    return createRequire(join(root, "package.json")).resolve(
-      "typescript/bin/tsc",
+    const manifestPath = createRequire(join(root, "package.json")).resolve(
+      "typescript/package.json",
     );
+    const tsc = parseManifest(readFileSync(manifestPath, "utf8")).bin?.tsc;
+    return tsc === undefined ? undefined : join(dirname(manifestPath), tsc);
   } catch {
     return undefined;
   }
