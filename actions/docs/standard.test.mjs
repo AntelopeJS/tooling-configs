@@ -153,6 +153,7 @@ it("fails a framework or tool version in prose and checks the description, and a
       ].join("\n"),
       { description: "Set up the module on Nuxt 4." },
     ),
+    "docs/crlf.md": PAGE("We use Vue\n3.5 here.").replaceAll("\n", "\r\n"),
     "docs/good.md": PAGE(
       [
         "AdonisJS apps load the module at start.",
@@ -178,7 +179,11 @@ it("fails a framework or tool version in prose and checks the description, and a
         "> ```sh",
         "> Vue 3.5",
         "> ```",
+        "",
+        "1. Install pnpm",
+        "2. Run the build",
       ].join("\n"),
+      { note: "use `Vue 3` carefully" },
     ),
   });
   assert.deepEqual(failures, [
@@ -195,6 +200,7 @@ it("fails a framework or tool version in prose and checks the description, and a
     'docs/bad.md:18: "Vue 3.5" states a version in prose, point at the pin in package.json or .nvmrc',
     'docs/bad.md:18: "Express.js 5" states a version in prose, point at the pin in package.json or .nvmrc',
     'docs/bad.md:18: "TypeScript version 5.6" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/crlf.md:7: "Vue 3.5" states a version in prose, point at the pin in package.json or .nvmrc',
   ]);
 });
 

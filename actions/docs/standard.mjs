@@ -57,11 +57,11 @@ const UNIT =
 
 /**
  * `AdonisJS 6`, `**Vue** 3.5`, `Express.js 5`, `pnpm v10`, `TypeScript version 5.6`, `Vue 3.5.0-beta.1`: a listed
- * dependency with a version after it, on the same line or the next. No listed dependency has reached major 100, so a
+ * dependency with a version after it, on the same line or the next unless that line starts a numbered list item. No listed dependency has reached major 100, so a
  * year, an HTTP status, a ratio, a decimal comma or a measure such as `99.9%` is not a version.
  */
 const DEPENDENCY_VERSION = new RegExp(
-  `(?<![\\w.@/-])(?:${DEPENDENCIES.join("|")})(?:\\.js)?[*_]*[ \\t\\u00a0]*(?:\\n[ \\t]*)?(?:version[ \\t]+)?(?:v|[<>]=?|[~^≥≤])?[ \\t]*\\d{1,2}(?:\\.(?:\\d+|x))*(?:-[\\da-z]+(?:\\.[\\da-z]+)*)?(?![\\w/-]|[.,]\\d|${UNIT})`,
+  `(?<![\\w.@/-])(?:${DEPENDENCIES.join("|")})(?:\\.js)?[*_]*[ \\t\\u00a0]*(?:\\r?\\n[ \\t]*(?!\\d+[.)][ \\t]))?(?:version[ \\t]+)?(?:(?:v|[<>]=?|[~^≥≤])[ \\t]*)?\\d{1,2}(?:\\.(?:\\d+|x))*(?:-[\\da-z]+(?:\\.[\\da-z]+)*)?(?![\\w/-]|[.,]\\d|${UNIT})`,
   "g",
 );
 
@@ -162,7 +162,7 @@ function checkVersionProse(doc, name, fail) {
         `${name}:${doc.firstLine + index}: Node version range in prose, state it once in package.json engines`,
       );
   });
-  const rendered = `${doc.frontmatter}${prose}`;
+  const rendered = `${doc.frontmatter.replace(NOT_PROSE, blank)}${prose}`;
   for (const { 0: version, index } of rendered.matchAll(DEPENDENCY_VERSION))
     fail(
       `${name}:${1 + (rendered.slice(0, index).match(/\n/g)?.length ?? 0)}: "${version.replace(/[*_]/g, "").replace(/\s+/g, " ")}" states a version in prose, point at the pin in package.json or .nvmrc`,
