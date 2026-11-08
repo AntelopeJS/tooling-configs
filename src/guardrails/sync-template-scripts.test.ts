@@ -146,6 +146,10 @@ test("a fresh template synced with the template profile has every script and fil
   linkOxlint(root);
   const sync = bin(root, "sync", ["--profile", "template"]);
   assert.equal(sync.status, 0, sync.stderr);
+  assert.match(
+    sync.stdout + sync.stderr,
+    /Added devDependencies\. Run install/,
+  );
   const scripts = scriptsOf(root);
   for (const step of [
     "checks",
