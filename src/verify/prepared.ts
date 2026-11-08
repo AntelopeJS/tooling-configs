@@ -1,6 +1,10 @@
 import {
-  cpSync,
+  chmodSync,
+  constants,
+  copyFileSync,
   existsSync,
+  linkSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -11,6 +15,7 @@ import {
   statSync,
   symlinkSync,
   unlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
@@ -64,11 +69,42 @@ function survey(folder: string): Survey {
   return found;
 }
 
+/** Hard-links `from` at `to` when it already has other links, such as a package file pnpm links from its store, and the filesystem allows one more; returns whether it did. */
+function linkShared(from: string, to: string): boolean {
+  if (lstatSync(from).nlink < 2) return false;
+  try {
+    linkSync(from, to);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "EMLINK")
+      return false;
+    throw error;
+  }
+}
+
+/** Copies the tree at `source` to the new path `target` without following a symlink; a file with no other link is cloned where the filesystem can, else copied, with its timestamps. */
+function cloneTree(source: string, target: string): void {
+  mkdirSync(target);
+  for (const entry of readdirSync(source, { withFileTypes: true })) {
+    const from = join(source, entry.name);
+    const to = join(target, entry.name);
+    if (entry.isDirectory()) cloneTree(from, to);
+    else if (entry.isSymbolicLink()) symlinkSync(readlinkSync(from), to);
+    else if (!linkShared(from, to)) {
+      copyFileSync(from, to, constants.COPYFILE_FICLONE);
+      const { atime, mtime } = statSync(from);
+      utimesSync(to, atime, mtime);
+    }
+  }
+  chmodSync(target, statSync(source).mode);
+}
+
 /**
  * Copies `source` to `target`, which ends up at `root`. Each of `links`
  * points to its target inside `root`, so no copy reaches another journey's
  * folder. Every other symlink keeps its target, so pnpm's relative links in a
- * copy never point back into the source.
+ * copy never point back into the source. A file that already shares its
+ * content through another hard link is linked, not copied.
  */
 function copyTree(
   source: string,
@@ -76,11 +112,7 @@ function copyTree(
   links: Link[] = [],
   root = target,
 ): void {
-  cpSync(source, target, {
-    recursive: true,
-    verbatimSymlinks: true,
-    preserveTimestamps: true,
-  });
+  cloneTree(source, target);
   for (const link of links) {
     unlinkSync(join(target, link.path));
     symlinkSync(join(root, link.target), join(target, link.path));
