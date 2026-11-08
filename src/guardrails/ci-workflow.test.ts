@@ -269,7 +269,7 @@ test("a rewritten caller passes the pack's own formatter check, whether old-shap
   }
 });
 
-test("comments under an empty trigger keep their lines through a rewrite, where the yaml default moves the first onto the trigger's line", () => {
+test("comments under an empty trigger keep their lines and columns through a rewrite, where the yaml default moves the first onto the trigger's line and a fix that ignores columns moves the indented and dedented ones", () => {
   const triggers = [
     "on:",
     "  pull_request:",
@@ -282,17 +282,33 @@ test("comments under an empty trigger keep their lines through a rewrite, where 
     "  push: # on every branch",
     "  # kept under the inline comment",
     "",
-    "  # after a blank line",
+    "  # before a blank line",
+    "",
+    "  release:",
+    "    # indented under release",
+    "    # in two lines",
     "  merge_group:",
     "  # under the last trigger",
     "",
+    "# above the jobs",
+    "",
   ].join("\n");
   const rewritten = rewrite(
-    `name: CI\n\n${triggers}\njobs:\n  checks:\n    uses: ${CI_NODE_REF}\n`,
+    `name: CI\n\n${triggers}jobs:\n  checks:\n    uses: ${CI_NODE_REF}\n`,
   );
   assert.equal(
     rewritten.slice(rewritten.indexOf("on:"), rewritten.indexOf("jobs:")),
-    `${triggers}\n`,
+    triggers,
+  );
+});
+
+test("a comment under the last trigger stays above the workflow_dispatch sync appends, where the yaml map comment trails it", () => {
+  const rewritten = rewrite(
+    `on:\n  push:\n  pull_request:\n  # only pull requests\njobs:\n  checks:\n    uses: ${CI_NODE_REF}\n`,
+  );
+  assert.match(
+    rewritten,
+    /\n {2}pull_request:\n {2}# only pull requests\n {2}workflow_dispatch:/,
   );
 });
 
