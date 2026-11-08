@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.4.0
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.8...v0.4.0)
+
+### 💅 Refactors
+
+- **verify:** ⚠️  Remove publish, its evidence branch, comment and status ([#275](https://github.com/AntelopeJS/tooling-configs/pull/275))
+
+#### ⚠️ Breaking Changes
+
+- **verify:** ⚠️  Remove publish, its evidence branch, comment and status ([#275](https://github.com/AntelopeJS/tooling-configs/pull/275))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.3.8
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.3.7...v0.3.8)
