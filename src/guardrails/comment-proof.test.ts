@@ -239,3 +239,68 @@ test("comment-proof fails on a root tsconfig that lists no files unless it parse
   assert.equal(included.status, 1, included.stdout);
   assert.match(included.stderr, /TS18002/);
 });
+
+test("comment-proof skips and reports a package whose tsconfig extends a repository file the commit does not hold, still proves the rest, and fails on a missing base outside the repository", (t) => {
+  const root = testRepo(t);
+  symlinkSync(
+    join(PACKAGE_ROOT, "node_modules"),
+    join(root, "node_modules"),
+    "dir",
+  );
+  put(root, ".gitignore", "node_modules\n*.generated.json\n");
+  put(root, "package.json", JSON.stringify({ private: true, type: "module" }));
+  put(
+    root,
+    "tsconfig.json",
+    JSON.stringify({
+      compilerOptions: {
+        module: "NodeNext",
+        rootDir: "src",
+        outDir: "dist",
+        types: [],
+      },
+      include: ["src/**/*.ts"],
+    }),
+  );
+  put(root, "src/index.ts", "export const value = 1;\n");
+  put(root, "templates/vue/package.json", JSON.stringify({ private: true }));
+  put(
+    root,
+    "templates/vue/tsconfig.json",
+    JSON.stringify({
+      extends: "./frontend-paths.generated.json",
+      include: ["*.ts"],
+    }),
+  );
+  put(root, "templates/vue/frontend-paths.generated.json", "{}");
+  put(root, "templates/vue/app.ts", "export const app = 1;\n");
+  commit(root);
+  put(root, "src/index.ts", "/** The value. */\nexport const value = 1;\n");
+  commit(root);
+  const proof = bin(root, "comment-proof", ["HEAD~1"]);
+  assert.equal(proof.status, 0, proof.stdout + proof.stderr);
+  assert.match(proof.stdout, /1 packages, 1 entries unchanged/);
+  assert.match(
+    proof.stdout,
+    /Comment proof: skipped templates\/vue, its tsconfig extends templates\/vue\/frontend-paths\.generated\.json, which the commit does not hold\.\n/,
+  );
+  put(root, "src/index.ts", "export const value = 2;\n");
+  commit(root);
+  const changed = bin(root, "comment-proof", ["HEAD~1"]);
+  assert.equal(changed.status, 1);
+  assert.match(changed.stdout, /\+export const value = 2;/);
+  put(
+    root,
+    "templates/outside/package.json",
+    JSON.stringify({ private: true }),
+  );
+  put(
+    root,
+    "templates/outside/tsconfig.json",
+    JSON.stringify({ extends: join(root, "..", "absent-base.json") }),
+  );
+  commit(root);
+  const outside = bin(root, "comment-proof", ["HEAD~1"]);
+  assert.equal(outside.status, 1);
+  assert.match(outside.stdout + outside.stderr, /TS5083.*absent-base\.json/);
+});
