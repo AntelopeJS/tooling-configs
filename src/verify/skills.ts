@@ -76,7 +76,7 @@ Each step writes \`<run>/evidence/<feature>/<journey>/<NN-step>/\` with \`comman
 ${BIN} clean <run>
 \`\`\`
 
-Each journey deletes its scratch folder and \`HOME\`, its install included, when it ends: passed, failed or interrupted. Only its evidence stays. \`clean\` stops what the run started, by recorded PID and container name, and removes everything but \`evidence/\` and \`run.json\`, the folders \`context.prepared\` kept included. Run it after every run, failed ones included.
+Each journey deletes its scratch folder and \`HOME\`, its install included, when it ends: passed, failed or interrupted. Only its evidence stays. \`clean\` stops what the run started, by recorded PID and container name, and removes everything but \`evidence/\` and \`run.json\`, the folders \`context.prepared\` kept included. Run it after every run, failed ones included. It cleans only a run this checkout created, the folder \`new\` printed: it refuses the shared runs folder, a repository's folder of runs and another checkout's run, which belong to other sessions. Never delete under the runs folder yourself, with \`rm\` or a glob over run names.
 
 ## The repository's own layer
 

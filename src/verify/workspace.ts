@@ -200,6 +200,37 @@ export function loadRun(dir: string): RunState {
   };
 }
 
+/**
+ * Loads the run at `dir` for a command that deletes in it, refusing any
+ * folder that is not one run this checkout created: the shared runs folder,
+ * a repository's folder of runs, a run of another checkout, and a run.json
+ * that names a folder other than `dir`. A refused run is not touched.
+ */
+export function ownRun(workspace: Workspace, dir: string): RunState {
+  const runs = join(RUNS_DIR, workspace.name);
+  if (canonical(dirname(dir)) !== canonical(runs))
+    throw new Error(
+      `${dir} is not one run of ${workspace.name}: pass the folder \`new\` printed, one level under ${runs}.`,
+    );
+  const file = stateFile(resolve(dir));
+  if (!existsSync(file))
+    throw new Error(
+      `No run at ${dir}: run.json is missing. Create one with \`new\`.`,
+    );
+  const stored = object(parseJson(readFileSync(file, "utf8")), file);
+  const recordedDir = str(stored, "dir");
+  if (canonical(recordedDir) !== canonical(dir))
+    throw new Error(
+      `${file} records the folder ${recordedDir}, not ${dir}: it was copied from another run.`,
+    );
+  const repo = str(stored, "repo");
+  if (canonical(repo) !== canonical(workspace.root))
+    throw new Error(
+      `${dir} was created by another checkout, ${repo}: only that checkout cleans it.`,
+    );
+  return loadRun(dir);
+}
+
 /** Writes `text` to `file` through a sibling temporary file and one rename, so a reader in another process sees the old content or the new, never part of it. */
 export function writeWhole(file: string, text: string): void {
   const staging = `${file}.${randomBytes(6).toString("hex")}.tmp`;
