@@ -46,14 +46,22 @@ const DEPENDENCIES = [
   "TypeScript",
   "Vite",
   "Vitest",
-  "Vue(?:\\.js)?",
+  "Vue",
   "Yarn",
   "yarn",
 ];
 
-/** `AdonisJS 6`, `Vue 3.5`, `pnpm v10`, `TypeScript >= 5.6`: a listed dependency with a version number after it. A year, a ratio or a decimal comma is not a version. */
+/** A number followed by one of these is a measure, not a version. */
+const UNIT =
+  "[ \\t]*(?:%|:\\d|(?:[kmgt]i?b|bytes?|m?s|secs?|seconds?|min|minutes?|times)(?![a-z]))";
+
+/**
+ * `AdonisJS 6`, `**Vue** 3.5`, `Express.js 5`, `pnpm v10`, `TypeScript version 5.6`, `Vue 3.5.0-beta.1`: a listed
+ * dependency with a version after it, on the same line or the next. No listed dependency has reached major 100, so a
+ * year, an HTTP status, a ratio, a decimal comma or a measure such as `99.9%` is not a version.
+ */
 const DEPENDENCY_VERSION = new RegExp(
-  `(?<![\\w.@/-])(?:${DEPENDENCIES.join("|")})[ \\t]*(?:v|[<>]=?|[~^≥≤])?[ \\t]*\\d{1,3}(?:\\.(?:\\d+|x))*(?![\\w/-]|[.,]\\d)`,
+  `(?<![\\w.@/-])(?:${DEPENDENCIES.join("|")})(?:\\.js)?[*_]*[ \\t\\u00a0]*(?:\\n[ \\t]*)?(?:version[ \\t]+)?(?:v|[<>]=?|[~^≥≤])?[ \\t]*\\d{1,2}(?:\\.(?:\\d+|x))*(?:-[\\da-z]+(?:\\.[\\da-z]+)*)?(?![\\w/-]|[.,]\\d|${UNIT})`,
   "g",
 );
 
@@ -99,14 +107,20 @@ function tokenLines(doc) {
   return lines;
 }
 
+/** Replaces a span with spaces, keeping newlines so lines stay put. */
+const blank = (span) => span.replace(/[^\n]/g, " ");
+
+/** HTML `<pre>` blocks, comments and tags, link destinations, URLs and inline code spans: none of them is prose. */
+const NOT_PROSE =
+  /<pre\b[\s\S]*?<\/pre>|<!--[\s\S]*?-->|<\/?[a-z][^>]*>|\]\([^)\n]*\)|\bhttps?:\/\/\S+|(`+)[^\n]*?\1/gi;
+
+/** The page text with every code block, at any depth, and every non-prose span blanked. */
 function proseWithoutCode(doc) {
-  let text = doc.text.replace(NODE_BLOCK, (block) =>
-    block.replace(/[^\n]/g, " "),
-  );
-  for (const token of doc.tokens)
-    if (token.type === "code")
-      text = text.replace(token.raw, token.raw.replace(/[^\n]/g, " "));
-  return text.replace(/`[^`\n]*`/g, (code) => " ".repeat(code.length));
+  const lines = doc.text.split("\n");
+  for (const [from, to] of doc.code)
+    for (let line = from; line <= to; line += 1)
+      lines[line - doc.firstLine] = blank(lines[line - doc.firstLine] ?? "");
+  return lines.join("\n").replace(NODE_BLOCK, blank).replace(NOT_PROSE, blank);
 }
 
 function checkFrontmatter(doc, name, fail) {
@@ -141,19 +155,18 @@ function checkWords(doc, name, fail) {
 }
 
 function checkVersionProse(doc, name, fail) {
-  proseWithoutCode(doc)
-    .split("\n")
-    .forEach((text, index) => {
-      const at = `${name}:${doc.firstLine + index}`;
-      if (NODE_RANGE.test(text))
-        fail(
-          `${at}: Node version range in prose, state it once in package.json engines`,
-        );
-      for (const [version] of text.matchAll(DEPENDENCY_VERSION))
-        fail(
-          `${at}: "${version}" states a version in prose, point at the pin in package.json or .nvmrc`,
-        );
-    });
+  const prose = proseWithoutCode(doc);
+  prose.split("\n").forEach((text, index) => {
+    if (NODE_RANGE.test(text))
+      fail(
+        `${name}:${doc.firstLine + index}: Node version range in prose, state it once in package.json engines`,
+      );
+  });
+  const rendered = `${doc.frontmatter}${prose}`;
+  for (const { 0: version, index } of rendered.matchAll(DEPENDENCY_VERSION))
+    fail(
+      `${name}:${1 + (rendered.slice(0, index).match(/\n/g)?.length ?? 0)}: "${version.replace(/[*_]/g, "").replace(/\s+/g, " ")}" states a version in prose, point at the pin in package.json or .nvmrc`,
+    );
 }
 
 /** The `output` of every scene in docs/captures.ts. Each must be a string literal, because the check reads the file and does not run it. */
