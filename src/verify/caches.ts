@@ -338,6 +338,11 @@ export class ProjectCaches {
     this.passClock(bound);
   }
 
+  /** Every project seeded so far, so a copy of a folder that holds some can seed its own. */
+  seeded(): string[] {
+    return [...this.projects.keys()];
+  }
+
   /**
    * Records the bound of each registry module that appeared in a project's manifest
    * since the last call, and refuses the cache of a project whose recorded

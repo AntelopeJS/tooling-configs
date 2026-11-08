@@ -246,7 +246,11 @@ export interface JourneyContext {
    * sibling in the journey's work folder or the repository, stays with the
    * journey that built. Two journeys that ask for the same key at once, in
    * concurrent `journey` commands, both build, and the first to finish is
-   * kept. The commands `build` runs get a HOME of their own, deleted when
+   * kept. A project `build` creates with `scaffold` starts each copy as
+   * `scaffold` starts one: a copy whose `.antelope/cache` holds no module
+   * gets a cache an earlier passing journey kept, and a passing journey keeps
+   * the registry modules installed into its copy for later journeys.
+   * The commands `build` runs get a HOME of their own, deleted when
    * `build` ends, so what they write there (`ajs config set git`, caches) is
    * never kept and every journey continues with its own HOME. Every journey
    * passes the same `build` for a key. `key` is lowercase letters and digits
