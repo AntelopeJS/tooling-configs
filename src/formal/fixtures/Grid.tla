@@ -13,4 +13,6 @@ Near == a + b + c < 2 * N
 NoCorner == ~(a = N /\ b = N - 1)
 
 Low == a + b + c < 3
+
+Box == a + b + c < 4
 ====

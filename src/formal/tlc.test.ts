@@ -171,6 +171,36 @@ test("a violating count covers every reachable state that breaks the finding", (
   ]);
 });
 
+test("a violating count leaves out the states a CONSTRAINT keeps out of the model", () => {
+  const run = check({
+    spec: "Grid",
+    config: "Grid.box",
+    findings: { Low: 4 },
+    violating: { Low: 10 },
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.ok(
+    run.lines.includes(
+      "finding Low: 4 states (recorded 4), 10 violating (recorded 10): Initial -> IncA -> IncA -> IncA",
+    ),
+    run.lines.join("\n"),
+  );
+});
+
+test("a violating count under an ACTION_CONSTRAINT exits 2", () => {
+  const run = check({
+    spec: "Grid",
+    config: "Grid.action",
+    findings: { Low: 4 },
+    violating: { Low: 10 },
+  });
+  assert.equal(run.status, 2);
+  assert.equal(
+    run.stderr,
+    "check: violating counts states outside an ACTION_CONSTRAINT; Grid.action.cfg has one\n",
+  );
+});
+
 test("a violating count for a rule that is not a finding exits 2", () => {
   const run = check({ findings: { NotTwo: 3 }, violating: { Bounded: 1 } });
   assert.equal(run.status, 2);

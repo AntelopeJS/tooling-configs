@@ -48,9 +48,11 @@ export interface CheckSpecOptions {
   /** The invariants of the configuration expected to break. */
   findings: Findings;
   /**
-   * The violating-state count of some `findings`. A finding without one is
-   * judged by its length alone, so a new path that breaks it in at least as
-   * many states goes unnoticed.
+   * The violating-state count of some `findings`: the distinct states inside
+   * the model, where every `CONSTRAINT` holds, that break the rule. A finding
+   * without one is judged by its length alone, so a new path that breaks it
+   * in at least as many states goes unnoticed. A configuration with an
+   * `ACTION_CONSTRAINT` cannot be counted.
    */
   violating?: Violating;
 }
@@ -220,13 +222,23 @@ function readModules(dir: string): Module[] {
     .map((name) => ({ name, bytes: readFileSync(path.join(dir, name)) }));
 }
 
-/** A module whose `Count_<rule>` invariants always hold and print {@link COUNT_MARK} once for each distinct reachable state that breaks `<rule>`. */
-function countModule(spec: string, rules: string[]): Module {
+/**
+ * A module whose `AntelopeJSCount_<rule>` invariants always hold and print
+ * {@link COUNT_MARK} once for each distinct reachable state that breaks
+ * `<rule>`. TLC also checks invariants on successors outside a `CONSTRAINT`,
+ * once per transition into them, so those states print nothing.
+ */
+function countModule(spec: string, rules: string[], config: Config): Module {
+  const outside = config.bounds.flatMap((line) => {
+    const [kind, name] = line.split(/\s+/);
+    return kind === "CONSTRAINT" ? [`~${name} \\/ `] : [];
+  });
   const text = [
     `---- MODULE ${COUNT_MODULE} ----`,
     `EXTENDS ${spec}, TLC`,
     ...rules.map(
-      (rule) => `Count_${rule} == ${rule} \\/ PrintT("${COUNT_MARK}")`,
+      (rule) =>
+        `${COUNT_MODULE}_${rule} == ${outside.join("")}${rule} \\/ PrintT("${COUNT_MARK}")`,
     ),
     "====",
     "",
@@ -416,13 +428,23 @@ export async function checkSpec(options: CheckSpecOptions): Promise<void> {
   for (const rule of Object.keys(violating))
     if (!Object.hasOwn(findings, rule))
       fail(`violating ${rule} is not a finding`);
+  if (
+    Object.keys(violating).length > 0 &&
+    parsed.bounds.some((line) => line.startsWith("ACTION_CONSTRAINT"))
+  )
+    fail(
+      `violating counts states outside an ACTION_CONSTRAINT; ${config}.cfg has one`,
+    );
   const holding = parsed.invariants.filter(
     (rule) => !Object.hasOwn(findings, rule),
   );
   const plan: Plan = {
     spec,
     header: `TLC ${TLC_VERSION} on ${spec}.tla (${config}.cfg) with ${parsed.constants.map((line) => line.trim()).join(", ")}`,
-    modules: [...readModules(dir), countModule(spec, Object.keys(violating))],
+    modules: [
+      ...readModules(dir),
+      countModule(spec, Object.keys(violating), parsed),
+    ],
     holds:
       holding.length > 0
         ? {
@@ -451,7 +473,7 @@ export async function checkSpec(options: CheckSpecOptions): Promise<void> {
               name: `count-${rule}`,
               module: COUNT_MODULE,
               workers: "1",
-              cfg: cfgText(parsed, [`Count_${rule}`]),
+              cfg: cfgText(parsed, [`${COUNT_MODULE}_${rule}`]),
             },
           }
         : undefined,
