@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import {
+  appendFileSync,
   closeSync,
   mkdirSync,
   openSync,
@@ -158,6 +159,9 @@ export function startRecorded(
   });
   closeSync(stdout);
   closeSync(stderr);
+  child.on("error", (error) =>
+    appendFileSync(join(folder, "stderr.txt"), `${error.message}\n`),
+  );
   const exited = new Promise<{
     exitCode: number | null;
     signal: string | null;

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 
 import { put, read } from "../guardrails/helpers/test-repo.ts";
 import {
@@ -23,7 +23,7 @@ http.createServer((request, response) => response.end("ok"))
   .listen(Number(process.env.PORT), "127.0.0.1", () => console.log("ready"));
 `;
 
-function config(server: string, pidFile: string): string {
+function config(command: string[], pidFile: string): string {
   return `import { readFileSync } from "node:fs";
 
 export default {
@@ -35,7 +35,7 @@ export default {
       entryPoint: "node server.cjs",
       async run(context) {
         const app = await context.dev("serve", context.work, {
-          command: [process.execPath, ${JSON.stringify(server)}],
+          command: ${JSON.stringify(command)},
           env: { PID_FILE: ${JSON.stringify(pidFile)} },
         });
         const own = Number(readFileSync(${JSON.stringify(pidFile)}, "utf8"));
@@ -51,28 +51,34 @@ export default {
 `;
 }
 
-test("context.dev starts a given command in place of ajs project dev, records its PID and stops it", (t) => {
+function runJourney(t: TestContext, program: string) {
   const tmp = mkdtempSync(join(tmpdir(), "verify-dev-command-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   put(tmp, "server.cjs", SERVER);
-  const pidFile = join(tmp, "server.pid");
+  const command = [program, join(tmp, "server.cjs")];
   const root = verifyRepo(t, {
     "README.md": "# Demo\n",
     "package.json": '{"name":"demo","type":"module","version":"1.0.0"}\n',
     [`${SKILL}/SKILL.md`]: "synced\n",
-    [`${SKILL}/verify.config.ts`]: config(join(tmp, "server.cjs"), pidFile),
+    [`${SKILL}/verify.config.ts`]: config(command, join(tmp, "server.pid")),
     [`${SKILL}/features/smoke.md`]: feature([], ["standalone"]),
   });
   const created = verify(root, tmp, ["new", "--kind", "template"]);
   assert.equal(created.status, 0, created.stdout + created.stderr);
   const run = created.stdout.trim().split("\n").at(-1) ?? "";
-  const journey = verify(root, tmp, [
-    "journey",
-    run,
-    "smoke",
-    "--kind",
-    "template",
-  ]);
+  const args = ["journey", run, "smoke", "--kind", "template"];
+  return { tmp, journey: verify(root, tmp, args) };
+}
+
+test("context.dev starts a given command in place of ajs project dev, records its PID and stops it", (t) => {
+  const { tmp, journey } = runJourney(t, process.execPath);
   assert.equal(journey.status, 0, journey.stdout + journey.stderr);
   assert.match(read(tmp, "server.pid"), /^\d+$/);
+});
+
+test("a command that cannot start fails its journey; an unhandled spawn error that crashes the harness fails", (t) => {
+  const { journey } = runJourney(t, "no-such-program-ant-1584");
+  assert.equal(journey.status, 1, journey.stdout + journey.stderr);
+  assert.match(journey.stdout, /FAIL smoke\/standalone/);
+  assert.doesNotMatch(journey.stderr, /Unhandled 'error' event/);
 });
