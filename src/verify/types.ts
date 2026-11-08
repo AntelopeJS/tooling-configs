@@ -279,6 +279,12 @@ export interface TemplateProbe {
   settleMs?: number;
 }
 
+/** A module the fixture project loads next to the module under verification: its `antelope.config.ts` source and config. */
+export type CompanionModule = {
+  source: JsonObject;
+  config?: JsonObject;
+};
+
 /** The repo-owned layer of a shared verification skill: `.agents/skills/verify-<kind>/verify.config.ts`. */
 export interface VerifyConfig<Api = never> {
   doors: DoorRules;
@@ -297,6 +303,8 @@ export interface VerifyConfig<Api = never> {
   saas?: { env: string[]; sandbox: string };
   /** The module kind's configuration of the module under verification. */
   moduleConfig?(services: ServiceEndpoint[]): JsonObject;
+  /** Other modules every fixture project loads, keyed by module name, such as the provider of an interface the module imports that nothing else implements. */
+  companions?(services: ServiceEndpoint[]): { [name: string]: CompanionModule };
   interface?: InterfaceHooks<Api>;
   /** The template kind: its name in the offline manifest, whether it is a project template, and its readiness probe. */
   template?: { name?: string; project?: boolean; probe: TemplateProbe };
