@@ -13,7 +13,6 @@ import {
   readlinkSync,
   realpathSync,
   renameSync,
-  rmSync,
   statSync,
   symlinkSync,
   unlinkSync,
@@ -154,14 +153,14 @@ export function writeOwn(file: string, content: string): void {
   }
   const real = realpathSync(file);
   accessSync(real, constants.W_OK);
-  const fresh = `${real}.${process.pid}.edit`;
+  const scratch = mkdtempSync(join(dirname(real), ".edit-"));
   try {
-    writeFileSync(fresh, content, { flag: "wx" });
+    const fresh = join(scratch, "file");
+    writeFileSync(fresh, content, { mode: before.mode });
     chmodSync(fresh, before.mode);
     renameSync(fresh, real);
-  } catch (error) {
-    rmSync(fresh, { force: true });
-    throw error;
+  } finally {
+    removeTree(scratch);
   }
 }
 

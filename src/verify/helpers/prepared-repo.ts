@@ -103,7 +103,7 @@ export default {
       },
     },
     "failed-editor": {
-      title: "edits the prepared hard link while the disk is full",
+      title: "edits the prepared hard link and records how it failed",
       entryPoint: "node",
       async run(context) {
         const folder = await prepare(context);
@@ -116,12 +116,9 @@ export default {
             return error.code;
           }
         })();
+        writeFileSync(join(${JSON.stringify(flags)}, "edit.json"), JSON.stringify({ failure, entries: readdirSync(folder).filter((name) => name.startsWith(".edit")) }));
         const after = context.tree("after the failed edit", folder);
-        context.expect(after.folder, [
-          equal("the edit failed", failure, "ENOSPC"),
-          equal("shared.txt is as stored", readFileSync(shared, "utf8"), "stored\\n"),
-          equal("no temporary file is left", readdirSync(folder).filter((name) => name.endsWith(".edit")), []),
-        ]);
+        context.expect(after.folder, [equal("shared.txt is as stored", readFileSync(shared, "utf8"), "stored\\n")]);
       },
     },
     shape: {
@@ -165,12 +162,15 @@ syncBuiltinESMExports();
 `;
 }
 
-/** Makes every write of `edited` fail with ENOSPC, as on a full disk. */
+/** Makes every write of `edited` create its file empty and then fail with ENOSPC, as on a full disk. */
 const FULL_DISK = `import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 const write = fs.writeFileSync;
 fs.writeFileSync = (file, content, options) => {
-  if (content === "edited\\n") throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" });
+  if (content === "edited\\n") {
+    write(file, "", options);
+    throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" });
+  }
   return write(file, content, options);
 };
 syncBuiltinESMExports();
@@ -216,13 +216,15 @@ export function preparedRepo(t: TestContext) {
     return { NODE_OPTIONS: `--import=${file}` };
   };
   const hook = (mode: "vanish" | "replace") => imported(mode, memoHook(mode));
-  const store = () => {
+  const store = (mode = 0o644) => {
     const file = join(flags, "store.txt");
-    writeFileSync(file, "stored\n");
+    writeFileSync(file, "stored\n", { mode });
     return statSync(file).ino;
   };
   const seen = (): { ino: number; value: number } =>
     JSON.parse(read(flags, "seen.json"));
+  const failedEdit = (): { failure: string; entries: string[] } =>
+    JSON.parse(read(flags, "edit.json"));
   return {
     root,
     tmp,
@@ -233,6 +235,7 @@ export function preparedRepo(t: TestContext) {
     hook,
     store,
     seen,
+    failedEdit,
     fullLinks: () => imported("full-links", FULL_LINKS),
     fullDisk: () => imported("full-disk", FULL_DISK),
   };

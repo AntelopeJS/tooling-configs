@@ -48,12 +48,24 @@ test("an edit of a linked file in one journey's copy reaches neither the file it
   assert.equal(seen().ino, stored);
 });
 
-test("an edit of a linked file that fails to write leaves the file as it was", (t) => {
-  const { root, tmp, builds, store, fullDisk } = preparedRepo(t);
+test("an edit of a linked file that fails to write leaves the file as it was and no temporary file", (t) => {
+  const { root, tmp, builds, store, failedEdit, fullDisk } = preparedRepo(t);
   store();
   const run = newRun(root, tmp);
   assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
   const failed = verify(root, tmp, ["journey", run, "full"], fullDisk());
   assert.equal(failed.status, 0, failed.stdout);
   assert.equal(builds(), 1);
+  assert.deepEqual(failedEdit(), { failure: "ENOSPC", entries: [] });
+});
+
+test("an edit of a read-only linked file fails as it does for a file with no other link", (t) => {
+  const { root, tmp, builds, store, failedEdit } = preparedRepo(t);
+  store(0o444);
+  const run = newRun(root, tmp);
+  assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
+  const failed = verify(root, tmp, ["journey", run, "full"]);
+  assert.equal(failed.status, 0, failed.stdout);
+  assert.equal(builds(), 1);
+  assert.deepEqual(failedEdit(), { failure: "EACCES", entries: [] });
 });
