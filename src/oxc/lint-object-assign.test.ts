@@ -120,6 +120,29 @@ export class Model {
     return Object.assign(this, patch);
   }
 }
+
+declare const flag: boolean;
+declare const prefixed: Record<\`data-\${string}\`, unknown>;
+declare const symbols: { [key: symbol]: unknown };
+declare const list: unknown[];
+
+/** Index signatures whose keys cannot name a declared field, or a target whose fields all take unknown. */
+export function keyed(target: ValueProxy<number>, open: { a: unknown }, record: Record<string, unknown>): object {
+  Object.assign(target, prefixed, symbols, list);
+  return Object.assign(open, record);
+}
+
+/** A setter of a generic class, a shorthand const literal, nested literals, and a condition over Date. */
+export class Collection<T> {
+  get items(): readonly T[] { return []; }
+  set items(next: Iterable<T>) {}
+}
+export function forms(target: ValueProxy<number>, collection: Collection<number>): object {
+  const status = "loading";
+  Object.assign(target, { status }, { stages: [{ kind: "match" }] });
+  Object.assign(collection, { items: new Set([1]) });
+  return Object.assign(new Date(), flag && { stamp: 1 });
+}
 `;
 
 function findings(files: Record<string, string>): string[] {
@@ -154,6 +177,23 @@ test("Object.assign writing unknown, any or a mistyped value over a typed field 
     "holes.ts:50",
     "holes.ts:8",
   ]);
+});
+
+test("an optional property that may hold undefined fails under exactOptionalPropertyTypes", () => {
+  const exact = JSON.stringify({
+    compilerOptions: { strict: true, exactOptionalPropertyTypes: true },
+  });
+  const source = `
+import type { ValueProxy } from "./proxy.ts";
+
+export function patch(target: ValueProxy<number>, update: { value?: number | undefined }): ValueProxy<number> {
+  return Object.assign(target, update);
+}
+`;
+  assert.deepEqual(
+    findings({ "tsconfig.json": exact, "proxy.ts": proxy, "exact.ts": source }),
+    ["exact.ts:5"],
+  );
 });
 
 test("Object.assign adding new fields, writing assignable values or copying into a fresh object passes", () => {

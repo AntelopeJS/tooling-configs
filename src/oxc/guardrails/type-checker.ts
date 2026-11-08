@@ -6,6 +6,7 @@ import { programConfig, project } from "./tsconfig-program.ts";
 /** A linted file as the TypeScript program of its tsconfig types it. */
 export interface TypedFile {
   checker: ts.TypeChecker;
+  options: ts.CompilerOptions;
   sourceFile: ts.SourceFile;
 }
 
@@ -54,7 +55,11 @@ export function typedFile(file: string, text: string): TypedFile | undefined {
       : build(config, path, text);
   const sourceFile = program?.getSourceFile(path);
   return program && sourceFile
-    ? { checker: program.getTypeChecker(), sourceFile }
+    ? {
+        checker: program.getTypeChecker(),
+        options: program.getCompilerOptions(),
+        sourceFile,
+      }
     : undefined;
 }
 
