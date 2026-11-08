@@ -3,6 +3,7 @@ import { defineConfig } from "oxlint";
 import { findGitRoot, MEASURE_ENV } from "../guardrails/ceilings.ts";
 import { readCarriedCeilings } from "../guardrails/renames.ts";
 import { PRESET_CONFIGS } from "../guardrails/templates.ts";
+import { TYPE_AWARE_RULES } from "../type-aware-rules.ts";
 import { TEST_FILE_GLOBS } from "./guardrails/shared.ts";
 import { IGNORE_PATTERNS, SYNCED_AGENT_PATTERNS } from "./shared.ts";
 
@@ -61,6 +62,8 @@ export interface AntelopePresetOptions {
   /**
    * Type-aware rules. Defaults to true. Consumers must also set options.typeAware
    * in their root config because oxlint never reads that field from extends.
+   * oxlint-tsgolint reads only TypeScript files, so `.vue` script blocks get
+   * these rules from `antelopeNuxtConfig({ typeAware })` in ESLint instead.
    */
   typeAware?: boolean;
 }
@@ -240,31 +243,12 @@ function complexityPreset(thresholds: ComplexityThresholds) {
   });
 }
 
-/**
- * Besides the base set, five rules reject an `any` or a type parameter that
- * stands in for `unknown`, which the anti-slop `unknown` and assertion rules
- * never see: a once-used type parameter, `any` passed as a typed argument,
- * assigned to a typed binding or returned as a typed result, and an untyped
- * `.catch` callback variable.
- */
+/** The {@link TYPE_AWARE_RULES} as oxlint names them. */
 function typeAwarePreset() {
   return defineConfig({
-    rules: {
-      "typescript/no-unnecessary-type-parameters": "error",
-      "typescript/no-unsafe-argument": "error",
-      "typescript/no-unsafe-assignment": "error",
-      "typescript/no-unsafe-return": "error",
-      "typescript/use-unknown-in-catch-callback-variable": "error",
-      "typescript/no-floating-promises": "error",
-      "typescript/await-thenable": "error",
-      "typescript/unbound-method": "error",
-      "typescript/no-meaningless-void-operator": "error",
-      "typescript/no-misused-spread": "error",
-      "typescript/no-base-to-string": "error",
-      "typescript/no-redundant-type-constituents": "error",
-      "typescript/restrict-template-expressions": "error",
-      "typescript/require-array-sort-compare": "error",
-    },
+    rules: Object.fromEntries(
+      TYPE_AWARE_RULES.map((rule) => [`typescript/${rule}`, "error"]),
+    ),
   });
 }
 

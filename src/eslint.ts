@@ -1,5 +1,7 @@
 import { createConfigForNuxt } from "@nuxt/eslint-config/flat";
 
+import { TYPE_AWARE_RULES } from "./type-aware-rules.ts";
+
 /** The rule map `overrideRules` accepts, derived so no transitive type is named. */
 type NuxtRules = Parameters<
   ReturnType<typeof createConfigForNuxt>["overrideRules"]
@@ -10,12 +12,21 @@ export interface AntelopeNuxtConfigOptions {
   dirs?: string[];
   /** Rules layered on top of the shared set. */
   rules?: NuxtRules;
+  /**
+   * Runs the type-aware rules of the oxlint preset on `.vue` script blocks,
+   * which oxlint-tsgolint cannot read. `tsconfigRootDir` is the directory of
+   * the tsconfig whose `include` lists the `.vue` files, usually
+   * `import.meta.dirname`. TypeScript files stay with oxlint and are not
+   * type-checked twice.
+   */
+  typeAware?: { tsconfigRootDir: string };
 }
 
 /**
- * The shared rules for a Nuxt layer. oxlint does not lint `.vue` files yet, so
- * the front end stays on ESLint, and `@nuxt/eslint` supplies the Vue and
- * TypeScript rules; this only records where AntelopeJS layers differ from it.
+ * The shared rules for a Nuxt layer. oxlint lints `.vue` script blocks only
+ * with rules that need no type information, so the front end stays on ESLint,
+ * and `@nuxt/eslint` supplies the Vue and TypeScript rules; this only records
+ * where AntelopeJS layers differ from it.
  *
  * Formatting rules are deliberately absent. oxfmt formats `.vue`, and a lint
  * rule that also reflows markup (`vue/max-attributes-per-line`, which eight
@@ -63,10 +74,26 @@ export function antelopeNuxtConfig(
   options: AntelopeNuxtConfigOptions = {},
 ): ReturnType<typeof createConfigForNuxt> {
   const overrides = { ...ANTELOPE_NUXT_RULES, ...options.rules };
-  return createConfigForNuxt({
+  const composer = createConfigForNuxt({
     features: { tooling: true },
     dirs: { src: options.dirs ?? [] },
-  }).onResolved((configs) =>
+  });
+  if (options.typeAware !== undefined) {
+    composer.append({
+      name: "antelopejs/vue-type-aware",
+      files: ["**/*.vue"],
+      languageOptions: {
+        parserOptions: {
+          projectService: true,
+          tsconfigRootDir: options.typeAware.tsconfigRootDir,
+        },
+      },
+      rules: Object.fromEntries(
+        TYPE_AWARE_RULES.map((rule) => [`@typescript-eslint/${rule}`, "error"]),
+      ),
+    });
+  }
+  return composer.onResolved((configs) =>
     configs.map((config) => {
       if (config.rules === undefined) return config;
       const rules = { ...config.rules };

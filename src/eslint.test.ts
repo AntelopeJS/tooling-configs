@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
+
+import { ESLint } from "eslint";
 
 import { antelopeNuxtConfig } from "./eslint.ts";
 
@@ -50,4 +55,61 @@ test("Nuxt resolves every warning severity to error while preserving options and
       assert.notEqual(severity, 1);
     }
   }
+});
+
+async function lintVueProject(
+  options: (root: string) => Parameters<typeof antelopeNuxtConfig>[0],
+) {
+  const root = mkdtempSync(join(tmpdir(), "antelope-eslint-"));
+  try {
+    writeFileSync(
+      join(root, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          strict: true,
+          module: "esnext",
+          moduleResolution: "bundler",
+        },
+        include: ["*.ts", "*.vue"],
+      }),
+    );
+    writeFileSync(
+      join(root, "load.ts"),
+      "export async function load(): Promise<number> {\n  return 1;\n}\nload();\n",
+    );
+    writeFileSync(
+      join(root, "Subject.vue"),
+      '<script setup lang="ts">\nimport { load } from "./load";\nconst parsed: number = JSON.parse("1");\nload();\n</script>\n\n<template><div>{{ parsed }}</div></template>\n',
+    );
+    const eslint = new ESLint({
+      cwd: root,
+      overrideConfigFile: true,
+      overrideConfig: await antelopeNuxtConfig(options(root)),
+    });
+    const results = await eslint.lintFiles(["load.ts", "Subject.vue"]);
+    return results.flatMap((result) =>
+      result.messages.map(
+        (message) =>
+          `${result.filePath.slice(root.length + 1)}:${message.line} ${message.ruleId ?? message.message}`,
+      ),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("typeAware runs the type-aware rules on .vue script blocks with types from sibling files, and leaves .ts files to oxlint", async () => {
+  assert.deepEqual(
+    await lintVueProject((root) => ({
+      typeAware: { tsconfigRootDir: root },
+    })),
+    [
+      "Subject.vue:3 @typescript-eslint/no-unsafe-assignment",
+      "Subject.vue:4 @typescript-eslint/no-floating-promises",
+    ],
+  );
+});
+
+test("without typeAware no rule needs type information", async () => {
+  assert.deepEqual(await lintVueProject(() => ({})), []);
 });
