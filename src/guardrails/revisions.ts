@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -31,7 +32,7 @@ function linkDependencies(root: string, worktree: string): void {
     if (
       existsSync(source) &&
       existsSync(dirname(target)) &&
-      !existsSync(target)
+      lstatSync(target, { throwIfNoEntry: false }) === undefined
     )
       symlinkSync(source, target, DIRECTORY_LINK);
   }
