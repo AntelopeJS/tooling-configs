@@ -302,13 +302,13 @@ test("comments under an empty trigger keep their lines and columns through a rew
   );
 });
 
-test("a comment under the last trigger stays above the workflow_dispatch sync appends, where the yaml map comment trails it", () => {
+test("a comment under the last trigger stays above the workflow_dispatch sync appends and a dedented one stays above permissions, where the yaml map comment trails the appended key and a fix that counts it as a source key pulls both into on", () => {
   const rewritten = rewrite(
-    `on:\n  push:\n  pull_request:\n  # only pull requests\njobs:\n  checks:\n    uses: ${CI_NODE_REF}\n`,
+    `on:\n  push:\n  pull_request:\n\n  # only pull requests\n\n# least privilege\npermissions:\n  contents: read\njobs:\n  checks:\n    uses: ${CI_NODE_REF}\n`,
   );
   assert.match(
     rewritten,
-    /\n {2}pull_request:\n {2}# only pull requests\n {2}workflow_dispatch:/,
+    /\n {2}pull_request:\n\n {2}# only pull requests\n {2}workflow_dispatch:[^\n]*\n\n# least privilege\npermissions:/,
   );
 });
 

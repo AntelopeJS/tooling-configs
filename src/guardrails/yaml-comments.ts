@@ -94,7 +94,8 @@ function placeBefore(key: Scalar | undefined, block: CommentBlock): boolean {
 }
 
 function placeAfter(map: YAMLMap, block: CommentBlock): void {
-  map.comment = [map.comment, withBlankAfter(block)]
+  const comment = withBlankAfter(block);
+  map.comment = [map.comment, block.blankBefore ? `\n${comment}` : comment]
     .filter((comment) => comment !== undefined)
     .join("\n");
 }
@@ -105,11 +106,15 @@ function columnOf(text: string, offset: number): number {
 
 /**
  * Splits the comment lines under a key into those indented under it, those at its column, which belong before the next
- * key, and, when the key is its map's last, those dedented past it, which belong to an enclosing map.
+ * key, and, when no key follows it in the source, those dedented past it, which belong to an enclosing map.
  */
-function partition(below: SourceLine[], keyColumn: number, hasNext: boolean) {
+function partition(
+  below: SourceLine[],
+  keyColumn: number,
+  followedInSource: boolean,
+) {
   const shallow = cut(below, (column) => column <= keyColumn);
-  const dedented = hasNext
+  const dedented = followedInSource
     ? below.length
     : Math.max(
         cut(below, (column) => column < keyColumn),
@@ -139,7 +144,7 @@ function emptyValueComments(map: YAMLMap, index: number, text: string) {
     value,
     nextKey,
     inline,
-    ...partition(below, columnOf(text, keyStart), next !== undefined),
+    ...partition(below, columnOf(text, keyStart), nextKey?.range != null),
   };
 }
 
