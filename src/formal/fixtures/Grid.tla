@@ -11,4 +11,6 @@ Next == IncA \/ IncB \/ IncC
 Spec == Init /\ [][Next]_vars
 Near == a + b + c < 2 * N
 NoCorner == ~(a = N /\ b = N - 1)
+
+Low == a + b + c < 3
 ====

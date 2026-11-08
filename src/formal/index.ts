@@ -25,6 +25,8 @@ const JVM_OPTIONS = ["-XX:+UseParallelGC"];
 const TLC_FLAGS = ["-deadlock"];
 const JVM_ENV = ["JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"];
 const CACHE_ENV = "ANTELOPEJS_FORMAL_CACHE";
+const COUNT_MODULE = "AntelopeJSCount";
+const COUNT_MARK = "antelopejs-violating";
 
 /** Exit codes of a check: 0 when every rule matches its record, 1 when a rule changed, 2 when TLC could not run. */
 export const EXIT = { ok: 0, changed: 1, tool: 2 } as const;
@@ -66,17 +68,23 @@ interface Module {
 
 interface TlcRun {
   name: string;
+  /** The module TLC checks: the spec, or {@link COUNT_MODULE}. */
+  module: string;
   workers: "auto" | "1";
-  /** Explore past each violation, so every violating state is counted. */
-  continue: boolean;
   cfg: string;
+}
+
+/** A recorded violating-state count and the run that measures it. */
+interface Count {
+  expected: number;
+  run: TlcRun;
 }
 
 interface Finding {
   rule: string;
   states: number;
-  violating: number | undefined;
   run: TlcRun;
+  count: Count | undefined;
 }
 
 interface Holding {
@@ -96,7 +104,6 @@ interface Plan {
 interface Workspace {
   jar: string;
   work: string;
-  spec: string;
 }
 
 /** A finished check as the result cache keeps it: what it printed and how it exits. */
@@ -213,8 +220,22 @@ function readModules(dir: string): Module[] {
     .map((name) => ({ name, bytes: readFileSync(path.join(dir, name)) }));
 }
 
+/** A module whose `Count_<rule>` invariants always hold and print {@link COUNT_MARK} once for each distinct reachable state that breaks `<rule>`. */
+function countModule(spec: string, rules: string[]): Module {
+  const text = [
+    `---- MODULE ${COUNT_MODULE} ----`,
+    `EXTENDS ${spec}, TLC`,
+    ...rules.map(
+      (rule) => `Count_${rule} == ${rule} \\/ PrintT("${COUNT_MARK}")`,
+    ),
+    "====",
+    "",
+  ].join("\n");
+  return { name: `${COUNT_MODULE}.tla`, bytes: Buffer.from(text) };
+}
+
 function runTlc(workspace: Workspace, run: TlcRun) {
-  const { jar, work, spec } = workspace;
+  const { jar, work } = workspace;
   const { name, workers } = run;
   const cfg = path.join(work, `${name}.cfg`);
   writeFileSync(cfg, run.cfg);
@@ -232,21 +253,16 @@ function runTlc(workspace: Workspace, run: TlcRun) {
       "-workers",
       workers,
       ...TLC_FLAGS,
-      ...(run.continue ? ["-continue"] : []),
       "-metadir",
       path.join(work, `states-${name}`),
-      `${spec}.tla`,
+      `${run.module}.tla`,
     ],
     { cwd: work, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 },
   );
   if (result.error) fail(`cannot run ${java.program}: ${result.error.message}`);
   const output = `${result.stdout}${result.stderr}`;
   writeFileSync(path.join(work, `${name}.out`), output);
-  const violations = Array.from(
-    output.matchAll(/Invariant (\w+) is violated/g),
-  );
-  const [first, second] = violations;
-  const violated = first?.[1];
+  const violated = /Invariant (\w+) is violated/.exec(output)?.[1];
   const distinct = /([\d,]+) distinct states found, 0 states left/.exec(
     output,
   )?.[1];
@@ -255,10 +271,11 @@ function runTlc(workspace: Workspace, run: TlcRun) {
       `TLC did not finish ${name}; output in ${path.join(work, `${name}.out`)}\n${output.slice(-2000)}`,
     );
   const steps = Array.from(
-    output.slice(first?.index, second?.index).matchAll(/^State \d+: <(\w+)/gm),
+    output.matchAll(/^State \d+: <(\w+)/gm),
     ([, action]) => action,
   );
-  return { violated, violating: violations.length, distinct, steps };
+  const marks = output.match(new RegExp(`^"${COUNT_MARK}"$`, "gm"));
+  return { violated, distinct, steps, violating: marks?.length ?? 0 };
 }
 
 function resultKey(plan: Plan): string {
@@ -310,7 +327,7 @@ async function modelCheck(plan: Plan): Promise<Outcome & { work: string }> {
   const work = mkdtempSync(path.join(os.tmpdir(), `formal-${spec}-`));
   for (const { name, bytes } of modules)
     writeFileSync(path.join(work, name), bytes);
-  const workspace = { jar, work, spec };
+  const workspace = { jar, work };
   const lines: string[] = [];
   const print = (line: string) => {
     lines.push(line);
@@ -330,7 +347,7 @@ async function modelCheck(plan: Plan): Promise<Outcome & { work: string }> {
       print(`BROKEN ${shortest.violated}: ${shortest.steps.join(" -> ")}`);
     } else print(`holds  ${holds.rules.join(", ")} (${held.distinct} states)`);
   }
-  for (const { rule, states, violating, run } of findings) {
+  for (const { rule, states, run, count } of findings) {
     const found = runTlc(workspace, run);
     if (!found.violated) {
       changed = true;
@@ -338,14 +355,14 @@ async function modelCheck(plan: Plan): Promise<Outcome & { work: string }> {
       continue;
     }
     const length = found.steps.length;
-    const same =
-      length === states &&
-      (violating === undefined || found.violating === violating);
+    const violating =
+      count === undefined ? undefined : runTlc(workspace, count.run).violating;
+    const same = length === states && violating === count?.expected;
     changed ||= !same;
     const counted =
-      violating === undefined
+      count === undefined
         ? ""
-        : `, ${found.violating} violating (recorded ${violating})`;
+        : `, ${violating} violating (recorded ${count.expected})`;
     print(
       `${same ? "finding" : "CHANGED"} ${rule}: ${length} states (recorded ${states})${counted}: ${found.steps.join(" -> ")}`,
     );
@@ -363,11 +380,11 @@ async function modelCheck(plan: Plan): Promise<Outcome & { work: string }> {
  * invariants of `<dir>/<config>.cfg`. Every invariant must hold except the
  * `findings`, each of which must still break with a shortest counterexample
  * of exactly its recorded number of states and, when `violating` names it,
- * in exactly that many distinct reachable states, which TLC counts with
- * `-continue`. The rules expected to hold are checked on every core; when one
- * breaks, a one-worker rerun picks the rule and the shortest trace that
- * `BROKEN` prints, so both are the same on every run. Prints one line per
- * rule (`holds`, `finding`, `BROKEN`, `CHANGED` or `HOLDS`) and exits the
+ * in exactly that many distinct reachable states, which a further one-worker
+ * run counts through a generated `AntelopeJSCount` module. The rules
+ * expected to hold are checked on every core; when one breaks, a one-worker
+ * rerun picks the rule and the shortest trace that `BROKEN` prints, so both
+ * are the same on every run. Prints one line per rule (`holds`, `finding`, `BROKEN`, `CHANGED` or `HOLDS`) and exits the
  * process
  * with {@link EXIT}`.changed` when a rule differs from its record, or
  * {@link EXIT}`.tool` when TLC could not run; returns when everything
@@ -387,7 +404,7 @@ async function modelCheck(plan: Plan): Promise<Outcome & { work: string }> {
  * SHA-256, the JVM options and TLC flags with `$JAVA_TOOL_OPTIONS`,
  * `$JDK_JAVA_OPTIONS` and `$_JAVA_OPTIONS`, the spec and configuration
  * names, the printed header, the bytes of every `.tla` file in `dir`, the
- * configuration, worker count and `-continue` of each TLC run, `findings` and
+ * module, configuration and worker count of each TLC run, `findings` and
  * `violating`. A replay keeps no TLC output
  * folder. `ANTELOPEJS_FORMAL_CACHE=off` neither reads nor writes the cache.
  * Entries are never pruned; each is a few hundred bytes, one per distinct
@@ -405,33 +422,40 @@ export async function checkSpec(options: CheckSpecOptions): Promise<void> {
   const plan: Plan = {
     spec,
     header: `TLC ${TLC_VERSION} on ${spec}.tla (${config}.cfg) with ${parsed.constants.map((line) => line.trim()).join(", ")}`,
-    modules: readModules(dir),
+    modules: [...readModules(dir), countModule(spec, Object.keys(violating))],
     holds:
       holding.length > 0
         ? {
             rules: holding,
             run: {
               name: "holds",
+              module: spec,
               workers: "auto",
-              continue: false,
               cfg: cfgText(parsed, holding),
             },
           }
         : undefined,
-    findings: Object.entries(findings).map(([rule, states]) => {
-      const counted = Object.hasOwn(violating, rule);
-      return {
-        rule,
-        states,
-        violating: counted ? violating[rule] : undefined,
-        run: {
-          name: rule,
-          workers: "1",
-          continue: counted,
-          cfg: cfgText(parsed, [rule]),
-        },
-      };
-    }),
+    findings: Object.entries(findings).map(([rule, states]) => ({
+      rule,
+      states,
+      run: {
+        name: rule,
+        module: spec,
+        workers: "1",
+        cfg: cfgText(parsed, [rule]),
+      },
+      count: Object.hasOwn(violating, rule)
+        ? {
+            expected: violating[rule],
+            run: {
+              name: `count-${rule}`,
+              module: COUNT_MODULE,
+              workers: "1",
+              cfg: cfgText(parsed, [`Count_${rule}`]),
+            },
+          }
+        : undefined,
+    })),
   };
   const key = resultKey(plan);
   const entry =

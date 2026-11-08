@@ -156,6 +156,21 @@ test("a finding that is not an invariant of the configuration exits 2", () => {
   assert.deepEqual(run.lines, []);
 });
 
+test("a violating count covers every reachable state that breaks the finding", () => {
+  const run = check({
+    spec: "Grid",
+    config: "Grid.wide",
+    findings: { Low: 4 },
+    violating: { Low: 9251 },
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(rules(run.lines), [
+    "TLC 1.7.4 on Grid.tla (Grid.wide.cfg) with N = 20",
+    "finding Low: 4 states (recorded 4), 9251 violating (recorded 9251): Initial -> IncA -> IncA -> IncA",
+    "Every rule matches the record in SKILL.md.",
+  ]);
+});
+
 test("a violating count for a rule that is not a finding exits 2", () => {
   const run = check({ findings: { NotTwo: 3 }, violating: { Bounded: 1 } });
   assert.equal(run.status, 2);
