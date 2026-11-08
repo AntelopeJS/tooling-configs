@@ -43,10 +43,11 @@ interface Installed {
   bound: bigint;
 }
 
-/** A project whose module cache the harness follows: each registry module as first seen, each git module seen, and the first reason the cache is not exactly what a fresh `ajs` install gives. */
+/** A project whose module cache the harness follows: each registry module as first seen, each git module seen, the bound of a cache copied in whole, and the first reason the cache is not exactly what a fresh `ajs` install gives. */
 interface Project {
   installed: Map<string, Installed>;
   git: Set<string>;
+  copied?: bigint;
   refused?: string;
 }
 
@@ -243,13 +244,15 @@ function manifestOf(
  * Why `cache` is not exactly what `ajs` installed, or `undefined` when it is.
  * Each file of a module must be no newer than the module's bound. Outside the
  * modules, `ajs` writes only the manifest and the folders that hold the
- * modules, which must be no newer than the manifest. Entries under the
- * folders in `left`, which the kept copy leaves out, are not checked.
+ * modules, which must be no newer than `folders`: the manifest's time, or the
+ * bound of a cache copied in whole when that is later, since a copy gives its
+ * folders the time of the copy. Entries under the folders in `left`, which the
+ * kept copy leaves out, are not checked.
  */
 function changeIn(
   cache: string,
   installed: Map<string, Installed>,
-  manifest: bigint,
+  folders: bigint,
   left: string[],
 ): string | undefined {
   const modules = [...installed].map(([name, module]) => ({
@@ -265,7 +268,7 @@ function changeIn(
       const owner = modules.find(({ folder }) => within(folder, path));
       if (owner === undefined) {
         if (!directory) return `${path} belongs to no installed module`;
-        if (mtime > manifest)
+        if (mtime > folders)
           return `${path} changed after ajs wrote ${MANIFEST}`;
       } else if (mtime > owner.bound) {
         return `${path} changed after ajs installed ${owner.label}`;
@@ -275,6 +278,27 @@ function changeIn(
     return `it could not be read: ${error instanceof Error ? error.message : String(error)}`;
   }
   return undefined;
+}
+
+/** Why the cache of a followed project is not exactly what a fresh `ajs` install gives, or `undefined` when it is. */
+function refusal(
+  cache: string,
+  state: Project,
+  manifest: { mtime: bigint; modules: [string, string][] },
+): string | undefined {
+  const left = manifest.modules
+    .filter(([, version]) => !REGISTRY_VERSION.test(version))
+    .map(([name]) => name);
+  const folders =
+    state.copied !== undefined && state.copied > manifest.mtime
+      ? state.copied
+      : manifest.mtime;
+  return (
+    state.refused ??
+    (left.length === manifest.modules.length
+      ? `${manifest.modules[0]?.join("@")} is not a registry version, and ajs updates a git module in place`
+      : changeIn(cache, state.installed, folders, left))
+  );
 }
 
 /**
@@ -302,14 +326,21 @@ export class ProjectCaches {
     this.store = store;
   }
 
-  /** Gives a project that has installed no module yet a copy of the largest kept cache, so `ajs` reuses the packages an earlier journey installed instead of packing and installing them again. A project whose antelope config names its own `cacheFolder` gets no copy, since `ajs` would not read `.antelope/cache`. */
-  seed(project: string): void {
+  /**
+   * Gives a project that has installed no module yet a copy of the largest kept cache, so `ajs` reuses the packages an earlier journey installed instead of packing and installing them again. A project whose antelope config names its own `cacheFolder` gets no copy, since `ajs` would not read `.antelope/cache`.
+   * A project that already holds modules is followed from what it holds. When `copiedFrom` is given, that cache is a copy of the cache `clean` accepted and named by those paths: its `.bin` shims are pointed at this project's cache and it is followed as a copy from the store is.
+   */
+  seed(project: string, copiedFrom: string | null = null): void {
     const state: Project = { installed: new Map(), git: new Set() };
     this.projects.set(project, state);
     if (namesCacheFolder(project)) return;
     const cache = join(project, PROJECT_CACHE);
     if ((manifestOf(cache)?.modules.length ?? 0) > 0) {
-      this.observe();
+      if (copiedFrom === null) this.observe();
+      else {
+        retarget(cache, [copiedFrom], cachePath(cache));
+        this.adopt(state, cache);
+      }
       return;
     }
     let largest: { folder: string; size: number } | undefined;
@@ -321,6 +352,11 @@ export class ProjectCaches {
     if (largest === undefined) return;
     mkdirSync(dirname(cache), { recursive: true });
     publish(largest.folder, cache, [KEPT_CACHE], cachePath(cache));
+    this.adopt(state, cache);
+  }
+
+  /** Follows each module of a cache copied whole from one exactly as `ajs` installed it, bounded by the newest entry of the copy, since a copy gives its folders the time of the copy. */
+  private adopt(state: Project, cache: string): void {
     const copied = manifestOf(cache);
     if (copied === undefined) return;
     let bound = copied.mtime;
@@ -335,12 +371,30 @@ export class ProjectCaches {
         born: bornAt(join(cache, name)),
         bound,
       });
+    state.copied = bound;
     this.passClock(bound);
   }
 
   /** Every project seeded so far, so a copy of a folder that holds some can seed its own. */
   seeded(): string[] {
     return [...this.projects.keys()];
+  }
+
+  /** When the cache of a seeded `project` holds no module, or only registry modules exactly as `ajs` installed them, the path its `.bin` shims name, which `seed` takes as `copiedFrom` for a copy of it; `null` otherwise. */
+  clean(project: string): string | null {
+    this.observe();
+    const state = this.projects.get(project);
+    const cache = join(project, PROJECT_CACHE);
+    const manifest = manifestOf(cache);
+    const accepted =
+      manifest === undefined ||
+      manifest.modules.length === 0 ||
+      (state !== undefined &&
+        manifest.modules.every(([, version]) =>
+          REGISTRY_VERSION.test(version),
+        ) &&
+        refusal(cache, state, manifest) === undefined);
+    return accepted && existsSync(cache) ? cachePath(cache) : null;
   }
 
   /**
@@ -439,11 +493,7 @@ export class ProjectCaches {
           .slice(0, 16),
       );
       if (modules.length > 0 && existsSync(target)) continue;
-      const change =
-        state.refused ??
-        (modules.length === 0
-          ? `${manifest.modules[0]?.join("@")} is not a registry version, and ajs updates a git module in place`
-          : changeIn(cache, state.installed, manifest.mtime, left));
+      const change = refusal(cache, state, manifest);
       if (change !== undefined) {
         skipped.push(`${cache}: ${change}`);
         continue;

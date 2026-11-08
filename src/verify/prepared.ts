@@ -21,7 +21,7 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
-import { isString, parseJson } from "../garden/json.ts";
+import { isObject, isString, parseJson } from "../garden/json.ts";
 import type { VerifyContext } from "./context.ts";
 import type { StepRecord } from "./results.ts";
 import { removeTree } from "./workspace.ts";
@@ -193,12 +193,26 @@ function readLinks(kept: string): Link[] {
   return links;
 }
 
-/** The projects the build seeded with the run's module cache, as paths inside its folder; a store kept without the list holds none. */
-function readProjects(kept: string): string[] {
+/** A project the build seeded with the run's module cache, as a path inside its folder, and, when its cache was exactly what `ajs` installed as the build ended, the path that cache's `.bin` shims name. */
+interface Seeded {
+  path: string;
+  cache: string | null;
+}
+
+/** The projects `keep` recorded; a build kept without the list holds none. */
+function readProjects(kept: string): Seeded[] {
   const file = join(kept, "projects.json");
   if (!existsSync(file)) return [];
   const listed = parseJson(readFileSync(file, "utf8"));
-  return Array.isArray(listed) ? listed.filter(isString) : [];
+  return Array.isArray(listed)
+    ? listed
+        .filter(isObject)
+        .flatMap(({ path, cache }): Seeded[] =>
+          isString(path)
+            ? [{ path, cache: isString(cache) ? cache : null }]
+            : [],
+        )
+    : [];
 }
 
 /** The journey that built what the run kept, as its path under the evidence. */
@@ -238,7 +252,8 @@ function reuse(
       join(marker, "prepared.txt"),
       `${key}: ${folder} is a copy of what ${from} prepared; build/ holds the evidence of that build\n`,
     );
-    for (const project of projects) context.caches.seed(join(folder, project));
+    for (const project of projects)
+      context.caches.seed(join(folder, project.path), project.cache);
     return null;
   } catch (error) {
     removeTree(evidence);
@@ -259,7 +274,7 @@ function keep(
   context: VerifyContext,
   kept: string,
   folder: string,
-  built: { steps: string[]; links: Link[]; projects: string[] },
+  built: { steps: string[]; links: Link[]; projects: Seeded[] },
 ): boolean {
   mkdirSync(dirname(kept), { recursive: true });
   const staging = mkdtempSync(`${kept}.`);
@@ -344,9 +359,11 @@ async function buildHere(
   const steps = readdirSync(context.folder).filter(
     (entry) => !earlier.has(entry),
   );
-  const projects = context.caches.seeded().flatMap((project) => {
+  const projects = context.caches.seeded().flatMap((project): Seeded[] => {
     const path = inside(folder, project);
-    return path === null ? [] : [path];
+    return path === null || !existsSync(project)
+      ? []
+      : [{ path, cache: context.caches.clean(project) }];
   });
   note(
     keep(context, kept, folder, { steps, links: verdict.links, projects })

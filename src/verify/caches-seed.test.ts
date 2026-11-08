@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -68,5 +68,26 @@ test("a seeded project's .bin shims put its own module folders on NODE_PATH, whe
   assert.equal(
     read(second, ".antelope/cache/@acme/api/node_modules/.bin/tool"),
     shim(second),
+  );
+});
+
+test("a copy of a clean prepared cache has .bin shims naming its own module folders, where following the copy as is leaves them pointing at the build the copy was taken from", (t) => {
+  const tmp = realpathSync(mkdtempSync(join(tmpdir(), "verify-caches-copy-")));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const shim = (project: string) =>
+    `export NODE_PATH="${join(project, ".antelope/cache/@acme/api/node_modules/.pnpm/node_modules")}"\n`;
+  const built = join(tmp, "built");
+  const building = new ProjectCaches(join(tmp, "store"));
+  building.seed(built);
+  put(built, ".antelope/cache/@acme/api/node_modules/.bin/tool", shim(built));
+  put(built, ".antelope/cache/manifest.json", '{"@acme/api":"1.0.0"}\n');
+  const from = building.clean(built);
+  assert.notEqual(from, null);
+  const copy = join(tmp, "copy");
+  cpSync(built, copy, { recursive: true, preserveTimestamps: true });
+  new ProjectCaches(join(tmp, "store")).seed(copy, from);
+  assert.equal(
+    read(copy, ".antelope/cache/@acme/api/node_modules/.bin/tool"),
+    shim(copy),
   );
 });
