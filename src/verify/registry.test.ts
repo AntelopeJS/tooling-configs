@@ -116,6 +116,24 @@ test("the probe asks every registry host the failing requests named, once each, 
   ]);
 });
 
+test("npm summary lines behind a BuildKit prefix or indentation do not hide an outage inside docker build (catches anchoring the summary at the line start)", async (t) => {
+  const prefixed = NPM_ENOTFOUND.split("\n")
+    .map((line) => `#8 12.31 ${line}`)
+    .join("\n");
+  const indented = NPM_ENOTFOUND.split("\n")
+    .map((line) => `    ${line}`)
+    .join("\n");
+  for (const [command, stderr] of [
+    ["docker build --progress=plain .", prefixed],
+    ["ajs module install --verbose", indented],
+  ]) {
+    const { fault } = await faultOf(t, [
+      { name: "fetch", command, exit: "1", stderr },
+    ]);
+    assert.match(fault ?? "", /^step fetch could not reach/, command);
+  }
+});
+
 test("a URL with no port is probed on 80 for http and 443 for https (catches probing a port the request never used)", async (t) => {
   const { asked } = await faultOf(t, [
     {

@@ -91,19 +91,22 @@ const REGISTRY_HOSTS = new Set([
   "index.docker.io",
   "docker.io",
   "production.cloudflare.docker.com",
+  "docker-images-prod.6aa30f8b08e16409b46e0173d6de2f56.r2.cloudflarestorage.com",
   "ghcr.io",
   "quay.io",
   "gcr.io",
+  "mirror.gcr.io",
   "public.ecr.aws",
 ]);
 
-/** The npm summary lines that repeat the error code with no request, such as `npm error code ENOTFOUND`. */
-const NPM_SUMMARY = /^npm (?:error|ERR!) (?:code|errno|syscall) [\w-]+\s*$/;
+/** The npm summary lines that repeat the error code with no request, such as `npm error code ENOTFOUND`, also behind a BuildKit `#8 12.31` prefix or indentation. */
+const NPM_SUMMARY =
+  /(?:^|\s)npm (?:error|ERR!) (?:code|errno|syscall) [\w-]+\s*$/;
 
 /** A host with its optional port, in a URL or after a network cause. */
 const URL_HOST = String.raw`(\[[^\]\s]+\]|[^\s"/:?#\[\]]+)(?::(\d+))?`;
 
-/** The address after a network error code, which takes the port of a URL naming the same host on the line. */
+/** The address after a network error code; with no port, it is dropped when an earlier target on the line names the same host. */
 const BARE_TARGET =
   /\b(?:ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|ECONNRESET)\s+(\[[^\]\s]+\]|[\w-]+(?:\.[\w-]+)+)(?::(\d+))?/gi;
 
@@ -271,8 +274,9 @@ export async function probeTarget({
  * one of these public registries on port 80 or 443: `registry.npmjs.org`,
  * `registry.yarnpkg.com`, `registry.npmmirror.com`, `registry-1.docker.io`,
  * `auth.docker.io`, `index.docker.io`, `docker.io`,
- * `production.cloudflare.docker.com`, `ghcr.io`, `quay.io`, `gcr.io` and
- * `public.ecr.aws`. Only fixed names count: a name the product picks, such as
+ * `production.cloudflare.docker.com`, Docker Hub's blob host on
+ * `r2.cloudflarestorage.com`, `ghcr.io`, `quay.io`, `gcr.io`, `mirror.gcr.io`
+ * and `public.ecr.aws`. Only fixed names count: a name the product picks, such as
  * an ECR account registry or a regional `pkg.dev` host, can fail DNS for the
  * product's own reasons, so it stays FAIL, and so do an address, a private
  * mirror and `localhost`.
