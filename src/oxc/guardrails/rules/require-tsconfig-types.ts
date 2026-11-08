@@ -16,7 +16,7 @@ export const requireTsconfigTypesRule = defineRule({
     },
     messages: {
       missing:
-        '{{config}} lists no `compilerOptions.types`, so tsc loads every `@types` package ({{packages}}) but type-aware lint, which runs TypeScript 7, loads none: Node and test-runner globals are error types, so `typescript/no-unsafe-*` reports here are false and findings that need those types go missing. Add `"types": [{{list}}]` to its compilerOptions, or the subset this code uses.',
+        '{{config}} lists no `compilerOptions.types`, so tsc loads every `@types` package ({{packages}}) but type-aware lint, which runs TypeScript 7, loads none: Node and test-runner globals are error types, so `typescript/no-unsafe-*` reports here are false and findings that need those types go missing. Add `"types": [{{list}}]` to its compilerOptions, or to the config that generates it, listing the packages this code uses.',
     },
   },
   createOnce(context) {
