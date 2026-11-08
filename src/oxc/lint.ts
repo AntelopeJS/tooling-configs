@@ -196,7 +196,8 @@ export function guardrailsRules() {
 }
 
 /**
- * With type-aware lint, a file no tsconfig lists is reported. The root configs
+ * With type-aware lint, a file no tsconfig lists, or whose tsconfig lists no
+ * `compilerOptions.types`, is reported. The root configs
  * `antelopejs-sync` writes are exempt: a tsconfig that builds `src` reaches them
  * only through a referenced composite tsconfig, which every repository would need.
  */
@@ -212,11 +213,15 @@ function guardrailsPreset(typeAware: boolean) {
     rules: {
       "antelopejs/no-unsafe-object-assign": typeAware ? "error" : "off",
       "antelopejs/require-tsconfig-include": typeAware ? "error" : "off",
+      "antelopejs/require-tsconfig-types": typeAware ? "error" : "off",
     },
     overrides: [
       {
         files: PRESET_CONFIGS.map(({ path }) => `./${path}`),
-        rules: { "antelopejs/require-tsconfig-include": "off" },
+        rules: {
+          "antelopejs/require-tsconfig-include": "off",
+          "antelopejs/require-tsconfig-types": "off",
+        },
       },
     ],
   });

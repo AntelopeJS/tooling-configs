@@ -15,6 +15,7 @@ export const PACK_NEW_RULES = new Map([
   ["antelopejs/no-presence-only-type-guard", "0.2.17"],
   ["antelopejs/no-unsafe-object-assign", "0.4.2"],
   ["antelopejs/require-tsconfig-include", "0.2.18"],
+  ["antelopejs/require-tsconfig-types", "0.4.2"],
   ["typescript/no-unnecessary-type-parameters", "0.2.17"],
   ["typescript/no-unsafe-argument", "0.2.17"],
   ["typescript/no-unsafe-assignment", "0.2.17"],
