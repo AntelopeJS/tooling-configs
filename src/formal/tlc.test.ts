@@ -201,6 +201,15 @@ test("a violating count under an ACTION_CONSTRAINT exits 2", () => {
   );
 });
 
+test("a bound line naming no single rule exits 2 rather than dropping the bound", () => {
+  const run = check({ spec: "Grid", config: "Grid.stacked", findings: {} });
+  assert.equal(run.status, 2);
+  assert.equal(
+    run.stderr,
+    'check: Grid.stacked.cfg: "CONSTRAINT" is not one keyword and one name; write one CONSTRAINT, ACTION_CONSTRAINT, SYMMETRY or VIEW line per name\n',
+  );
+});
+
 test("a violating count for a rule that is not a finding exits 2", () => {
   const run = check({ findings: { NotTwo: 3 }, violating: { Bounded: 1 } });
   assert.equal(run.status, 2);

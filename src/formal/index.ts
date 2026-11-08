@@ -193,11 +193,14 @@ function readConfig(dir: string, config: string, findings: Findings): Config {
     ([, name]) => name,
   );
   const bounds = Array.from(
-    text.matchAll(
-      /^(?:CONSTRAINT|ACTION_CONSTRAINT|SYMMETRY|VIEW)\s+\w+\s*$/gm,
-    ),
+    text.matchAll(/^\s*(?:(?:ACTION_)?CONSTRAINTS?|SYMMETRY|VIEW)\b.*$/gm),
     ([line]) => line.trim(),
   );
+  for (const line of bounds)
+    if (!/^(?:CONSTRAINT|ACTION_CONSTRAINT|SYMMETRY|VIEW)[ \t]+\w+$/.test(line))
+      fail(
+        `${config}.cfg: "${line}" is not one keyword and one name; write one CONSTRAINT, ACTION_CONSTRAINT, SYMMETRY or VIEW line per name`,
+      );
   for (const name of Object.keys(findings))
     if (!invariants.includes(name))
       fail(`finding ${name} is not an INVARIANT in ${config}.cfg`);
