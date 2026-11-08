@@ -22,6 +22,41 @@ const NODE_BLOCK =
 const NODE_RANGE =
   /\bnode(?:\.js)?\s*(?:(?:v|>=?|<=?|~|\^|≥|≤)\s*\d|\d{2}|\d+\.\d)/i;
 
+/** Frameworks, runtimes and tools whose version a page pins in package.json or .nvmrc, spelled as prose writes them. Node has its own rule. */
+const DEPENDENCIES = [
+  "AdonisJS",
+  "Angular",
+  "Bun",
+  "Deno",
+  "Express",
+  "Fastify",
+  "MongoDB",
+  "MySQL",
+  "NestJS",
+  "Next\\.js",
+  "npm",
+  "Nuxt",
+  "pnpm",
+  "PostgreSQL",
+  "Postgres",
+  "React",
+  "Redis",
+  "Svelte",
+  "Tailwind(?: ?CSS)?",
+  "TypeScript",
+  "Vite",
+  "Vitest",
+  "Vue(?:\\.js)?",
+  "Yarn",
+  "yarn",
+];
+
+/** `AdonisJS 6`, `Vue 3.5`, `pnpm v10`, `TypeScript >= 5.6`: a listed dependency with a version number after it. A year, a ratio or a decimal comma is not a version. */
+const DEPENDENCY_VERSION = new RegExp(
+  `(?<![\\w.@/-])(?:${DEPENDENCIES.join("|")})[ \\t]*(?:v|[<>]=?|[~^≥≤])?[ \\t]*\\d{1,3}(?:\\.(?:\\d+|x))*(?![\\w/-]|[.,]\\d)`,
+  "g",
+);
+
 const isReadme = (path) => /^readme(?:\.[a-z]+)?\.md$/i.test(basename(path));
 
 /** Whether the consumer's package.json opts in: `antelopeJs.docs.standard` is true. */
@@ -105,13 +140,18 @@ function checkWords(doc, name, fail) {
     fail(`${name}: ${count} words, split the page at ${WORD_LIMIT}`);
 }
 
-function checkNodeRanges(doc, name, fail) {
+function checkVersionProse(doc, name, fail) {
   proseWithoutCode(doc)
     .split("\n")
     .forEach((text, index) => {
+      const at = `${name}:${doc.firstLine + index}`;
       if (NODE_RANGE.test(text))
         fail(
-          `${name}:${doc.firstLine + index}: Node version range in prose, state it once in package.json engines`,
+          `${at}: Node version range in prose, state it once in package.json engines`,
+        );
+      for (const [version] of text.matchAll(DEPENDENCY_VERSION))
+        fail(
+          `${at}: "${version}" states a version in prose, point at the pin in package.json or .nvmrc`,
         );
     });
 }
@@ -196,7 +236,7 @@ function runVale(valeBin, root, documents, fail) {
 
 /**
  * The Docs standard, run only when the repository opts in. Each page needs `title`, `description` and a `mode`
- * in its frontmatter, no body H1 and at most 3,000 words; every file reads as English, names no Node version in prose,
+ * in its frontmatter, no body H1 and at most 3,000 words; every file reads as English, names no Node, framework or tool version in prose,
  * references only images that a `docs/captures.ts` scene writes or that are marked `illustration`, and has no Vale warning.
  * A README keeps its H1 and needs no frontmatter.
  */
@@ -210,7 +250,7 @@ export function checkStandard({ root, documents, fail, valeBin }) {
       checkHeading(doc, name, lines, fail);
     }
     checkWords(doc, name, fail);
-    checkNodeRanges(doc, name, fail);
+    checkVersionProse(doc, name, fail);
     checkImages(doc, name, outputs, root, fail);
     for (const { line } of foreignProse(doc.text))
       fail(`${name}:${doc.firstLine + line - 1}: prose is not English`);

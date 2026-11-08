@@ -133,7 +133,7 @@ it("fails a Node version range in prose and allows it in code and in the generat
   ]);
 });
 
-it("fails a framework or tool version in prose and allows it in code and without a version", (t) => {
+it("fails a framework or tool version in prose and allows it in code, without a version, and before a year, ratio or decimal comma", (t) => {
   const { failures } = run(t, {
     "README.md": README,
     "docs/bad.md": PAGE(
@@ -154,6 +154,8 @@ it("fails a framework or tool version in prose and allows it in code and without
         "Run `pnpm add vue@3.5` in a shell.",
         "",
         "Vue components render in 2 steps, and TypeScript checks 12 files.",
+        "",
+        "The MongoDB 2026-Q3 restore passed, Redis 3/173 failovers held, and MySQL 6,5 s stayed flat.",
       ].join("\n"),
     ),
   });
