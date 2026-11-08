@@ -3,6 +3,7 @@ import test, { type TestContext } from "node:test";
 import { stringify } from "yaml";
 
 import { bin, put, testRepo } from "./helpers/test-repo.ts";
+import { checkSingletonPackages } from "./singleton-packages.ts";
 
 const PASSING_STEPS = [
   "typecheck",
@@ -85,4 +86,71 @@ test("a lockfile holding two copies of an interface package fails checks and nam
     /\[lockfile:singletons\]\npnpm-lock\.yaml resolves "@antelopejs\/interface-core" at 2 versions, and an interface package must load once:\n {2}0\.1\.1, pulled by importer "\.", @antelopejs\/interface-api@0\.1\.0\n {2}0\.2\.6, pulled by @antelopejs\/core@1\.17\.2\n/,
   );
   assert.match(result.stdout, /Checks: 8 passed, 1 failed\./);
+});
+
+test("one interface copy under two peer contexts and two copies of a package that is not an interface pass, caught by counting snapshot keys or flagging any duplicate", (t) => {
+  const root = testRepo(t);
+  put(
+    root,
+    "pnpm-lock.yaml",
+    stringify({
+      lockfileVersion: "9.0",
+      importers: {
+        ".": {
+          dependencies: {
+            "@antelopejs/interface-core": {
+              specifier: "^0.2.6",
+              version: "0.2.6(typescript@5.9.3)",
+            },
+            "left-pad": { specifier: "^1.3.0", version: "1.3.0" },
+          },
+        },
+      },
+      packages: {
+        "@antelopejs/interface-core@0.2.6": {},
+        "left-pad@1.3.0": {},
+        "left-pad@1.2.0": {},
+      },
+      snapshots: {
+        "@antelopejs/interface-core@0.2.6(typescript@5.9.3)": {
+          dependencies: { "left-pad": "1.2.0" },
+        },
+        "@antelopejs/interface-core@0.2.6(typescript@5.8.0)": {},
+        "left-pad@1.3.0": {},
+        "left-pad@1.2.0": {},
+      },
+    }),
+  );
+  assert.equal(checkSingletonPackages(root), "");
+});
+
+test("a version 6 lockfile in a nested folder holding two copies fails, caught by reading only the root or only version 9 keys", (t) => {
+  const root = testRepo(t);
+  put(
+    root,
+    "playground/pnpm-lock.yaml",
+    stringify({
+      lockfileVersion: "6.0",
+      dependencies: {
+        "@antelopejs/interface-database": {
+          specifier: "^0.2.4",
+          version: "0.2.4",
+        },
+      },
+      packages: {
+        "/@antelopejs/interface-database@0.2.4": {},
+        "/@antelopejs/interface-database@0.2.6": {},
+        "/@antelopejs/mongodb@1.0.0(@antelopejs/interface-database@0.2.6)": {
+          dependencies: { "@antelopejs/interface-database": "0.2.6" },
+        },
+      },
+    }),
+  );
+  assert.equal(
+    checkSingletonPackages(root),
+    'playground/pnpm-lock.yaml resolves "@antelopejs/interface-database" at 2 versions, and an interface package must load once:\n' +
+      '  0.2.4, pulled by importer "."\n' +
+      "  0.2.6, pulled by @antelopejs/mongodb@1.0.0\n" +
+      "  Set the direct specifier that locks the older copy to the newer version, run `pnpm install --lockfile-only`, then restore the specifier.\n",
+  );
 });

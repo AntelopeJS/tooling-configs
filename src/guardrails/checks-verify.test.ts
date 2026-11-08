@@ -231,9 +231,9 @@ test("a repository without a verify layer runs exactly the steps it did before, 
     JSON.stringify({ ...NO_DEPENDENCIES, dependencies: LEFT_PAD }),
   );
   put(root, "playground/pnpm-lock.yaml", "not a lockfile: [\n");
-  const result = run(root);
+  const result = run(root, { ANTELOPEJS_CHECKS_SKIP: "lockfile:singletons" });
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 8 passed, 0 failed.\n");
+  assert.equal(result.stdout, "Checks: 8 passed, 0 failed, 1 skipped.\n");
 });
 
 test("ANTELOPEJS_CHECKS_SKIP names verify:types and verify:lockfiles, caught by an implementation that runs a skipped step", (t) => {
@@ -248,7 +248,7 @@ test("ANTELOPEJS_CHECKS_SKIP names verify:types and verify:lockfiles, caught by 
     ANTELOPEJS_CHECKS_SKIP: "verify:types,verify:lockfiles",
   });
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 8 passed, 0 failed, 2 skipped.\n");
+  assert.equal(result.stdout, "Checks: 9 passed, 0 failed, 2 skipped.\n");
 });
 
 test("a stale layer lockfile fails under verify:lockfiles and names the dependency and the fix, caught by an implementation that never compares", (t) => {
@@ -265,12 +265,12 @@ test("a stale layer lockfile fails under verify:lockfiles and names the dependen
     result.stdout,
     /\[verify:lockfiles\]\n\.agents\/skills\/verify-interface\/pnpm-lock\.yaml does not match \.agents\/skills\/verify-interface\/package\.json: run `pnpm install --dir \.agents\/skills\/verify-interface --ignore-workspace --lockfile-only`\.\n {2}importer "\." "left-pad": package\.json asks for "\^1\.3\.0", the lockfile has none\.\n/,
   );
-  assert.match(result.stdout, /Checks: 8 passed, 1 failed, 1 skipped\.\n$/);
+  assert.match(result.stdout, /Checks: 9 passed, 1 failed, 1 skipped\.\n$/);
 });
 
-for (const [manager, file, lock] of [
-  ["pnpm", "pnpm-lock.yaml", pnpmLock({ ".": { dependencies: LEFT_PAD } })],
-  ["npm", "package-lock.json", npmLock({ dependencies: LEFT_PAD })],
+for (const [manager, file, lock, passed] of [
+  ["pnpm", "pnpm-lock.yaml", pnpmLock({ ".": { dependencies: LEFT_PAD } }), 10],
+  ["npm", "package-lock.json", npmLock({ dependencies: LEFT_PAD }), 9],
 ] as const)
   test(`a matching ${manager} lockfile passes with every registry unreachable and leaves its folder untouched, caught by an implementation that runs ${manager} or rewrites the lockfile`, (t) => {
     const root = layerRepo(t, CLEAN_SOURCE);
@@ -288,7 +288,10 @@ for (const [manager, file, lock] of [
     const before = folderStamp(folder, file);
     const result = lockfiles(root, OFFLINE);
     assert.equal(result.status, 0, result.stdout);
-    assert.equal(result.stdout, "Checks: 9 passed, 0 failed, 1 skipped.\n");
+    assert.equal(
+      result.stdout,
+      `Checks: ${passed} passed, 0 failed, 1 skipped.\n`,
+    );
     assert.deepEqual(folderStamp(folder, file), before);
     assert.equal(before.nodeModules, false);
   });
