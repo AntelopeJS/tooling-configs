@@ -138,3 +138,23 @@ test("intersection constituents keep their order, because function intersections
     norm("export type F = ((a: number) => 2) & ((a: string) => 1);"),
   );
 });
+
+test("merged interface blocks of one name compare equal in either block order, while function overloads keep theirs", () => {
+  const display =
+    'export interface WatchFunctionParamMap {\n  "refresh-page": undefined;\n}';
+  const table =
+    'export interface WatchFunctionParamMap {\n  "open-row": { id: string };\n}';
+  const map = "export interface WatchFunctionParamMap {}";
+  assert.equal(
+    norm([map, display, table].join("\n")),
+    norm([table, map, display].join("\n")),
+  );
+  assert.notEqual(
+    norm(
+      "export declare function f(a: string): 1;\nexport declare function f(a: number): 2;",
+    ),
+    norm(
+      "export declare function f(a: number): 2;\nexport declare function f(a: string): 1;",
+    ),
+  );
+});
