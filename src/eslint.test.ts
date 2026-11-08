@@ -59,6 +59,7 @@ test("Nuxt resolves every warning severity to error while preserving options and
 
 async function lintVueProject(typeAware: boolean) {
   const root = mkdtempSync(join(tmpdir(), "antelope-eslint-"));
+  const cwd = process.cwd();
   try {
     writeFileSync(
       join(root, "tsconfig.json"),
@@ -79,7 +80,6 @@ async function lintVueProject(typeAware: boolean) {
       join(root, "Subject.vue"),
       '<script setup lang="ts">\nimport { load } from "./load";\nconst parsed: number = JSON.parse("1");\nload();\n</script>\n\n<template><div>{{ parsed }}</div></template>\n',
     );
-    const cwd = process.cwd();
     if (typeAware) process.chdir(root);
     const config = antelopeNuxtConfig(
       typeAware ? { typeAware: { tsconfigRootDir: root } } : {},
@@ -98,6 +98,7 @@ async function lintVueProject(typeAware: boolean) {
       ),
     );
   } finally {
+    process.chdir(cwd);
     rmSync(root, { recursive: true, force: true });
   }
 }
