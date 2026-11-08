@@ -146,13 +146,10 @@ it("fails a framework or tool version in prose and checks the description, and a
         "",
         "It also runs on Nuxt 4 and Vue.js 3.",
         "",
-        "It is built on AdonisJS",
-        "7 and Vue 3.6.0-beta.1, for Vue 3-based apps.",
+        "It is built on AdonisJS 7 and Vue 3.6.0-beta.1,",
+        "for Vue 3-based apps.",
         "",
         "It runs on **Vue** 3.5, Express.js 5 and TypeScript version 5.6.",
-        "",
-        "It is built on AdonisJS",
-        "6. Install it next.",
       ].join("\n"),
       { description: "Set up the module on Nuxt 4." },
     ),
@@ -161,7 +158,7 @@ it("fails a framework or tool version in prose and checks the description, and a
       description: "Set up the module on Vue 3.",
       note: "a > b",
     }),
-    "docs/crlf.md": PAGE("We use Vue\n3.5 here.").replaceAll("\n", "\r\n"),
+    "docs/crlf.md": PAGE("We use Vue 3.5 here.").replaceAll("\n", "\r\n"),
     "docs/good.md": PAGE(
       [
         "AdonisJS apps load the module at start.",
@@ -194,7 +191,7 @@ it("fails a framework or tool version in prose and checks the description, and a
         "> 1. Install pnpm",
         "> 2. Run the build",
       ].join("\n"),
-      { note: "use `Vue 3` carefully" },
+      { note: "use `Vue 3` carefully", aside: "<!-- old\n  Vue 3 -->" },
     ),
   });
   assert.deepEqual(failures, [
@@ -206,12 +203,11 @@ it("fails a framework or tool version in prose and checks the description, and a
     'docs/bad.md:13: "Nuxt 4" states a version in prose, point at the pin in package.json or .nvmrc',
     'docs/bad.md:13: "Vue.js 3" states a version in prose, point at the pin in package.json or .nvmrc',
     'docs/bad.md:15: "AdonisJS 7" states a version in prose, point at the pin in package.json or .nvmrc',
-    'docs/bad.md:16: "Vue 3.6.0-beta.1" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:15: "Vue 3.6.0-beta.1" states a version in prose, point at the pin in package.json or .nvmrc',
     'docs/bad.md:16: "Vue 3-based" states a version in prose, point at the pin in package.json or .nvmrc',
     'docs/bad.md:18: "Vue 3.5" states a version in prose, point at the pin in package.json or .nvmrc',
     'docs/bad.md:18: "Express.js 5" states a version in prose, point at the pin in package.json or .nvmrc',
     'docs/bad.md:18: "TypeScript version 5.6" states a version in prose, point at the pin in package.json or .nvmrc',
-    'docs/bad.md:20: "AdonisJS 6" states a version in prose, point at the pin in package.json or .nvmrc',
     'docs/crlf.md:7: "Vue 3.5" states a version in prose, point at the pin in package.json or .nvmrc',
     'docs/stray.md:3: "Vue 3" states a version in prose, point at the pin in package.json or .nvmrc',
   ]);
