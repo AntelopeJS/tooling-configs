@@ -8,7 +8,7 @@ const cli = (exitCode: number) =>
 const runner = (code: number) =>
   `declare const process: { exit(code: number): never };\nconsole.log("runner needs a file");\nprocess.exit(${code});\n`;
 
-test("api-diff describes wildcard entries that print on import, set an exit code or exit while loading, and compares each exit code", (t) => {
+test("api-diff describes wildcard entries that print on import, set an exit code or exit while loading, compares each exit code, and skips the non-JavaScript files a wildcard publishes", (t) => {
   const root = apiRepo(t);
   put(
     root,
@@ -19,19 +19,24 @@ test("api-diff describes wildcard entries that print on import, set an exit code
       scripts: {
         build: "tsc --noEmit false --composite false --declarationMap false",
       },
-      exports: { "./dist/*.js": "./dist/*.js" },
+      exports: {
+        "./dist/*.js": "./dist/*.js",
+        "./dist/*": "./dist/*",
+        "./templates/*": "./templates/*",
+      },
     }),
   );
   put(root, "src/index.ts", cli(2));
   put(root, "src/runner.ts", runner(2));
   put(root, "src/lib.ts", "export function run(file: string) {}\n");
+  put(root, "templates/page.vue", "<template><main /></template>\n");
   commit(root);
   const unchanged = bin(root, "api-diff", ["HEAD"]);
   assert.equal(unchanged.status, 0, unchanged.stdout + unchanged.stderr);
   assert.doesNotMatch(unchanged.stdout, /Execution error/);
   assert.match(
     unchanged.stdout,
-    /Runtime API: 1 packages, 3 entries unchanged/,
+    /Runtime API: 1 packages, 6 entries unchanged/,
   );
   put(root, "src/index.ts", cli(3));
   put(root, "src/runner.ts", runner(3));

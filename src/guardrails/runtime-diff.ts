@@ -72,6 +72,9 @@ function properties(object, observe) {
 })().catch(error => { failed = true; process.stderr.write(String(error.stack)); process.exitCode = 1; });
 `;
 
+/** A file a wildcard export matches is a runtime entry only when Node loads it as JavaScript; declarations, build info and templates it also publishes are data. */
+const JS_MODULE = /\.[cm]?js$/u;
+
 interface RuntimeTarget {
   entry: string;
   target: string;
@@ -153,8 +156,9 @@ function builtEntries(
         .filter((file) => pattern.test(file));
       if (!found.length)
         throw new Error(`${directory}: missing built runtime entry ${target}.`);
-      const matches = found.filter((file) => !isTestSource(output, file));
-      if (matches.length < found.length) skipped.push(target);
+      const modules = found.filter((file) => JS_MODULE.test(file));
+      const matches = modules.filter((file) => !isTestSource(output, file));
+      if (matches.length < modules.length) skipped.push(target);
       return matches.sort().map((file) => {
         const capture = pattern.exec(file)?.[1] ?? relative(directory, file);
         return {
@@ -204,7 +208,10 @@ function describeEntry(
   cwd: string,
 ): void {
   rmSync(destination, { force: true });
-  const result = runChild([describe, file, destination], cwd);
+  const result = runChild(
+    ["--unhandled-rejections=throw", describe, file, destination],
+    cwd,
+  );
   if (!existsSync(destination)) throw childFailure(result);
   writeFileSync(destination, formatJson(readFileSync(destination, "utf8")));
 }
