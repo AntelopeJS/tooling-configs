@@ -10,7 +10,7 @@ archive="$target/vale.tar.gz"
 status=$(curl --fail --silent --show-error --location --output "$archive" \
   --retry "$retries" --retry-connrefused --retry-delay "${VALE_RETRY_DELAY:-10}" \
   --write-out '%{http_code}' "$url") || {
-  echo "::error title=Vale download failed::HTTP $status from $url after $retries retries" >&2
+  echo "::error title=Vale download failed::HTTP $status (curl exit $?) from $url after up to $retries retries" >&2
   exit 1
 }
 echo "$sha256  $archive" | sha256sum --check --quiet >&2

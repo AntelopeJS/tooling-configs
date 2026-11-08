@@ -75,5 +75,8 @@ it("exits non-zero and names the HTTP status when every attempt fails", async (t
   const run = await install(root, url, sha256);
   assert.equal(seen.length, 6);
   assert.notEqual(run.code, 0);
-  assert.match(run.stderr, /Vale download failed::HTTP 504 from /);
+  assert.match(
+    run.stderr,
+    /Vale download failed::HTTP 504 \(curl exit 22\) from /,
+  );
 });
