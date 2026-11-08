@@ -10,7 +10,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import {
   claudeLink,
@@ -143,17 +143,46 @@ function planSharedKind(
     else if (readIfPresent(root, path) !== content)
       actions.push({ kind: "write", path, content });
   }
-  const link = claudeLink(kind);
-  const target = claudeLinkTarget(kind);
+  const link = planLink(root, claudeLink(kind), claudeLinkTarget(kind));
+  return {
+    actions: [...actions, ...link.actions],
+    errors: [...errors, ...link.errors],
+  };
+}
+
+function planLink(
+  root: string,
+  link: string,
+  target: string,
+): Pick<VerifyPlan, "actions" | "errors"> {
   const stat = lstatSync(join(root, link), { throwIfNoEntry: false });
-  if (stat === undefined) actions.push({ kind: "link", path: link, target });
-  else if (!stat.isSymbolicLink())
-    errors.push(
-      `${link} is not a symlink. Move it away, then rerun antelopejs-sync.`,
-    );
-  else if (readlinkSync(join(root, link)) !== target)
-    actions.push({ kind: "link", path: link, target });
-  return { actions, errors };
+  if (stat === undefined)
+    return { actions: [{ kind: "link", path: link, target }], errors: [] };
+  if (!stat.isSymbolicLink())
+    return {
+      actions: [],
+      errors: [
+        `${link} is not a symlink. Move it away, then rerun antelopejs-sync.`,
+      ],
+    };
+  if (readlinkSync(join(root, link)) !== target)
+    return { actions: [{ kind: "link", path: link, target }], errors: [] };
+  return { actions: [], errors: [] };
+}
+
+/** The `.claude/skills` link of an own skill under `.agents/skills`; one elsewhere is already where Claude Code reads it, or is not an agent skill. */
+function planOwnLink(
+  root: string,
+  skill: string | undefined,
+): Pick<VerifyPlan, "actions" | "errors"> {
+  const folder = skill === undefined ? undefined : dirname(skill);
+  if (folder === undefined || dirname(folder) !== ".agents/skills")
+    return { actions: [], errors: [] };
+  return planLink(
+    root,
+    `.claude/skills/${basename(folder)}`,
+    `../../${folder}`,
+  );
 }
 
 function planStaleKinds(
@@ -212,16 +241,19 @@ export function planVerify(
     options.profile,
   );
   const shared = kind !== undefined && kind !== "custom" ? kind : undefined;
+  const own = shared ? undefined : ownVerificationSkill(root);
   const wanted = shared
     ? planSharedKind(root, shared)
-    : { actions: [], errors: [] };
+    : kind === "custom"
+      ? planOwnLink(root, own)
+      : { actions: [], errors: [] };
   const stale =
     kind === undefined
       ? { actions: [], notes: [] }
       : planStaleKinds(root, shared);
   return {
     kind,
-    verificationSkill: shared ? skillPath(shared) : ownVerificationSkill(root),
+    verificationSkill: shared ? skillPath(shared) : own,
     actions: [...wanted.actions, ...stale.actions],
     errors: [...errors, ...wanted.errors],
     notes: stale.notes,
