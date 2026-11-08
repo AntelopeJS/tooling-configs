@@ -9,6 +9,16 @@ interface TestFrame {
   hasAssertion: boolean;
 }
 
+function isInCallback(node: ESTree.Node, frame: TestFrame): boolean {
+  for (
+    let current = node.parent;
+    current !== null && current !== frame.node;
+    current = current.parent
+  )
+    if (current === frame.callback) return true;
+  return false;
+}
+
 /** Test callbacks must contain an assertion regardless of their framework or filename. */
 export const requireAssertionRule = defineRule({
   meta: {
@@ -27,12 +37,7 @@ export const requireAssertionRule = defineRule({
       node: ESTree.CallExpression | ESTree.MemberExpression,
     ) {
       const frame = frames.at(-1);
-      if (
-        frame !== undefined &&
-        node.start >= frame.callback.start &&
-        node.end <= frame.callback.end &&
-        isAssertion(node)
-      )
+      if (frame !== undefined && isInCallback(node, frame) && isAssertion(node))
         frame.hasAssertion = true;
     }
     return {
