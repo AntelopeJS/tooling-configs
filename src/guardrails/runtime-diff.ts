@@ -54,11 +54,11 @@ const aliases = Object.entries(manifest.antelopeJs?.paths ?? {}).map(([key, valu
   key: key.replace(/\\*$/, ""),
   values: values.map(value => join(directory, manifest.antelopeJs.baseUrl ?? "", value.replace(/\\*$/, ""))),
 }));
-const packageDirectory = realpathSync(directory);
+const packageDirectories = [directory, realpathSync(directory)];
 const resolveFilename = Module._resolveFilename;
 Module._resolveFilename = function (request, parent, ...rest) {
   const caller = parent?.filename ?? "";
-  if (caller.startsWith(packageDirectory + sep) && !caller.includes(sep + "node_modules" + sep))
+  if (packageDirectories.some(root => caller.startsWith(root + sep)) && !caller.includes(sep + "node_modules" + sep))
     for (const { key, values } of aliases)
       if (request.startsWith(key))
         for (const value of values) {
