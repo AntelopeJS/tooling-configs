@@ -69,6 +69,7 @@ const TEMPLATE: KindText = {
   layer: `- \`template.name\`: the listing name users pass to \`--template\`.
 - \`template.project\`: list it under \`projectTemplates\`.
 - \`services\`: image, port, readiness command and \`reset\`, as for a module. \`new\` starts them in Docker on free ports; a journey reads them with \`context.service(name)\` and \`context.native(...)\` and passes their endpoints to the project it starts through the \`env\` of \`context.dev\`.
+- \`context.dev(name, project, { command })\`: a template that is not an \`ajs\` project starts with its own command, such as \`["node", "ace", "serve"]\`, in place of \`ajs project dev\`. The harness records its PID, so \`context.stop\` and \`clean\` stop it, and \`template.probe\` decides when it is ready. Leave \`scaffold-dev\` and \`scaffold-checks\` out of its features: both run \`ajs\`.
 - \`template.probe\`: \`path\`, \`status\` and \`body\` for an HTTP welcome page or endpoint, or \`log\` and \`settleMs\` for a template that serves nothing.`,
   smoke: "`scaffold-dev` and `scaffold-checks`",
   gotchas: [
