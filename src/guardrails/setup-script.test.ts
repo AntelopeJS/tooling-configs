@@ -11,7 +11,7 @@ import { SETUP_SCRIPT } from "./templates.ts";
 const COREPACK_WITHOUT_GLOBAL_WRITE = `#!/usr/bin/env bash
 if [[ "$1" == enable ]]; then
   if [[ "$2" != --install-directory ]]; then
-    echo "EACCES: permission denied, symlink -> /usr/bin/pnpm" >&2
+    echo "Internal Error: EACCES: permission denied, symlink -> /usr/bin/pnpm"
     exit 1
   fi
   printf '#!/usr/bin/env bash\\necho "shim pnpm $*"\\n' > "$3/pnpm"
