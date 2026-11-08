@@ -99,12 +99,44 @@ async function runSteps(
   return steps.flatMap((step) => failures.get(step) ?? []);
 }
 
+/** The optional package script run once before the steps, to build what several steps read, such as a workspace package's `dist`. */
+const PREPARE = "checks:prepare";
+
+/** Runs `checks:prepare` when the manifest has it: the run's result when it failed or `signal` aborted it, else undefined. */
+async function prepare(
+  root: string,
+  manifest: ReturnType<typeof parseManifest>,
+  signal: AbortSignal | undefined,
+) {
+  if (!manifest.scripts?.[PREPARE]) return undefined;
+  const result = await runCommand(packageManager(manifest), ["run", PREPARE], {
+    cwd: root,
+    env: { ...process.env, CI: "1" },
+    signal,
+  });
+  const failure = result.status === 0 ? "" : `[${PREPARE}]\n${result.output}`;
+  if (signal?.aborted)
+    return {
+      failed: failure ? 1 : 0,
+      interrupted: true,
+      output: `${failure}Checks interrupted by ${String(signal.reason)}.\n`,
+    };
+  if (failure)
+    return {
+      failed: 1,
+      interrupted: false,
+      output: `${failure}Checks: 0 passed, 1 failed.\n`,
+    };
+  return undefined;
+}
+
 function summary(failures: string[], passed: number, skipped: number): string {
   return `${failures.join("\n")}Checks: ${passed} passed, ${failures.length} failed${skipped ? `, ${skipped} skipped` : ""}.\n`;
 }
 
 /**
- * Runs every check step except `test` at the same time, then `test` alone, and reports only what failed, each step's
+ * Runs the `checks:prepare` package script first when it exists and a step will run, and stops there if it fails.
+ * Then runs every check step except `test` at the same time, then `test` alone, and reports only what failed, each step's
  * output buffered and listed in step order whichever step finishes first. `skipSetting` is the comma-separated value of
  * `ANTELOPEJS_CHECKS_SKIP`: the steps it names are not run and are counted as skipped, never as passed, and a name that
  * is not a step fails the run before any step starts so a typo cannot skip nothing. Unless `services` is false, the
@@ -137,6 +169,10 @@ export async function runChecks(root: string, options: ChecksOptions = {}) {
       interrupted: false,
       output: `[services]\n${plan.output}Checks: 0 passed, 1 failed.\n`,
     };
+  const unprepared = steps.length
+    ? await prepare(root, manifest, signal)
+    : undefined;
+  if (unprepared) return unprepared;
   const started =
     plan.kind === "start"
       ? await startServices(root, signal)
