@@ -65,7 +65,9 @@ const TEMPLATE: KindText = {
   launch:
     "`new` copies the working tree, uncommitted changes included, into a local git repository, and lists it in an offline interfaces manifest (`templates`, or `projectTemplates` when `template.project` is set) under `template.name`. Journeys point `ajs config set git` at it, so no step reaches GitHub. Every `services` entry of `verify.config.ts` then starts in its own Docker container on a free loopback port, as for a module.",
   builtins: `- \`scaffold-dev\`: \`ajs project init <app> --template <name> --pm pnpm --git-init\`, \`pnpm install --frozen-lockfile\`, then \`ajs project dev --watch\` with \`PORT\` set until \`template.probe\` answers: a path and status on that port, or a \`log\` line followed by \`settleMs\` of still running. Ctrl+C must exit 130.
-- \`scaffold-checks\`: the same scaffold and install, then the project's own \`pnpm run checks\`.`,
+- \`scaffold-checks\`: the same scaffold and install, then the project's own \`pnpm run checks\`.
+
+Both take their project from \`context.prepared("scaffolded", ...)\`, so the run scaffolds and installs it once. A repository journey that prepares \`scaffolded\` shares that build, so its build must be the same \`context.scaffold\` then \`pnpm install --frozen-lockfile --prefer-offline\`.`,
   layer: `- \`template.name\`: the listing name users pass to \`--template\`.
 - \`template.project\`: list it under \`projectTemplates\`.
 - \`services\`: image, port, readiness command and \`reset\`, as for a module. \`new\` starts them in Docker on free ports; a journey reads them with \`context.service(name)\` and \`context.native(...)\` and passes their endpoints to the project it starts through the \`env\` of \`context.dev\`.

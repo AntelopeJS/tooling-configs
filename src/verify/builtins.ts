@@ -37,9 +37,11 @@ const moduleDev: BuiltinJourney = {
   },
 };
 
-/** Scaffolds a project from the template with `ajs project init` and installs it; returns its folder. */
-async function scaffoldProject(context: VerifyContext): Promise<string> {
-  const project = join(context.work, "app");
+/** Scaffolds a project from the template into `project` with `ajs project init` and installs it. */
+async function scaffoldInto(
+  context: VerifyContext,
+  project: string,
+): Promise<void> {
   const init = await context.scaffold("ajs project init", project);
   context.expect(
     init.folder,
@@ -54,6 +56,20 @@ async function scaffoldProject(context: VerifyContext): Promise<string> {
     { cwd: project },
   );
   context.expect(install.folder, [exitIs(install, 0)], { critical: true });
+}
+
+/**
+ * The journey's copy of the project scaffolded from the template and
+ * installed, built once per run under the key `scaffolded`, which a repo
+ * journey shares by preparing it with the same init and install. The build's
+ * HOME is gone, so the journey's own HOME is pointed at the offline manifest
+ * again.
+ */
+async function scaffoldProject(context: VerifyContext): Promise<string> {
+  const project = await context.prepared("scaffolded", (folder) =>
+    scaffoldInto(context, folder),
+  );
+  await context.configureGit();
   return project;
 }
 
