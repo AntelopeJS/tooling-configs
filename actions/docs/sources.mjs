@@ -98,12 +98,21 @@ function layouts(ts, dir) {
 }
 
 /**
+ * Whether an export entry is a fallback array or a conditions object rather than a target path or `null`.
+ * @param {unknown} entry
+ * @returns {entry is Record<string, unknown>}
+ */
+function isNested(entry) {
+  return entry instanceof Object;
+}
+
+/**
  * Export targets of one subpath, the `source` condition first and `types` next.
  * An entry is a target path, a fallback array, a conditions object, or `null`.
  */
 function targets(entry) {
   if (Array.isArray(entry)) return entry.flatMap(targets);
-  if (!(entry instanceof Object)) return entry ? [String(entry)] : [];
+  if (!isNested(entry)) return entry ? [String(entry)] : [];
   const keys = Object.keys(entry);
   const order = [
     "source",
@@ -122,7 +131,7 @@ function subpaths(manifest) {
     return main ? [[".", [main]]] : [];
   }
   const map =
-    exports instanceof Object &&
+    isNested(exports) &&
     !Array.isArray(exports) &&
     Object.keys(exports).some((key) => key.startsWith("."))
       ? exports

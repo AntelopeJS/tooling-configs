@@ -97,6 +97,7 @@
   "src/oxc/anti-slop/rules/no-object-parameters.test.ts": 0.2,
   "src/oxc/anti-slop/rules/no-reflect-apply.test.ts": 0.2,
   "src/oxc/anti-slop/rules/no-reflect-get.test.ts": 0.2,
+  "src/oxc/anti-slop/rules/no-runtime-typeof-instanceof.test.ts": 0.2,
   "src/oxc/anti-slop/rules/no-runtime-typeof-merged.test.ts": 0.2,
   "src/oxc/anti-slop/rules/no-runtime-typeof-sinks.test.ts": 0.3,
   "src/oxc/anti-slop/rules/no-runtime-typeof-thrown.test.ts": 0.2,
