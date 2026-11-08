@@ -134,6 +134,31 @@ test("npm summary lines behind a BuildKit prefix or indentation do not hide an o
   }
 });
 
+test("Docker Hub's own blob host reaches the probe and another bucket under the same R2 account does not (catches losing the blob host or matching R2 by suffix)", async (t) => {
+  const lookupOf = (host: string) =>
+    `Error response from daemon: Get "https://${host}/registry-v2/docker/registry/v2/blobs/sha256/ab/data": dial tcp: lookup ${host}: no such host`;
+  const account = "6aa30f8b08e16409b46e0173d6de2f56.r2.cloudflarestorage.com";
+  const hub = await faultOf(t, [
+    {
+      name: "pull",
+      command: "docker pull node:22",
+      exit: "1",
+      stderr: lookupOf(`docker-images-prod.${account}`),
+    },
+  ]);
+  assert.match(hub.fault ?? "", /^step pull could not reach/);
+  const other = await faultOf(t, [
+    {
+      name: "pull",
+      command: "docker pull node:22",
+      exit: "1",
+      stderr: lookupOf(`product-bucket.${account}`),
+    },
+  ]);
+  assert.equal(other.fault, null);
+  assert.deepEqual(other.asked, []);
+});
+
 test("a URL with no port is probed on 80 for http and 443 for https (catches probing a port the request never used)", async (t) => {
   const { asked } = await faultOf(t, [
     {
