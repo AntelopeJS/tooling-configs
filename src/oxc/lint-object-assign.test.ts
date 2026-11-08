@@ -17,6 +17,14 @@ export class Box {
   get size(): number { return 0; }
   set size(next: number | string) {}
 }
+export interface Shapes {
+  byName: Record<string, QueryStage>;
+  pair: [number, string];
+  ids: string[] | number[];
+  shape: { kind: "circle"; r: number } | { kind: "square"; side: number };
+}
+export type Cell<T> = { get items(): readonly T[]; set items(next: Iterable<T>) };
+export interface Deep { a: { b: { c: { d: { e: { status: "idle" | "loading" } } } } } }
 `;
 
 const holes = `
@@ -69,6 +77,21 @@ export function nested(): ValueProxy<number> {
 /** Unknown values under an index signature overwrite every field. */
 export function entries(pairs: [string, unknown][]): ValueProxy<number> {
   return Object.assign(receiver.add(0), Object.fromEntries(pairs));
+}
+
+/** Nested literals a direct assignment rejects: a missing or misspelled property, unknown under a record, tuple order and length, mixed unions. */
+export function shaped(shapes: import("./proxy.ts").Shapes): void {
+  Object.assign(receiver.add(0), { stages: [{}] });
+  Object.assign(receiver.add(0), { stages: [{ kid: "match" }] });
+  Object.assign(shapes, { byName: { first: junk } });
+  Object.assign(shapes, { pair: [1, 2] }, { pair: [1] });
+  Object.assign(shapes, { ids: ["a", 1] });
+  Object.assign(shapes, { shape: { kind: "circle", side: 1 } });
+}
+
+/** A type-parameter source, read through its constraint. */
+export function apply<P extends { stages: unknown }>(patch: P): ValueProxy<number> {
+  return Object.assign(receiver.add(0), patch);
 }
 `;
 
@@ -143,6 +166,12 @@ export function forms(target: ValueProxy<number>, collection: Collection<number>
   Object.assign(collection, { items: new Set([1]) });
   return Object.assign(new Date(), flag && { stamp: 1 });
 }
+
+/** A setter in a generic type alias, and a literal nested past the depth the rule compares. */
+export function aliased(cell: import("./proxy.ts").Cell<number>, deep: import("./proxy.ts").Deep): object {
+  Object.assign(cell, { items: new Set([1]) });
+  return Object.assign(deep, { a: { b: { c: { d: { e: { status: "idle" } } } } } });
+}
 `;
 
 function findings(files: Record<string, string>): string[] {
@@ -175,6 +204,14 @@ test("Object.assign writing unknown, any or a mistyped value over a typed field 
     "holes.ts:40",
     "holes.ts:45",
     "holes.ts:50",
+    "holes.ts:55",
+    "holes.ts:56",
+    "holes.ts:57",
+    "holes.ts:58",
+    "holes.ts:58",
+    "holes.ts:59",
+    "holes.ts:60",
+    "holes.ts:65",
     "holes.ts:8",
   ]);
 });

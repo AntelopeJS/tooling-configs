@@ -2,6 +2,7 @@ import { defineRule } from "@oxlint/plugins";
 import ts from "typescript";
 
 import { callName } from "../shared.ts";
+import { literalFits, valueType } from "../literal-fit.ts";
 import { nodeAt, typedFile } from "../type-checker.ts";
 
 const UNTYPED = ts.TypeFlags.Any | ts.TypeFlags.Unknown;
@@ -38,7 +39,24 @@ interface Check {
   exactOptional: boolean;
 }
 
-/** The types a field accepts: its read type, and its setter's parameter type. Undefined when a setter of a generic class or interface takes a type this rule cannot instantiate. */
+/** Whether a declaration sits inside a generic class, interface or type alias, whose type parameters the public checker API cannot instantiate for a declaration. */
+function insideGeneric(declaration: ts.Node): boolean {
+  for (
+    let node = declaration.parent;
+    !ts.isSourceFile(node);
+    node = node.parent
+  )
+    if (
+      (ts.isClassLike(node) ||
+        ts.isInterfaceDeclaration(node) ||
+        ts.isTypeAliasDeclaration(node)) &&
+      node.typeParameters !== undefined
+    )
+      return true;
+  return false;
+}
+
+/** The types a field accepts: its read type, and its setter's parameter type. Undefined when the setter sits inside a generic declaration, whose parameter type this rule cannot instantiate. */
 function acceptedTypes(
   checker: ts.TypeChecker,
   field: ts.Symbol,
@@ -47,11 +65,8 @@ function acceptedTypes(
   const setter = field.declarations?.find(ts.isSetAccessorDeclaration);
   const parameter = setter?.parameters[0];
   const read = checker.getTypeOfSymbolAtLocation(field, source);
-  if (parameter === undefined) return [read];
-  const owner = setter?.parent;
-  return owner !== undefined &&
-    (ts.isClassLike(owner) || ts.isInterfaceDeclaration(owner)) &&
-    owner.typeParameters !== undefined
+  if (setter === undefined || parameter === undefined) return [read];
+  return insideGeneric(setter)
     ? undefined
     : [read, checker.getTypeAtLocation(parameter)];
 }
@@ -89,141 +104,57 @@ function typeVerdict(
     : "mistypedField";
 }
 
-/** The types the fields in `accepted` give their property `name`. */
-function propertyTypes(
-  checker: ts.TypeChecker,
-  accepted: readonly ts.Type[],
-  name: string,
-  at: ts.Node,
-): ts.Type[] {
-  return accepted.flatMap((type) => {
-    const field = checker.getPropertyOfType(
-      checker.getNonNullableType(type),
-      name,
-    );
-    return field === undefined
-      ? []
-      : [checker.getTypeOfSymbolAtLocation(field, at)];
-  });
-}
-
-/** The element types of the array or tuple fields in `accepted`. */
-function elementTypes(
-  checker: ts.TypeChecker,
-  accepted: readonly ts.Type[],
-): ts.Type[] {
-  return accepted.flatMap((type) => {
-    const element = checker.getIndexTypeOfType(
-      checker.getNonNullableType(type),
-      ts.IndexKind.Number,
-    );
-    return element === undefined ? [] : [element];
-  });
-}
-
-/** The type a written value has: a shorthand property reads its variable, as a direct assignment would. */
-function valueType(checker: ts.TypeChecker, value: ts.Expression): ts.Type {
-  const shorthand =
-    ts.isShorthandPropertyAssignment(value.parent) &&
-    value.parent.name === value
-      ? checker.getShorthandAssignmentValueSymbol(value.parent)
-      : undefined;
-  return shorthand === undefined
-    ? checker.getTypeAtLocation(value)
-    : checker.getTypeOfSymbolAtLocation(shorthand, value);
-}
-
-/** The parts of an object or array literal, each with the types the field gives it; undefined when a spread, computed key or accessor leaves only the literal's own type to compare. */
-function literalParts(
-  checker: ts.TypeChecker,
-  literal: ts.ObjectLiteralExpression | ts.ArrayLiteralExpression,
-  accepted: readonly ts.Type[],
-): { value: ts.Expression; accepted: ts.Type[] }[] | undefined {
-  if (ts.isArrayLiteralExpression(literal)) {
-    const elements = elementTypes(checker, accepted);
-    return elements.length === 0 || literal.elements.some(ts.isSpreadElement)
-      ? undefined
-      : literal.elements.map((value) => ({ value, accepted: elements }));
-  }
-  const parts = [];
-  for (const property of literal.properties) {
-    if (
-      !(
-        ts.isPropertyAssignment(property) ||
-        ts.isShorthandPropertyAssignment(property)
-      ) ||
-      !(ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))
-    )
-      return undefined;
-    parts.push({
-      value: ts.isPropertyAssignment(property)
-        ? property.initializer
-        : property.name,
-      accepted: propertyTypes(checker, accepted, property.name.text, literal),
-    });
-  }
-  return parts;
-}
-
-/** Compares a value written in the source with the field, part by part through nested literals, so a literal keeps the type a direct assignment gives it. */
-function expressionVerdict(
-  check: Check,
-  expression: ts.Expression,
-  accepted: readonly ts.Type[],
-  depth = 0,
-): Verdict {
-  let value = expression;
-  while (ts.isParenthesizedExpression(value)) value = value.expression;
-  const parts =
-    depth < MAX_DEPTH &&
-    (ts.isObjectLiteralExpression(value) || ts.isArrayLiteralExpression(value))
-      ? literalParts(check.checker, value, accepted)
-      : undefined;
-  if (parts === undefined)
-    return typeVerdict(check, valueType(check.checker, value), accepted, false);
-  for (const part of parts) {
-    const verdict = expressionVerdict(
-      check,
-      part.value,
-      part.accepted,
-      depth + 1,
-    );
-    if (verdict !== undefined) return verdict;
-  }
-  return undefined;
-}
-
 function fieldWrite(
   check: Check,
   property: ts.Symbol,
   field: ts.Symbol,
   source: ts.Expression,
 ): Write | undefined {
-  const accepted = acceptedTypes(check.checker, field, source);
+  const { checker } = check;
+  const accepted = acceptedTypes(checker, field, source);
   if (accepted === undefined) return undefined;
   const declaration = property.valueDeclaration;
-  const inSource =
+  const written =
     declaration !== undefined &&
     declaration.getSourceFile() === source.getSourceFile() &&
     declaration.pos >= source.pos &&
-    declaration.end <= source.end;
+    declaration.end <= source.end &&
+    (ts.isPropertyAssignment(declaration) ||
+      ts.isShorthandPropertyAssignment(declaration))
+      ? ts.isPropertyAssignment(declaration)
+        ? declaration.initializer
+        : declaration.name
+      : undefined;
   const kind =
-    inSource && ts.isPropertyAssignment(declaration)
-      ? expressionVerdict(check, declaration.initializer, accepted)
-      : inSource && ts.isShorthandPropertyAssignment(declaration)
-        ? expressionVerdict(check, declaration.name, accepted)
-        : typeVerdict(
-            check,
-            check.checker.getTypeOfSymbolAtLocation(property, source),
-            accepted,
-            (property.flags & ts.SymbolFlags.Optional) !== 0,
-          );
-  return kind === undefined ? undefined : { kind, name: property.name };
+    written === undefined
+      ? typeVerdict(
+          check,
+          checker.getTypeOfSymbolAtLocation(property, source),
+          accepted,
+          (property.flags & ts.SymbolFlags.Optional) !== 0,
+        )
+      : typeVerdict(check, valueType(checker, written), accepted, false);
+  if (
+    kind === undefined ||
+    (kind === "mistypedField" &&
+      written !== undefined &&
+      accepted.some((type) => literalFits(checker, written, type)))
+  )
+    return undefined;
+  return { kind, name: property.name };
 }
 
-/** Whether a source member can write keys: an object, not a primitive such as the `false` of `flag && { ... }`. */
-const WRITES_KEYS =
-  ts.TypeFlags.Object | ts.TypeFlags.NonPrimitive | ts.TypeFlags.Intersection;
+/** A primitive source member, such as the `false` of `flag && { ... }`, whose apparent members (`valueOf`) `Object.assign` never copies. */
+const PRIMITIVE =
+  ts.TypeFlags.BooleanLike |
+  ts.TypeFlags.NumberLike |
+  ts.TypeFlags.StringLike |
+  ts.TypeFlags.BigIntLike |
+  ts.TypeFlags.ESSymbolLike |
+  ts.TypeFlags.Null |
+  ts.TypeFlags.Undefined |
+  ts.TypeFlags.Void |
+  ts.TypeFlags.Never;
 
 /** Whether the target declares a field that does not take `unknown`, which an untyped string-keyed source could overwrite. */
 function hasTypedField(checker: ts.TypeChecker, target: ts.Type): boolean {
@@ -254,7 +185,7 @@ function sourceWrites(
       (untypedKeys(checker, member) && hasTypedField(checker, target))
     )
       writes.set("", { kind: "untypedSource" });
-    if (!(member.flags & WRITES_KEYS)) continue;
+    if (member.flags & PRIMITIVE) continue;
     for (const property of checker.getPropertiesOfType(member)) {
       const field = checker.getPropertyOfType(target, property.name);
       const write = field && fieldWrite(check, property, field, source);
