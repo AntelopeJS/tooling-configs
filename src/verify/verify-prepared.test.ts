@@ -25,7 +25,7 @@ import {
 
 const SKILL = ".agents/skills/verify-module";
 
-/** Logs the build, writes `value.txt` with a relative `link` and an absolute `abs` to it, makes the links `links.json` lists with `<folder>` standing for its folder, hard-links `store.txt` as `shared.txt` while it exists, writes a file into HOME, makes a FIFO while the fifo marker exists, and exits 1 while the fail marker exists. */
+/** Logs the build, writes `value.txt` with a relative `link` and an absolute `abs` to it, makes the links `links.json` lists with `<folder>` standing for its folder, hard-links `store.txt` as `shared.txt` while it exists, hard-links `value.txt` as `twin.txt` while the twin marker exists, writes a file into HOME, makes a FIFO while the fifo marker exists, and exits 1 while the fail marker exists. */
 const BUILD = `const fs = require("fs");
 const path = require("path");
 const [folder, log, flags] = process.argv.slice(1);
@@ -38,6 +38,8 @@ for (const [name, to] of Object.entries(fs.existsSync(links) ? JSON.parse(fs.rea
   fs.symlinkSync(to.replace("<folder>", folder), path.join(folder, name));
 if (fs.existsSync(path.join(flags, "store.txt")))
   fs.linkSync(path.join(flags, "store.txt"), path.join(folder, "shared.txt"));
+if (fs.existsSync(path.join(flags, "twin")))
+  fs.linkSync(path.join(folder, "value.txt"), path.join(folder, "twin.txt"));
 fs.writeFileSync(path.join(process.env.HOME, "from-build"), "");
 if (fs.existsSync(path.join(flags, "fifo")))
   require("child_process").execFileSync("mkfifo", [path.join(folder, "pipe")]);
@@ -407,4 +409,13 @@ test("a shared file the filesystem can link no more is copied, so the copy still
   assert.equal(copied.status, 0, copied.stdout);
   assert.equal(builds(), 1);
   assert.notEqual(seen().ino, stored);
+});
+
+test("two hard links the build made inside its folder are copied, so a write through one never reaches the next journey", (t) => {
+  const { root, tmp, builds, flag } = preparedRepo(t);
+  flag("twin");
+  const run = newRun(root, tmp);
+  const wrote = verify(root, tmp, ["journey", run, "tree"]);
+  assert.equal(wrote.status, 0, wrote.stdout);
+  assert.equal(builds(), 1);
 });

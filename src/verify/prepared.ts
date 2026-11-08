@@ -69,9 +69,33 @@ function survey(folder: string): Survey {
   return found;
 }
 
-/** Hard-links `from` at `to` when it already has other links, such as a package file pnpm links from its store, and the filesystem allows one more; returns whether it did. */
-function linkShared(from: string, to: string): boolean {
-  if (lstatSync(from).nlink < 2) return false;
+/** The files under `source` with a hard link outside it, such as package files pnpm links from its store; a file linked only within `source` is not one. */
+function sharedOutside(source: string): Set<string> {
+  const inodes = new Map<string, { nlink: bigint; paths: string[] }>();
+  const walk = (folder: string): void => {
+    for (const entry of readdirSync(folder, { withFileTypes: true })) {
+      const path = join(folder, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.isFile()) {
+        const { dev, ino, nlink } = lstatSync(path, { bigint: true });
+        if (nlink < 2n) continue;
+        const key = `${dev}:${ino}`;
+        const inode = inodes.get(key) ?? { nlink, paths: [] };
+        inode.paths.push(path);
+        inodes.set(key, inode);
+      }
+    }
+  };
+  walk(source);
+  return new Set(
+    [...inodes.values()]
+      .filter((inode) => inode.nlink > BigInt(inode.paths.length))
+      .flatMap((inode) => inode.paths),
+  );
+}
+
+/** Hard-links `from` at `to` unless the filesystem allows `from` no more links; returns whether it did. */
+function linked(from: string, to: string): boolean {
   try {
     linkSync(from, to);
     return true;
@@ -82,18 +106,18 @@ function linkShared(from: string, to: string): boolean {
   }
 }
 
-/** Copies the tree at `source` to the new path `target` without following a symlink; a file with no other link is cloned where the filesystem can, else copied, with its timestamps. */
-function cloneTree(source: string, target: string): void {
+/** Copies the tree at `source` to the new path `target` without following a symlink, linking each of `shared`; any other file is cloned where the filesystem can, else copied, with its timestamps. */
+function cloneTree(source: string, target: string, shared: Set<string>): void {
   mkdirSync(target);
   for (const entry of readdirSync(source, { withFileTypes: true })) {
     const from = join(source, entry.name);
     const to = join(target, entry.name);
-    if (entry.isDirectory()) cloneTree(from, to);
+    if (entry.isDirectory()) cloneTree(from, to, shared);
     else if (entry.isSymbolicLink()) symlinkSync(readlinkSync(from), to);
-    else if (!linkShared(from, to)) {
+    else if (!shared.has(from) || !linked(from, to)) {
       copyFileSync(from, to, constants.COPYFILE_FICLONE);
-      const { atime, mtime } = statSync(from);
-      utimesSync(to, atime, mtime);
+      const { atimeMs, mtimeMs } = statSync(from);
+      utimesSync(to, atimeMs / 1000, mtimeMs / 1000);
     }
   }
   chmodSync(target, statSync(source).mode);
@@ -103,8 +127,8 @@ function cloneTree(source: string, target: string): void {
  * Copies `source` to `target`, which ends up at `root`. Each of `links`
  * points to its target inside `root`, so no copy reaches another journey's
  * folder. Every other symlink keeps its target, so pnpm's relative links in a
- * copy never point back into the source. A file that already shares its
- * content through another hard link is linked, not copied.
+ * copy never point back into the source. A file with a hard link outside
+ * `source` is linked, not copied.
  */
 function copyTree(
   source: string,
@@ -112,7 +136,7 @@ function copyTree(
   links: Link[] = [],
   root = target,
 ): void {
-  cloneTree(source, target);
+  cloneTree(source, target, sharedOutside(source));
   for (const link of links) {
     unlinkSync(join(target, link.path));
     symlinkSync(join(root, link.target), join(target, link.path));

@@ -236,8 +236,8 @@ export interface JourneyContext {
    * that build's evidence under `build/`. A build that is not kept is built
    * again by the next journey. Rerunning the journey that built builds again.
    * In a copy, an absolute symlink into the built folder points to the same
-   * path in the copy; every other symlink keeps its target. A file the build
-   * left with another hard link, such as a package file pnpm links from its
+   * path in the copy; every other symlink keeps its target. A file with a hard
+   * link outside the built folder, such as a package file pnpm links from its
    * store, is linked into each copy rather than copied, so a journey replaces
    * such a file instead of writing it in place. `build` writes
    * only inside the folder it is given: what it writes elsewhere, such as a
