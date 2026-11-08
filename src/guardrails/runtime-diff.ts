@@ -4,7 +4,9 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -93,6 +95,27 @@ function runtimeTargets(
   });
 }
 
+/** The regular files below `directory`, following a directory link unless it leads back to a directory the walk is already inside, so a dependency linked back to its own package cannot loop the walk. */
+function filesUnder(
+  directory: string,
+  ancestors: ReadonlySet<string> = new Set(),
+): string[] {
+  const real = realpathSync(directory);
+  if (ancestors.has(real)) return [];
+  const inside = new Set(ancestors).add(real);
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (
+      entry.isDirectory() ||
+      (entry.isSymbolicLink() &&
+        existsSync(path) &&
+        statSync(path).isDirectory())
+    )
+      return filesUnder(path, inside);
+    return entry.isFile() ? [path] : [];
+  });
+}
+
 interface BuiltEntries {
   entries: { entry: string; file: string; subpath: string }[];
   skipped: string[];
@@ -136,13 +159,7 @@ function builtEntries(
       );
       if (!existsSync(parent))
         throw new Error(`${directory}: missing build output for ${target}.`);
-      const found = readdirSync(parent, {
-        recursive: true,
-        withFileTypes: true,
-      })
-        .filter((file) => file.isFile())
-        .map((file) => join(file.parentPath, file.name))
-        .filter((file) => pattern.test(file));
+      const found = filesUnder(parent).filter((file) => pattern.test(file));
       if (!found.length)
         throw new Error(`${directory}: missing built runtime entry ${target}.`);
       const matches = found.filter((file) => !isTestSource(output, file));
