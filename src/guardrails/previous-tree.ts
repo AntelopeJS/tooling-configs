@@ -65,7 +65,8 @@ function linkIgnored(root: string, tree: string): void {
  * not exist, so the files are linted under the staged configuration. The
  * checkout is deleted afterwards. With `wholeIndex`, files the index marks
  * skip-worktree (a sparse checkout) are written too, so the tree is the commit,
- * and an empty `.git` stops ignore-file lookups at the tree, not above `TMPDIR`.
+ * and a `.git` holding only the repository's `info/exclude` stops ignore-file
+ * lookups at the tree, not above `TMPDIR`, and skips what the real one skips.
  */
 export function withPreviousTree<Result>(
   root: string,
@@ -122,7 +123,16 @@ export function withPreviousTree<Result>(
       ],
       env,
     );
-    if (wholeIndex) mkdirSync(join(tree, ".git"), { recursive: true });
+    if (wholeIndex) {
+      mkdirSync(join(tree, ".git/info"), { recursive: true });
+      const exclude = git(
+        root,
+        ["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"],
+        {},
+      ).trim();
+      if (existsSync(exclude))
+        copyFileSync(exclude, join(tree, ".git/info/exclude"));
+    }
     linkIgnored(root, tree);
     return use(tree);
   } finally {
