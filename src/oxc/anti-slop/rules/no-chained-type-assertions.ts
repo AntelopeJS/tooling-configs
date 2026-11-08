@@ -33,8 +33,11 @@ function instanceClassName(thisExpression: ESTree.ThisExpression): string | null
     }
     scope = scope.parent;
   }
+  const declaresThis = scope.params.some(
+    (parameter) => parameter.type === "Identifier" && parameter.name === "this",
+  );
   const method = scope.parent;
-  if (method.type !== "MethodDefinition" || method.static) return null;
+  if (declaresThis || method.type !== "MethodDefinition" || method.static) return null;
   const owner = method.parent.parent;
   if (owner?.type !== "ClassDeclaration" && owner?.type !== "ClassExpression") return null;
   return owner.id?.name ?? null;

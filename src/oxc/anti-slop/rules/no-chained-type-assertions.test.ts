@@ -76,6 +76,11 @@ tester.run("anti-slop/no-chained-type-assertions", noChainedTypeAssertionsRule, 
       errors: [error],
     },
     {
+      name: "this rebound by a this parameter on the method",
+      code: "class Datum<T> { cast<U>(this: Other) { return () => this as unknown as Datum<U>; } }",
+      errors: [error],
+    },
+    {
       name: "member of this retyped",
       code: "class Datum<T> { cast<U>() { return this.inner as unknown as Datum<U>; } }",
       errors: [error],
