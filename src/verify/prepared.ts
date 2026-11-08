@@ -1,4 +1,5 @@
 import {
+  accessSync,
   chmodSync,
   constants,
   copyFileSync,
@@ -12,6 +13,7 @@ import {
   readlinkSync,
   realpathSync,
   renameSync,
+  rmSync,
   statSync,
   symlinkSync,
   unlinkSync,
@@ -143,7 +145,7 @@ function copyTree(
   }
 }
 
-/** Writes `content` to `file`, through a new inode when the file has other hard links, so the write reaches no other path, such as a copy `prepared` linked or pnpm's store. */
+/** Writes `content` to `file`, through a new inode renamed over it when the file has other hard links, so the write reaches no other path, such as a copy `prepared` linked or pnpm's store, and a failed write leaves the file as it was. */
 export function writeOwn(file: string, content: string): void {
   const before = existsSync(file) ? statSync(file) : null;
   if (before === null || before.nlink < 2) {
@@ -151,9 +153,16 @@ export function writeOwn(file: string, content: string): void {
     return;
   }
   const real = realpathSync(file);
-  unlinkSync(real);
-  writeFileSync(real, content);
-  chmodSync(real, before.mode);
+  accessSync(real, constants.W_OK);
+  const fresh = `${real}.${process.pid}.edit`;
+  try {
+    writeFileSync(fresh, content, { flag: "wx" });
+    chmodSync(fresh, before.mode);
+    renameSync(fresh, real);
+  } catch (error) {
+    rmSync(fresh, { force: true });
+    throw error;
+  }
 }
 
 /** Whether the run keeps a build: only one that recorded a check, passed every check and holds nothing a copy would drop. */
