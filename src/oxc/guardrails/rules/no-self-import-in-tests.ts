@@ -8,7 +8,7 @@ import {
   selfSubpath,
 } from "../self-package.ts";
 
-/** A test that imports its own package name must reach local code: the `exports` map publishes the subpath and `node_modules` links the package to itself. */
+/** A test that imports its own package name must reach local code: the `exports` map publishes the subpath and `node_modules` links the package to itself. Under `ajs module test` no self-link reaches local code, so every self-import is reported. */
 export const noSelfImportInTestsRule = defineRule({
   meta: {
     type: "problem",
@@ -19,6 +19,8 @@ export const noSelfImportInTestsRule = defineRule({
     messages: {
       selfImport:
         "This test imports its own package `{{ name }}`, which resolves to the installed published copy, so it never exercises the local code. Import the module under test by relative path, or make the self-import local: publish `{{ subpath }}` in package.json `exports` and link the package to itself (`link:.` in devDependencies).",
+      selfImportUnderAjsTest:
+        "This test imports its own package `{{ name }}`, and `ajs module test` resolves that name through its own module resolver, which can bind it to a copy installed with another module instead of this package, even with a `link:.` self-link. Import the module under test by relative path.",
     },
   },
   createOnce(context) {
@@ -27,10 +29,18 @@ export const noSelfImportInTestsRule = defineRule({
       if (owner === undefined) return;
       const { directory, manifest } = owner;
       const subpath = selfSubpath(manifest.name, specifier);
+      if (subpath === undefined) return;
+      if (manifest.testedByAjs) {
+        context.report({
+          node,
+          messageId: "selfImportUnderAjsTest",
+          data: { name: manifest.name },
+        });
+        return;
+      }
       if (
-        subpath === undefined ||
-        (exportsCover(manifest.exports, subpath) &&
-          isSelfLinked(directory, manifest.name))
+        exportsCover(manifest.exports, subpath) &&
+        isSelfLinked(directory, manifest.name)
       )
         return;
       context.report({
