@@ -163,6 +163,7 @@ export interface JourneyContext {
   readonly work: string;
   /** The journey's own HOME. */
   readonly home: string;
+  /** Runs a program. A project whose `.antelope/cache` gains more than one module during it keeps no cache for later journeys; run `ajs` through `ajs` to keep one. */
   command(
     name: string,
     program: string,

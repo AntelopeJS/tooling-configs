@@ -211,9 +211,11 @@ function changeIn(
  * `manifest.json`, so the manifest's modification time when the harness first
  * sees the module bounds every file of it. A file modified later, a module
  * whose version or folder changes after that, a module `ajs` installed from a
- * lock record the project held before the command, and a git module, which
+ * lock record the project held before the command, a git module, which
  * `ajs` updates in place and builds with the project's own install command,
- * each keep the cache out of the store.
+ * and two modules that first appear after one command that is not `ajs`,
+ * which may have edited the first before installing the second, each keep
+ * the cache out of the store.
  */
 export class ProjectCaches {
   private readonly store: string;
@@ -265,7 +267,7 @@ export class ProjectCaches {
    * module left the manifest, changed version or sits in a new folder. A
    * module that appeared with a lock record no newer than `start`, the start
    * of the command that just ended, was installed from that record. After a
-   * command that is not `ajs`, `ajs` is not alone between two installs, so a
+   * command that is not `ajs`, `ajs` may not be alone between two installs, so a
    * project whose manifest gained more than one module is refused.
    */
   private observe(start = UNKNOWN_START, ajs = true): void {
