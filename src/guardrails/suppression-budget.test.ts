@@ -137,7 +137,7 @@ test("the staged check fails a commit adding an inline directive, nets a suppres
   assert.equal(bin(root, "suppressions", ["--staged"]).status, 0);
 });
 
-test("sync writes the current counts once, then only adds config ceilings a budget lacks, restores a deleted one from HEAD, and the template profile writes none", (t) => {
+test("sync writes the current counts once, then only adds config ceilings a budget lacks, restores a deleted one from HEAD", (t) => {
   const root = testRepo(t);
   linkOxlint(root);
   put(root, "src/routes.ts", ROUTES);
@@ -145,12 +145,6 @@ test("sync writes the current counts once, then only adds config ceilings a budg
     root,
     "src/cast.ts",
     "// SAFETY: a route id is a string\nexport const id = (1 as unknown) as string;\n",
-  );
-  assert.equal(
-    syncRepository(root, { profile: "template" }).paths.includes(
-      "guardrails.suppressions.json",
-    ),
-    false,
   );
   const adoption = syncRepository(root, { check: true });
   assert.ok(adoption.paths.includes("guardrails.suppressions.json"));
