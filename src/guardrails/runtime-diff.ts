@@ -33,8 +33,8 @@ import {
 } from "./typescript.ts";
 
 const DESCRIBE = `
-const { readFileSync, writeFileSync, existsSync } = require("node:fs");
-const { dirname, join, extname } = require("node:path");
+const { readFileSync, writeFileSync, existsSync, realpathSync } = require("node:fs");
+const { dirname, join, extname, sep } = require("node:path");
 const { pathToFileURL } = require("node:url");
 const [file, destination] = process.argv.splice(2);
 let directory = dirname(file);
@@ -49,6 +49,25 @@ process.on("exit", code => {
   const recorded = description ?? { kind: esm ? "esm" : "cjs" };
   writeFileSync(destination, JSON.stringify(code === 0 && description ? recorded : { ...recorded, exit: code }));
 });
+const Module = require("node:module");
+const aliases = Object.entries(manifest.antelopeJs?.paths ?? {}).map(([key, values]) => ({
+  key: key.replace(/\\*$/, ""),
+  values: values.map(value => join(directory, manifest.antelopeJs.baseUrl ?? "", value.replace(/\\*$/, ""))),
+}));
+const packageDirectories = [directory, realpathSync(directory)];
+const resolveFilename = Module._resolveFilename;
+Module._resolveFilename = function (request, parent, ...rest) {
+  const caller = parent?.filename ?? "";
+  if (packageDirectories.some(root => caller.startsWith(root + sep)) && !caller.includes(sep + "node_modules" + sep))
+    for (const { key, values } of aliases)
+      if (request.startsWith(key))
+        for (const value of values) {
+          const candidate = join(value, request.slice(key.length));
+          if (existsSync(candidate + ".js") || existsSync(join(candidate, "index.js")))
+            return resolveFilename.call(this, candidate, parent, ...rest);
+        }
+  return resolveFilename.call(this, request, parent, ...rest);
+};
 const seen = new Map();
 function functionInfo(fn) {
   let constructible = true;
