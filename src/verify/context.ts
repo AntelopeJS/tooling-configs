@@ -81,6 +81,16 @@ function slug(text: string): string {
     .replace(/^-|-$/g, "");
 }
 
+/** Sends `name` to `pid`, returning whether the signal was delivered. */
+function signal(pid: number, name: NodeJS.Signals): boolean {
+  try {
+    process.kill(pid, name);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 interface Running {
   app: App;
   handle: BackgroundHandle;
@@ -421,12 +431,9 @@ export class VerifyContext implements JourneyContext {
     const folder = this.step(name);
     writeFileSync(join(folder, "command.txt"), `kill -INT ${app.pid}\n`);
     const running = this.running.find((entry) => entry.app.pid === app.pid);
-    running?.sent.push("SIGINT");
-    try {
-      process.kill(app.pid, "SIGINT");
-    } catch {
-      writeFileSync(join(folder, "note.txt"), "process was already gone\n");
-    }
+    if (!running?.exit && signal(app.pid, "SIGINT"))
+      running?.sent.push("SIGINT");
+    else writeFileSync(join(folder, "note.txt"), "process was already gone\n");
     let timer: NodeJS.Timeout | undefined;
     const timeout = new Promise<undefined>((resolve) => {
       timer = setTimeout(() => resolve(undefined), STOP_TIMEOUT_MS);

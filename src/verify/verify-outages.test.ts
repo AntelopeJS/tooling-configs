@@ -35,7 +35,7 @@ const AJS = String.raw`const http = require("node:http");
 const net = require("node:net");
 const port = Number(process.env.PORT);
 const mode = process.env.FAKE_MODE;
-process.on("SIGINT", () => process.exit(0));
+if (mode !== "no-sigint-handler") process.on("SIGINT", () => process.exit(0));
 if (mode === "crash-at-start") {
   console.error("Error: the module threw while it constructed");
   process.exit(1);
@@ -95,6 +95,26 @@ const JOURNEYS = `
         await new Promise((resolve) => setTimeout(resolve, 300));
         const answer = await context.http("after the kill", "http://127.0.0.1:" + app.port + "/");
         context.expect(answer.folder, [{ name: "the product answers", pass: answer.status === 200, detail: String(answer.error) }]);
+      },
+    },
+    "interrupted": {
+      title: "the project without a SIGINT handler is interrupted from outside after it is ready",
+      entryPoint: "ajs project dev",
+      async run(context) {
+        const app = await context.dev("ajs project dev", context.work, { env: { FAKE_MODE: "no-sigint-handler" } });
+        process.kill(app.pid, "SIGINT");
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const answer = await context.http("after the interrupt", "http://127.0.0.1:" + app.port + "/");
+        context.expect(answer.folder, [{ name: "the product answers", pass: answer.status === 200, detail: String(answer.error) }]);
+      },
+    },
+    "stopped": {
+      title: "the harness stops the project without a SIGINT handler, then a check fails",
+      entryPoint: "ajs project dev",
+      async run(context) {
+        const app = await context.dev("ajs project dev", context.work, { env: { FAKE_MODE: "no-sigint-handler" } });
+        const stopped = await context.stop("stop", app);
+        context.expect(stopped.folder, [{ name: "the product exits cleanly", pass: stopped.exitCode === 0, detail: String(stopped.signal) }]);
       },
     },
     "crashes": {
@@ -192,6 +212,8 @@ function outageRepo(t: TestContext) {
       ["src/**"],
       [
         "killed",
+        "interrupted",
+        "stopped",
         "crashes",
         "port-taken",
         "crash-at-start",
@@ -261,9 +283,14 @@ test("a project killed from outside or holding a taken port is NOT VERIFIED, and
     /^NOT VERIFIED: ajs project dev \(pid \d+\) was killed by SIGKILL, a signal the harness did not send$/,
   );
   assert.match(
+    statuses.interrupted,
+    /^NOT VERIFIED: ajs project dev \(pid \d+\) was killed by SIGINT, a signal the harness did not send$/,
+  );
+  assert.match(
     statuses["port-taken"],
     /^NOT VERIFIED: ajs project dev \(pid \d+\) could not bind port \d+, which another process holds: .*EADDRINUSE/,
   );
+  assert.equal(statuses.stopped, "FAIL");
   assert.equal(statuses.crashes, "FAIL");
   assert.equal(statuses["crash-at-start"], "FAIL");
 });
