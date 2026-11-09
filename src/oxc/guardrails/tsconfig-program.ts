@@ -4,6 +4,7 @@ import ts from "typescript";
 
 interface Project {
   files: ReadonlySet<string>;
+  options: ts.CompilerOptions;
   references: readonly string[];
 }
 
@@ -26,12 +27,13 @@ function configAbove(directory: string): string | undefined {
   }
 }
 
-/** The files `config` lists and the configs it references, parsed once per lint run. */
-function project(config: string): Project | undefined {
+/** The files `config` lists, its compiler options and the configs it references, parsed once per lint run. */
+export function project(config: string): Project | undefined {
   if (projects.has(config)) return projects.get(config);
   const parsed = ts.getParsedCommandLineOfConfigFile(config, undefined, HOST);
   const result = parsed && {
     files: new Set(parsed.fileNames),
+    options: parsed.options,
     references: (parsed.projectReferences ?? []).map((reference) =>
       ts.resolveProjectReferencePath(reference),
     ),

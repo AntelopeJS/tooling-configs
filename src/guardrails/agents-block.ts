@@ -90,6 +90,10 @@ const SHARED_RULES = [
     "review; no tool",
   ],
   [
+    "`Object.assign` writes no `unknown`, `any` or mistyped value over a field",
+    "`antelopejs/no-unsafe-object-assign`",
+  ],
+  [
     "Every file type-aware lint reads is listed by a tsconfig",
     "`antelopejs/require-tsconfig-include`",
   ],

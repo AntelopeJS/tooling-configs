@@ -4,6 +4,7 @@ import { chmodSync, existsSync, rmSync, statSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
+import { recordedRelease } from "./adoption.ts";
 import {
   agentsBlock,
   AGENTS_BLOCK_END,
@@ -65,7 +66,7 @@ test("full sync measures once, preserves handwritten text even behind a CLAUDE s
   assert.deepEqual(readCeilings(root).rules, {
     "typescript/no-explicit-any": 1,
   });
-  assert.equal(readCeilings(root).pack, toolingVersions().pack);
+  assert.equal(readCeilings(root).pack, recordedRelease(undefined));
   assert.equal(
     read(root, "AGENTS.md"),
     `Handwritten introduction.\n\n${agentsBlock({ profile: "full", ratchet: true, verificationSkill: ".agents/skills/verify-runtime/SKILL.md", glossary: "docs/GLOSSARY.md" }).trimEnd()}\n\nHandwritten footer.\n`,

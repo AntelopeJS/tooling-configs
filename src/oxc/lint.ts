@@ -210,6 +210,7 @@ function guardrailsPreset(typeAware: boolean) {
       },
     ],
     rules: {
+      "antelopejs/no-unsafe-object-assign": typeAware ? "error" : "off",
       "antelopejs/require-tsconfig-include": typeAware ? "error" : "off",
     },
     overrides: [
