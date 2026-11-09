@@ -133,6 +133,86 @@ it("fails a Node version range in prose and allows it in code and in the generat
   ]);
 });
 
+it("fails a framework or tool version in prose and checks the description, and allows it in code at any depth, links, URLs, comments, and before a year, status, ratio, decimal comma or measure", (t) => {
+  const { failures } = run(t, {
+    "README.md": README,
+    "docs/bad.md": PAGE(
+      [
+        "Only AdonisJS 6 is tested.",
+        "",
+        "The page builds on Vue 3.5 components.",
+        "",
+        "Install pnpm v10 first, then TypeScript >= 5.6.",
+        "",
+        "It also runs on Nuxt 4 and Vue.js 3.",
+        "",
+        "It is built on AdonisJS 7 and Vue 3.6.0-beta.1,",
+        "for Vue 3-based apps.",
+        "",
+        "It runs on **Vue** 3.5, Express.js 5 and TypeScript version 5.6.",
+      ].join("\n"),
+      { description: "Set up the module on Nuxt 4." },
+    ),
+    "docs/stray.md": PAGE("Body text for the page.", {
+      title: "Compare n<m",
+      description: "Set up the module on Vue 3.",
+      note: "a > b",
+    }),
+    "docs/crlf.md": PAGE("We use Vue 3.5 here.").replaceAll("\n", "\r\n"),
+    "docs/good.md": PAGE(
+      [
+        "AdonisJS apps load the module at start.",
+        "",
+        "Run `pnpm add vue@3.5` in a shell.",
+        "",
+        "Vue components render in 2 steps, and TypeScript checks 12 files.",
+        "",
+        "The MongoDB 2026-Q3 restore passed, Redis 3/173 failovers held, and MySQL 6,5 s stayed flat.",
+        "",
+        "Redis 99.9% uptime, Redis 100 ms latency, a React 12:30 standup and an Express 404 handler are not versions.",
+        "",
+        "Use ``pnpm v10`` in [the guide](https://example.com/?tool=Vite5) or https://example.com/#Vue3.",
+        "",
+        "<!-- Vue 3.5 -->",
+        "",
+        "1. Install the tools:",
+        "",
+        "   ```sh",
+        "   pnpm v10",
+        "   ```",
+        "",
+        "> ```sh",
+        "> Vue 3.5",
+        "> ```",
+        "",
+        "1. Install pnpm",
+        "2. Run the build",
+        "",
+        "> 1. Install pnpm",
+        "> 2. Run the build",
+      ].join("\n"),
+      { note: "use `Vue 3` carefully", aside: "<!-- old\n  Vue 3 -->" },
+    ),
+  });
+  assert.deepEqual(failures, [
+    'docs/bad.md:3: "Nuxt 4" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:7: "AdonisJS 6" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:9: "Vue 3.5" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:11: "pnpm v10" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:11: "TypeScript >= 5.6" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:13: "Nuxt 4" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:13: "Vue.js 3" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:15: "AdonisJS 7" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:15: "Vue 3.6.0-beta.1" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:16: "Vue 3-based" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:18: "Vue 3.5" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:18: "Express.js 5" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/bad.md:18: "TypeScript version 5.6" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/crlf.md:7: "Vue 3.5" states a version in prose, point at the pin in package.json or .nvmrc',
+    'docs/stray.md:3: "Vue 3" states a version in prose, point at the pin in package.json or .nvmrc',
+  ]);
+});
+
 it("passes an image that is a capture output or marked illustration, and fails any other", (t) => {
   const { failures } = run(t, {
     "README.md": README,

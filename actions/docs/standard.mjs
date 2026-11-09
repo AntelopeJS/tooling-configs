@@ -22,6 +22,49 @@ const NODE_BLOCK =
 const NODE_RANGE =
   /\bnode(?:\.js)?\s*(?:(?:v|>=?|<=?|~|\^|≥|≤)\s*\d|\d{2}|\d+\.\d)/i;
 
+/** Frameworks, runtimes and tools whose version a page pins in package.json or .nvmrc, spelled as prose writes them. Node has its own rule. */
+const DEPENDENCIES = [
+  "AdonisJS",
+  "Angular",
+  "Bun",
+  "Deno",
+  "Express",
+  "Fastify",
+  "MongoDB",
+  "MySQL",
+  "NestJS",
+  "Next\\.js",
+  "npm",
+  "Nuxt",
+  "pnpm",
+  "PostgreSQL",
+  "Postgres",
+  "React",
+  "Redis",
+  "Svelte",
+  "Tailwind(?: ?CSS)?",
+  "TypeScript",
+  "Vite",
+  "Vitest",
+  "Vue",
+  "Yarn",
+  "yarn",
+];
+
+/** A number followed by one of these is a measure, not a version. */
+const UNIT =
+  "[ \\t]*(?:%|:\\d|(?:[kmgt]i?b|bytes?|m?s|secs?|seconds?|min|minutes?|times)(?![a-z]))";
+
+/**
+ * `AdonisJS 6`, `**Vue** 3.5`, `Express.js 5`, `pnpm v10`, `TypeScript version 5.6`, `Vue 3.5.0-beta.1`: a listed
+ * dependency with a version after it on the same line. No listed dependency has reached major 100, so a year, an HTTP
+ * status, a ratio, a decimal comma or a measure such as `99.9%` is not a version.
+ */
+const DEPENDENCY_VERSION = new RegExp(
+  `(?<![\\w.@/-])(?:${DEPENDENCIES.join("|")})(?:\\.js)?[*_]*[ \\t\\u00a0]*(?:version[ \\t]+)?(?:(?:v|[<>]=?|[~^≥≤])[ \\t]*)?\\d{1,2}(?:\\.(?:\\d+|x))*(?:-[\\da-z]+(?:\\.[\\da-z]+)*)?(?![\\w/-]|[.,]\\d|${UNIT})`,
+  "g",
+);
+
 const isReadme = (path) => /^readme(?:\.[a-z]+)?\.md$/i.test(basename(path));
 
 /** Whether the consumer's package.json opts in: `antelopeJs.docs.standard` is true. */
@@ -64,14 +107,27 @@ function tokenLines(doc) {
   return lines;
 }
 
-function proseWithoutCode(doc) {
-  let text = doc.text.replace(NODE_BLOCK, (block) =>
-    block.replace(/[^\n]/g, " "),
+/** Replaces a span with spaces, keeping newlines so lines stay put. */
+const blank = (span) => span.replace(/[^\n]/g, " ");
+
+/** HTML `<pre>` blocks, comments and tags, link destinations, URLs and inline code spans: none of them is prose. */
+const nonProse = (tag) =>
+  new RegExp(
+    `<pre\\b[\\s\\S]*?<\\/pre>|<!--[\\s\\S]*?-->|<\\/?[a-z]${tag}>|\\]\\([^)\\n]*\\)|\\bhttps?:\\/\\/\\S+|(\`+)[^\\n]*?\\1`,
+    "gi",
   );
-  for (const token of doc.tokens)
-    if (token.type === "code")
-      text = text.replace(token.raw, token.raw.replace(/[^\n]/g, " "));
-  return text.replace(/`[^`\n]*`/g, (code) => " ".repeat(code.length));
+const NOT_PROSE = nonProse("[^>]*");
+
+/** In YAML a `<` is often a comparison, so a frontmatter tag ends on its own line. */
+const NOT_PROSE_IN_FRONTMATTER = nonProse("[^>\\n]*");
+
+/** The page text with every code block, at any depth, and every non-prose span blanked. */
+function proseWithoutCode(doc) {
+  const lines = doc.text.split("\n");
+  for (const [from, to] of doc.code)
+    for (let line = from; line <= to; line += 1)
+      lines[line - doc.firstLine] = blank(lines[line - doc.firstLine] ?? "");
+  return lines.join("\n").replace(NODE_BLOCK, blank).replace(NOT_PROSE, blank);
 }
 
 function checkFrontmatter(doc, name, fail) {
@@ -105,15 +161,19 @@ function checkWords(doc, name, fail) {
     fail(`${name}: ${count} words, split the page at ${WORD_LIMIT}`);
 }
 
-function checkNodeRanges(doc, name, fail) {
-  proseWithoutCode(doc)
-    .split("\n")
-    .forEach((text, index) => {
-      if (NODE_RANGE.test(text))
-        fail(
-          `${name}:${doc.firstLine + index}: Node version range in prose, state it once in package.json engines`,
-        );
-    });
+function checkVersionProse(doc, name, fail) {
+  const prose = proseWithoutCode(doc);
+  prose.split("\n").forEach((text, index) => {
+    if (NODE_RANGE.test(text))
+      fail(
+        `${name}:${doc.firstLine + index}: Node version range in prose, state it once in package.json engines`,
+      );
+  });
+  const rendered = `${doc.frontmatter.replace(NOT_PROSE_IN_FRONTMATTER, blank)}${prose}`;
+  for (const { 0: version, index } of rendered.matchAll(DEPENDENCY_VERSION))
+    fail(
+      `${name}:${1 + (rendered.slice(0, index).match(/\n/g)?.length ?? 0)}: "${version.replace(/[*_]/g, "").replace(/\s+/g, " ")}" states a version in prose, point at the pin in package.json or .nvmrc`,
+    );
 }
 
 /** The `output` of every scene in docs/captures.ts. Each must be a string literal, because the check reads the file and does not run it. */
@@ -196,7 +256,7 @@ function runVale(valeBin, root, documents, fail) {
 
 /**
  * The Docs standard, run only when the repository opts in. Each page needs `title`, `description` and a `mode`
- * in its frontmatter, no body H1 and at most 3,000 words; every file reads as English, names no Node version in prose,
+ * in its frontmatter, no body H1 and at most 3,000 words; every file reads as English, names no Node, framework or tool version in prose,
  * references only images that a `docs/captures.ts` scene writes or that are marked `illustration`, and has no Vale warning.
  * A README keeps its H1 and needs no frontmatter.
  */
@@ -210,7 +270,7 @@ export function checkStandard({ root, documents, fail, valeBin }) {
       checkHeading(doc, name, lines, fail);
     }
     checkWords(doc, name, fail);
-    checkNodeRanges(doc, name, fail);
+    checkVersionProse(doc, name, fail);
     checkImages(doc, name, outputs, root, fail);
     for (const { line } of foreignProse(doc.text))
       fail(`${name}:${doc.firstLine + line - 1}: prose is not English`);
