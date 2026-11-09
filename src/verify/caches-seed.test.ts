@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -86,6 +94,27 @@ test("a copy of a clean prepared cache has .bin shims naming its own module fold
   const copy = join(tmp, "copy");
   cpSync(built, copy, { recursive: true, preserveTimestamps: true });
   new ProjectCaches(join(tmp, "store")).seed(copy, from);
+  assert.equal(
+    read(copy, ".antelope/cache/@acme/api/node_modules/.bin/tool"),
+    shim(copy),
+  );
+});
+
+test("a copy of a clean prepared cache reached through a symlink has .bin shims naming its own module folders, where retargeting only the resolved build path leaves the path the shim was written with", (t) => {
+  const tmp = realpathSync(mkdtempSync(join(tmpdir(), "verify-caches-link-")));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const shim = (project: string) =>
+    `export NODE_PATH="${join(project, ".antelope/cache/@acme/api/node_modules/.pnpm/node_modules")}"\n`;
+  mkdirSync(join(tmp, "real"));
+  symlinkSync(join(tmp, "real"), join(tmp, "link"));
+  const built = join(tmp, "link/built");
+  const building = new ProjectCaches(join(tmp, "store"));
+  building.seed(built);
+  put(built, ".antelope/cache/@acme/api/node_modules/.bin/tool", shim(built));
+  put(built, ".antelope/cache/manifest.json", '{"@acme/api":"1.0.0"}\n');
+  const copy = join(tmp, "copy");
+  cpSync(built, copy, { recursive: true, preserveTimestamps: true });
+  new ProjectCaches(join(tmp, "store")).seed(copy, building.clean(built));
   assert.equal(
     read(copy, ".antelope/cache/@acme/api/node_modules/.bin/tool"),
     shim(copy),

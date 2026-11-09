@@ -193,10 +193,10 @@ function readLinks(kept: string): Link[] {
   return links;
 }
 
-/** A project the build seeded with the run's module cache, as a path inside its folder, and, when its cache was exactly what `ajs` installed as the build ended, the path that cache's `.bin` shims name. */
+/** A project the build seeded with the run's module cache, as a path inside its folder, and, when its cache was exactly what `ajs` installed as the build ended, the paths that cache's `.bin` shims may name. */
 interface Seeded {
   path: string;
-  cache: string | null;
+  cache: string[] | null;
 }
 
 /** The projects `keep` recorded; a build kept without the list holds none. */
@@ -205,13 +205,16 @@ function readProjects(kept: string): Seeded[] {
   if (!existsSync(file)) return [];
   const listed = parseJson(readFileSync(file, "utf8"));
   return Array.isArray(listed)
-    ? listed
-        .filter(isObject)
-        .flatMap(({ path, cache }): Seeded[] =>
-          isString(path)
-            ? [{ path, cache: isString(cache) ? cache : null }]
-            : [],
-        )
+    ? listed.filter(isObject).flatMap(({ path, cache }): Seeded[] =>
+        isString(path)
+          ? [
+              {
+                path,
+                cache: Array.isArray(cache) ? cache.filter(isString) : null,
+              },
+            ]
+          : [],
+      )
     : [];
 }
 

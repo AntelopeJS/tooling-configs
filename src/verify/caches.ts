@@ -330,7 +330,7 @@ export class ProjectCaches {
    * Gives a project that has installed no module yet a copy of the largest kept cache, so `ajs` reuses the packages an earlier journey installed instead of packing and installing them again. A project whose antelope config names its own `cacheFolder` gets no copy, since `ajs` would not read `.antelope/cache`.
    * A project that already holds modules is followed from what it holds. When `copiedFrom` is given, that cache is a copy of the cache `clean` accepted and named by those paths: its `.bin` shims are pointed at this project's cache and it is followed as a copy from the store is.
    */
-  seed(project: string, copiedFrom: string | null = null): void {
+  seed(project: string, copiedFrom: string[] | null = null): void {
     const state: Project = { installed: new Map(), git: new Set() };
     this.projects.set(project, state);
     if (namesCacheFolder(project)) return;
@@ -338,7 +338,7 @@ export class ProjectCaches {
     if ((manifestOf(cache)?.modules.length ?? 0) > 0) {
       if (copiedFrom === null) this.observe();
       else {
-        retarget(cache, [copiedFrom], cachePath(cache));
+        retarget(cache, copiedFrom, cachePath(cache));
         this.adopt(state, cache);
       }
       return;
@@ -380,8 +380,8 @@ export class ProjectCaches {
     return [...this.projects.keys()];
   }
 
-  /** When the cache of a seeded `project` holds no module, or only registry modules exactly as `ajs` installed them, the path its `.bin` shims name, which `seed` takes as `copiedFrom` for a copy of it; `null` otherwise. */
-  clean(project: string): string | null {
+  /** When the cache of a seeded `project` holds no module, or only registry modules exactly as `ajs` installed them, the paths its `.bin` shims may name, resolved and as given, which `seed` takes as `copiedFrom` for a copy of it; `null` otherwise. */
+  clean(project: string): string[] | null {
     this.observe();
     const state = this.projects.get(project);
     const cache = join(project, PROJECT_CACHE);
@@ -394,7 +394,9 @@ export class ProjectCaches {
           REGISTRY_VERSION.test(version),
         ) &&
         refusal(cache, state, manifest) === undefined);
-    return accepted && existsSync(cache) ? cachePath(cache) : null;
+    return accepted && existsSync(cache)
+      ? [cachePath(cache), cache + sep]
+      : null;
   }
 
   /**
