@@ -57,3 +57,48 @@ test("a journey that writes the fixture project twice gets two separate projects
       new RegExp(`^${project}/antelope\\.config\\.ts \\d+$`, "m"),
     );
 });
+
+test("the fixture project loads every companion module next to the module, where a fixture that writes only the module and the driver leaves the module's interface imports unserved", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "verify-fixture-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const api = {
+    source: { type: "package", package: "@antelopejs/api", version: "1.0.0" },
+    config: { servers: [{ protocol: "http", port: 5010 }] },
+  };
+  const root = verifyRepo(t, {
+    "README.md": "# Demo\n",
+    "package.json": '{"name":"demo","type":"module","version":"1.0.0"}\n',
+    "node_modules/@antelopejs/interface-core/package.json":
+      '{"name":"@antelopejs/interface-core","version":"1.0.0"}\n',
+    ".gitignore": "",
+    [`${SKILL}/verify.config.ts`]: `import { join } from "node:path";
+
+export default {
+  doors: ${PUBLISH_DOORS},
+  setup: [["node", "-e", "0"]],
+  moduleConfig: () => ({ folder: "files" }),
+  companions: () => ({ "@antelopejs/api": ${JSON.stringify(api)} }),
+  journeys: {
+    companions: {
+      title: "the fixture loads the companion modules",
+      entryPoint: "node",
+      async run(context) {
+        const project = context.fixture();
+        const { default: config } = await import(join(project, "antelope.config.ts"));
+        context.expect(context.tree("project", project).folder, [
+          { name: "the companion is a module of the project", pass: JSON.stringify(config.modules["@antelopejs/api"]) === ${JSON.stringify(JSON.stringify(api))}, detail: JSON.stringify(config.modules) },
+          { name: "the module keeps its config", pass: config.modules.demo?.config?.folder === "files", detail: JSON.stringify(config.modules.demo) },
+          { name: "the driver is still loaded", pass: config.modules["verify-driver"] !== undefined, detail: Object.keys(config.modules).join(",") },
+        ]);
+      },
+    },
+  },
+};
+`,
+    [`${SKILL}/features/smoke.md`]: feature([], ["companions"]),
+  });
+  const run = newRun(root, tmp);
+  verify(root, tmp, ["journey", run, "smoke"]);
+  const [result] = evidence(run, "smoke/feature.json");
+  assert.equal(result.status, "PASS", JSON.stringify(result));
+});

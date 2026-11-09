@@ -15,6 +15,7 @@ import {
   type JsonObject,
 } from "../garden/json.ts";
 import { DRIVER_SOURCE, STUB_SOURCE } from "./fixture-modules.ts";
+import type { CompanionModule } from "./types.ts";
 import type { RunState, Workspace } from "./workspace.ts";
 
 /** A written fixture project and the environment its driver and stub read. */
@@ -109,17 +110,21 @@ function interfaceLinks(workspace: Workspace, state: RunState) {
  * the driver module and, for the interface kind, the stub provider, or, for
  * the module kind, the module under verification as a `local` source. Every
  * interface the driver calls is linked to the copy the repository resolves,
- * so the project shares one copy per interface as core requires.
+ * so the project shares one copy per interface as core requires. Each of
+ * `companions` is loaded too, but never in place of the module or the driver.
  */
 export function writeFixture(
   workspace: Workspace,
   state: RunState,
   folder: string,
-  moduleConfig: JsonObject,
+  configs: {
+    module: JsonObject;
+    companions: { [name: string]: CompanionModule };
+  },
 ): Fixture {
   const project = join(folder, "project");
   const { links, entries } = interfaceLinks(workspace, state);
-  const modules: JsonObject = {};
+  const modules: JsonObject = { ...configs.companions };
   if (workspace.kind === "interface") {
     writeModule(
       join(project, "stub"),
@@ -136,7 +141,7 @@ export function writeFixture(
   } else {
     modules[workspace.name] = {
       source: { type: "local", path: workspace.root },
-      config: moduleConfig,
+      config: configs.module,
     };
   }
   writeModule(

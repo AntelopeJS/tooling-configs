@@ -17,6 +17,7 @@ export type {
   CallResult,
   Check,
   CommandResult,
+  CompanionModule,
   DevOptions,
   DoorKind,
   DoorRule,

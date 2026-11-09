@@ -281,7 +281,10 @@ export class VerifyContext implements JourneyContext {
       this.fixtures.size === 0
         ? this.work
         : join(this.work, `fixture-${this.fixtures.size + 1}`);
-    const fixture = writeFixture(this.workspace, this.state, folder, config);
+    const fixture = writeFixture(this.workspace, this.state, folder, {
+      module: config,
+      companions: this.workspace.config.companions?.(this.services()) ?? {},
+    });
     this.fixtures.set(fixture.project, fixture);
     this.tree("fixture project", fixture.project);
     this.caches.seed(fixture.project);

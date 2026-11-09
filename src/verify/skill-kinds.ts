@@ -45,9 +45,10 @@ const MODULE: KindText = {
   launch:
     "`new` runs the setup (`pnpm run build` by default), then starts every `services` entry of `verify.config.ts` in its own Docker container on a free loopback port, named `<prefix>-<repo>-<service>-<run>` (`VERIFY_CONTAINER_PREFIX`, default `verify`), and waits for each readiness command. A provider with sandbox keys in `saas.env` records the missing ones.",
   builtins:
-    "- `module-dev`: a fixture project installs the module as `local` with `moduleConfig(services)` as its config, plus a consumer module. `ajs project dev` must answer, the consumer must load every implemented interface, Ctrl+C must exit 130 and the port must refuse afterwards.",
+    "- `module-dev`: a fixture project installs the module as `local` with `moduleConfig(services)` as its config, plus the `companions(services)` modules and a consumer module. `ajs project dev` must answer, the consumer must load every implemented interface, Ctrl+C must exit 130 and the port must refuse afterwards.",
   layer: `- \`services\`: image, port, readiness command and a \`reset\` command run before every journey, so each starts from a clean state.
 - \`moduleConfig(services)\`: the module's configuration, pointing at the run's containers.
+- \`companions(services)\`: other modules the fixture project loads, keyed by name, each a \`source\` and an optional \`config\` as in \`antelope.config.ts\`. Add the provider of every interface the module imports that it does not implement, such as \`@antelopejs/api\` for \`@antelopejs/interface-api\`, or the module never finishes starting.
 - \`saas: { env, sandbox }\`: a SaaS module runs against the provider's sandbox with keys from these environment variables. Without every key, each journey is NOT VERIFIED and so is the verdict, never PASS or PASS+NOTES.
 - \`journeys\`: the module's own journeys. Each writes through the module with \`context.call(...)\` and reads the result back with \`context.native(...)\` (\`redis-cli\`, \`mongosh\`, \`psql\`, the Mailpit API) inside the service container.`,
   smoke: "`module-dev` and one write read back through the native client",
