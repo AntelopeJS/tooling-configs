@@ -81,6 +81,20 @@ function names(folder: string): string[] {
   }
 }
 
+/** Why a module the harness recorded as `known` is no longer that install, now that the manifest lists `version` in a folder created at `born`. */
+function reinstalled(
+  name: string,
+  known: Installed,
+  version: string,
+  born: bigint,
+): string | undefined {
+  if (known.version !== version)
+    return `${name} changed from ${known.version} to ${version} after ajs installed it`;
+  if (born !== known.born)
+    return `${name} was created again after ajs installed ${name}@${version}`;
+  return undefined;
+}
+
 /** Every entry under `root`, by its path relative to `root`, with its modification time; symbolic links are listed, not followed. */
 function* entries(
   root: string,
@@ -227,9 +241,11 @@ function changeIn(
  * `manifest.json`, so the manifest's modification time when the harness first
  * sees the module bounds every file of it. A file modified later, a module
  * whose version or folder changes after that, a module `ajs` installed from a
- * lock record the project held before the command, and a git module, which
+ * lock record the project held before the command, a git module, which
  * `ajs` updates in place and builds with the project's own install command,
- * each keep the cache out of the store.
+ * and two modules that first appear after one command that is not `ajs`,
+ * which may have edited the first before installing the second, each keep
+ * the cache out of the store.
  */
 export class ProjectCaches {
   private readonly store: string;
@@ -280,15 +296,18 @@ export class ProjectCaches {
    * since the last call, and refuses the cache of a project whose recorded
    * module left the manifest, changed version or sits in a new folder. A
    * module that appeared with a lock record no newer than `start`, the start
-   * of the command that just ended, was installed from that record.
+   * of the command that just ended, was installed from that record. After a
+   * command that is not `ajs`, `ajs` may not be alone between two installs, so a
+   * project whose manifest gained more than one module is refused.
    */
-  private observe(start = UNKNOWN_START): void {
+  private observe(start = UNKNOWN_START, ajs = true): void {
     let latest = -1n;
     for (const [project, state] of this.projects) {
       const cache = join(project, PROJECT_CACHE);
       const manifest = manifestOf(cache);
       if (manifest === undefined) continue;
       const listed = new Map(manifest.modules);
+      const added: string[] = [];
       for (const [name, known] of state.installed)
         if (!listed.has(name))
           state.refused ??= `${name} left ${MANIFEST} after ajs installed ${name}@${known.version}`;
@@ -296,23 +315,27 @@ export class ProjectCaches {
         const born = bornAt(join(cache, name));
         const known = state.installed.get(name);
         if (known === undefined) {
+          added.push(`${name}@${version}`);
           state.installed.set(name, { version, born, bound: manifest.mtime });
           if (manifest.mtime > latest) latest = manifest.mtime;
           if (pinned(project, name, version, start))
             state.refused ??= `ajs installed ${name}@${version} from the project's lock record`;
-        } else if (known.version !== version) {
-          state.refused ??= `${name} changed from ${known.version} to ${version} after ajs installed it`;
-        } else if (born !== known.born) {
-          state.refused ??= `${name} was created again after ajs installed ${name}@${version}`;
+        } else {
+          state.refused ??= reinstalled(name, known, version, born);
         }
       }
+      if (!ajs && added.length > 1)
+        state.refused ??= `${added.join(" and ")} appeared in one command that is not ajs, which may have changed one of them before ajs installed the next`;
     }
     if (latest >= 0n) this.passClock(latest);
   }
 
-  /** Observes the project caches once a command or an app start has ended, and returns its result. Its `folder` is the step folder the harness created as it began, so a lock record no newer than that folder was there before the command. */
-  observed<Result extends { folder: string }>(result: Result): Result {
-    this.observe(bornAt(result.folder) || UNKNOWN_START);
+  /** Observes the project caches once a command or an app start has ended, and returns its result. Its `folder` is the step folder the harness created as it began, so a lock record no newer than that folder was there before the command. `ajs` tells whether only `ajs` ran, as in `ajs` commands and app starts, or a command that may also run other programs. */
+  observed<Result extends { folder: string }>(
+    result: Result,
+    ajs: boolean,
+  ): Result {
+    this.observe(bornAt(result.folder) || UNKNOWN_START, ajs);
     return result;
   }
 
