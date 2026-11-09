@@ -157,6 +157,8 @@ function compilerOptions(
       read.config ?? {},
       compiler.sys,
       moduleRoot,
+      undefined,
+      config,
     );
     return { ...parsed.options, ...scan, paths: parsed.options.paths ?? paths };
   }
