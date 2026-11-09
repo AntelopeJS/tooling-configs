@@ -85,7 +85,7 @@ test("a lockfile holding two copies of an interface package fails checks and nam
     result.stdout,
     /\[lockfile:singletons\]\npnpm-lock\.yaml resolves "@antelopejs\/interface-core" at 2 versions, and an interface package must load once:\n {2}0\.1\.1, pulled by importer "\.", @antelopejs\/interface-api@0\.1\.0\n {2}0\.2\.6, pulled by @antelopejs\/core@1\.17\.2\n/,
   );
-  assert.match(result.stdout, /Checks: 8 passed, 1 failed\./);
+  assert.match(result.stdout, /Checks: 9 passed, 1 failed\./);
 });
 
 test("one interface copy under two peer contexts and two copies of a package that is not an interface pass, caught by counting snapshot keys or flagging any duplicate", (t) => {

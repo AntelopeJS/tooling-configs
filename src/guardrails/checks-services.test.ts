@@ -87,7 +87,7 @@ test("checks start the compose services before the steps and remove them after",
   const root = servicesRepo(t, UNREACHABLE_COMPOSE);
   const result = bin(root, "checks", [], dockerEnv(t, root));
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 8 passed, 0 failed.\n");
+  assert.equal(result.stdout, "Checks: 9 passed, 0 failed.\n");
   assert.deepEqual(logLines(root), [
     "docker compose -f .github/compose.yml version",
     "docker compose -f .github/compose.yml ps --all --quiet",
@@ -106,7 +106,7 @@ test("checks remove the compose services when a step fails", (t) => {
   const result = bin(root, "checks", [], dockerEnv(t, root));
   assert.equal(result.status, 1);
   assert.match(result.stdout, /tests broke/);
-  assert.match(result.stdout, /Checks: 7 passed, 1 failed\./);
+  assert.match(result.stdout, /Checks: 8 passed, 1 failed\./);
   assert.equal(
     logLines(root).at(-1),
     "docker compose -f .github/compose.yml down -v",
@@ -197,7 +197,7 @@ test("checks skipping the test step neither need nor start the services", (t) =>
     ANTELOPEJS_CHECKS_SKIP: "test",
   });
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 7 passed, 0 failed, 1 skipped.\n");
+  assert.equal(result.stdout, "Checks: 8 passed, 0 failed, 1 skipped.\n");
 });
 
 test("checks keep a stack whose containers existed before the run", (t) => {

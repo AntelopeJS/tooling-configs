@@ -28,7 +28,7 @@ test("checks suppresses passing output, reports missing scripts, and continues a
   assert.match(result.stdout, /later failure/);
   assert.doesNotMatch(result.stdout, /hidden success/);
   assert.match(result.stdout, /Missing package.json script "suppressions"/);
-  assert.match(result.stdout, /Checks: 5 passed, 4 failed\./);
+  assert.match(result.stdout, /Checks: 6 passed, 4 failed\./);
   put(
     root,
     "package.json",
@@ -51,7 +51,7 @@ test("checks suppresses passing output, reports missing scripts, and continues a
   );
   const passing = bin(root, "checks");
   assert.equal(passing.status, 0);
-  assert.equal(passing.stdout, "Checks: 9 passed, 0 failed.\n");
+  assert.equal(passing.stdout, "Checks: 10 passed, 0 failed.\n");
 });
 
 test("checks skips ratchet by file absence even if a stale ratchet script fails", (t) => {
@@ -72,7 +72,7 @@ test("checks skips ratchet by file absence even if a stale ratchet script fails"
   put(root, "package.json", JSON.stringify({ packageManager: "npm", scripts }));
   const result = bin(root, "checks");
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 8 passed, 0 failed.\n");
+  assert.equal(result.stdout, "Checks: 9 passed, 0 failed.\n");
 });
 
 const ALL_STEPS = [
@@ -112,7 +112,7 @@ test("ANTELOPEJS_CHECKS_SKIP leaves the named steps unrun and reports them as sk
     ANTELOPEJS_CHECKS_SKIP: " test , size ",
   });
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 7 passed, 0 failed, 2 skipped.\n");
+  assert.equal(result.stdout, "Checks: 8 passed, 0 failed, 2 skipped.\n");
 });
 
 test("ANTELOPEJS_CHECKS_SKIP still runs the steps it does not name", (t) => {
@@ -121,7 +121,7 @@ test("ANTELOPEJS_CHECKS_SKIP still runs the steps it does not name", (t) => {
   assert.equal(result.status, 1);
   assert.match(result.stdout, /lint ran/);
   assert.doesNotMatch(result.stdout, /test ran/);
-  assert.match(result.stdout, /Checks: 7 passed, 1 failed, 1 skipped\./);
+  assert.match(result.stdout, /Checks: 8 passed, 1 failed, 1 skipped\./);
 });
 
 test("an unknown ANTELOPEJS_CHECKS_SKIP name fails and names the valid steps instead of skipping nothing", (t) => {
@@ -133,7 +133,7 @@ test("an unknown ANTELOPEJS_CHECKS_SKIP name fails and names the valid steps ins
   assert.match(result.stdout, /Unknown step "tset"/);
   assert.match(
     result.stdout,
-    /Valid steps: typecheck, lint, format:check, knip, test, size, ratchet, suppressions, sync:check, verify:types, verify:lockfiles, lockfile:singletons\./,
+    /Valid steps: typecheck, lint, format:check, knip, test, size, ratchet, suppressions, sync:check, verify:types, verify:lockfiles, lockfile:singletons, git:identity\./,
   );
 });
 
@@ -147,7 +147,7 @@ test("a checks skip set in the test runner's own environment does not reach the 
   const root = stepsRepo(t, ["test"]);
   const result = bin(root, "checks");
   assert.equal(result.status, 1);
-  assert.match(result.stdout, /Checks: 8 passed, 1 failed\./);
+  assert.match(result.stdout, /Checks: 9 passed, 1 failed\./);
 });
 
 test("an unset, empty or blank ANTELOPEJS_CHECKS_SKIP runs every step", (t) => {
@@ -160,6 +160,6 @@ test("an unset, empty or blank ANTELOPEJS_CHECKS_SKIP runs every step", (t) => {
   for (const env of settings) {
     const result = bin(root, "checks", [], env);
     assert.equal(result.status, 1, JSON.stringify(env));
-    assert.match(result.stdout, /Checks: 8 passed, 1 failed\./);
+    assert.match(result.stdout, /Checks: 9 passed, 1 failed\./);
   }
 });
