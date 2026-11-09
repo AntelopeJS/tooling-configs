@@ -25,6 +25,7 @@ import {
   readCeilings,
 } from "./ceilings.ts";
 import {
+  addedDevDependencies,
   managedPackage,
   packageManager,
   parseManifest,
@@ -79,6 +80,8 @@ export interface RepoContext extends AgentsBlockContext {
   docs: DocsPlan | undefined;
   /** Whether package.json's `test` script only stands in for tests, so the CI caller turns its test job off. */
   placeholderTests: boolean;
+  /** Whether `docs/captures.ts` exists, so package.json declares the capture tool's peers. */
+  captures: boolean;
 }
 
 interface ArtifactContent {
@@ -394,6 +397,7 @@ function repositoryContext(
     placeholderTests:
       current.has("package.json") &&
       placeholderTestScript(manifest.scripts?.test),
+    captures: existsSync(join(root, "docs/captures.ts")),
   };
 }
 
@@ -499,12 +503,12 @@ export function syncRepository(
     writeArtifacts(root, writes);
     applyVerifyActions(root, actions);
   }
-  const requiredDependencies =
-    profile === "full" ? ["lefthook", "knip"] : ["knip"];
-  if (context.typeAware) requiredDependencies.push("oxlint-tsgolint");
-  const dependenciesAdded = requiredDependencies.some(
-    (name) => !manifest.devDependencies?.[name],
-  );
+  const templateDependencies = ["knip"];
+  if (context.typeAware) templateDependencies.push("oxlint-tsgolint");
+  const dependenciesAdded =
+    profile === "full"
+      ? addedDevDependencies(manifest, context.versions, context).length > 0
+      : templateDependencies.some((name) => !manifest.devDependencies?.[name]);
   return {
     artifacts: plan,
     paths: errors.length ? [] : [...writes, ...actions].map(({ path }) => path),
