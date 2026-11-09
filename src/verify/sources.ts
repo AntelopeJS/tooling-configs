@@ -69,6 +69,11 @@ export function templateName(workspace: Workspace): string {
   return workspace.config.template?.name ?? `Verify ${workspace.name}`;
 }
 
+/** The `ajs` command group that creates from the template: `module` for a module template, `project` otherwise. */
+export function templateInit(workspace: Workspace): "module" | "project" {
+  return workspace.config.template?.module === true ? "module" : "project";
+}
+
 /**
  * Builds the offline template source of a run: the template's working tree,
  * uncommitted changes included, as a local git repository, and an interfaces

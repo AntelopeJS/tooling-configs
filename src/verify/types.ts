@@ -213,8 +213,8 @@ export interface JourneyContext {
   /** Stops an app with SIGINT by recorded PID. */
   stop(name: string, app: App): Promise<StopResult>;
   /**
-   * Creates a project from the template under verification with `ajs project init`.
-   * Once init succeeds, the project's `.antelope/cache` starts as a copy of a cache of registry modules an earlier passing journey of the run left exactly as a fresh `ajs` install leaves it, none installed from a lock record.
+   * Creates a project from the template under verification with `ajs project init`, or a module with `ajs module init` when `template.module` is set.
+   * Once a project init succeeds, the project's `.antelope/cache` starts as a copy of a cache of registry modules an earlier passing journey of the run left exactly as a fresh `ajs` install leaves it, none installed from a lock record.
    */
   scaffold(
     name: string,
@@ -295,6 +295,17 @@ export type CompanionModule = {
   config?: JsonObject;
 };
 
+/**
+ * How `ajs` creates from a template. A project template (`project`) is listed
+ * under `projectTemplates` and created with `ajs project init`; a module
+ * template (`module`) is listed under `templates` and created with
+ * `ajs module init`; any other template is listed under `templates` and
+ * created as the app module of a project with `ajs project init`.
+ */
+export type TemplateInit =
+  | { project?: boolean; module?: false }
+  | { module: true; project?: false };
+
 /** The repo-owned layer of a shared verification skill: `.agents/skills/verify-<kind>/verify.config.ts`. */
 export interface VerifyConfig<Api = never> {
   doors: DoorRules;
@@ -316,6 +327,6 @@ export interface VerifyConfig<Api = never> {
   /** Other modules every fixture project loads, keyed by module name, such as the provider of an interface the module imports that nothing else implements. */
   companions?(services: ServiceEndpoint[]): { [name: string]: CompanionModule };
   interface?: InterfaceHooks<Api>;
-  /** The template kind: its name in the offline manifest, whether it is a project template, and its readiness probe. */
-  template?: { name?: string; project?: boolean; probe: TemplateProbe };
+  /** The template kind: its name in the offline manifest, how `ajs` creates from it, and its readiness probe. */
+  template?: { name?: string; probe: TemplateProbe } & TemplateInit;
 }

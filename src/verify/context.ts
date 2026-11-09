@@ -46,6 +46,7 @@ import type {
   TreeRecord,
 } from "./types.ts";
 import type { JourneyEnd, StepRecord } from "./results.ts";
+import { templateInit } from "./sources.ts";
 import { StepClock } from "./timing.ts";
 import {
   isolatedEnv,
@@ -437,15 +438,16 @@ export class VerifyContext implements JourneyContext {
     flags: string[] = ["--pm", "pnpm", "--git-init"],
   ): Promise<CommandResult> {
     await this.configureGit();
+    const group = templateInit(this.workspace);
     const init = await this.ajs(name, [
-      "project",
+      group,
       "init",
       relative(this.work, project),
       "--template",
       this.state.templateName,
       ...flags,
     ]);
-    if (init.exitCode === 0) this.caches.seed(project);
+    if (init.exitCode === 0 && group === "project") this.caches.seed(project);
     return init;
   }
 
