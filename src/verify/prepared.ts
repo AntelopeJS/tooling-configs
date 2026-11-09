@@ -21,6 +21,7 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
+import { isObject, isString, parseJson } from "../garden/json.ts";
 import type { VerifyContext } from "./context.ts";
 import type { StepRecord } from "./results.ts";
 import { removeTree } from "./workspace.ts";
@@ -192,6 +193,31 @@ function readLinks(kept: string): Link[] {
   return links;
 }
 
+/** A project the build seeded with the run's module cache, as a path inside its folder, and, when its cache was exactly what `ajs` installed as the build ended, the paths that cache's `.bin` shims may name. */
+interface Seeded {
+  path: string;
+  cache: string[] | null;
+}
+
+/** The projects `keep` recorded; a build kept without the list holds none. */
+function readProjects(kept: string): Seeded[] {
+  const file = join(kept, "projects.json");
+  if (!existsSync(file)) return [];
+  const listed = parseJson(readFileSync(file, "utf8"));
+  return Array.isArray(listed)
+    ? listed.filter(isObject).flatMap(({ path, cache }): Seeded[] =>
+        isString(path)
+          ? [
+              {
+                path,
+                cache: Array.isArray(cache) ? cache.filter(isString) : null,
+              },
+            ]
+          : [],
+      )
+    : [];
+}
+
 /** The journey that built what the run kept, as its path under the evidence. */
 function builder(kept: string): string {
   return readFileSync(join(kept, "from.txt"), "utf8").trim();
@@ -207,23 +233,30 @@ interface Where {
 
 /**
  * Copies what the run kept into the journey, with the evidence of that build
- * under the step `marker`, and returns `null`. When the copy fails, or what
- * the run kept is gone or replaced once it ends, as when the journey that
- * built reruns meanwhile, the partial copy is removed and this returns why.
+ * under the step `marker`, seeds each project the build seeded as
+ * `scaffold` does, and returns `null`. When the copy fails, or what the run
+ * kept is gone or replaced once it ends, as when the journey that built
+ * reruns meanwhile, the partial copy is removed and this returns why.
  */
-function reuse({ marker, key, kept, folder }: Where): string | null {
+function reuse(
+  context: VerifyContext,
+  { marker, key, kept, folder }: Where,
+): string | null {
   const evidence = join(marker, "build");
   try {
     const memo = statSync(kept).ino;
     copyTree(join(kept, "evidence"), evidence);
     copyTree(join(kept, "folder"), folder, readLinks(kept));
     const from = builder(kept);
+    const projects = readProjects(kept);
     if (statSync(kept).ino !== memo)
       throw new Error(`${kept} was replaced while it was copied`);
     writeFileSync(
       join(marker, "prepared.txt"),
       `${key}: ${folder} is a copy of what ${from} prepared; build/ holds the evidence of that build\n`,
     );
+    for (const project of projects)
+      context.caches.seed(join(folder, project.path), project.cache);
     return null;
   } catch (error) {
     removeTree(evidence);
@@ -244,7 +277,7 @@ function keep(
   context: VerifyContext,
   kept: string,
   folder: string,
-  built: { steps: string[]; links: Link[] },
+  built: { steps: string[]; links: Link[]; projects: Seeded[] },
 ): boolean {
   mkdirSync(dirname(kept), { recursive: true });
   const staging = mkdtempSync(`${kept}.`);
@@ -261,6 +294,10 @@ function keep(
     writeFileSync(
       join(staging, "links"),
       built.links.flatMap((link) => [link.path, link.target]).join("\0"),
+    );
+    writeFileSync(
+      join(staging, "projects.json"),
+      JSON.stringify(built.projects),
     );
     writeFileSync(
       join(staging, "from.txt"),
@@ -325,8 +362,14 @@ async function buildHere(
   const steps = readdirSync(context.folder).filter(
     (entry) => !earlier.has(entry),
   );
+  const projects = context.caches.seeded().flatMap((project): Seeded[] => {
+    const path = inside(folder, project);
+    return path === null || !existsSync(project)
+      ? []
+      : [{ path, cache: context.caches.clean(project) }];
+  });
   note(
-    keep(context, kept, folder, { steps, links: verdict.links })
+    keep(context, kept, folder, { steps, links: verdict.links, projects })
       ? "kept, so later journeys of the run copy it"
       : `not kept: ${builder(kept)} kept ${key} first, so later journeys copy that build`,
   );
@@ -359,7 +402,7 @@ export async function prepare(
   };
   if (!existsSync(kept)) await buildHere(context, where, build);
   else {
-    const failed = reuse(where);
+    const failed = reuse(context, where);
     if (failed !== null)
       await buildHere(
         context,
