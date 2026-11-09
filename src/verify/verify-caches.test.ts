@@ -120,6 +120,15 @@ function gitJourneys(fake: FakeAjs): string {
         context.expect(context.step("read"), [equal("the module is as cloned", [readFileSync(join(module, "dist/built.txt"), "utf8"), existsSync(join(module, "dist/planted.txt"))], ["A\\n", false])]);
       },
     },
+    mixer: {
+      title: "installs a registry module and the git module with install command A",
+      entryPoint: "node",
+      async run(context) {
+        const project = context.fixture();
+        await installGit(context, project, "A");
+        context.expect(context.step("read"), [whole(await install(context, project))]);
+      },
+    },
     rebuilder: {
       title: "installs the git module with install command B",
       entryPoint: "node",
@@ -237,6 +246,7 @@ function cacheRepo(t: TestContext) {
     [`${SKILL}/features/move.md`]: feature([], ["mover"]),
     [`${SKILL}/features/clone.md`]: feature([], ["cloner"]),
     [`${SKILL}/features/rebuild.md`]: feature([], ["rebuilder"]),
+    [`${SKILL}/features/mix.md`]: feature([], ["mixer"]),
   });
   const installs = () =>
     existsSync(fake.log) ? read(tmp, "installs.log").split("\n").length - 1 : 0;
@@ -424,4 +434,15 @@ test("a module ajs installed from a lock record is not kept, so a journey withou
     read(run, "evidence/pin/pinner/04-module-cache-not-kept/note.txt"),
     /ajs installed @acme\/api@1\.0\.0 from the project's lock record/,
   );
+});
+
+test("a cache mixing a git module with a registry module keeps the registry module alone, so a later journey reuses it and still builds the git module with its own install command", (t) => {
+  const { root, tmp, installs, journey } = cacheRepo(t);
+  const run = newRun(root, tmp);
+  assert.equal(journey(run, "mix").status, 0);
+  for (const name of ["smoke", "rebuild"]) {
+    const result = journey(run, name);
+    assert.equal(result.status, 0, result.output);
+  }
+  assert.equal(installs(), 3);
 });
