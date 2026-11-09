@@ -130,3 +130,68 @@ test("comment-proof emits a package whose TypeScript has no compiler API with th
     result.stdout,
   );
 });
+
+test("comment-proof proves a workspace whose private root tsconfig lists no files, the root emitting nothing", (t) => {
+  const root = testRepo(t);
+  symlinkSync(
+    join(PACKAGE_ROOT, "node_modules"),
+    join(root, "node_modules"),
+    "dir",
+  );
+  put(root, "package.json", JSON.stringify({ private: true, type: "module" }));
+  put(
+    root,
+    "tsconfig.json",
+    JSON.stringify({
+      files: [],
+      compilerOptions: {
+        target: "ES2020",
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        types: [],
+      },
+    }),
+  );
+  put(
+    root,
+    "packages/a/package.json",
+    JSON.stringify({ name: "a", private: true, type: "module" }),
+  );
+  put(
+    root,
+    "packages/a/tsconfig.json",
+    JSON.stringify({ extends: "../../tsconfig.json", include: ["src"] }),
+  );
+  put(root, "packages/a/src/index.ts", "// old\nexport const a = 1;\n");
+  commit(root);
+  put(root, "packages/a/src/index.ts", "// new\nexport const a = 1;\n");
+  commit(root);
+  const proof = bin(root, "comment-proof", ["HEAD~1"]);
+  assert.equal(proof.status, 0, proof.stdout + proof.stderr);
+  assert.match(proof.stdout, /2 packages, 1 entries unchanged/);
+  put(root, "packages/a/src/index.ts", "export const a = 2;\n");
+  commit(root);
+  const changed = bin(root, "comment-proof", ["HEAD~1"]);
+  assert.equal(changed.status, 1);
+  assert.match(changed.stdout, /\+export const a = 2/);
+});
+
+test("comment-proof fails a package whose include matches no inputs instead of proving it empty", (t) => {
+  const root = testRepo(t);
+  symlinkSync(
+    join(PACKAGE_ROOT, "node_modules"),
+    join(root, "node_modules"),
+    "dir",
+  );
+  put(root, "package.json", JSON.stringify({ private: true, type: "module" }));
+  put(
+    root,
+    "tsconfig.json",
+    JSON.stringify({ compilerOptions: { types: [] }, include: ["srcc"] }),
+  );
+  put(root, "src/index.ts", "export const a = 1;\n");
+  commit(root);
+  const proof = bin(root, "comment-proof", ["HEAD"]);
+  assert.equal(proof.status, 1, proof.stdout + proof.stderr);
+  assert.match(proof.stdout + proof.stderr, /TS18003/);
+});

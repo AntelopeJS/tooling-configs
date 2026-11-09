@@ -132,3 +132,24 @@ test("api-diff resolves a workspace package's types from its own node_modules, a
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /^API: 1 packages, 1 entries unchanged/m);
 });
+
+test("api-diff fails a published package whose tsconfig lists no files, even under wildcard exports", (t) => {
+  const root = apiRepo(t);
+  put(
+    root,
+    "package.json",
+    JSON.stringify({
+      name: "public-api",
+      type: "module",
+      exports: { "./*": { types: "./dist/*.d.ts", default: "./dist/*.js" } },
+    }),
+  );
+  put(root, "tsconfig.json", JSON.stringify({ files: [] }));
+  put(root, "src/index.ts", "export const value = 1;\n");
+  put(root, "dist/index.js", "export const value = 1;\n");
+  put(root, "dist/index.d.ts", "export declare const value: number;\n");
+  commit(root);
+  const result = bin(root, "api-diff", ["HEAD"]);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /Execution error: \. \(public-api\): .*TS18002/);
+});
