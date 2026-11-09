@@ -43,9 +43,10 @@ interface Installed {
   bound: bigint;
 }
 
-/** A project whose module cache the harness follows: each module as first seen, and the first reason the cache is not exactly what a fresh `ajs` install gives. */
+/** A project whose module cache the harness follows: each registry module as first seen, each git module seen, and the first reason the cache is not exactly what a fresh `ajs` install gives. */
 interface Project {
   installed: Map<string, Installed>;
+  git: Set<string>;
   refused?: string;
 }
 
@@ -95,22 +96,24 @@ function reinstalled(
   return undefined;
 }
 
-/** Every entry under `root`, by its path relative to `root`, with its modification time; symbolic links are listed, not followed. */
+/** Every entry under `root` but those `skip` names and what they hold, by its path relative to `root`, with its modification time; symbolic links are listed, not followed. */
 function* entries(
   root: string,
+  skip: (path: string) => boolean = () => false,
   prefix = "",
 ): Generator<{ path: string; mtime: bigint; directory: boolean }> {
   for (const entry of readdirSync(join(root, prefix), {
     withFileTypes: true,
   })) {
     const path = join(prefix, entry.name);
+    if (skip(path)) continue;
     const directory = entry.isDirectory();
     yield {
       path,
       mtime: lstatSync(join(root, path), { bigint: true }).mtimeNs,
       directory,
     };
-    if (directory) yield* entries(root, path);
+    if (directory) yield* entries(root, skip, path);
   }
 }
 
@@ -151,13 +154,16 @@ function retarget(folder: string, from: string[], to: string): void {
  * Copies `source` into a staging entry next to `target`, replaces each of
  * `from` by `to` in its `.bin` shims, and renames it onto `target`, so a
  * reader sees all of the copy or none of it. A failed copy, a deleted source
- * or a `target` another writer filled first leaves `target` as it was.
+ * or a `target` another writer filled first leaves `target` as it was. With
+ * `only`, the copy leaves out every other module's folder and its manifest
+ * lists those modules alone.
  */
 function publish(
   source: string,
   target: string,
   from: string[],
   to: string,
+  only?: { modules: [string, string][]; left: string[] },
 ): void {
   const staging = join(
     dirname(target),
@@ -168,7 +174,15 @@ function publish(
       recursive: true,
       verbatimSymlinks: true,
       preserveTimestamps: true,
+      filter: (path) =>
+        only === undefined ||
+        !only.left.some((name) => within(join(source, name), path)),
     });
+    if (only !== undefined)
+      writeFileSync(
+        join(staging, MANIFEST),
+        JSON.stringify(Object.fromEntries(only.modules)),
+      );
     retarget(staging, from, to);
     renameSync(staging, target);
   } catch {
@@ -176,6 +190,36 @@ function publish(
   } finally {
     removeTree(staging);
   }
+}
+
+/** Why a registry module the project followed is no longer among `modules`, or `undefined` when each still is. */
+function departure(
+  state: Project,
+  modules: [string, string][],
+): string | undefined {
+  const listed = new Set(modules.map(([name]) => name));
+  for (const [name, known] of state.installed)
+    if (!listed.has(name))
+      return `${name} left ${MANIFEST} after ajs installed ${name}@${known.version}`;
+  return undefined;
+}
+
+/** Whether `name`, listed at `version`, is a git module `state` does not follow; one seen for the first time joins `added`. */
+function recordGit(
+  state: Project,
+  name: string,
+  version: string,
+  added: string[],
+): boolean {
+  if (state.installed.has(name) || REGISTRY_VERSION.test(version)) return false;
+  if (!state.git.has(name)) added.push(`${name}@${version}`);
+  state.git.add(name);
+  return true;
+}
+
+/** Whether `path` is `folder` or lies under it. */
+function within(folder: string, path: string): boolean {
+  return path === folder || path.startsWith(`${folder}${sep}`);
 }
 
 /** The manifest `ajs` writes each time it finishes installing a module: its modification time and each module's version, sorted by module. */
@@ -199,12 +243,14 @@ function manifestOf(
  * Why `cache` is not exactly what `ajs` installed, or `undefined` when it is.
  * Each file of a module must be no newer than the module's bound. Outside the
  * modules, `ajs` writes only the manifest and the folders that hold the
- * modules, which must be no newer than the manifest.
+ * modules, which must be no newer than the manifest. Entries under the
+ * folders in `left`, which the kept copy leaves out, are not checked.
  */
 function changeIn(
   cache: string,
   installed: Map<string, Installed>,
   manifest: bigint,
+  left: string[],
 ): string | undefined {
   const modules = [...installed].map(([name, module]) => ({
     folder: join(name),
@@ -212,11 +258,11 @@ function changeIn(
     bound: module.bound,
   }));
   try {
-    for (const { path, mtime, directory } of entries(cache)) {
+    for (const { path, mtime, directory } of entries(cache, (path) =>
+      left.includes(path),
+    )) {
       if (path === MANIFEST) continue;
-      const owner = modules.find(
-        ({ folder }) => path === folder || path.startsWith(`${folder}${sep}`),
-      );
+      const owner = modules.find(({ folder }) => within(folder, path));
       if (owner === undefined) {
         if (!directory) return `${path} belongs to no installed module`;
         if (mtime > manifest)
@@ -241,11 +287,12 @@ function changeIn(
  * `manifest.json`, so the manifest's modification time when the harness first
  * sees the module bounds every file of it. A file modified later, a module
  * whose version or folder changes after that, a module `ajs` installed from a
- * lock record the project held before the command, a git module, which
- * `ajs` updates in place and builds with the project's own install command,
- * and two modules that first appear after one command that is not `ajs`,
- * which may have edited the first before installing the second, each keep
- * the cache out of the store.
+ * lock record the project held before the command, and two modules that
+ * first appear after one command that is not `ajs`, which may have edited the
+ * first before installing the second, each keep the cache out of the store. A
+ * git module, which `ajs` updates in place and builds with the project's own
+ * install command, is never followed nor kept: the copy holds the cache's
+ * registry modules alone.
  */
 export class ProjectCaches {
   private readonly store: string;
@@ -257,7 +304,7 @@ export class ProjectCaches {
 
   /** Gives a project that has installed no module yet a copy of the largest kept cache, so `ajs` reuses the packages an earlier journey installed instead of packing and installing them again. A project whose antelope config names its own `cacheFolder` gets no copy, since `ajs` would not read `.antelope/cache`. */
   seed(project: string): void {
-    const state: Project = { installed: new Map() };
+    const state: Project = { installed: new Map(), git: new Set() };
     this.projects.set(project, state);
     if (namesCacheFolder(project)) return;
     const cache = join(project, PROJECT_CACHE);
@@ -292,7 +339,7 @@ export class ProjectCaches {
   }
 
   /**
-   * Records the bound of each module that appeared in a project's manifest
+   * Records the bound of each registry module that appeared in a project's manifest
    * since the last call, and refuses the cache of a project whose recorded
    * module left the manifest, changed version or sits in a new folder. A
    * module that appeared with a lock record no newer than `start`, the start
@@ -306,16 +353,16 @@ export class ProjectCaches {
       const cache = join(project, PROJECT_CACHE);
       const manifest = manifestOf(cache);
       if (manifest === undefined) continue;
-      const listed = new Map(manifest.modules);
       const added: string[] = [];
-      for (const [name, known] of state.installed)
-        if (!listed.has(name))
-          state.refused ??= `${name} left ${MANIFEST} after ajs installed ${name}@${known.version}`;
+      state.refused ??= departure(state, manifest.modules);
       for (const [name, version] of manifest.modules) {
         const born = bornAt(join(cache, name));
         const known = state.installed.get(name);
+        if (recordGit(state, name, version, added)) continue;
         if (known === undefined) {
           added.push(`${name}@${version}`);
+          if (state.git.has(name))
+            state.refused ??= `${name} changed from a git module to ${version} after ajs installed it`;
           state.installed.set(name, { version, born, bound: manifest.mtime });
           if (manifest.mtime > latest) latest = manifest.mtime;
           if (pinned(project, name, version, start))
@@ -373,28 +420,37 @@ export class ProjectCaches {
       const cache = join(project, PROJECT_CACHE);
       const manifest = manifestOf(cache);
       if (manifest === undefined || manifest.modules.length === 0) continue;
+      const modules = manifest.modules.filter(([, version]) =>
+        REGISTRY_VERSION.test(version),
+      );
+      const left = manifest.modules
+        .filter(([, version]) => !REGISTRY_VERSION.test(version))
+        .map(([name]) => name);
       const target = join(
         this.store,
         createHash("sha256")
-          .update(manifest.modules.map((entry) => entry.join("@")).join("\n"))
+          .update(modules.map((entry) => entry.join("@")).join("\n"))
           .digest("hex")
           .slice(0, 16),
       );
-      if (existsSync(target)) continue;
-      const unregistered = manifest.modules.find(
-        ([, version]) => !REGISTRY_VERSION.test(version),
-      );
+      if (modules.length > 0 && existsSync(target)) continue;
       const change =
         state.refused ??
-        (unregistered === undefined
-          ? changeIn(cache, state.installed, manifest.mtime)
-          : `${unregistered.join("@")} is not a registry version, and ajs updates a git module in place`);
+        (modules.length === 0
+          ? `${manifest.modules[0]?.join("@")} is not a registry version, and ajs updates a git module in place`
+          : changeIn(cache, state.installed, manifest.mtime, left));
       if (change !== undefined) {
         skipped.push(`${cache}: ${change}`);
         continue;
       }
       mkdirSync(this.store, { recursive: true });
-      publish(cache, target, [cachePath(cache), cache + sep], KEPT_CACHE);
+      publish(
+        cache,
+        target,
+        [cachePath(cache), cache + sep],
+        KEPT_CACHE,
+        left.length > 0 ? { modules, left } : undefined,
+      );
     }
     return skipped;
   }
