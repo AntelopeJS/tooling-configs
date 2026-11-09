@@ -31,6 +31,7 @@ import { seconds } from "../verify/timing.ts";
 import { renderVerdict } from "../verify/verdict.ts";
 import {
   loadRun,
+  ownRun,
   openWorkspace,
   withLocalBins,
   type Workspace,
@@ -360,7 +361,7 @@ async function main(argv: string[]): Promise<number> {
       rest[0] ? patchFiles(rest[0]) : planFor(workspace, values.base).changed,
     );
   else if (command === "clean")
-    for (const line of clean(loadRun(rest[0]))) print(line);
+    for (const line of clean(ownRun(workspace, rest[0]))) print(line);
   else if (command === "verdict")
     return judge(workspace, rest[0], Number(values.pr));
   else {
