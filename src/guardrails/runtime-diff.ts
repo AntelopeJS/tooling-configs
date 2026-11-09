@@ -9,7 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 
 import {
   fillStars,
@@ -19,9 +19,10 @@ import {
 import {
   packageManager,
   parseManifest,
+  type Manifest,
   type PackageManager,
 } from "./package.ts";
-import { compareRevisions } from "./revisions.ts";
+import { compareRevisions, workspaceManifests } from "./revisions.ts";
 import { testEntryNotice } from "./test-entries.ts";
 import {
   isTestSource,
@@ -272,6 +273,113 @@ function declaredPackageManager(
   }
 }
 
+function runBuild(directory: string, manager: PackageManager): Manifest {
+  const manifest = parseManifest(
+    readFileSync(join(directory, "package.json"), "utf8"),
+  );
+  if (manifest.scripts?.build)
+    execFileSync(manager, ["run", "build"], {
+      cwd: directory,
+      encoding: "utf8",
+      shell: process.platform === "win32",
+      env: { ...process.env, pnpm_config_verify_deps_before_run: "false" },
+      timeout: 120_000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  return manifest;
+}
+
+/** Builds `directory`, a workspace package a published one depends on, and returns the execution error a failed build reports. */
+function buildDependency(worktree: string, directory: string): string[] {
+  try {
+    runBuild(
+      join(worktree, directory),
+      declaredPackageManager(worktree, directory),
+    );
+    return [];
+  } catch (error) {
+    return [
+      `Execution error: ${directory}: ${error instanceof Error ? error.message : String(error)}\n`,
+    ];
+  }
+}
+
+/** The tracked package `name` resolves to from `directory` in `worktree`, through the installed links Node would follow. */
+function installedPackage(
+  worktree: string,
+  directory: string,
+  name: string,
+  manifests: Map<string, Manifest>,
+): string | undefined {
+  for (let at = directory; ; at = dirname(at)) {
+    const link = join(worktree, at, "node_modules", name);
+    if (existsSync(link)) {
+      const real =
+        relative(realpathSync(worktree), realpathSync(link))
+          .split(sep)
+          .join("/") || ".";
+      return manifests.has(real) ? real : undefined;
+    }
+    if (at === ".") return undefined;
+  }
+}
+
+interface Edge {
+  to: string;
+  development: boolean;
+}
+
+/** `published` and the tracked workspace packages they depend on, transitively, each after its dependencies, so a build resolves this revision's built output; a `devDependencies` edge that closes a cycle gives way. */
+function buildOrder(worktree: string, published: string[]): string[] {
+  const manifests = workspaceManifests(worktree);
+  const edges = new Map<string, Edge[]>();
+  const edgesOf = (directory: string): Edge[] => {
+    const known = edges.get(directory);
+    if (known !== undefined) return known;
+    const manifest = manifests.get(directory) ?? {};
+    const declared = [
+      { field: manifest.dependencies, development: false },
+      { field: manifest.peerDependencies, development: false },
+      { field: manifest.optionalDependencies, development: false },
+      { field: manifest.devDependencies, development: true },
+    ];
+    const found = declared.flatMap(({ field, development }) =>
+      Object.keys(field ?? {}).flatMap((name) => {
+        const to = installedPackage(worktree, directory, name, manifests);
+        return to === undefined || to === directory
+          ? []
+          : [{ to, development }];
+      }),
+    );
+    edges.set(directory, found);
+    return found;
+  };
+  const reaches = (from: string, target: string): boolean => {
+    const stack = [from];
+    const seen = new Set(stack);
+    for (let next = stack.pop(); next !== undefined; next = stack.pop()) {
+      if (next === target) return true;
+      for (const { to } of edgesOf(next))
+        if (!seen.has(to)) {
+          seen.add(to);
+          stack.push(to);
+        }
+    }
+    return false;
+  };
+  const order: string[] = [];
+  const visited = new Set<string>();
+  const visit = (directory: string) => {
+    if (visited.has(directory)) return;
+    visited.add(directory);
+    for (const { to, development } of edgesOf(directory))
+      if (!development || !reaches(to, directory)) visit(to);
+    order.push(directory);
+  };
+  for (const directory of published) visit(directory);
+  return order;
+}
+
 function buildPackage(
   directory: string,
   manager: PackageManager,
@@ -285,18 +393,7 @@ function buildPackage(
       skipped: string[];
     }
   | undefined {
-  const buildManifest = parseManifest(
-    readFileSync(join(directory, "package.json"), "utf8"),
-  );
-  if (buildManifest.scripts?.build)
-    execFileSync(manager, ["run", "build"], {
-      cwd: directory,
-      encoding: "utf8",
-      shell: process.platform === "win32",
-      env: { ...process.env, pnpm_config_verify_deps_before_run: "false" },
-      timeout: 120_000,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+  const buildManifest = runBuild(directory, manager);
   let built: BuiltEntries;
   try {
     built = builtEntries(directory, manifest);
@@ -335,7 +432,18 @@ export function runtimeDiff(
       mkdirSync(scratch, { recursive: true });
       const describe = join(scratch, "describe.cjs");
       writeFileSync(describe, DESCRIBE);
-      for (const { directory, manifest } of packages) {
+      const manifests = new Map(
+        packages.map(({ directory, manifest }) => [directory, manifest]),
+      );
+      for (const directory of buildOrder(
+        worktree,
+        packages.map(({ directory }) => directory),
+      )) {
+        const manifest = manifests.get(directory);
+        if (manifest === undefined) {
+          errors.push(...buildDependency(worktree, directory));
+          continue;
+        }
         const folder = encodeURIComponent(directory).replaceAll(".", "%2E");
         try {
           const built = buildPackage(
@@ -394,7 +502,7 @@ export function runtimeDiff(
         published,
       };
     },
-    policy,
+    { policy, ownWorkspace: true },
   );
   return {
     different: result.different || errors.length > 0,

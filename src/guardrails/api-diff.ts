@@ -399,7 +399,7 @@ function declarationDiff(
         published,
       };
     },
-    policy,
+    { policy },
   );
   return {
     different: result.different || errors.size > 0,

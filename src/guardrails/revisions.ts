@@ -1,16 +1,22 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import {
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
 import { resolveRevision, trackedManifests } from "./files.ts";
+import { parseManifest, type Manifest } from "./package.ts";
 import {
   countSuppressions,
   revisionSuppressions,
@@ -24,17 +30,118 @@ import {
 
 export const DIRECTORY_LINK = process.platform === "win32" ? "junction" : "dir";
 
-function linkDependencies(root: string, worktree: string): void {
-  const directories = new Set([".", ...trackedManifests(root).map(dirname)]);
-  for (const directory of directories) {
-    const source = join(root, directory, "node_modules");
-    const target = join(worktree, directory, "node_modules");
-    if (
-      existsSync(source) &&
-      existsSync(dirname(target)) &&
-      lstatSync(target, { throwIfNoEntry: false }) === undefined
+/** The parsed manifest of each tracked package of `checkout`, keyed by its directory; an unreadable manifest is left out. */
+export function workspaceManifests(checkout: string): Map<string, Manifest> {
+  const manifests = new Map<string, Manifest>();
+  for (const file of trackedManifests(checkout))
+    try {
+      manifests.set(
+        dirname(file),
+        parseManifest(readFileSync(join(checkout, file), "utf8")),
+      );
+    } catch {
+      continue;
+    }
+  return manifests;
+}
+
+/** Maps each named package directory of the checkout to its package in `worktree`: the same directory when it holds a package of that name, otherwise the only package of that name. */
+function ownPackages(root: string, worktree: string): Map<string, string> {
+  const atRevision = workspaceManifests(worktree);
+  const byName = new Map<string, string[]>();
+  for (const [directory, { name }] of atRevision)
+    if (name !== undefined)
+      byName.set(name, [...(byName.get(name) ?? []), directory]);
+  const packages = new Map<string, string>();
+  for (const [directory, { name }] of workspaceManifests(root)) {
+    if (name === undefined) continue;
+    const named = byName.get(name) ?? [];
+    if (atRevision.get(directory)?.name === name)
+      packages.set(directory, directory);
+    else if (named.length === 1) packages.set(directory, named[0]);
+  }
+  return packages;
+}
+
+/** The worktree path standing in for `real`, a path relative to the checkout, when it is a workspace package of the checkout or lies inside one other than the root package, and the revision has a package of that name. */
+function ownCopy(
+  real: string,
+  packages: Map<string, string>,
+): string | undefined {
+  const posix = real.split(sep).join("/") || ".";
+  if (
+    isAbsolute(real) ||
+    posix.split("/").some((part) => part === ".." || part === "node_modules")
+  )
+    return undefined;
+  const owner = [...packages.keys()]
+    .filter(
+      (directory) => posix === directory || posix.startsWith(`${directory}/`),
     )
-      symlinkSync(source, target, DIRECTORY_LINK);
+    .sort((a, b) => b.length - a.length)[0];
+  return owner === undefined
+    ? undefined
+    : join(packages.get(owner) ?? owner, posix.slice(owner.length));
+}
+
+interface Installed {
+  root: string;
+  realRoot: string;
+  worktree: string;
+  packages: Map<string, string>;
+}
+
+/** Mirrors `path`, a `node_modules`, scope or `.bin` directory of the checkout, into the worktree entry by entry: an entry whose real location is a workspace package of the checkout links to the worktree's package of that name, and every other entry to the checkout's installed one. */
+function mirrorInstalled(installed: Installed, path: string): void {
+  const { root, realRoot, worktree, packages } = installed;
+  mkdirSync(join(worktree, path));
+  for (const entry of readdirSync(join(root, path))) {
+    const source = join(root, path, entry);
+    const target = join(worktree, path, entry);
+    if (
+      !existsSync(source) ||
+      lstatSync(target, { throwIfNoEntry: false }) !== undefined
+    )
+      continue;
+    const directory = statSync(source).isDirectory();
+    if (directory && (entry === ".bin" || entry.startsWith("@"))) {
+      mirrorInstalled(installed, join(path, entry));
+      continue;
+    }
+    const real = realpathSync(source);
+    const own = ownCopy(relative(realRoot, real), packages);
+    const type = directory ? DIRECTORY_LINK : "file";
+    if (own !== undefined) symlinkSync(join(worktree, own), target, type);
+    else if (directory) symlinkSync(source, target, DIRECTORY_LINK);
+    else if (lstatSync(source).isSymbolicLink())
+      symlinkSync(real, target, type);
+    else copyFileSync(source, target);
+  }
+}
+
+/** Links the checkout's installed dependencies into `worktree`; with `ownWorkspace`, a dependency on a workspace package resolves to the worktree's own revision of it instead of the checkout's. */
+function linkDependencies(
+  root: string,
+  worktree: string,
+  ownWorkspace: boolean,
+): void {
+  const directories = new Set([".", ...trackedManifests(root).map(dirname)]);
+  const installed = {
+    root,
+    realRoot: realpathSync(root),
+    worktree,
+    packages: ownWorkspace ? ownPackages(root, worktree) : new Map(),
+  };
+  for (const directory of directories) {
+    const path = join(directory, "node_modules");
+    if (
+      !existsSync(join(root, path)) ||
+      !existsSync(join(worktree, directory)) ||
+      lstatSync(join(worktree, path), { throwIfNoEntry: false }) !== undefined
+    )
+      continue;
+    if (ownWorkspace) mirrorInstalled(installed, path);
+    else symlinkSync(join(root, path), join(worktree, path), DIRECTORY_LINK);
   }
 }
 
@@ -44,13 +151,19 @@ interface RevisionOutput {
   published?: PublishedEntry[];
 }
 
+interface CompareOptions {
+  policy?: AddedPolicy;
+  /** Each worktree resolves its workspace packages to its own revision, for a comparison that builds them there. */
+  ownWorkspace?: boolean;
+}
+
 /** Compares isolated committed revisions and removes both worktrees even when compilation fails; a policy lets matching `@internal` additions through. */
 export function compareRevisions(
   root: string,
   baseRef: string,
   label: string,
   emit: (worktree: string, output: string, scratch: string) => RevisionOutput,
-  policy?: AddedPolicy,
+  { policy, ownWorkspace = false }: CompareOptions = {},
 ) {
   const temporary = mkdtempSync(join(tmpdir(), "antelope-proof-"));
   const worktrees: string[] = [];
@@ -75,7 +188,7 @@ export function compareRevisions(
         },
       );
       worktrees.push(worktree);
-      linkDependencies(root, worktree);
+      linkDependencies(root, worktree, ownWorkspace);
       const output = join(temporary, side);
       mkdirSync(output, { recursive: true });
       results.push(emit(worktree, output, join(temporary, "emit", side)));
