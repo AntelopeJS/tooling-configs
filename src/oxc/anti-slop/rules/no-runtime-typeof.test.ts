@@ -9,47 +9,6 @@ const allowInTypeGuards = [{ allowInTypeGuards: true }];
 
 tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 	valid: [
-		{
-			name: "postgres@887faab src/implementations/database/selection.ts:114 an assert message",
-			code: 'assert(id === undefined || id === null || IsString(id), `An instance id must be a string or CROSS_INSTANCE, received ${typeof id}`);',
-		},
-		{
-			name: "postgres@887faab src/implementations/database/stages-selection.ts:89 an assert message",
-			code: "assert(IsString(name), `The '${stage.stage}' stage names its index with a string, received ${typeof name}`);",
-		},
-		{
-			name: "postgres@887faab src/implementations/database/stages-selection.ts:130 a branch of a nested message",
-			code: "assert(Array.isArray(key) && key.length === columns.length, `The '${selection.indexId}' index takes a key of ${columns.length} values, received ${Array.isArray(key) ? `${key.length} values` : `a ${typeof key}`}`);",
-		},
-		{
-			name: "postgres@887faab src/implementations/database/utils.ts:79 a thrown message",
-			code: "if (!IsString(id)) { throw new Error(`${operation} expects a string instance id, received ${typeof id}`); }",
-		},
-		{
-			name: "postgres@887faab src/implementations/database/value.ts:83 a thrown message",
-			code: "throw new Error(`Unsupported value of type '${typeof value}' in query`);",
-		},
-		{
-			name: "postgres@887faab src/implementations/database/writes-insert.ts:95 an assert message",
-			code: "assert(IsString(supplied), `An inserted document's '${ID_COLUMN}' must be a string, received ${typeof supplied}`);",
-		},
-		{
-			name: "dms-automation@29b56c5 src/runtime/builtins/nodes/foreach.ts:15 a log message",
-			code: 'async function execute() { if (!Array.isArray(raw)) { ctx.log("warn", `foreach "items" input is not an array (got ${typeof raw}); iterating zero times`); } }',
-		},
-		{
-			name: "mongodb@cf32203 src/implementations/database/utils.ts:63 a thrown message",
-			code: "if (!isString(id)) { throw new Error(`Invalid instance id: expected string, got ${typeof id}`); }",
-		},
-		{
-			name: "a logger's log call records the message",
-			code: "function f(value: unknown) { console.log(`got ${typeof value}`); }",
-		},
-		{
-			name: "an assert call with the message in a branch of a conditional",
-			code: "function f(value: unknown) { assert(ok(value), flag ? `got ${typeof value}` : 'bad'); }",
-		},
-		"throw `received ${typeof value}`;",
 		'const isServer = typeof document === "undefined";',
 		'const hasStorage = typeof localStorage !== "undefined";',
 		'if (typeof globalThis.crypto === "undefined") throw new Error("no crypto");',
@@ -103,6 +62,87 @@ tester.run("anti-slop/no-runtime-typeof", noRuntimeTypeofRule, {
 		},
 	],
 	invalid: [
+		{
+			name: "postgres@887faab src/implementations/database/selection.ts:114 an assert message",
+			code: 'assert(id === undefined || id === null || IsString(id), `An instance id must be a string or CROSS_INSTANCE, received ${typeof id}`);',
+			errors: [error],
+		},
+		{
+			name: "postgres@887faab src/implementations/database/stages-selection.ts:89 an assert message",
+			code: "assert(IsString(name), `The '${stage.stage}' stage names its index with a string, received ${typeof name}`);",
+			errors: [error],
+		},
+		{
+			name: "postgres@887faab src/implementations/database/stages-selection.ts:130 a branch of a nested message",
+			code: "assert(Array.isArray(key) && key.length === columns.length, `The '${selection.indexId}' index takes a key of ${columns.length} values, received ${Array.isArray(key) ? `${key.length} values` : `a ${typeof key}`}`);",
+			errors: [error],
+		},
+		{
+			name: "postgres@887faab src/implementations/database/utils.ts:79 a thrown message",
+			code: "if (!IsString(id)) { throw new Error(`${operation} expects a string instance id, received ${typeof id}`); }",
+			errors: [error],
+		},
+		{
+			name: "postgres@887faab src/implementations/database/value.ts:83 a thrown message",
+			code: "throw new Error(`Unsupported value of type '${typeof value}' in query`);",
+			errors: [error],
+		},
+		{
+			name: "postgres@887faab src/implementations/database/writes-insert.ts:95 an assert message",
+			code: "assert(IsString(supplied), `An inserted document's '${ID_COLUMN}' must be a string, received ${typeof supplied}`);",
+			errors: [error],
+		},
+		{
+			name: "dms-automation@29b56c5 src/runtime/builtins/nodes/foreach.ts:15 a log message",
+			code: 'async function execute() { if (!Array.isArray(raw)) { ctx.log("warn", `foreach "items" input is not an array (got ${typeof raw}); iterating zero times`); } }',
+			errors: [error],
+		},
+		{
+			name: "mongodb@cf32203 src/implementations/database/utils.ts:63 a thrown message",
+			code: "if (!isString(id)) { throw new Error(`Invalid instance id: expected string, got ${typeof id}`); }",
+			errors: [error],
+		},
+		{
+			name: "a logger's log call records the message",
+			code: "function f(value: unknown) { console.log(`got ${typeof value}`); }",
+			errors: [error],
+		},
+		{
+			name: "an assert call with the message in a branch of a conditional",
+			code: "function f(value: unknown) { assert(ok(value), flag ? `got ${typeof value}` : 'bad'); }",
+			errors: [error],
+		},
+		{ name: "a thrown template", code: "throw `received ${typeof value}`;", errors: [error] },
+		{
+			name: "#115 item 1: a log call on a console this file rewrites to keep the message",
+			code: 'const recorded = { last: "" };\nconsole.log = (message: string) => { recorded.last = message; };\nexport function isString(value: unknown): boolean { console.log(`kind:${typeof value}`); return recorded.last === "kind:string"; }',
+			errors: [error],
+		},
+		{
+			name: "#115 item 3: a thrown message read back in the catch",
+			code: 'export function isString(value: unknown): boolean { try { throw new Error(`kind:${typeof value}`); } catch (caught) { return caught instanceof Error && caught.message === "kind:string"; } }',
+			errors: [error],
+		},
+		{
+			name: "#115 item 3: a helper that throws for its caller to catch",
+			code: 'function fail(value: unknown): never { throw new Error(`kind:${typeof value}`); }\nexport function isString(value: unknown): boolean { try { fail(value); } catch (caught) { return caught instanceof Error && caught.message === "kind:string"; } return false; }',
+			errors: [error],
+		},
+		{
+			name: "#115 item 5: an imported assert that may compare the message",
+			code: 'import { assert } from "./assert";\nexport function f(value: unknown): void { assert(`kind:${typeof value}`); }',
+			errors: [error],
+		},
+		{
+			name: "#115 item 5: a log method on an imported logger",
+			code: 'import { logger } from "./logger";\nexport function f(value: unknown): void { logger.log(`kind:${typeof value}`); }',
+			errors: [error],
+		},
+		{
+			name: "#115 item 5: an imported error class thrown by new",
+			code: 'import { Check } from "./check";\nexport function f(value: unknown): never { throw new Check(`kind:${typeof value}`); }',
+			errors: [error],
+		},
 		{
 			name: "postgres@887faab src/implementations/database/writes-shared.ts:159 text returned to a caller that can compare it",
 			code: 'export function DescribeKind(value: unknown): string { return Array.isArray(value) ? "an array" : `a ${typeof value}`; }',
