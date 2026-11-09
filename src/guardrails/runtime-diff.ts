@@ -14,7 +14,11 @@ import {
   type AddedPolicy,
   type PublishedEntry,
 } from "./added-entries.ts";
-import { packageManager, parseManifest } from "./package.ts";
+import {
+  packageManager,
+  parseManifest,
+  type PackageManager,
+} from "./package.ts";
 import { compareRevisions } from "./revisions.ts";
 import { testEntryNotice } from "./test-entries.ts";
 import {
@@ -176,8 +180,25 @@ function childJson(args: string[], cwd: string): string {
   return `${JSON.stringify(JSON.parse(result.stdout), null, 2)}\n`;
 }
 
+/** The package manager that builds `directory`, read like corepack reads it: from the nearest manifest between `directory` and `worktree` that declares `packageManager`, or pnpm when none does. */
+function declaredPackageManager(
+  worktree: string,
+  directory: string,
+): PackageManager {
+  for (let folder = directory; ; folder = dirname(folder)) {
+    const path = join(worktree, folder, "package.json");
+    if (existsSync(path)) {
+      const manifest = parseManifest(readFileSync(path, "utf8"));
+      if (manifest.packageManager !== undefined)
+        return packageManager(manifest);
+    }
+    if (folder === ".") return packageManager({});
+  }
+}
+
 function buildPackage(
   directory: string,
+  manager: PackageManager,
   output: string,
   manifest: ProofManifest,
   describe: string,
@@ -192,7 +213,7 @@ function buildPackage(
     readFileSync(join(directory, "package.json"), "utf8"),
   );
   if (buildManifest.scripts?.build)
-    execFileSync(packageManager(buildManifest), ["run", "build"], {
+    execFileSync(manager, ["run", "build"], {
       cwd: directory,
       encoding: "utf8",
       shell: process.platform === "win32",
@@ -244,6 +265,7 @@ export function runtimeDiff(
         try {
           const built = buildPackage(
             join(worktree, directory),
+            declaredPackageManager(worktree, directory),
             join(output, folder),
             manifest,
             describe,
