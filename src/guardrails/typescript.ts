@@ -73,7 +73,7 @@ export function unpublishedAt(root: string) {
   });
 }
 
-/** A TypeScript installation and the directory of its package; `notice` says the package declares none and the pack's was used. */
+/** A TypeScript installation and the directory of its package; `notice` says the pack's was used, because the package declares none or, for a JavaScript-only emit, because its own has no compiler API. */
 interface PackageCompiler {
   compiler: typeof ts;
   root: string;
@@ -104,31 +104,52 @@ function resolveTypeScript(directory: string) {
         `${describePackage(directory)} declares typescript but it cannot be resolved from the package directory, so the compiler it builds with is not available. Install dependencies (run pnpm install) and retry.`,
         { cause: error },
       );
-    return {
-      file: createRequire(
-        createRequire(import.meta.url).resolve("dts-bundle-generator"),
-      ).resolve("typescript"),
-      fallback: true,
-    };
+    return { file: packTypeScript(), fallback: true };
   }
 }
 
-/** Loads the compiler a package builds with, including a package-local installation in a workspace. A package that declares `typescript` (itself or through its workspace root) but cannot resolve it is an error; only a package that declares none falls back to the one `dts-bundle-generator` brings, with a `notice`. A TypeScript without the programmatic API (7 and later) is an error rather than a crash. */
-export function loadTypeScript(directory: string): PackageCompiler {
-  const { file, fallback } = resolveTypeScript(directory);
+/** The TypeScript `dts-bundle-generator` brings, which the pack falls back to. */
+function packTypeScript(): string {
+  return createRequire(
+    createRequire(import.meta.url).resolve("dts-bundle-generator"),
+  ).resolve("typescript");
+}
+
+/** Loads the TypeScript at `file`; one without the programmatic API (7 and later) yields only its `version`, so the caller reports it rather than crashing. */
+function requireTypeScript(file: string) {
   /* SAFETY: a resolved typescript package implements the compiler API unless the check below rejects it. */
   const compiler = createRequire(file)("typescript") as typeof ts;
   const root = packageRoot(file);
   if (compiler.sys === undefined || !("createProgram" in compiler))
+    return { root, version: compiler.version };
+  return { root, compiler };
+}
+
+/** Loads the compiler a package builds with, including a package-local installation in a workspace. A package that declares `typescript` (itself or through its workspace root) but cannot resolve it is an error; only a package that declares none falls back to the one `dts-bundle-generator` brings, with a `notice`. A TypeScript without the programmatic API (7 and later) is an error, unless `javascriptOnly` says the caller only strips comments and emits JavaScript, so the pack's TypeScript emits both revisions instead, with a `notice`. */
+export function loadTypeScript(
+  directory: string,
+  javascriptOnly = false,
+): PackageCompiler {
+  const { file, fallback } = resolveTypeScript(directory);
+  const loaded = requireTypeScript(file);
+  if (loaded.compiler !== undefined)
+    return {
+      compiler: loaded.compiler,
+      root: loaded.root,
+      notice: fallback
+        ? `${repositoryDirectory(directory)}: declares no typescript; using the pack's TypeScript ${loaded.compiler.version}\n`
+        : undefined,
+    };
+  const pack =
+    javascriptOnly && !fallback ? requireTypeScript(packTypeScript()) : loaded;
+  if (pack.compiler === undefined)
     throw new Error(
-      `TypeScript ${compiler.version} at ${root} has no programmatic compiler API (sys, createProgram), so this package cannot be analysed. Build it with a TypeScript that has one, or mark the package private.`,
+      `TypeScript ${loaded.version} at ${loaded.root} has no programmatic compiler API (sys, createProgram), so this package cannot be analysed. Build it with a TypeScript that has one, or mark the package private.`,
     );
   return {
-    compiler,
-    root,
-    notice: fallback
-      ? `${repositoryDirectory(directory)}: declares no typescript; using the pack's TypeScript ${compiler.version}\n`
-      : undefined,
+    compiler: pack.compiler,
+    root: pack.root,
+    notice: `${repositoryDirectory(directory)}: TypeScript ${loaded.version} has no programmatic compiler API; emitting JavaScript with the pack's TypeScript ${pack.compiler.version}\n`,
   };
 }
 
@@ -198,8 +219,8 @@ function copyDeclarations(
   return files;
 }
 
-function parseConfig(directory: string) {
-  const { compiler, root, notice } = loadTypeScript(directory);
+function parseConfig(directory: string, javascriptOnly = false) {
+  const { compiler, root, notice } = loadTypeScript(directory, javascriptOnly);
   const file = join(directory, "tsconfig.json");
   const config = compiler.readConfigFile(file, compiler.sys.readFile);
   if (config.error) failDiagnostics(compiler, [config.error]);
@@ -222,13 +243,16 @@ export function outputRoot(directory: string): string {
   );
 }
 
-/** Emits with the package's compiler and config; test roots and outputs never enter either proof. `modules` maps each emitted file to its source module. */
+/** Emits with the package's compiler and config, or for JavaScript alone with the pack's when the package's has no compiler API; test roots and outputs never enter either proof. `modules` maps each emitted file to its source module. */
 export function emitPackage(
   directory: string,
   output: string,
   declarations: boolean,
 ) {
-  const { compiler, root, notice, parsed } = parseConfig(directory);
+  const { compiler, root, notice, parsed } = parseConfig(
+    directory,
+    !declarations,
+  );
   const options: ts.CompilerOptions = {
     ...parsed.options,
     rootDir:
