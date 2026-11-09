@@ -89,6 +89,7 @@ test("full sync measures once, preserves handwritten text even behind a CLAUDE s
     read(root, "lefthook.yml"),
     /npm exec -- oxfmt --no-error-on-unmatched-pattern \{staged_files\}/,
   );
+  assert.match(read(root, "lefthook.yml"), /antelopejs-ratchet --staged\n/);
   const mtimes = MANAGED_ARTIFACTS.map(
     ({ path }) => statSync(join(root, path)).mtimeMs,
   );
