@@ -270,7 +270,7 @@ function withScripts(root: string, scripts: Record<string, string>): void {
   put(root, "package.json", `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
-test("sync --check and a write run print each finding as a Note on stdout and exit 0, and stay quiet when the repository passes; a check that fails --check turns every repository that has not adopted the pattern red", (t) => {
+test("sync --check fails on each finding, printed on stderr, and a write run prints it as a Note and exits 0; a check that keeps --check report-only passes the repository, and one that fails the write run blocks it from syncing", (t) => {
   const root = syncedRepo(t);
   const clean = bin(root, "sync", ["--check"]);
   assert.equal(clean.status, 0, clean.stderr);
@@ -281,21 +281,20 @@ test("sync --check and a write run print each finding as a Note on stdout and ex
     release: "pnpm run lint && release-it",
   });
   put(root, "tsconfig.json", '{ "compilerOptions": { "skipLibCheck": true } }');
-  for (const args of [["--check"], []]) {
-    const run = bin(root, "sync", args);
-    assert.equal(run.status, 0, run.stderr);
-    assert.doesNotMatch(run.stderr, /skipLibCheck|typecheck/);
-    assert.match(
-      run.stdout,
-      /^Note: package\.json: script "build" passes --skipLibCheck/m,
-    );
-    assert.match(
-      run.stdout,
-      /^Note: tsconfig\.json: sets compilerOptions\.skipLibCheck: true/m,
-    );
-    assert.match(
-      run.stdout,
-      /^Note: package\.json: script "release" does not run "typecheck"/m,
-    );
-  }
+  const findings = [
+    /package\.json: script "build" passes --skipLibCheck/,
+    /tsconfig\.json: sets compilerOptions\.skipLibCheck: true/,
+    /package\.json: script "release" does not run "typecheck"/,
+  ];
+  const check = bin(root, "sync", ["--check"]);
+  assert.equal(check.status, 1, check.stdout);
+  assert.doesNotMatch(check.stdout, /skipLibCheck|typecheck/);
+  for (const finding of findings)
+    assert.match(check.stderr, new RegExp(`^${finding.source}`, "m"));
+
+  const write = bin(root, "sync");
+  assert.equal(write.status, 0, write.stderr);
+  assert.doesNotMatch(write.stderr, /skipLibCheck|typecheck/);
+  for (const finding of findings)
+    assert.match(write.stdout, new RegExp(`^Note: ${finding.source}`, "m"));
 });

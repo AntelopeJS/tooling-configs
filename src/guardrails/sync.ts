@@ -471,7 +471,9 @@ export function syncRepository(
     .filter((artifact) => artifact.kind === "error")
     .map(({ message }) => message);
   const entryOnly = checkEntryOnlyConfiguration(root);
+  const coverage = checkTypecheckCoverage(root, Boolean(options.check));
   errors.push(...entryOnly.errors, ...verify.errors, ...writing.errors);
+  errors.push(...coverage.errors);
   const notes = plan.flatMap((artifact) =>
     artifact.kind === "migrated" ? artifact.notes : [],
   );
@@ -518,10 +520,7 @@ export function syncRepository(
     errors,
     notes,
     verifyNotes: options.check || errors.length ? [] : verify.notes,
-    advisories: [
-      ...entryOnly.advisories,
-      ...checkTypecheckCoverage(root).map((finding) => `Note: ${finding}`),
-    ],
+    advisories: [...entryOnly.advisories, ...coverage.advisories],
     dependenciesAdded,
   };
 }
