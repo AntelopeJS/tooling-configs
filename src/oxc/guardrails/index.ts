@@ -10,10 +10,11 @@ import { noTypeofFunctionOnlyTestRule } from "./rules/no-typeof-function-only-te
 import { noUnsafeObjectAssignRule } from "./rules/no-unsafe-object-assign.ts";
 import { requireAssertionRule } from "./rules/require-assertion.ts";
 import { requireTsconfigIncludeRule } from "./rules/require-tsconfig-include.ts";
+import { requireTsconfigTypesRule } from "./rules/require-tsconfig-types.ts";
 
 export { ASSERTION_FUNCTION_NAMES, TEST_FILE_GLOBS } from "./shared.ts";
 
-/** AntelopeJS rules that reject comments, inherited-key lookups, presence-only type guards, unchecked Object.assign writes, low-evidence tests and files no tsconfig lists. */
+/** AntelopeJS rules that reject comments, inherited-key lookups, presence-only type guards, unchecked Object.assign writes, low-evidence tests, files no tsconfig lists and tsconfigs that list no `types`. */
 const guardrailsPlugin = eslintCompatPlugin({
   meta: { name: "antelopejs" },
   rules: {
@@ -27,6 +28,7 @@ const guardrailsPlugin = eslintCompatPlugin({
     "no-unsafe-object-assign": noUnsafeObjectAssignRule,
     "require-assertion": requireAssertionRule,
     "require-tsconfig-include": requireTsconfigIncludeRule,
+    "require-tsconfig-types": requireTsconfigTypesRule,
   },
 });
 

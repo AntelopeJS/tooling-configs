@@ -6,6 +6,8 @@ interface Project {
   files: ReadonlySet<string>;
   options: ts.CompilerOptions;
   references: readonly string[];
+  /** The `@types` packages tsc loads because the config lists no `compilerOptions.types`; empty when it lists them. */
+  automaticTypes: readonly string[];
 }
 
 const CONFIG_NAMES = ["tsconfig.json", "jsconfig.json"];
@@ -37,6 +39,10 @@ export function project(config: string): Project | undefined {
     references: (parsed.projectReferences ?? []).map((reference) =>
       ts.resolveProjectReferencePath(reference),
     ),
+    automaticTypes:
+      parsed.options.types === undefined
+        ? ts.getAutomaticTypeDirectiveNames(parsed.options, ts.sys)
+        : [],
   };
   projects.set(config, result);
   return result;
@@ -78,4 +84,13 @@ export function programConfig(file: string): string | undefined {
     if (parent === dirname(nearest)) return undefined;
     directory = parent;
   }
+}
+
+/**
+ * The `@types` packages tsc loads into `config`'s program only because it lists no
+ * `compilerOptions.types`. oxlint-tsgolint runs TypeScript 7, where `types` defaults
+ * to none, so its program loads none of them.
+ */
+export function automaticTypes(config: string): readonly string[] {
+  return project(config)?.automaticTypes ?? [];
 }
