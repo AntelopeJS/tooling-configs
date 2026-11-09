@@ -10,6 +10,8 @@ interface JsonObject {
 interface Manifest {
   name: string;
   exports: Json | undefined;
+  /** Whether `antelopeJs.test` is set, which makes `ajs module test` run the tests and bind package names through its own module resolver instead of `node_modules`. */
+  testedByAjs: boolean;
 }
 
 function isObject(value: Json | undefined): value is JsonObject {
@@ -28,7 +30,12 @@ function readManifest(directory: string): Manifest | undefined {
     return undefined;
   }
   if (!isObject(parsed) || !isText(parsed.name)) return undefined;
-  return { name: parsed.name, exports: parsed.exports };
+  const { antelopeJs } = parsed;
+  return {
+    name: parsed.name,
+    exports: parsed.exports,
+    testedByAjs: isObject(antelopeJs) && isText(antelopeJs.test),
+  };
 }
 
 /** The nearest enclosing package that has a name, with the directory holding its manifest. */

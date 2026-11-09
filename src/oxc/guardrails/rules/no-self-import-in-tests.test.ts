@@ -43,6 +43,24 @@ const linkedPartialExports = packageAt(
   JSON.stringify({ name: NAME, exports: { ".": "./dist/index.js" } }),
   true,
 );
+const ajsLinked = packageAt(
+  join(base, "ajs-linked"),
+  JSON.stringify({
+    name: NAME,
+    exports: EXPORTS,
+    antelopeJs: { test: "src/antelope.test.ts" },
+  }),
+  true,
+);
+const linkedWithoutAjsTest = packageAt(
+  join(base, "ajs-no-test"),
+  JSON.stringify({
+    name: NAME,
+    exports: EXPORTS,
+    antelopeJs: { imports: [], test: ["src/antelope.test.ts"] },
+  }),
+  true,
+);
 const nested = join(base, "workspace");
 mkdirSync(join(nested, "packages/inner/src"), { recursive: true });
 writeFileSync(
@@ -59,6 +77,7 @@ const tester = new RuleTester({
   languageOptions: { parserOptions: { lang: "ts" } },
 });
 const error = { messageId: "selfImport" };
+const ajsError = { messageId: "selfImportUnderAjsTest" };
 
 tester.run("antelopejs/no-self-import-in-tests", noSelfImportInTestsRule, {
   valid: [
@@ -78,6 +97,16 @@ tester.run("antelopejs/no-self-import-in-tests", noSelfImportInTestsRule, {
       filename: linked,
     },
     { code: `const { run } = require("${NAME}");`, filename: linked },
+    {
+      name: "an antelopeJs block without a string test path keeps the self-link exemption",
+      code: `import { run } from "${NAME}";`,
+      filename: linkedWithoutAjsTest,
+    },
+    { code: `import { run } from "../index";`, filename: ajsLinked },
+    {
+      code: `import { other } from "@antelopejs/interface-other";`,
+      filename: ajsLinked,
+    },
     {
       code: `import { run } from "@antelopejs/interface-demo";`,
       filename: "/nonexistent/dir/a.test.ts",
@@ -137,6 +166,12 @@ tester.run("antelopejs/no-self-import-in-tests", noSelfImportInTestsRule, {
       code: `import { helper } from "${NAME}/tests/helper";`,
       filename: linkedPartialExports,
       errors: [error],
+    },
+    {
+      name: "interface-database@4050da1: ajs module test resolves the name itself, so a self-link is no proof",
+      code: `import { run } from "${NAME}";`,
+      filename: ajsLinked,
+      errors: [ajsError],
     },
     {
       name: "a workspace member is judged by its own manifest, not the root",
