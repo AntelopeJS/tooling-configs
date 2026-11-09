@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join, sep } from "node:path";
 
+import { writeOwn } from "./prepared.ts";
 import { removeTree } from "./workspace.ts";
 
 /** The file `ajs` lists a project cache's modules in, each name with its version. */
@@ -49,7 +50,7 @@ export function cachePath(cache: string): string {
   return join(realpathSync(dirname(cache)), basename(cache)) + sep;
 }
 
-/** Replaces each of `from`, in order, by `to` in every `.bin` shim under `folder`. */
+/** Replaces each of `from`, in order, by `to` in every `.bin` shim under `folder`, never through a hard link another path shares. */
 export function retarget(folder: string, from: string[], to: string): void {
   for (const { path, directory } of entries(folder)) {
     if (directory || basename(dirname(path)) !== ".bin") continue;
@@ -60,7 +61,7 @@ export function retarget(folder: string, from: string[], to: string): void {
       (current, old) => current.replaceAll(old, () => to),
       text,
     );
-    if (shim !== text) writeFileSync(file, shim);
+    if (shim !== text) writeOwn(file, shim);
   }
 }
 

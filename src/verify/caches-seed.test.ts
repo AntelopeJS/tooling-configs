@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   cpSync,
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   realpathSync,
@@ -118,5 +119,29 @@ test("a copy of a clean prepared cache reached through a symlink has .bin shims 
   assert.equal(
     read(copy, ".antelope/cache/@acme/api/node_modules/.bin/tool"),
     shim(copy),
+  );
+});
+
+test("retargeting a copy's .bin shim that shares its inode with a file outside the copy leaves that file as it was, where a write in place rewrites the build's shim too", (t) => {
+  const tmp = realpathSync(
+    mkdtempSync(join(tmpdir(), "verify-caches-linked-")),
+  );
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const shim = (project: string) =>
+    `export NODE_PATH="${join(project, ".antelope/cache/@acme/api/node_modules/.pnpm/node_modules")}"\n`;
+  const tool = ".antelope/cache/@acme/api/node_modules/.bin/tool";
+  const built = join(tmp, "built");
+  const building = new ProjectCaches(join(tmp, "store"));
+  building.seed(built);
+  put(built, tool, shim(built));
+  put(built, ".antelope/cache/manifest.json", '{"@acme/api":"1.0.0"}\n');
+  const copy = join(tmp, "copy");
+  cpSync(built, copy, { recursive: true, preserveTimestamps: true });
+  rmSync(join(copy, tool));
+  linkSync(join(built, tool), join(copy, tool));
+  new ProjectCaches(join(tmp, "store")).seed(copy, building.clean(built));
+  assert.deepEqual(
+    [read(copy, tool), read(built, tool)],
+    [shim(copy), shim(built)],
   );
 });
