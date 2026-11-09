@@ -165,7 +165,7 @@ function publishedEntries(
   scratch: string,
 ) {
   const outputRoot = resolve(directory, emitted.options.outDir ?? ".");
-  const files = emitted.files.map((file) =>
+  const files = [...emitted.files, ...emitted.withheld].map((file) =>
     relative(scratch, file).split("\\").join("/"),
   );
   const entries: { entry: string; file: string; subpath: string }[] = [];
@@ -262,6 +262,24 @@ function generatorEntry(file: string): string {
   return alias;
 }
 
+/** The published entries, failing first on the declaration errors of the modules they reach, so a module whose declaration TypeScript withheld is reported by its own diagnostic. */
+function publishedDeclarationEntries(
+  { directory, scratch }: PackagePaths,
+  manifest: ProofManifest,
+  emitted: ReturnType<typeof emitPackage>,
+) {
+  const published = publishedEntries(directory, manifest, emitted, scratch);
+  const errors = emitted.declarationErrors(
+    published.entries.map(
+      ({ file }) =>
+        emitted.modules.get(resolve(scratch, file)) ??
+        join(directory, file.replace(/^\.published\//u, "")),
+    ),
+  );
+  if (errors) throw new Error(errors);
+  return published;
+}
+
 function bundlePackage(
   paths: PackagePaths,
   manifest: ProofManifest,
@@ -271,11 +289,10 @@ function bundlePackage(
   const { directory, output, scratch } = paths;
   const emitted = emitPackage(directory, scratch, true);
   if (emitted.notice !== undefined) notices?.add(emitted.notice);
-  const { entries, skipped } = publishedEntries(
-    directory,
+  const { entries, skipped } = publishedDeclarationEntries(
+    paths,
     manifest,
     emitted,
-    scratch,
   );
   if (!entries.length) return { count: 0, published: [], skipped };
   bundleDependencies(directory, scratch);
