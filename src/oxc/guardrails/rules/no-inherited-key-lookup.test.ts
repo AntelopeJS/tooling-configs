@@ -99,6 +99,26 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       code: "const T: Record<string, number> = { a: 1 }; const has = 'a' in T;",
     },
     {
+      name: "dms-lang app/utils/keySaves.ts:106, a computed binding discarded to copy the rest",
+      code: "function without(record: Record<string, number>, id: string) { const { [id]: _previous, ...rest } = record; return rest; }",
+    },
+    {
+      name: "a computed destructure guarded by Object.hasOwn",
+      code: "function f(table: Record<string, unknown>, key: string) { if (!Object.hasOwn(table, key)) return; const { [key]: value } = table; return value; }",
+    },
+    {
+      name: "a computed destructure with a literal key, and of a table that is not string-keyed",
+      code: "function f(table: Record<string, unknown>, other: Options, key: string) { const { ['a']: a } = table; const { [key]: b } = other; return [a, b]; }",
+    },
+    {
+      name: "an unknown-annotated alias guarded by Object.hasOwn",
+      code: "function f(table: Record<string, unknown>, key: string) { const holder: unknown = table; return isRecord(holder) && Object.hasOwn(holder, key) ? holder[key] : undefined; }",
+    },
+    {
+      name: "a let alias is not followed, and an alias annotated with a closed type keeps that type",
+      code: "function f(table: Record<string, unknown>, key: string) { let holder: unknown = table; holder = other; const options: Options = table; return [isRecord(holder) ? holder[key] : undefined, options[key]]; }",
+    },
+    {
       name: "a shadowing Map binding",
       code: "const T: Record<string, number> = { a: 1 }; function f(key: string) { const T = new Map<string, number>(); return T.get(key) ?? T.size; }",
     },
@@ -323,6 +343,43 @@ class ControllerProto {
       name: "a guard on a different key does not cover the read",
       code: "const T: Record<string, number> = { a: 1 }; function f(key: string, other: string) { return Object.hasOwn(T, other) ? T[key] : undefined; }",
       errors: [lookup],
+    },
+    {
+      name: "interface-core#58 form a (tooling-configs#121), a computed destructure",
+      code: `
+type UnparsedRecord = Record<string, unknown>;
+function a(implementation: UnparsedRecord, key: string) {
+  const { [key]: implemented } = implementation;
+  ({ [key]: implemented } = implementation);
+  return implemented;
+}`,
+      errors: [lookup, lookup],
+    },
+    {
+      name: "interface-core#58 form b (tooling-configs#121), a read through an unknown-annotated alias",
+      code: `
+type UnparsedRecord = Record<string, unknown>;
+function b(implementation: UnparsedRecord, key: string) {
+  const holder: unknown = implementation;
+  const alias = holder;
+  return isRecord(holder) ? holder[key] ?? alias[key] : undefined;
+}`,
+      errors: [lookup, lookup],
+    },
+    {
+      name: "an any-annotated alias, and a computed destructure beside a plain one",
+      code: "function f(table: Record<string, unknown>, key: string) { const holder: any = table; const { a, [key]: b } = table; return [holder[key], a, b]; }",
+      errors: [lookup, lookup],
+    },
+    {
+      name: "a computed binding exported in its own declaration is read by importers",
+      code: "const T: Record<string, number> = { a: 1 }; declare const k: string; export const { [k]: v } = T; export let x: number; ({ [k]: x } = T);",
+      errors: [lookup, lookup],
+    },
+    {
+      name: "an alias widened with as unknown, and a computed binding that is read beside a rest",
+      code: "function f(t: Record<string, unknown>, key: string) { const holder = t as unknown; const { [key]: taken, ...rest } = t; return [isRecord(holder) ? holder[key] : undefined, taken, rest]; }",
+      errors: [lookup, lookup],
     },
   ],
 });

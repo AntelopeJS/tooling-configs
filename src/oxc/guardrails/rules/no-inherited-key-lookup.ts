@@ -12,11 +12,8 @@ import {
   unwrapExpression,
   type LocalTypes,
 } from "../local-types.ts";
-import {
-  isHasOwnPropertyCall,
-  isKnownKey,
-  isStaticKey,
-} from "../key-provenance.ts";
+import { isKnownKey, isStaticKey } from "../key-provenance.ts";
+import { isOwnKeyGuarded } from "../own-key-guard.ts";
 import { callName } from "../shared.ts";
 
 /** `dictionary`: typed to take any string key; `literal`: an untyped object literal. */
@@ -25,7 +22,6 @@ type TableKind = "dictionary" | "literal";
 interface Environment {
   source: SourceCode;
   types: LocalTypes;
-  program: ESTree.Program;
 }
 
 interface Candidate {
@@ -35,14 +31,7 @@ interface Candidate {
   key: string;
 }
 
-interface OwnKeyCheck {
-  scope: ESTree.Node;
-  table: string;
-  key: string;
-}
-
 const WRAPPER_TYPES = new Set(["Readonly", "Partial", "Required"]);
-const HAS_OWN_CALLS = new Set(["Object.hasOwn", "hasOwnProperty.call"]);
 const MAX_ALIAS_DEPTH = 8;
 
 function isStringKey(type: ESTree.TSType): boolean {
@@ -197,7 +186,42 @@ function variableKind(
     definition.node.type !== "VariableDeclarator"
   )
     return null;
-  return declaredKind(annotation, definition.node.init, environment, depth);
+  const declared = declaredKind(
+    annotation,
+    definition.node.init,
+    environment,
+    depth,
+  );
+  if (
+    declared !== null ||
+    depth >= MAX_ALIAS_DEPTH ||
+    definition.parent?.type !== "VariableDeclaration" ||
+    definition.parent.kind !== "const" ||
+    definition.node.init === null ||
+    !isOpaqueAnnotation(annotation)
+  )
+    return declared;
+  return tableKind(widened(definition.node.init), environment, depth + 1);
+}
+
+/** The value under `as unknown` and `as any` casts, which widen the type without changing the value. */
+function widened(init: ESTree.Expression): ESTree.Expression {
+  let value = init;
+  while (
+    value.type === "TSAsExpression" &&
+    isOpaqueAnnotation(value.typeAnnotation)
+  )
+    value = value.expression;
+  return value;
+}
+
+/** No annotation, `unknown` or `any`: the alias holds whatever its initializer holds. */
+function isOpaqueAnnotation(annotation: ESTree.TSType | undefined): boolean {
+  return (
+    annotation === undefined ||
+    annotation.type === "TSUnknownKeyword" ||
+    annotation.type === "TSAnyKeyword"
+  );
 }
 
 /** The table a field declares, given its type annotation and initializer. */
@@ -267,30 +291,6 @@ function isWrite(node: ESTree.MemberExpression): boolean {
   );
 }
 
-function ownKeyCheck(
-  node: ESTree.CallExpression,
-  source: SourceCode,
-): Omit<OwnKeyCheck, "scope"> | null {
-  const [first, second] = node.arguments;
-  if (first === undefined) return null;
-  if (
-    HAS_OWN_CALLS.has(callName(node.callee) ?? "") ||
-    isHasOwnPropertyCall(node.callee)
-  )
-    return second === undefined
-      ? null
-      : { table: source.getText(first), key: source.getText(second) };
-  const callee = node.callee;
-  if (
-    callee.type === "MemberExpression" &&
-    !callee.computed &&
-    callee.property.type === "Identifier" &&
-    callee.property.name === "hasOwnProperty"
-  )
-    return { table: source.getText(callee.object), key: source.getText(first) };
-  return null;
-}
-
 function isPredicateKey(node: ESTree.BinaryExpression): boolean {
   const fn = enclosingFunction(node);
   const predicate = fn === null ? null : parameterPredicate(fn);
@@ -301,8 +301,30 @@ function isPredicateKey(node: ESTree.BinaryExpression): boolean {
   );
 }
 
-function contains(outer: ESTree.Node, inner: ESTree.Node): boolean {
-  return outer.range[0] <= inner.range[0] && inner.range[1] <= outer.range[1];
+/** The value a `const { [key]: x } = value` declaration or `({ [key]: x } = value)` assignment reads. */
+function destructuredValue(
+  pattern: ESTree.ObjectPattern,
+): ESTree.Expression | null {
+  const parent = pattern.parent;
+  if (parent.type === "VariableDeclarator")
+    return parent.id === pattern ? parent.init : null;
+  return parent.type === "AssignmentExpression" && parent.left === pattern
+    ? parent.right
+    : null;
+}
+
+/** A destructured binding nothing reads or exports, such as `_removed` in `const { [key]: _removed, ...rest } = table`. */
+function isDiscarded(value: ESTree.Node, source: SourceCode): boolean {
+  if (value.type !== "Identifier") return false;
+  const variable = resolveVariable(source, value);
+  return (
+    variable !== null &&
+    variable.defs.every(
+      (definition) =>
+        definition.parent?.parent?.type !== "ExportNamedDeclaration",
+    ) &&
+    !variable.references.some((reference) => reference.isRead())
+  );
 }
 
 /** Lookups into string-keyed object tables must not answer inherited `Object.prototype` keys. */
@@ -322,34 +344,63 @@ export const noInheritedKeyLookupRule = defineRule({
   },
   createOnce(context) {
     let environment: Environment | null = null;
-    let candidates: Candidate[] = [];
-    let checks: OwnKeyCheck[] = [];
+    const report = (candidate: Candidate): void => {
+      if (
+        !isOwnKeyGuarded(
+          candidate.node,
+          candidate.table,
+          candidate.key,
+          context.sourceCode,
+        )
+      )
+        context.report({
+          node: candidate.node,
+          messageId: candidate.messageId,
+          data: { table: candidate.table, key: candidate.key },
+        });
+    };
+    const lookup = (
+      node: ESTree.Node,
+      object: ESTree.Expression,
+      key: ESTree.Node,
+    ): void => {
+      if (environment === null) return;
+      const kind = tableKind(object, environment);
+      if (
+        kind === null ||
+        (kind === "literal" && key.type !== "TSAsExpression")
+      )
+        return;
+      const table = context.sourceCode.getText(object);
+      if (isKnownKey(key, table, context.sourceCode)) return;
+      report({
+        node,
+        messageId: "lookup",
+        table,
+        key: context.sourceCode.getText(key),
+      });
+    };
     return {
       Program(node) {
         environment = {
           source: context.sourceCode,
           types: collectLocalTypes(node),
-          program: node,
         };
-        candidates = [];
-        checks = [];
       },
       MemberExpression(node) {
-        if (environment === null || !node.computed || isWrite(node)) return;
-        const kind = tableKind(node.object, environment);
-        if (
-          kind === null ||
-          (kind === "literal" && node.property.type !== "TSAsExpression")
-        )
-          return;
-        const table = context.sourceCode.getText(node.object);
-        if (isKnownKey(node.property, table, context.sourceCode)) return;
-        candidates.push({
-          node,
-          messageId: "lookup",
-          table,
-          key: context.sourceCode.getText(node.property),
-        });
+        if (node.computed && !isWrite(node))
+          lookup(node, node.object, node.property);
+      },
+      ObjectPattern(node) {
+        const object = destructuredValue(node);
+        if (object === null) return;
+        for (const property of node.properties)
+          if (
+            property.type === "Property" &&
+            property.computed &&
+            !isDiscarded(property.value, context.sourceCode)
+          )
+            lookup(property, object, property.key);
       },
       BinaryExpression(node) {
         if (
@@ -360,36 +411,12 @@ export const noInheritedKeyLookupRule = defineRule({
           tableKind(node.right, environment) === null
         )
           return;
-        candidates.push({
+        report({
           node,
           messageId: "inOperator",
           table: context.sourceCode.getText(node.right),
           key: context.sourceCode.getText(node.left),
         });
-      },
-      CallExpression(node) {
-        const check = ownKeyCheck(node, context.sourceCode);
-        if (check !== null && environment !== null)
-          checks.push({
-            ...check,
-            scope: enclosingFunction(node) ?? environment.program,
-          });
-      },
-      "Program:exit"() {
-        for (const candidate of candidates) {
-          const guarded = checks.some(
-            (check) =>
-              check.table === candidate.table &&
-              check.key === candidate.key &&
-              contains(check.scope, candidate.node),
-          );
-          if (!guarded)
-            context.report({
-              node: candidate.node,
-              messageId: candidate.messageId,
-              data: { table: candidate.table, key: candidate.key },
-            });
-        }
       },
     };
   },
