@@ -210,6 +210,37 @@ test("--verify custom over a layer with no repo-owned files reports each removal
   assert.equal(existsSync(join(root, skillFolder("module"))), false);
 });
 
+test("--verify custom links .claude/skills to the own skill under .agents, and a missing link is drift under --check", (t) => {
+  const root = testRepo(t);
+  put(root, OWN_SKILL, "Own verification skill.\n");
+  const custom = bin(root, "sync", [...TEMPLATE, "--verify", "custom"]);
+  assert.equal(custom.status, 0, custom.stderr);
+  assert.equal(
+    read(root, ".claude/skills/verify-repo/SKILL.md"),
+    "Own verification skill.\n",
+  );
+  const check = bin(root, "sync", [...TEMPLATE, "--check"]);
+  assert.equal(check.status, 0, check.stderr);
+  assert.equal(check.stdout, IN_SYNC);
+  rmSync(join(root, ".claude/skills/verify-repo"));
+  const missing = bin(root, "sync", [...TEMPLATE, "--check"]);
+  assert.equal(missing.status, 1);
+  assert.equal(
+    missing.stdout,
+    "Drift: .claude/skills/verify-repo; run antelopejs-sync\n",
+  );
+});
+
+test("--verify custom leaves an own skill already under .claude/skills as a folder and reports it in sync", (t) => {
+  const root = testRepo(t);
+  put(root, ".claude/skills/verify-repo/SKILL.md", "Own verification skill.\n");
+  const custom = bin(root, "sync", [...TEMPLATE, "--verify", "custom"]);
+  assert.equal(custom.status, 0, custom.stderr);
+  const check = bin(root, "sync", [...TEMPLATE, "--check"]);
+  assert.equal(check.status, 0, check.stderr);
+  assert.equal(check.stdout, IN_SYNC);
+});
+
 test("--verify custom fails without an own skill and keeps a shared layer, which never counts as own", (t) => {
   const bare = testRepo(t);
   put(bare, ".agents/skills/runtime/SKILL.md", "Not a verification name.\n");
