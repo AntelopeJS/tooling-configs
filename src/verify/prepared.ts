@@ -1,6 +1,11 @@
 import {
-  cpSync,
+  accessSync,
+  chmodSync,
+  constants,
+  copyFileSync,
   existsSync,
+  linkSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -11,6 +16,7 @@ import {
   statSync,
   symlinkSync,
   unlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
@@ -64,11 +70,66 @@ function survey(folder: string): Survey {
   return found;
 }
 
+/** The files under `source` with a hard link outside it, such as package files pnpm links from its store; a file linked only within `source` is not one. */
+function sharedOutside(source: string): Set<string> {
+  const inodes = new Map<string, { nlink: bigint; paths: string[] }>();
+  const walk = (folder: string): void => {
+    for (const entry of readdirSync(folder, { withFileTypes: true })) {
+      const path = join(folder, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.isFile()) {
+        const { dev, ino, nlink } = lstatSync(path, { bigint: true });
+        if (nlink < 2n) continue;
+        const key = `${dev}:${ino}`;
+        const inode = inodes.get(key) ?? { nlink, paths: [] };
+        inode.paths.push(path);
+        inodes.set(key, inode);
+      }
+    }
+  };
+  walk(source);
+  return new Set(
+    [...inodes.values()]
+      .filter((inode) => inode.nlink > BigInt(inode.paths.length))
+      .flatMap((inode) => inode.paths),
+  );
+}
+
+/** Hard-links `from` at `to` unless the filesystem allows `from` no more links; returns whether it did. */
+function linked(from: string, to: string): boolean {
+  try {
+    linkSync(from, to);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "EMLINK")
+      return false;
+    throw error;
+  }
+}
+
+/** Copies the tree at `source` to the new path `target` without following a symlink, linking each of `shared`; any other file is cloned where the filesystem can, else copied, with its timestamps. */
+function cloneTree(source: string, target: string, shared: Set<string>): void {
+  mkdirSync(target);
+  for (const entry of readdirSync(source, { withFileTypes: true })) {
+    const from = join(source, entry.name);
+    const to = join(target, entry.name);
+    if (entry.isDirectory()) cloneTree(from, to, shared);
+    else if (entry.isSymbolicLink()) symlinkSync(readlinkSync(from), to);
+    else if (!shared.has(from) || !linked(from, to)) {
+      copyFileSync(from, to, constants.COPYFILE_FICLONE);
+      const { atimeMs, mtimeMs } = statSync(from);
+      utimesSync(to, atimeMs / 1000, mtimeMs / 1000);
+    }
+  }
+  chmodSync(target, statSync(source).mode);
+}
+
 /**
  * Copies `source` to `target`, which ends up at `root`. Each of `links`
  * points to its target inside `root`, so no copy reaches another journey's
  * folder. Every other symlink keeps its target, so pnpm's relative links in a
- * copy never point back into the source.
+ * copy never point back into the source. A file with a hard link outside
+ * `source` is linked, not copied.
  */
 function copyTree(
   source: string,
@@ -76,14 +137,30 @@ function copyTree(
   links: Link[] = [],
   root = target,
 ): void {
-  cpSync(source, target, {
-    recursive: true,
-    verbatimSymlinks: true,
-    preserveTimestamps: true,
-  });
+  cloneTree(source, target, sharedOutside(source));
   for (const link of links) {
     unlinkSync(join(target, link.path));
     symlinkSync(join(root, link.target), join(target, link.path));
+  }
+}
+
+/** Writes `content` to `file`, through a new inode renamed over it when the file has other hard links, so the write reaches no other path, such as a copy `prepared` linked or pnpm's store, and a failed write leaves the file as it was. */
+export function writeOwn(file: string, content: string): void {
+  const before = existsSync(file) ? statSync(file) : null;
+  if (before === null || before.nlink < 2) {
+    writeFileSync(file, content);
+    return;
+  }
+  const real = realpathSync(file);
+  accessSync(real, constants.W_OK);
+  const scratch = mkdtempSync(join(dirname(real), ".edit-"));
+  try {
+    const fresh = join(scratch, "file");
+    writeFileSync(fresh, content, { mode: before.mode });
+    chmodSync(fresh, before.mode);
+    renameSync(fresh, real);
+  } finally {
+    removeTree(scratch);
   }
 }
 

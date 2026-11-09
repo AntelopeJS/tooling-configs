@@ -183,6 +183,7 @@ export interface JourneyContext {
     args: string[],
     options?: DriveOptions,
   ): Promise<CommandResult>;
+  /** Writes `content` to `file` in a new step and returns the step folder; a file with other hard links gets a new inode, so the write reaches no other path. */
   edit(name: string, file: string, content: string): string;
   tree(name: string, root: string): TreeRecord;
   http(name: string, url: string, init?: HttpInit): Promise<HttpResult>;
@@ -236,7 +237,11 @@ export interface JourneyContext {
    * that build's evidence under `build/`. A build that is not kept is built
    * again by the next journey. Rerunning the journey that built builds again.
    * In a copy, an absolute symlink into the built folder points to the same
-   * path in the copy; every other symlink keeps its target. `build` writes
+   * path in the copy; every other symlink keeps its target. A file with a hard
+   * link outside the built folder, such as a package file pnpm links from its
+   * store, is linked into each copy rather than copied: `edit` gives it a new
+   * inode, and a journey that writes it another way replaces it instead of
+   * writing it in place. `build` writes
    * only inside the folder it is given: what it writes elsewhere, such as a
    * sibling in the journey's work folder or the repository, stays with the
    * journey that built. Two journeys that ask for the same key at once, in

@@ -18,7 +18,7 @@ import { appFault } from "./app-fault.ts";
 import { ProjectCaches } from "./caches.ts";
 import { readinessFailure } from "./docker.ts";
 import { ajsEntry, writeFixture, type Fixture } from "./fixture.ts";
-import { prepare } from "./prepared.ts";
+import { prepare, writeOwn } from "./prepared.ts";
 import {
   freePort,
   killGroup,
@@ -196,7 +196,7 @@ export class VerifyContext implements JourneyContext {
   edit(name: string, file: string, content: string): string {
     const folder = this.step(name);
     mkdirSync(join(file, ".."), { recursive: true });
-    writeFileSync(file, content);
+    writeOwn(file, content);
     writeFileSync(join(folder, "edit.txt"), `${file}\n---\n${content}`);
     return folder;
   }
