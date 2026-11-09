@@ -241,11 +241,25 @@ test("template profile manages presets, AGENTS, the suppression budget and the c
     "oxlint.config.ts",
     "package.json",
   ]);
+  const versions = toolingVersions();
   assert.deepEqual(parseManifest(read(root, "package.json")), {
     ...parseManifest(originalPackage),
     scripts: {
+      typecheck: "tsc --noEmit",
+      lint: "oxlint",
+      format: "oxfmt .",
+      "format:check": "oxfmt --check .",
+      knip: "knip",
+      sync: "antelopejs-sync --profile template",
+      "sync:check": "antelopejs-sync --profile template --check",
+      checks: "antelopejs-checks",
+      size: "antelopejs-check-size",
       suppressions: "antelopejs-suppressions",
       "suppressions:update": "antelopejs-suppressions --update",
+    },
+    devDependencies: {
+      knip: versions.knip,
+      "oxlint-tsgolint": versions.tsgolint,
     },
   });
   assert.equal(read(root, "oxfmt.config.ts"), customFormatter);

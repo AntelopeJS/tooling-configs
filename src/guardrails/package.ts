@@ -143,6 +143,16 @@ const DEFAULT_SCRIPTS = {
   knip: "knip",
 };
 
+function defaultScripts(nuxt: boolean | undefined) {
+  return { ...DEFAULT_SCRIPTS, ...(nuxt && { typecheck: "nuxi typecheck" }) };
+}
+
+function sortedEntries(record: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(record).sort(([a], [b]) => a.localeCompare(b)),
+  );
+}
+
 /** Stands in for the current install while the script is split on its separators, since the install holds `&&` itself. */
 const INSTALL_TOKEN = "\u0000prepare-install\u0000";
 
@@ -194,45 +204,59 @@ export function managedPackage(
     delete scripts.ratchet;
     delete scripts["ratchet:update"];
   }
-  for (const [name, command] of Object.entries(DEFAULT_SCRIPTS))
-    scripts[name] ??=
-      name === "typecheck" && options.nuxt ? "nuxi typecheck" : command;
+  for (const [name, command] of Object.entries(defaultScripts(options.nuxt)))
+    scripts[name] ??= command;
   const dependencies = (manifest.devDependencies ??= {});
   dependencies.lefthook ??= versions.lefthook;
   dependencies.knip ??= versions.knip;
   if (options.typeAware) dependencies["oxlint-tsgolint"] ??= versions.tsgolint;
-  manifest.devDependencies = Object.fromEntries(
-    Object.entries(dependencies).sort(([a], [b]) => a.localeCompare(b)),
-  );
+  manifest.devDependencies = sortedEntries(dependencies);
   return serializeManifest(manifest, current);
 }
 
 /**
- * The template profile owns only the scripts `antelopejs-checks` requires and
- * the profile's `sync` scripts do not provide. An already complete manifest is
- * returned unchanged, so a template is never reformatted for nothing.
+ * The template profile owns the scripts and devDependencies `antelopejs-checks`
+ * runs, without the hooks: the pack's commands are set, and the other steps get
+ * a default only where the template has none, so its own `test`, `lint` or
+ * `sync` stays. An already complete manifest is returned unchanged, so a
+ * template is never reformatted for nothing.
  */
 export function templatePackage(
   current: string | undefined,
-  options: { ratchet: boolean },
+  versions: ReturnType<typeof toolingVersions>,
+  options: { ratchet: boolean; nuxt?: boolean; typeAware?: boolean },
 ): string {
   if (current === undefined) throw new Error("package.json is missing.");
   const manifest = parseManifest(current);
-  const commands = repositoryTools(manifest).commands;
-  const wanted = {
+  const { commands } = repositoryTools(manifest);
+  const sync = `${commands.sync} --profile template`;
+  const scripts = (manifest.scripts ??= {});
+  const dependencies = (manifest.devDependencies ??= {});
+  const set = Object.entries({
+    checks: commands.checks,
+    size: commands.size,
     suppressions: commands.suppressions,
     "suppressions:update": `${commands.suppressions} --update`,
     ...(options.ratchet && {
       ratchet: commands.ratchet,
       "ratchet:update": `${commands.ratchet} --update`,
     }),
-  };
-  const scripts = (manifest.scripts ??= {});
-  if (
-    Object.entries(wanted).every(([name, command]) => scripts[name] === command)
-  )
-    return current;
-  Object.assign(scripts, wanted);
+  }).filter(([name, command]) => scripts[name] !== command);
+  const defaults = Object.entries({
+    ...defaultScripts(options.nuxt),
+    sync,
+    "sync:check": `${sync} --check`,
+  }).filter(([name]) => scripts[name] === undefined);
+  const missing = Object.entries({
+    knip: versions.knip,
+    ...(options.typeAware && { "oxlint-tsgolint": versions.tsgolint }),
+  }).filter(([name]) => dependencies[name] === undefined);
+  if (set.length + defaults.length + missing.length === 0) return current;
+  Object.assign(scripts, Object.fromEntries([...defaults, ...set]));
+  manifest.devDependencies = sortedEntries({
+    ...dependencies,
+    ...Object.fromEntries(missing),
+  });
   return serializeManifest(manifest, current);
 }
 

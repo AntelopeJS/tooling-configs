@@ -178,7 +178,7 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
       content:
         context.profile === "full"
           ? managedPackage(current, context.versions, context)
-          : templatePackage(current, context),
+          : templatePackage(current, context.versions, context),
       notes: [],
     }),
   },
@@ -499,11 +499,12 @@ export function syncRepository(
     writeArtifacts(root, writes);
     applyVerifyActions(root, actions);
   }
-  const requiredDependencies = ["lefthook", "knip"];
+  const requiredDependencies =
+    profile === "full" ? ["lefthook", "knip"] : ["knip"];
   if (context.typeAware) requiredDependencies.push("oxlint-tsgolint");
-  const dependenciesAdded =
-    profile === "full" &&
-    requiredDependencies.some((name) => !manifest.devDependencies?.[name]);
+  const dependenciesAdded = requiredDependencies.some(
+    (name) => !manifest.devDependencies?.[name],
+  );
   return {
     artifacts: plan,
     paths: errors.length ? [] : [...writes, ...actions].map(({ path }) => path),
