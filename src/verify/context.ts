@@ -323,9 +323,15 @@ export class VerifyContext implements JourneyContext {
       ...options.env,
     };
     const folder = this.step(name);
+    const [program, ...args] = options.command ?? [
+      process.execPath,
+      ajsEntry(this.repo),
+      "project",
+      "dev",
+    ];
     const handle = startRecorded(folder, {
-      program: process.execPath,
-      args: [ajsEntry(this.repo), "project", "dev", ...(options.args ?? [])],
+      program,
+      args: [...args, ...(options.args ?? [])],
       cwd: project,
       env: this.env(env),
     });

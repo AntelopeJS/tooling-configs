@@ -104,10 +104,14 @@ export interface TreeRecord {
   lines: string[];
 }
 
-/** Options of `ajs project dev`: extra environment and extra flags such as `--watch`. */
+/** Options of `context.dev`: extra environment and extra flags such as `--watch`. */
 export interface DevOptions {
   env?: { [name: string]: string };
   args?: string[];
+  /**
+   * The program and arguments that start the project in place of `ajs project dev`, for a project that is not an `ajs` project, such as `["node", "ace", "serve"]`. `args` follow it.
+   */
+  command?: [program: string, ...args: string[]];
 }
 
 /** Options of a driven command. */
@@ -198,7 +202,7 @@ export interface JourneyContext {
    * The project's `.antelope/cache` starts as a copy of a cache of registry modules an earlier passing journey of the run left exactly as a fresh `ajs` install leaves it, none installed from a lock record, so `ajs` installs a registry module once per run.
    */
   fixture(options?: { moduleConfig?: JsonObject }): string;
-  /** Starts `ajs project dev` in a project and waits until it is ready. */
+  /** Starts `ajs project dev`, or `options.command`, in a project, records its PID for `stop` and `clean`, and waits until it is ready. */
   dev(name: string, project: string, options?: DevOptions): Promise<App>;
   call(name: string, app: App, request: CallRequest): Promise<CallResult>;
   /** Stops an app with SIGINT by recorded PID. */
