@@ -33,14 +33,22 @@ import {
 } from "./typescript.ts";
 
 const DESCRIBE = `
-const { readFileSync, existsSync } = require("node:fs");
+const { readFileSync, writeFileSync, existsSync } = require("node:fs");
 const { dirname, join, extname } = require("node:path");
 const { pathToFileURL } = require("node:url");
-const file = process.argv[2];
+const [file, destination] = process.argv.splice(2);
 let directory = dirname(file);
 while (!existsSync(join(directory, "package.json")) && dirname(directory) !== directory) directory = dirname(directory);
 const manifest = existsSync(join(directory, "package.json")) ? JSON.parse(readFileSync(join(directory, "package.json"), "utf8")) : {};
 const esm = extname(file) === ".mjs" || (extname(file) === ".js" && manifest.type === "module");
+let description;
+let failed = false;
+process.on("uncaughtExceptionMonitor", () => { failed = true; });
+process.on("exit", code => {
+  if (failed) return;
+  const recorded = description ?? { kind: esm ? "esm" : "cjs" };
+  writeFileSync(destination, JSON.stringify(code === 0 && description ? recorded : { ...recorded, exit: code }));
+});
 const seen = new Map();
 function functionInfo(fn) {
   let constructible = true;
@@ -66,9 +74,12 @@ function properties(object, observe) {
 }
 (async () => {
   const value = esm ? await import(pathToFileURL(file).href) : require(file);
-  process.stdout.write(JSON.stringify({ kind: esm ? "esm" : "cjs", value: valueInfo(value), properties: typeof value === "function" ? [] : properties(value, true) }));
-})().catch(error => { process.stderr.write(String(error.stack)); process.exitCode = 1; });
+  description = { kind: esm ? "esm" : "cjs", value: valueInfo(value), properties: typeof value === "function" ? [] : properties(value, true) };
+})().catch(error => { failed = true; process.stderr.write(String(error.stack)); process.exitCode = 1; });
 `;
+
+/** A file a wildcard export matches is a runtime entry only when Node loads it as JavaScript; declarations, build info and templates it also publishes are data. */
+const JS_MODULE = /\.[cm]?js$/u;
 
 interface RuntimeTarget {
   entry: string;
@@ -166,8 +177,9 @@ function builtEntries(
       const found = filesUnder(parent).filter((file) => pattern.test(file));
       if (!found.length)
         throw new Error(`${directory}: missing built runtime entry ${target}.`);
-      const matches = found.filter((file) => !isTestSource(output, file));
-      if (matches.length < found.length) skipped.push(target);
+      const modules = found.filter((file) => JS_MODULE.test(file));
+      const matches = modules.filter((file) => !isTestSource(output, file));
+      if (matches.length < modules.length) skipped.push(target);
       return matches.sort().map((file) => {
         const capture = pattern.exec(file)?.[1] ?? relative(directory, file);
         return {
@@ -180,7 +192,7 @@ function builtEntries(
   return { entries, skipped };
 }
 
-function childJson(args: string[], cwd: string): string {
+function runChild(args: string[], cwd: string) {
   const result = spawnSync(process.execPath, args, {
     cwd,
     encoding: "utf8",
@@ -189,12 +201,40 @@ function childJson(args: string[], cwd: string): string {
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (result.error) throw result.error;
-  if (result.status !== 0)
-    throw new Error(
-      result.stderr ||
-        `Runtime child exited with ${result.status ?? result.signal}.`,
-    );
-  return `${JSON.stringify(JSON.parse(result.stdout), null, 2)}\n`;
+  return result;
+}
+
+function childFailure(result: ReturnType<typeof runChild>): Error {
+  return new Error(
+    result.stderr ||
+      `Runtime child exited with ${result.status ?? result.signal}.`,
+  );
+}
+
+function formatJson(json: string): string {
+  return `${JSON.stringify(JSON.parse(json), null, 2)}\n`;
+}
+
+function childJson(args: string[], cwd: string): string {
+  const result = runChild(args, cwd);
+  if (result.status !== 0) throw childFailure(result);
+  return formatJson(result.stdout);
+}
+
+/** Describes one built entry into `destination`, away from the entry's own stdout, with the exit code of an entry that ends with a non-zero code or exits while it loads; an uncaught error is a failure. */
+function describeEntry(
+  describe: string,
+  file: string,
+  destination: string,
+  cwd: string,
+): void {
+  rmSync(destination, { force: true });
+  const result = runChild(
+    ["--unhandled-rejections=throw", describe, file, destination],
+    cwd,
+  );
+  if (!existsSync(destination)) throw childFailure(result);
+  writeFileSync(destination, formatJson(readFileSync(destination, "utf8")));
 }
 
 /** The package manager that builds `directory`, read like corepack reads it: from the nearest manifest between `directory` and `worktree` that declares `packageManager`, or pnpm when none does. */
@@ -248,9 +288,8 @@ function buildPackage(
   const { entries, skipped } = built;
   for (const { entry, file } of entries) {
     const destination = join(output, `${encodeURIComponent(entry)}.json`);
-    const metadata = childJson([describe, file], directory);
     mkdirSync(dirname(destination), { recursive: true });
-    writeFileSync(destination, metadata);
+    describeEntry(describe, file, destination, directory);
   }
   return { count: entries.length, entries, skipped };
 }
