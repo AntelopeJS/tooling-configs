@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
+import { type AddressInfo, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -296,12 +296,19 @@ test("a fetch that exited 0, an earlier failing step, or output that names no ta
   }
 });
 
+/** Whether a bound server's address is a TCP address rather than a pipe path or unbound. */
+function isAddressInfo(
+  address: AddressInfo | string | null,
+): address is AddressInfo {
+  return address !== null && typeof address !== "string";
+}
+
 test("the probe reports a listening port as reachable, and a refused port or an unresolvable host as a failure (catches a probe that always fails and so softens every failure)", async (t) => {
   const server = createServer((socket) => socket.end());
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
   const address = server.address();
-  assert.ok(address !== null && address instanceof Object);
+  assert.ok(isAddressInfo(address));
   assert.equal(
     await probeTarget({ host: "localhost", port: address.port }),
     null,
@@ -309,7 +316,7 @@ test("the probe reports a listening port as reachable, and a refused port or an 
   const closed = createServer();
   await new Promise<void>((resolve) => closed.listen(0, "127.0.0.1", resolve));
   const closedAddress = closed.address();
-  assert.ok(closedAddress !== null && closedAddress instanceof Object);
+  assert.ok(isAddressInfo(closedAddress));
   await new Promise<void>((resolve) => closed.close(() => resolve()));
   assert.match(
     (await probeTarget({ host: "127.0.0.1", port: closedAddress.port })) ?? "",
