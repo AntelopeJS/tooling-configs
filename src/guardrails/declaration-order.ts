@@ -174,7 +174,7 @@ function statementName(
   return statement.getText(source);
 }
 
-/** Prints a bundle in canonical form: top-level statements by name and object members in a fixed order. */
+/** Prints a bundle in canonical form: top-level statements by name and object members in a fixed order. Statements of one name, such as merged interface blocks, which the bundler emits in an order that varies between runs, are ordered by their normalized text. Merged blocks that declare the same method therefore compare equal in either block order, though TypeScript resolves the later block's overloads first. Function declarations of one name are overloads, come first among their name, and keep their order. */
 export function normalizeBundle(compiler: typeof ts, text: string): string {
   const source = compiler.createSourceFile(
     "bundle.d.ts",
@@ -182,20 +182,31 @@ export function normalizeBundle(compiler: typeof ts, text: string): string {
     compiler.ScriptTarget.Latest,
     true,
   );
-  const statements = [...source.statements].sort((a, b) =>
-    statementName(compiler, a, source).localeCompare(
-      statementName(compiler, b, source),
+  const normalized = sortDeclarationMembers(compiler, source, source);
+  const printer = compiler.createPrinter({
+    removeComments: true,
+    newLine: compiler.NewLineKind.LineFeed,
+  });
+  const keyed = source.statements.map((statement, index) => {
+    const node = normalized.statements[index];
+    return {
+      node,
+      name: statementName(compiler, statement, source),
+      overload: compiler.isFunctionDeclaration(statement),
+      text: printer.printNode(compiler.EmitHint.Unspecified, node, normalized),
+    };
+  });
+  keyed.sort((a, b) => {
+    const byName = a.name.localeCompare(b.name);
+    if (byName !== 0) return byName;
+    if (a.overload !== b.overload) return a.overload ? -1 : 1;
+    if (a.overload || a.text === b.text) return 0;
+    return a.text < b.text ? -1 : 1;
+  });
+  return printer.printFile(
+    compiler.factory.updateSourceFile(
+      normalized,
+      keyed.map(({ node }) => node),
     ),
   );
-  const normalized = sortDeclarationMembers(
-    compiler,
-    compiler.factory.updateSourceFile(source, statements),
-    source,
-  );
-  return compiler
-    .createPrinter({
-      removeComments: true,
-      newLine: compiler.NewLineKind.LineFeed,
-    })
-    .printFile(normalized);
 }
