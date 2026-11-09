@@ -15,6 +15,50 @@ function unwrapParenthesizedExpression(expression: ESTree.Expression): ESTree.Ex
   return current;
 }
 
+function unwrapParenthesizedType(type: ESTree.TSType): ESTree.TSType {
+  let current = type;
+  while (current.type === "TSParenthesizedType") current = current.typeAnnotation;
+  return current;
+}
+
+function instanceClassName(thisExpression: ESTree.ThisExpression): string | null {
+  let scope: ESTree.Node = thisExpression.parent;
+  while (scope.type !== "FunctionExpression") {
+    if (
+      scope.type === "Program" ||
+      scope.type === "FunctionDeclaration" ||
+      scope.type === "ClassBody"
+    ) {
+      return null;
+    }
+    scope = scope.parent;
+  }
+  const declaresThis = scope.params.some(
+    (parameter) => parameter.type === "Identifier" && parameter.name === "this",
+  );
+  const method = scope.parent;
+  if (declaresThis || method.type !== "MethodDefinition" || method.static) return null;
+  const owner = method.parent.parent;
+  if (owner?.type !== "ClassDeclaration" && owner?.type !== "ClassExpression") return null;
+  return owner.id?.name ?? null;
+}
+
+function isPhantomRetypeOfThis(node: TypeAssertionExpression): boolean {
+  const target = unwrapParenthesizedType(node.typeAnnotation);
+  const inner = unwrapParenthesizedExpression(node.expression);
+  if (
+    target.type !== "TSTypeReference" ||
+    target.typeName.type !== "Identifier" ||
+    (target.typeArguments?.params.length ?? 0) === 0 ||
+    !isTypeAssertionExpression(inner) ||
+    unwrapParenthesizedType(inner.typeAnnotation).type !== "TSUnknownKeyword"
+  ) {
+    return false;
+  }
+  const source = unwrapParenthesizedExpression(inner.expression);
+  return source.type === "ThisExpression" && instanceClassName(source) === target.typeName.name;
+}
+
 function isConstAssertion(node: TypeAssertionExpression): boolean {
   const { typeAnnotation } = node;
   return (
@@ -47,16 +91,22 @@ function isForbiddenAssertionChain(node: TypeAssertionExpression): boolean {
     current = unwrapParenthesizedExpression(current.expression);
   }
 
-  return assertionCount > 1 && hasNonConstAssertion;
+  return assertionCount > 1 && hasNonConstAssertion && !isPhantomRetypeOfThis(node);
 }
 
-/** Disallow nested TypeScript type assertions, while permitting chains made only of const assertions. */
+/**
+ * Disallow nested TypeScript type assertions. Chains made only of const assertions pass, and so
+ * does `this as unknown as C<...>` in a non-static method of class `C`: the same instance under
+ * other type arguments, which TypeScript cannot express in one step when `C` is invariant in a
+ * phantom type parameter. require-safety-comment-for-type-assertion still asks it to state why the
+ * parameter holds no value.
+ */
 export const noChainedTypeAssertionsRule = defineRule({
   meta: {
     type: "problem",
     docs: {
       description:
-        "Disallow chained TypeScript as and angle-bracket assertions, including parenthesized chains.",
+        "Disallow chained TypeScript as and angle-bracket assertions, including parenthesized chains, except `this as unknown as C<...>` in a non-static method of class C.",
     },
     messages: {
       chained:
