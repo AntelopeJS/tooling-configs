@@ -2,6 +2,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { isMap, isScalar, isSeq, parseDocument, type Document } from "yaml";
 
+import { placeModulesBlock } from "./docs-modules.ts";
+import { tableLines } from "./markdown-table.ts";
 import {
   parseManifest,
   type Manifest,
@@ -38,25 +40,17 @@ export function compatBlock(rows: readonly CompatRow[]): string {
   const sorted = [...rows].sort((a, b) =>
     a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
   );
-  const table = [
-    ["Package", "Supported", "Tested with"],
-    ...sorted.map(({ name, supported, tested }) => [
-      `\`${name}\``,
-      `\`${supported.replaceAll("|", "\\|")}\``,
-      tested === undefined ? UNRESOLVED : `\`${tested}\``,
-    ]),
-  ];
-  const widths = [0, 1, 2].map((column) =>
-    Math.max(3, ...table.map((row) => row[column].length)),
-  );
-  const line = (cells: string[]) =>
-    `| ${cells.map((cell, column) => cell.padEnd(widths[column])).join(" | ")} |`;
   return [
     DOCS_COMPAT_START,
     "",
-    line(table[0]),
-    line(widths.map((width) => "-".repeat(width))),
-    ...table.slice(1).map(line),
+    ...tableLines([
+      ["Package", "Supported", "Tested with"],
+      ...sorted.map(({ name, supported, tested }) => [
+        `\`${name}\``,
+        `\`${supported.replaceAll("|", "\\|")}\``,
+        tested === undefined ? UNRESOLVED : `\`${tested}\``,
+      ]),
+    ]),
     "",
     DOCS_COMPAT_END,
     "",
@@ -401,7 +395,7 @@ function planPackage(
     ? readFileSync(join(root, readme), "utf8")
     : undefined;
   const nodeRange = standard && current !== undefined ? node : undefined;
-  if (ranges.size === 0 && nodeRange === undefined) return;
+  if (ranges.size === 0 && current === undefined) return;
   const rows = [...ranges].map(([name, supported]) => ({
     name,
     supported,
@@ -415,10 +409,11 @@ function planPackage(
     plan.readmes.push({
       path: readme,
       current,
-      content:
+      content: placeModulesBlock(
         rows.length > 0
           ? placeCompatBlock(withRequirements, compatBlock(rows))
           : (withRequirements ?? ""),
+      ),
     });
   } catch (error) {
     plan.errors.push(
