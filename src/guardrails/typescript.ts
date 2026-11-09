@@ -200,15 +200,15 @@ function copyDeclarations(
 
 function parseConfig(directory: string) {
   const { compiler, root, notice } = loadTypeScript(directory);
-  const config = compiler.readConfigFile(
-    join(directory, "tsconfig.json"),
-    compiler.sys.readFile,
-  );
+  const file = join(directory, "tsconfig.json");
+  const config = compiler.readConfigFile(file, compiler.sys.readFile);
   if (config.error) failDiagnostics(compiler, [config.error]);
   const parsed = compiler.parseJsonConfigFileContent(
     config.config,
     compiler.sys,
     directory,
+    undefined,
+    file,
   );
   failDiagnostics(compiler, parsed.errors);
   return { compiler, root, notice, parsed };
