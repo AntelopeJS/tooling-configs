@@ -14,7 +14,7 @@ import { constants } from "node:os";
 import { join, relative } from "node:path";
 
 import { parseJson, type JsonValue } from "../garden/json.ts";
-import type { CommandResult, HttpResult } from "./types.ts";
+import type { CommandResult, HttpInit, HttpResult } from "./types.ts";
 
 /** A command to drive: a program, its arguments and where it runs. */
 export interface CommandSpec {
@@ -261,19 +261,52 @@ function reason(error: Error): string {
   return error.cause instanceof Error ? error.cause.message : error.message;
 }
 
-/** Sends one request and writes http.json with the status and body. */
+/** Header names whose values http.json replaces with `<redacted>`, since `publish` pushes the evidence to the repository. */
+const CREDENTIAL_HEADERS = new Set([
+  "authorization",
+  "proxy-authorization",
+  "cookie",
+  "set-cookie",
+]);
+
+function redacted(headers: { [name: string]: string }): {
+  [name: string]: string;
+} {
+  return Object.fromEntries(
+    Object.entries(headers).map(([name, value]) => [
+      name,
+      CREDENTIAL_HEADERS.has(name) ? "<redacted>" : value,
+    ]),
+  );
+}
+
+/** The headers a request sends: `content-type: application/json` when it has a body, then the journey's headers over it, names lower-cased. */
+function requestHeaders(init: HttpInit): Headers {
+  const headers = new Headers(
+    init.body ? { "content-type": "application/json" } : {},
+  );
+  for (const [name, value] of Object.entries(init.headers ?? {}))
+    headers.set(name, value);
+  return headers;
+}
+
+/** Sends one request and writes http.json with the request it sent, and the status, headers and body of the answer, credential headers redacted. */
 export async function httpRecorded(
   folder: string,
   url: string,
-  init: { method?: string; body?: string; timeoutMs?: number } = {},
+  init: HttpInit & { timeoutMs?: number } = {},
 ): Promise<HttpResult> {
   mkdirSync(folder, { recursive: true });
+  const method = init.method ?? "GET";
+  let sent: { [name: string]: string } = {};
   let result: HttpResult;
   try {
+    const headers = requestHeaders(init);
+    sent = Object.fromEntries(headers);
     const response = await fetch(url, {
-      method: init.method ?? "GET",
+      method,
       body: init.body,
-      headers: init.body ? { "content-type": "application/json" } : undefined,
+      headers,
       signal: AbortSignal.timeout(init.timeoutMs ?? 5000),
     });
     const body = await response.text();
@@ -283,20 +316,31 @@ export async function httpRecorded(
     } catch {
       json = undefined;
     }
-    result = { folder, url, status: response.status, body, json, error: null };
+    result = {
+      folder,
+      url,
+      status: response.status,
+      headers: Object.fromEntries(response.headers),
+      body,
+      json,
+      error: null,
+    };
   } catch (error) {
     result = {
       folder,
       url,
       status: null,
+      headers: {},
       body: "",
       json: undefined,
       error: error instanceof Error ? reason(error) : String(error),
     };
   }
+  const request = { url, ...init, method, headers: redacted(sent) };
+  const response = { ...result, headers: redacted(result.headers) };
   writeFileSync(
     join(folder, "http.json"),
-    `${JSON.stringify({ request: { url, ...init }, response: result }, null, 2)}\n`,
+    `${JSON.stringify({ request, response }, null, 2)}\n`,
   );
   return result;
 }

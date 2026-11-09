@@ -24,6 +24,7 @@ export type {
   DoorRules,
   DriveOptions,
   FormalCheck,
+  HttpInit,
   HttpResult,
   InterfaceCall,
   InterfaceHooks,
