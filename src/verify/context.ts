@@ -366,8 +366,8 @@ export class VerifyContext implements JourneyContext {
       path: request.path,
       args: request.args ?? [],
       chain: request.chain ?? [],
-      entry: request.entry ?? ".",
     };
+    if (request.entry) body.entry = request.entry;
     if (request.interface) body.interface = request.interface;
     return this.driver(name, app, "/call", body);
   }
