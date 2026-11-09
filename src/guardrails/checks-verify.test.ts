@@ -102,7 +102,7 @@ test("a layer type error fails under verify:types with the compiler error, caugh
     result.stdout,
     /\[verify:types\]\n[^\n]*verify\.config\.ts\(1,14\): error TS2322/,
   );
-  assert.match(result.stdout, /Checks: 8 passed, 1 failed\.\n$/);
+  assert.match(result.stdout, /Checks: 9 passed, 1 failed\.\n$/);
 });
 
 test("a clean layer passes and writes nothing, caught by an implementation that keeps the root's incremental build or writes its config in the layer", (t) => {
@@ -110,7 +110,7 @@ test("a clean layer passes and writes nothing, caught by an implementation that 
   const before = folderStamp(join(root, LAYER), "verify.config.ts");
   const result = run(root);
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 9 passed, 0 failed.\n");
+  assert.equal(result.stdout, "Checks: 10 passed, 0 failed.\n");
   assert.deepEqual(folderStamp(join(root, LAYER), "verify.config.ts"), before);
   assert.equal(existsSync(join(root, ".cache")), false);
 });
@@ -121,7 +121,7 @@ test("a type error in the layer's playground, dist or node_modules is ignored, c
   put(root, `${LAYER}/journeys/dist/built.ts`, BROKEN_SOURCE);
   const result = run(root);
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 9 passed, 0 failed.\n");
+  assert.equal(result.stdout, "Checks: 10 passed, 0 failed.\n");
 });
 
 test("a type error in a layer file other than verify.config.ts fails, caught by an implementation that checks only verify.config.ts", (t) => {
@@ -166,7 +166,7 @@ test("a layer inheriting declarationDir, isolatedDeclarations and declarationMap
   );
   const result = run(root);
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 9 passed, 0 failed.\n");
+  assert.equal(result.stdout, "Checks: 10 passed, 0 failed.\n");
   assert.equal(existsSync(join(root, ".cache")), false);
 });
 
@@ -233,7 +233,7 @@ test("a repository without a verify layer runs exactly the steps it did before, 
   put(root, "playground/pnpm-lock.yaml", "not a lockfile: [\n");
   const result = run(root, { ANTELOPEJS_CHECKS_SKIP: "lockfile:singletons" });
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 8 passed, 0 failed, 1 skipped.\n");
+  assert.equal(result.stdout, "Checks: 9 passed, 0 failed, 1 skipped.\n");
 });
 
 test("ANTELOPEJS_CHECKS_SKIP names verify:types and verify:lockfiles, caught by an implementation that runs a skipped step", (t) => {
@@ -248,7 +248,7 @@ test("ANTELOPEJS_CHECKS_SKIP names verify:types and verify:lockfiles, caught by 
     ANTELOPEJS_CHECKS_SKIP: "verify:types,verify:lockfiles",
   });
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 9 passed, 0 failed, 2 skipped.\n");
+  assert.equal(result.stdout, "Checks: 10 passed, 0 failed, 2 skipped.\n");
 });
 
 test("a stale layer lockfile fails under verify:lockfiles and names the dependency and the fix, caught by an implementation that never compares", (t) => {
@@ -265,12 +265,12 @@ test("a stale layer lockfile fails under verify:lockfiles and names the dependen
     result.stdout,
     /\[verify:lockfiles\]\n\.agents\/skills\/verify-interface\/pnpm-lock\.yaml does not match \.agents\/skills\/verify-interface\/package\.json: run `pnpm install --dir \.agents\/skills\/verify-interface --ignore-workspace --lockfile-only`\.\n {2}importer "\." "left-pad": package\.json asks for "\^1\.3\.0", the lockfile has none\.\n/,
   );
-  assert.match(result.stdout, /Checks: 9 passed, 1 failed, 1 skipped\.\n$/);
+  assert.match(result.stdout, /Checks: 10 passed, 1 failed, 1 skipped\.\n$/);
 });
 
 for (const [manager, file, lock, passed] of [
-  ["pnpm", "pnpm-lock.yaml", pnpmLock({ ".": { dependencies: LEFT_PAD } }), 10],
-  ["npm", "package-lock.json", npmLock({ dependencies: LEFT_PAD }), 9],
+  ["pnpm", "pnpm-lock.yaml", pnpmLock({ ".": { dependencies: LEFT_PAD } }), 11],
+  ["npm", "package-lock.json", npmLock({ dependencies: LEFT_PAD }), 10],
 ] as const)
   test(`a matching ${manager} lockfile passes with every registry unreachable and leaves its folder untouched, caught by an implementation that runs ${manager} or rewrites the lockfile`, (t) => {
     const root = layerRepo(t, CLEAN_SOURCE);

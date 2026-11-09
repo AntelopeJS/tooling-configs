@@ -70,7 +70,7 @@ test("without checks:prepare, lint reading a dist that typecheck builds runs bef
   assert.equal(result.status, 1);
   assert.match(
     result.stdout,
-    /^\[lint\]\n[\s\S]*packages\/interface\/dist\/index\.js is not built\nChecks: 7 passed, 1 failed\.\n$/,
+    /^\[lint\]\n[\s\S]*packages\/interface\/dist\/index\.js is not built\nChecks: 8 passed, 1 failed\.\n$/,
   );
 });
 
@@ -78,7 +78,7 @@ test("checks:prepare builds the dist once before the steps start, so lint beside
   const root = workspace(t, { "checks:prepare": BUILD_INTERFACE });
   const result = bin(root, "checks", ["--no-services"]);
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 8 passed, 0 failed.\n");
+  assert.equal(result.stdout, "Checks: 9 passed, 0 failed.\n");
   assert.equal(builds(root), 2, "checks:prepare once, typecheck's own once");
 });
 
@@ -137,9 +137,9 @@ test("checks:prepare does not run when every step is skipped", (t) => {
   const root = workspace(t, { "checks:prepare": BUILD_INTERFACE });
   const result = bin(root, "checks", ["--no-services"], {
     ANTELOPEJS_CHECKS_SKIP:
-      "typecheck,lint,format:check,knip,test,size,suppressions,sync:check",
+      "typecheck,lint,format:check,knip,test,size,suppressions,sync:check,git:identity",
   });
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 0 passed, 0 failed, 8 skipped.\n");
+  assert.equal(result.stdout, "Checks: 0 passed, 0 failed, 9 skipped.\n");
   assert.equal(builds(root), 0);
 });

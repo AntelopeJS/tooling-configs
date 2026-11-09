@@ -65,7 +65,7 @@ test("two steps that each wait for the other's marker both finish, so the steps 
   });
   const result = bin(root, "checks", ["--no-services"]);
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 8 passed, 0 failed.\n");
+  assert.equal(result.stdout, "Checks: 9 passed, 0 failed.\n");
 });
 
 test("the first and the last step run at the same time, so a bounded pool or per-pair batching is not enough", (t) => {
@@ -75,7 +75,7 @@ test("the first and the last step run at the same time, so a bounded pool or per
   });
   const result = bin(root, "checks", ["--no-services"]);
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 8 passed, 0 failed.\n");
+  assert.equal(result.stdout, "Checks: 9 passed, 0 failed.\n");
 });
 
 test("test starts only after every other step finished, so its time limits never share the CPU with them", (t) => {
@@ -86,7 +86,7 @@ test("test starts only after every other step finished, so its time limits never
   });
   const result = bin(root, "checks", ["--no-services"]);
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 8 passed, 0 failed.\n");
+  assert.equal(result.stdout, "Checks: 9 passed, 0 failed.\n");
 });
 
 test("failures are listed in step order even when a later step fails first", (t) => {
@@ -98,7 +98,7 @@ test("failures are listed in step order even when a later step fails first", (t)
   assert.equal(result.status, 1);
   assert.match(
     result.stdout,
-    /^\[lint\]\n[\s\S]*lint\.marker failed\n\n\[knip\]\n[\s\S]*knip failed\nChecks: 6 passed, 2 failed\.\n$/,
+    /^\[lint\]\n[\s\S]*lint\.marker failed\n\n\[knip\]\n[\s\S]*knip failed\nChecks: 7 passed, 2 failed\.\n$/,
   );
 });
 

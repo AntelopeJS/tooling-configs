@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { packageManager, parseManifest } from "./package.ts";
 import { CEILINGS_FILE } from "./ceilings.ts";
+import { checkGitIdentity, isGitCheckout } from "./git-identity.ts";
 import { runCommand } from "./run-command.ts";
 import {
   type ServicesPlan,
@@ -27,6 +28,7 @@ const CHECK_STEPS = [
   "verify:types",
   "verify:lockfiles",
   "lockfile:singletons",
+  "git:identity",
 ];
 
 /** Steps `antelopejs-checks` runs itself, no package.json script behind them: each returns what failed, empty when it passed. */
@@ -40,6 +42,7 @@ const OWN_STEPS = new Map<
     "lockfile:singletons",
     (root) => Promise.resolve(checkSingletonPackages(root)),
   ],
+  ["git:identity", checkGitIdentity],
 ]);
 
 function hasWork(root: string, step: string): boolean {
@@ -47,6 +50,7 @@ function hasWork(root: string, step: string): boolean {
   if (step === "verify:types") return verifyLayers(root).length > 0;
   if (step === "verify:lockfiles") return verifyInstallFolders(root).length > 0;
   if (step === "lockfile:singletons") return pnpmLockfiles(root).length > 0;
+  if (step === "git:identity") return isGitCheckout(root);
   return true;
 }
 
