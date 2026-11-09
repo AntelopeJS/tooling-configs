@@ -3,7 +3,7 @@ import type { TestContext } from "node:test";
 import { syncRepository } from "../sync.ts";
 import { put, testRepo } from "./test-repo.ts";
 
-/** The `Note:` findings sync reports for a repository with these scripts, extra package.json fields and files. */
+/** The errors `sync --check` reports for a repository with these scripts, extra package.json fields and files. */
 export function findingsFor(
   t: TestContext,
   scripts: Record<string, string>,
@@ -26,7 +26,5 @@ export function findingsFor(
   );
   for (const [path, content] of Object.entries(configs))
     put(root, path, content);
-  return syncRepository(root, { check: true })
-    .advisories.filter((line) => line.startsWith("Note: "))
-    .map((line) => line.slice("Note: ".length));
+  return syncRepository(root, { check: true }).errors;
 }

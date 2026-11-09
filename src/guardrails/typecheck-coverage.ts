@@ -156,15 +156,23 @@ function scriptsOf(files: CoverageFiles): Scripts | undefined {
   }
 }
 
-/** The package.json and tsconfig facts that keep `typecheck` the lib check no other script skips: `build` skips the lib check only over a program `typecheck` checks in full, no tsconfig a script uses or the root one sets `skipLibCheck: true`, and `release` runs `typecheck`. A file that cannot be read yields a note and never an error. */
-export function checkTypecheckCoverage(root: string): string[] {
+/** The package.json and tsconfig facts that keep `typecheck` the lib check no other script skips: `build` skips the lib check only over a program `typecheck` checks in full, no tsconfig a script uses or the root one sets `skipLibCheck: true`, and `release` runs `typecheck`. Under `check` a broken fact is an error; otherwise it is a `Note:` advisory. A file that cannot be read yields a `Note:` advisory and never an error. */
+export function checkTypecheckCoverage(root: string, check: boolean) {
   const files = coverageFiles(root);
   const scripts = scriptsOf(files);
-  if (scripts === undefined) return unreadableNotes(files);
-  return [
-    ...skipCoverageErrors(scripts),
-    ...skipLibCheckErrors(files, scripts),
-    ...releaseErrors(files, scripts),
-    ...unreadableNotes(files),
-  ];
+  const findings =
+    scripts === undefined
+      ? []
+      : [
+          ...skipCoverageErrors(scripts),
+          ...skipLibCheckErrors(files, scripts),
+          ...releaseErrors(files, scripts),
+        ];
+  const notes = check
+    ? unreadableNotes(files)
+    : [...findings, ...unreadableNotes(files)];
+  return {
+    errors: check ? findings : [],
+    advisories: notes.map((note) => `Note: ${note}`),
+  };
 }

@@ -161,7 +161,7 @@ test("a tracked file between two generated ones is the one reported; a check tha
   );
 });
 
-test("a directory where a tsconfig or a release-it config is expected becomes a Note and sync still succeeds; a check that lets the read throw fails sync", (t) => {
+test("a directory where a tsconfig or a release-it config is expected becomes a Note and never a --check error; a check that lets the read throw, or fails --check on it, fails this", (t) => {
   const root = testRepo(t);
   put(
     root,
@@ -177,9 +177,9 @@ test("a directory where a tsconfig or a release-it config is expected becomes a 
   put(root, "tsconfig.json/keep", "");
   mkdirSync(join(root, ".release-it.json"));
   put(root, ".release-it.json/keep", "");
-  const notes = syncRepository(root, { check: true })
-    .advisories.filter((line) => line.startsWith("Note: "))
-    .join("\n");
+  const result = syncRepository(root, { check: true });
+  const notes = result.advisories.join("\n");
   assert.match(notes, /Note: could not read tsconfig\.json \(EISDIR\)/);
   assert.match(notes, /Note: could not read \.release-it\.json \(EISDIR\)/);
+  assert.doesNotMatch(result.errors.join("\n"), /could not read/);
 });
