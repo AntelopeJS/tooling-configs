@@ -64,6 +64,16 @@ const PAGES = new Map([
 ]);
 
 /**
+ * Whether the server listens on a TCP port rather than a pipe or not at all.
+ *
+ * @param {ReturnType<import("node:net").Server["address"]>} address
+ * @returns {address is import("node:net").AddressInfo}
+ */
+function isTcpAddress(address) {
+  return typeof address === "object" && address !== null;
+}
+
+/**
  * Serves the three benchmark pages from memory on a free loopback port.
  *
  * @returns {Promise<{ baseUrl: string, close: () => Promise<void> }>} The running site
@@ -86,7 +96,7 @@ export function startSite() {
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
-      if (!(address instanceof Object)) {
+      if (!isTcpAddress(address)) {
         throw new Error(`site server is not on a TCP port: ${address}`);
       }
       const { port } = address;
