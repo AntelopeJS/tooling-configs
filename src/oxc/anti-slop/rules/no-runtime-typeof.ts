@@ -113,6 +113,15 @@ function constructorCheckTarget(node: ESTree.BinaryExpression): string | undefin
 	return undefined;
 }
 
+/** Built-ins whose `instanceof` test re-implements a `typeof` result for every value but one from another realm. */
+const TYPEOF_INSTANCEOF_TARGETS = new Set(["Function", "Object"]);
+
+/** Return the built-in name when the comparison is `x instanceof Function` or `x instanceof Object`. */
+function instanceofCheckTarget(node: ESTree.BinaryExpression): string | undefined {
+	if (node.operator !== "instanceof" || node.right.type !== "Identifier") return undefined;
+	return TYPEOF_INSTANCEOF_TARGETS.has(node.right.name) ? node.right.name : undefined;
+}
+
 /** Disallow runtime typeof checks that narrow unparsed values instead of decoding them. */
 export const noRuntimeTypeofRule = defineRule({
 	meta: {
@@ -126,6 +135,8 @@ export const noRuntimeTypeofRule = defineRule({
 				"A `typeof` check narrows a representation without establishing its contract. Parse input at its I/O boundary, then branch on the domain value.",
 			constructorCheck:
 				"`.constructor === {{name}}` is a `typeof` check in another form. Parse input at its I/O boundary, or move the check into a type guard such as `(value: unknown): value is string`.",
+			instanceofCheck:
+				"`instanceof {{name}}` is a `typeof` check in another form. Parse input at its I/O boundary, or move the check into a type guard such as `(value: unknown): value is Function`.",
 		},
 		schema: [
 			{
@@ -159,6 +170,10 @@ export const noRuntimeTypeofRule = defineRule({
 				const name = constructorCheckTarget(node);
 				if (name !== undefined && !allowedInTypeGuard(node)) {
 					context.report({ node, messageId: "constructorCheck", data: { name } });
+				}
+				const instanceofName = instanceofCheckTarget(node);
+				if (instanceofName !== undefined && !allowedInTypeGuard(node)) {
+					context.report({ node, messageId: "instanceofCheck", data: { name: instanceofName } });
 				}
 			},
 		};

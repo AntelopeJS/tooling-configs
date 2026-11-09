@@ -8,7 +8,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { createServer } from "node:net";
+import { type AddressInfo, createServer, type Server } from "node:net";
 import { constants } from "node:os";
 import { join, relative } from "node:path";
 
@@ -216,14 +216,19 @@ export function readOutput(folder: string): Output {
 const PORT_RANGE = { low: 10_000, high: 20_000 } as const;
 const PORT_ATTEMPTS = 50;
 
+function isAddressInfo(
+  address: ReturnType<Server["address"]>,
+): address is AddressInfo {
+  return address instanceof Object;
+}
+
 function bindable(port: number): Promise<number | null> {
   return new Promise((resolve) => {
     const server = createServer();
     server.once("error", () => resolve(null));
     server.listen(port, "127.0.0.1", () => {
       const address = server.address();
-      const bound =
-        address !== null && address instanceof Object ? address.port : null;
+      const bound = isAddressInfo(address) ? address.port : null;
       server.close(() => resolve(bound));
     });
   });
