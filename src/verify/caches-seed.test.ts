@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
-import { put } from "../guardrails/helpers/test-repo.ts";
+import { put, read } from "../guardrails/helpers/test-repo.ts";
 import { ProjectCaches } from "./caches.ts";
 
 function storeWithKeptCache(t: TestContext) {
@@ -48,5 +48,25 @@ test("a seed ignores a staging copy another journey is still publishing to the s
   assert.equal(
     existsSync(join(project, ".antelope/cache/@acme/api/value.txt")),
     true,
+  );
+});
+
+test("a seeded project's .bin shims put its own module folders on NODE_PATH, where a seed that copies shims verbatim points them at the project the cache was kept from and one that reads the path as a replacement pattern mangles its $&", (t) => {
+  const tmp = realpathSync(mkdtempSync(join(tmpdir(), "verify-caches-shim-")));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const caches = new ProjectCaches(join(tmp, "store"));
+  const shim = (project: string) =>
+    `export NODE_PATH="${join(project, ".antelope/cache/@acme/api/node_modules/.pnpm/node_modules")}"\n`;
+  const first = join(tmp, "first");
+  caches.seed(first);
+  put(first, ".antelope/cache/@acme/api/node_modules/.bin/tool", shim(first));
+  put(first, ".antelope/cache/manifest.json", '{"@acme/api":"1.0.0"}\n');
+  assert.deepEqual(caches.keep(), []);
+  const second = join(tmp, "second$&");
+  put(second, "package.json", "{}\n");
+  caches.seed(second);
+  assert.equal(
+    read(second, ".antelope/cache/@acme/api/node_modules/.bin/tool"),
+    shim(second),
   );
 });
