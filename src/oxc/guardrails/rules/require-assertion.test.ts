@@ -1,13 +1,15 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
+
+import { ESLint } from "eslint";
 import { RuleTester } from "oxlint/plugins-dev";
 
 import { requireAssertionRule } from "./require-assertion.ts";
 
-const tester = new RuleTester({
-  languageOptions: { parserOptions: { lang: "ts" } },
-});
 const error = { messageId: "missingAssertion" };
 
-tester.run("antelopejs/require-assertion", requireAssertionRule, {
+const cases = {
   valid: [
     ...[
       "expect(value).to.equal(1)",
@@ -70,4 +72,36 @@ tester.run("antelopejs/require-assertion", requireAssertionRule, {
       errors: [error],
     },
   ],
+};
+
+new RuleTester({
+  languageOptions: { parserOptions: { lang: "ts" } },
+}).run("antelopejs/require-assertion", requireAssertionRule, cases);
+
+const eslint = new ESLint({
+  cwd: fileURLToPath(new URL("fixtures/eslint/", import.meta.url)),
+  overrideConfigFile: fileURLToPath(
+    new URL("fixtures/eslint/require-assertion.config.mjs", import.meta.url),
+  ),
+});
+
+async function eslintMessageIds(code: string) {
+  const results = await eslint.lintText(code, { filePath: "tests/x.test.ts" });
+  return results.flatMap((result) =>
+    result.messages.map((message) => message.messageId ?? message.message),
+  );
+}
+
+describe("antelopejs/require-assertion under ESLint", () => {
+  for (const code of cases.valid)
+    it(`accepts ${code}`, async () => {
+      assert.deepEqual(await eslintMessageIds(code), []);
+    });
+  for (const { code, errors } of cases.invalid)
+    it(`reports ${code}`, async () => {
+      assert.deepEqual(
+        await eslintMessageIds(code),
+        errors.map(({ messageId }) => messageId),
+      );
+    });
 });
