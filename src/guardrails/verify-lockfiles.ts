@@ -21,14 +21,14 @@ const OTHER_LOCKS = [
 ] as const;
 
 /** The manifest fields both package managers record as a project's direct dependencies. */
-const DIRECT_FIELDS = [
+export const DIRECT_FIELDS = [
   "dependencies",
   "devDependencies",
   "optionalDependencies",
 ] as const;
 
 /** A JSON or YAML mapping, read with every scalar as its source text; `undefined` when absent or not a mapping. */
-type Mapping = YAMLMap | undefined;
+export type Mapping = YAMLMap | undefined;
 
 /** Direct dependencies by name, each with every specifier it is declared or locked with across the three fields. */
 type Direct = Map<string, Set<string>>;
@@ -39,7 +39,8 @@ export interface InstallFolder {
   lockfile: typeof PNPM_LOCK | typeof NPM_LOCK | "other" | undefined;
 }
 
-class Unreadable extends Error {}
+/** A lockfile or manifest this check cannot read as a version it knows. */
+export class Unreadable extends Error {}
 
 /** Parses a JSON or YAML file whose top level is a mapping; throws `Unreadable` otherwise. */
 function readMapping(path: string): YAMLMap {
@@ -53,17 +54,20 @@ function readMapping(path: string): YAMLMap {
   return contents;
 }
 
-function mapping(map: Mapping, key: string): Mapping {
+/** The mapping under `key`; `undefined` when absent or not a mapping. */
+export function mapping(map: Mapping, key: string): Mapping {
   const value = map?.get(key, true);
   return isMap(value) ? value : undefined;
 }
 
-function scalar(map: Mapping, key: string): string | undefined {
+/** The source text of the scalar under `key`; `undefined` when absent or not a scalar. */
+export function scalar(map: Mapping, key: string): string | undefined {
   const value = map?.get(key, true);
   return isScalar(value) ? String(value.value) : undefined;
 }
 
-function keys(map: Mapping): string[] {
+/** The scalar keys of a mapping, in order; none when it is absent. */
+export function keys(map: Mapping): string[] {
   return (map?.items ?? []).flatMap((pair) =>
     isScalar(pair.key) ? [String(pair.key.value)] : [],
   );

@@ -10,6 +10,7 @@ import {
   startServices,
   stopServices,
 } from "./services.ts";
+import { checkSingletonPackages, pnpmLockfiles } from "./singleton-packages.ts";
 import { typecheckLayers, verifyLayers } from "./verify-layers.ts";
 import { checkLockfiles, verifyInstallFolders } from "./verify-lockfiles.ts";
 
@@ -25,6 +26,7 @@ const CHECK_STEPS = [
   "sync:check",
   "verify:types",
   "verify:lockfiles",
+  "lockfile:singletons",
 ];
 
 /** Steps `antelopejs-checks` runs itself, no package.json script behind them: each returns what failed, empty when it passed. */
@@ -34,12 +36,17 @@ const OWN_STEPS = new Map<
 >([
   ["verify:types", typecheckLayers],
   ["verify:lockfiles", (root) => Promise.resolve(checkLockfiles(root))],
+  [
+    "lockfile:singletons",
+    (root) => Promise.resolve(checkSingletonPackages(root)),
+  ],
 ]);
 
 function hasWork(root: string, step: string): boolean {
   if (step === "ratchet") return existsSync(join(root, CEILINGS_FILE));
   if (step === "verify:types") return verifyLayers(root).length > 0;
   if (step === "verify:lockfiles") return verifyInstallFolders(root).length > 0;
+  if (step === "lockfile:singletons") return pnpmLockfiles(root).length > 0;
   return true;
 }
 
