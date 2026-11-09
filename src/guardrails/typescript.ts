@@ -219,6 +219,10 @@ function copyDeclarations(
   return files;
 }
 
+/** TS18002: the config lists `files: []`, as a workspace's shared base does. */
+const EMPTY_FILES = 18002;
+
+/** A `javascriptOnly` parse lets a config that declares `files: []` parse to no inputs; any other parse error, including an `include` that matches nothing, fails. */
 function parseConfig(directory: string, javascriptOnly = false) {
   const { compiler, root, notice } = loadTypeScript(directory, javascriptOnly);
   const file = join(directory, "tsconfig.json");
@@ -231,7 +235,12 @@ function parseConfig(directory: string, javascriptOnly = false) {
     undefined,
     file,
   );
-  failDiagnostics(compiler, parsed.errors);
+  failDiagnostics(
+    compiler,
+    parsed.errors.filter(
+      (error) => !javascriptOnly || error.code !== EMPTY_FILES,
+    ),
+  );
   return { compiler, root, notice, parsed };
 }
 
