@@ -139,6 +139,23 @@ already listed there that still exist, so hand-added entries such as a site's
 content directory stay covered. A listed path that no longer exists is dropped.
 The caller's other inputs stay as they are.
 
+## Generated DMS module table
+
+`antelopejs-sync` (full profile) keeps one table of the AntelopeJS DMS modules
+identical in every README that opts in. Put both markers anywhere in the
+`README.md` of the root package or of a workspace package that is not private:
+
+```md
+<!-- antelopejs-dms-modules:start -->
+<!-- antelopejs-dms-modules:end -->
+```
+
+Sync writes the table between them, from the list in `src/guardrails/docs-modules.ts`,
+so adding or renaming a module changes that list once. A README without the
+markers gets nothing. Text outside the markers stays. `antelopejs-sync --check`
+reports a README whose table differs as drift, and fails on a start marker
+without its end marker.
+
 ## Declare compatibility explicitly
 
 Put a `docs-compat` comment immediately before a top-level Markdown table with
