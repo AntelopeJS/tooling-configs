@@ -17,6 +17,7 @@ import {
   LEGACY_AGGREGATOR_ID,
 } from "./ci-aggregator.ts";
 import { staleNeeds } from "./workflow-needs.ts";
+import { restoreEmptyValueComments } from "./yaml-comments.ts";
 
 export const CI_PATH = ".github/workflows/ci.yml";
 export const CI_JOB_ID = "ci";
@@ -436,6 +437,7 @@ export function ciWorkflow(
   const stale = staleNeeds(document, CI_PATH, removed);
   if (stale.length) throw new Error(stale.join("\n"));
   if (!changed) return current;
+  restoreEmptyValueComments(document, current);
   blockOverflowingFlow(document);
   return document.toString({ lineWidth: 0, flowCollectionPadding: false });
 }

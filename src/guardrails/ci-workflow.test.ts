@@ -269,6 +269,49 @@ test("a rewritten caller passes the pack's own formatter check, whether old-shap
   }
 });
 
+test("comments under an empty trigger keep their lines and columns through a rewrite, where the yaml default moves the first onto the trigger's line and a fix that ignores columns moves the indented and dedented ones", () => {
+  const triggers = [
+    "on:",
+    "  pull_request:",
+    "    branches: [main]",
+    "  workflow_dispatch:",
+    "  # Upstream documentation changes without a commit in this repository.",
+    "  # Rebuild and validate it daily; this workflow does not deploy the sites.",
+    "  schedule:",
+    '    - cron: "17 3 * * *"',
+    "  push: # on every branch",
+    "  # kept under the inline comment",
+    "",
+    "  # before a blank line",
+    "",
+    "  release:",
+    "    # indented under release",
+    "    # in two lines",
+    "  merge_group:",
+    "  # under the last trigger",
+    "",
+    "# above the jobs",
+    "",
+  ].join("\n");
+  const rewritten = rewrite(
+    `name: CI\n\n${triggers}jobs:\n  checks:\n    uses: ${CI_NODE_REF}\n`,
+  );
+  assert.equal(
+    rewritten.slice(rewritten.indexOf("on:"), rewritten.indexOf("jobs:")),
+    triggers,
+  );
+});
+
+test("a comment under the last trigger stays above the workflow_dispatch sync appends and a dedented one stays above permissions, where the yaml map comment trails the appended key and a fix that counts it as a source key pulls both into on", () => {
+  const rewritten = rewrite(
+    `on:\n  push:\n  pull_request:\n\n  # only pull requests\n\n# least privilege\npermissions:\n  contents: read\njobs:\n  checks:\n    uses: ${CI_NODE_REF}\n`,
+  );
+  assert.match(
+    rewritten,
+    /\n {2}pull_request:\n\n {2}# only pull requests\n {2}workflow_dispatch:[^\n]*\n\n# least privilege\npermissions:/,
+  );
+});
+
 test("a renamed caller still gets a renovate-sync job and keeps its dependents", () => {
   const parsed = jobs(rewrite(LEGACY));
   assert.deepEqual(Object.keys(parsed), [
