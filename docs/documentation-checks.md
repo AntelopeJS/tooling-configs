@@ -372,13 +372,13 @@ export default defineScenes([
 ]);
 ```
 
-A screenshot scene sets an `id` in kebab-case, a `route`, an `output` path ending in `.webp`, and optionally a `viewport` (default 1440 by 900), `steps` and a `crop` selector. A setup scene sets `setup: true`, takes no `output`, and runs once before any screenshot. The steps are `click`, `fill`, `press` and `wait`.
+A screenshot scene sets an `id` in kebab-case, a `route`, an `output` path ending in `.webp`, and optionally a `viewport` (default 1440 by 900), `steps` and a `crop` selector. A setup scene sets `setup: true`, takes no `output`, and runs once before any screenshot. The setup scenes share one browser context. Each screenshot scene opens a fresh context with the cookies, `localStorage` and IndexedDB the setup scenes left (Playwright does not save `sessionStorage`), so a scene that signs out or clears storage changes no other scene. A screenshot scene with `signedOut: true` opens an empty context instead, for a page such as the sign-in form. The steps are `click`, `fill`, `press` and `wait`.
 
 A run does this:
 
 1. Clones AntelopeJS/template-dms-demo at `--demo-ref` (default `main`) into a temporary directory, and sets the pnpm overrides there so every published package of the current repository resolves to the working tree. The demo's own overrides are kept next to them, in `package.json` and in `pnpm-workspace.yaml`, because the pnpm that installs decides which one it reads. Nothing is committed.
 2. Starts an empty MongoDB with `mongodb-memory-server` and the demo's `pnpm run capture:start`, with `HELIO_NOW=2026-06-15T09:00:00Z`, `HELIO_SIMULATORS=off` and `TZ=UTC`.
-3. Opens Chromium dark, at 2x, with the browser clock frozen on `HELIO_NOW`, runs the setup scenes, then captures each scene as lossless WebP.
+3. Opens Chromium dark, at 2x, with the browser clock frozen on `HELIO_NOW`, runs the setup scenes in one context and saves its session, then captures each scene in a fresh context seeded with that session, as lossless WebP.
 4. Writes the files. A scene whose committed file differs by no more than 0.1% of the pixels (pixelmatch) keeps its committed bytes, so render noise changes no file. With `--check` it compares each scene the same way, fails above 0.1% changed pixels, and writes nothing.
 
 A scene is shot once its page is ready, all seen in one look: the app has set `data-dms-ready` on `<html>`, the font faces its text and form fields use are loaded, and no request has started or ended for 500 ms. A page that is not ready within 60 s is not shot: its scene fails and names what was still pending. An event stream (`EventSource`) or a WebSocket is not waited for; any other request that never ends keeps the page from being ready. Add a `wait` step for a change the page makes later without a request. A scene that fails to render fails the run, and its id leads the failure line. Set `ANTELOPEJS_CAPTURE_DEMO_URL` to clone the demo from another URL or a local path.

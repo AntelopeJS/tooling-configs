@@ -50,6 +50,7 @@ function scene(setup: boolean): CaptureScene {
     viewport: { width: 1440, height: 900 },
     steps: STEPS,
     setup,
+    signedOut: false,
   };
 }
 

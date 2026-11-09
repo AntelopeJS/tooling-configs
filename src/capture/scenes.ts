@@ -27,7 +27,9 @@ export type CaptureStep =
 /**
  * A scene as a `docs/captures.ts` declares it. A screenshot scene writes `output`, a `.webp` path
  * relative to the repository root. A setup scene (`setup: true`, such as the onboarding that
- * creates the administrator) runs its steps once, before any screenshot, and writes nothing.
+ * creates the administrator) runs its steps once, before any screenshot, and writes nothing. Each
+ * screenshot scene opens a fresh browser with the session the setup scenes left, or an empty one
+ * with `signedOut: true`.
  */
 export interface CaptureSceneInput {
   id: string;
@@ -38,6 +40,8 @@ export interface CaptureSceneInput {
   crop?: string;
   output?: string;
   setup?: boolean;
+  /** Opens the scene in a browser with no session, such as the sign-in page. */
+  signedOut?: boolean;
 }
 
 /** A scene with every default filled in. */
@@ -49,6 +53,7 @@ export interface CaptureScene {
   crop?: string;
   output?: string;
   setup: boolean;
+  signedOut: boolean;
 }
 
 /** Types the `docs/captures.ts` default export: `export default defineScenes([...])`. */
@@ -124,6 +129,9 @@ function parseScene(entry: JsonValue, position: number): CaptureScene {
     if (route === undefined || !route.startsWith("/"))
       throw new Error('route must start with "/"');
     const setup = entry.setup === true;
+    const signedOut = entry.signedOut === true;
+    if (setup && signedOut)
+      throw new Error("a setup scene cannot be signed out");
     const scene: CaptureScene = {
       id,
       route,
@@ -132,6 +140,7 @@ function parseScene(entry: JsonValue, position: number): CaptureScene {
         ? children(entry, "steps").map(parseStep)
         : [],
       setup,
+      signedOut,
     };
     const crop = optStr(entry, "crop");
     if (crop !== undefined && crop !== "") scene.crop = crop;

@@ -20,8 +20,9 @@ import { chromium, type Browser } from "playwright-core";
 import sharp from "sharp";
 
 import { child, object, parseJson, type JsonObject } from "../garden/json.ts";
-import { openContext, renderScene } from "./browser.ts";
+import { playwrightScenes } from "./browser.ts";
 import { type CaptureArgs, checkoutSettings, demoEnvironment } from "./demo.ts";
+import { playScenes } from "./play.ts";
 import { settle } from "./settle.ts";
 import { stopProcessGroup } from "./stop.ts";
 import { type CaptureScene, parseScenes, selectScenes } from "./scenes.ts";
@@ -126,33 +127,22 @@ interface Session {
   check: boolean;
 }
 
-async function captureAll(
+function captureAll(
   session: Session,
   scenes: CaptureScene[],
 ): Promise<string[]> {
-  const failures: string[] = [];
-  const first = scenes[0];
-  const context = await openContext(
-    session.browser,
-    first?.viewport ?? { width: 1440, height: 900 },
+  return playScenes(
+    playwrightScenes(session.browser, session.url),
+    scenes,
+    (scene, png) =>
+      scene.output === undefined
+        ? Promise.resolve(undefined)
+        : settle(sharp, session.root, session.check, {
+            scene: scene.id,
+            output: scene.output,
+            png,
+          }),
   );
-  for (const scene of scenes) {
-    try {
-      const png = await renderScene(context, session.url, scene);
-      if (png === undefined || scene.output === undefined) continue;
-      const failure = await settle(sharp, session.root, session.check, {
-        scene: scene.id,
-        output: scene.output,
-        png,
-      });
-      if (failure !== undefined) failures.push(failure);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      failures.push(`scene ${scene.id}: ${reason.split("\n")[0]}`);
-    }
-  }
-  await context.close();
-  return failures;
 }
 
 /** Runs the scenes against the demo and writes, or with `check` compares, their WebP files. Answers the failures, one line per scene. */

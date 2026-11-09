@@ -17,6 +17,7 @@ test("a scene gets the guide viewport, no steps and the screenshot role by defau
     viewport: { width: 1440, height: 900 },
     steps: [],
     setup: false,
+    signedOut: false,
   });
 });
 
@@ -77,6 +78,10 @@ test("parseScenes names the scene and the field it refuses", () => {
     [
       { ...GUIDE, setup: true },
       /scene "dashboard-overview": a setup scene takes no output/,
+    ],
+    [
+      { id: "onboarding", route: "/", setup: true, signedOut: true },
+      /scene "onboarding": a setup scene cannot be signed out/,
     ],
     [
       { ...GUIDE, steps: [{ action: "hover", selector: "a" }] },

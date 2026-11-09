@@ -4,6 +4,7 @@ import type sharp from "sharp";
 import { DEMO_NOW } from "./demo.ts";
 import type { RawImage } from "./compare.ts";
 import { NetworkLog } from "./network.ts";
+import type { SceneBrowser, SessionState } from "./play.ts";
 import type { CaptureScene, CaptureStep } from "./scenes.ts";
 import { type ReadyOptions, type ReadyPage, waitForReady } from "./ready.ts";
 
@@ -13,13 +14,15 @@ const READY: ReadyOptions = { timeoutMs: 60_000, quietMs: 500, pollMs: 50 };
 
 export type Sharp = typeof sharp;
 
-/** A browser that opens every scene dark, with the clock frozen on the demo's instant, at 2x. */
-export async function openContext(
+/** A browser that opens every scene dark, with the clock frozen on the demo's instant, at 2x, seeded with `session` when given. */
+async function openContext(
   browser: Browser,
   viewport: CaptureScene["viewport"],
+  session: SessionState | undefined,
 ): Promise<BrowserContext> {
   const context = await browser.newContext({
     viewport,
+    ...(session && { storageState: session }),
     deviceScaleFactor: DEVICE_SCALE_FACTOR,
     colorScheme: "dark",
     reducedMotion: "reduce",
@@ -127,7 +130,7 @@ export async function playScene(
 }
 
 /** Plays the scene on a new page of `context`, at the scene's viewport, and closes the page. */
-export async function renderScene(
+async function renderScene(
   context: BrowserContext,
   baseUrl: string,
   scene: CaptureScene,
@@ -156,6 +159,19 @@ export async function renderScene(
   } finally {
     await page.close();
   }
+}
+
+/** The scenes' browser on Playwright, against the demo at `baseUrl`. */
+export function playwrightScenes(
+  browser: Browser,
+  baseUrl: string,
+): SceneBrowser<BrowserContext> {
+  return {
+    open: (viewport, session) => openContext(browser, viewport, session),
+    save: (context) => context.storageState({ indexedDB: true }),
+    render: (context, scene) => renderScene(context, baseUrl, scene),
+    close: (context) => context.close(),
+  };
 }
 
 /** Lossless WebP, so decoding what was written gives back the pixels that were captured. */
