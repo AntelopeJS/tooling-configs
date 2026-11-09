@@ -166,21 +166,28 @@ export function isTestSource(root: string, file: string): boolean {
   return TEST_SOURCE_GLOBS.some((pattern) => matchesGlob(path, pattern));
 }
 
+function formatErrors(
+  compiler: typeof ts,
+  diagnostics: readonly ts.Diagnostic[],
+): string {
+  return compiler.formatDiagnostics(
+    diagnostics.filter(
+      (item) => item.category === compiler.DiagnosticCategory.Error,
+    ),
+    {
+      getCanonicalFileName: (file) => file,
+      getCurrentDirectory: () => process.cwd(),
+      getNewLine: () => "\n",
+    },
+  );
+}
+
 function failDiagnostics(
   compiler: typeof ts,
   diagnostics: readonly ts.Diagnostic[],
 ): void {
-  const errors = diagnostics.filter(
-    (item) => item.category === compiler.DiagnosticCategory.Error,
-  );
-  if (errors.length)
-    throw new Error(
-      compiler.formatDiagnostics(errors, {
-        getCanonicalFileName: (file) => file,
-        getCurrentDirectory: () => process.cwd(),
-        getNewLine: () => "\n",
-      }),
-    );
+  const errors = formatErrors(compiler, diagnostics);
+  if (errors) throw new Error(errors);
 }
 
 /** Declaration inputs are part of the local closure but TypeScript does not emit copies of them. */
@@ -188,6 +195,7 @@ function copyDeclarations(
   program: ts.Program,
   directory: string,
   output: string,
+  modules: Map<string, string>,
 ): string[] {
   const sources = program
     .getSourceFiles()
@@ -215,6 +223,7 @@ function copyDeclarations(
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, source.text);
     files.push(target);
+    modules.set(resolve(target), source.fileName);
   }
   return files;
 }
@@ -299,7 +308,43 @@ export function outputRoot(directory: string): string {
   );
 }
 
-/** Emits with the package's compiler and config, or for JavaScript alone with the pack's when the package's has no compiler API; test roots and outputs never enter either proof. `modules` maps each emitted file to its source module; `paths` is the configured `paths` with absolute targets. */
+/** The root TypeScript lays its emit out under: `rootDir`, else the common directory of every authored source in `program`, wherever it sits. */
+function emitRoot(program: ts.Program): string {
+  const authored = program
+    .getSourceFiles()
+    .filter(
+      (source) =>
+        !source.isDeclarationFile &&
+        !program.isSourceFileFromExternalLibrary(source),
+    )
+    .map((source) => source.fileName);
+  let root = dirname(authored[0] ?? ".");
+  for (const file of authored)
+    while (relative(root, file).startsWith(`..${sep}`)) root = dirname(root);
+  return program.getCompilerOptions().rootDir ?? root;
+}
+
+/** The declaration TypeScript withheld for each module with a declaration error, at the path its emit would have used, mapped to that module. */
+function withheldDeclarations(
+  program: ts.Program,
+  diagnostics: readonly ts.Diagnostic[],
+  output: string,
+  directory: string,
+): Map<string, string> {
+  const root = emitRoot(program);
+  const withheld = new Map<string, string>();
+  for (const { file } of diagnostics) {
+    if (file === undefined || isTestSource(directory, file.fileName)) continue;
+    const path = resolve(output, relative(root, file.fileName)).replace(
+      /\.([cm]?)[jt]sx?$/u,
+      ".d.$1ts",
+    );
+    withheld.set(path, file.fileName);
+  }
+  return withheld;
+}
+
+/** Emits with the package's compiler and config, or for JavaScript alone with the pack's when the package's has no compiler API; test roots and outputs never enter either proof. `modules` maps each emitted, copied or `withheld` file to its source module; `paths` is the configured `paths` with absolute targets. */
 export function emitPackage(
   directory: string,
   output: string,
@@ -339,34 +384,67 @@ export function emitPackage(
     projectReferences: parsed.projectReferences,
   });
   if (declarations)
-    failDiagnostics(compiler, compiler.getPreEmitDiagnostics(program));
+    failDiagnostics(compiler, [
+      ...program.getConfigFileParsingDiagnostics(),
+      ...program.getOptionsDiagnostics(),
+      ...program.getSyntacticDiagnostics(),
+      ...program.getGlobalDiagnostics(),
+      ...program.getSemanticDiagnostics(),
+    ]);
+  const declarationDiagnostics = declarations
+    ? program.getDeclarationDiagnostics()
+    : [];
   const files: string[] = [];
   const modules = new Map<string, string>();
-  const result = program.emit(
-    undefined,
-    (file, text, _bom, _onError, sources) => {
-      if (sources?.some((source) => isTestSource(directory, source.fileName)))
-        return;
-      if (
-        declarations ? !/\.d\.[cm]?ts$/.test(file) : !/\.[cm]?jsx?$/.test(file)
-      )
-        return;
-      mkdirSync(dirname(file), { recursive: true });
-      writeFileSync(file, text);
-      files.push(file);
-      if (sources?.[0] !== undefined)
-        modules.set(resolve(file), sources[0].fileName);
-    },
+  program.emit(undefined, (file, text, _bom, _onError, sources) => {
+    if (sources?.some((source) => isTestSource(directory, source.fileName)))
+      return;
+    if (declarations ? !/\.d\.[cm]?ts$/.test(file) : !/\.[cm]?jsx?$/.test(file))
+      return;
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, text);
+    files.push(file);
+    if (sources?.[0] !== undefined)
+      modules.set(resolve(file), sources[0].fileName);
+  });
+  const withheld = withheldDeclarations(
+    program,
+    declarationDiagnostics,
+    output,
+    directory,
   );
-  if (declarations) failDiagnostics(compiler, result.diagnostics);
-  if (declarations) files.push(...copyDeclarations(program, directory, output));
+  if (declarations)
+    files.push(...copyDeclarations(program, directory, output, modules));
+  for (const [file, source] of withheld) modules.set(file, source);
   return {
     compiler,
     compilerRoot: root,
     notice,
     files,
+    withheld: [...withheld.keys()],
     modules,
     options: parsed.options,
     paths: absolutePaths(parsed.options),
+    /** The formatted declaration errors of the modules `sources` reach; empty when there are none. A declaration error in a module no published entry reaches never fails the proof. */
+    declarationErrors(sources: readonly string[]): string {
+      if (!declarationDiagnostics.length) return "";
+      const reached = new Set(
+        compiler
+          .createProgram({
+            rootNames: sources,
+            options,
+            projectReferences: parsed.projectReferences,
+            oldProgram: program,
+          })
+          .getSourceFiles()
+          .map((source) => source.fileName),
+      );
+      return formatErrors(
+        compiler,
+        declarationDiagnostics.filter(
+          (item) => item.file !== undefined && reached.has(item.file.fileName),
+        ),
+      );
+    },
   };
 }
