@@ -24,7 +24,9 @@ runs:
     - name: Install Vale
       if: steps.standard.outputs.enabled == 'true'
       shell: bash
-      run: echo "VALE_BIN=$("$GITHUB_ACTION_PATH/install-vale.sh" "$RUNNER_TEMP/vale")" >> "$GITHUB_ENV"
+      run: |
+        vale_bin=$("$GITHUB_ACTION_PATH/install-vale.sh" "$RUNNER_TEMP/vale")
+        echo "VALE_BIN=$vale_bin" >> "$GITHUB_ENV"
     - name: Check documentation
       shell: bash
       env:
