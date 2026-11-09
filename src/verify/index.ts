@@ -33,6 +33,7 @@ export type {
   ServiceDefinition,
   ServiceEndpoint,
   StopResult,
+  TemplateInit,
   TemplateProbe,
   VerifyConfig,
 } from "./types.ts";

@@ -60,24 +60,26 @@ const MODULE: KindText = {
 
 const TEMPLATE: KindText = {
   description:
-    "Drive this AntelopeJS template the way a new user does: scaffold a project with `ajs project init` from an offline interfaces manifest, install it, run its own `pnpm run checks`, run `ajs project dev --watch` and hit its welcome page, endpoint or ready line. Use to prove a change to the template works before merge, to verify a PR, or to run the release canary.",
+    "Drive this AntelopeJS template the way a new user does: scaffold a project with `ajs project init`, or a module with `ajs module init`, from an offline interfaces manifest, install it, run its own `pnpm run checks`, run `ajs project dev --watch` and hit its welcome page, endpoint or ready line. Use to prove a change to the template works before merge, to verify a PR, or to run the release canary.",
   title: "Verify template",
-  user: "The user of a template is someone running `ajs project init --template`: they get a copy of the repository without `.agents/` and `.claude/skills/` and expect it to install, pass its checks and run.",
+  user: "The user of a template is someone running `ajs project init --template`, or `ajs module init --template` for a module template: they get a copy of the repository without `.agents/` and `.claude/skills/` and expect it to install, pass its checks and run.",
   launch:
-    "`new` copies the working tree, uncommitted changes included, into a local git repository, and lists it in an offline interfaces manifest (`templates`, or `projectTemplates` when `template.project` is set) under `template.name`. Journeys point `ajs config set git` at it, so no step reaches GitHub. Every `services` entry of `verify.config.ts` then starts in its own Docker container on a free loopback port, as for a module.",
+    "`new` copies the working tree, uncommitted changes included, into a local git repository, and lists it in an offline interfaces manifest (`templates`, or `projectTemplates` when `template.project` is set) under `template.name`. `context.scaffold` creates from it with `ajs project init`, or with `ajs module init` when `template.module` is set. Journeys point `ajs config set git` at it, so no step reaches GitHub. Every `services` entry of `verify.config.ts` then starts in its own Docker container on a free loopback port, as for a module.",
   builtins: `- \`scaffold-dev\`: \`ajs project init <app> --template <name> --pm pnpm --git-init\`, \`pnpm install --frozen-lockfile\`, then \`ajs project dev --watch\` with \`PORT\` set until \`template.probe\` answers: a path and status on that port, or a \`log\` line followed by \`settleMs\` of still running. Ctrl+C must exit 130.
 - \`scaffold-checks\`: the same scaffold and install, then the project's own \`pnpm run checks\`.
+- For a module template (\`template.module\`), both run \`ajs module init <app> --template <name> --pm pnpm --git-init\` in place of \`ajs project init\`, and \`scaffold-dev\` runs \`pnpm run build\` before \`ajs project dev --watch --project playground\`.
 
 Both take their project from \`context.prepared("scaffolded", ...)\`, so the run scaffolds and installs it once. A repository journey that prepares \`scaffolded\` shares that build, so its build must be the same \`context.scaffold\` then \`pnpm install --frozen-lockfile --prefer-offline\`.`,
   layer: `- \`template.name\`: the listing name users pass to \`--template\`.
 - \`template.project\`: list it under \`projectTemplates\`.
+- \`template.module\`: a module template, listed under \`templates\` and created with \`ajs module init\`; it excludes \`template.project\`.
 - \`services\`: image, port, readiness command and \`reset\`, as for a module. \`new\` starts them in Docker on free ports; a journey reads them with \`context.service(name)\` and \`context.native(...)\` and passes their endpoints to the project it starts through the \`env\` of \`context.dev\`.
 - \`context.dev(name, project, { command })\`: a template that is not an \`ajs\` project starts with its own command, such as \`["node", "ace", "serve"]\`, in place of \`ajs project dev\`. The harness records its PID, so \`context.stop\` and \`clean\` stop it, and \`template.probe\` decides when it is ready. Leave \`scaffold-dev\` and \`scaffold-checks\` out of its features: both run \`ajs\`.
 - \`template.probe\`: \`path\`, \`status\` and \`body\` for an HTTP welcome page or endpoint, or \`log\` and \`settleMs\` for a template that serves nothing.`,
   smoke:
     "`scaffold-dev` and `scaffold-checks`, or, for a template that is not an `ajs` project, its own journeys that start it with `context.dev(name, project, { command })`",
   gotchas: [
-    "`ajs project init` leaves out `.agents/` and `.claude/skills/`, so the scaffolded project carries neither this skill nor anything else under `.agents/`. Never expect either folder there.",
+    "`ajs project init` and `ajs module init` leave out `.agents/` and `.claude/skills/`, so the scaffolded project or module carries neither this skill nor anything else under `.agents/`. Never expect either folder there.",
     "Every file a user gets is user-facing here, tests included; only `.github/` and `.claude/` outside `.claude/skills/` are not.",
   ],
 };
