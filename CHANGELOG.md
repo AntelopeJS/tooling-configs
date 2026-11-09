@@ -1,5 +1,77 @@
 # Changelog
 
+## v0.5.0
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.4.1...v0.5.0)
+
+### 🚀 Enhancements
+
+- **rules:** Report Object.assign writing an unknown or any value over a typed field ([#262](https://github.com/AntelopeJS/tooling-configs/pull/262))
+
+### 🔥 Performance
+
+- **verify:** Let the built-in template journeys share the scaffolded project ([#219](https://github.com/AntelopeJS/tooling-configs/pull/219))
+- **verify:** Hard-link shared files when copying a prepared folder ([#221](https://github.com/AntelopeJS/tooling-configs/pull/221))
+
+### 🩹 Fixes
+
+- **docs:** Retry the Vale download and fail the step when it cannot ([#240](https://github.com/AntelopeJS/tooling-configs/pull/240))
+- **lint:** Exempt only root sync-written configs from require-tsconfig-include ([#246](https://github.com/AntelopeJS/tooling-configs/pull/246))
+- **sync:** Write the suppression budget under the template profile ([#242](https://github.com/AntelopeJS/tooling-configs/pull/242))
+- **body-check:** Read suppression rows only from the suppression table ([#268](https://github.com/AntelopeJS/tooling-configs/pull/268))
+- **verify:** Record SIGINT as sent only when stop delivers it ([#261](https://github.com/AntelopeJS/tooling-configs/pull/261))
+- **api-diff:** Resolve type roots from each package's tsconfig directory ([#254](https://github.com/AntelopeJS/tooling-configs/pull/254))
+- **api-diff:** Order same-named declaration blocks by their text ([#267](https://github.com/AntelopeJS/tooling-configs/pull/267))
+- **lint:** Report self-imports in tests run by ajs module test even when self-linked ([#229](https://github.com/AntelopeJS/tooling-configs/pull/229))
+- **guardrails:** Keep tracked node_modules symlinks in proof worktrees ([#239](https://github.com/AntelopeJS/tooling-configs/pull/239))
+- **sync:** Fall back to a home bin directory when corepack cannot enable globally ([#220](https://github.com/AntelopeJS/tooling-configs/pull/220))
+- **verify:** Point seeded .bin shims at their own project cache ([#224](https://github.com/AntelopeJS/tooling-configs/pull/224))
+- **guardrails:** Locate require-assertion's assertions by ancestry so the rule works under ESLint ([#238](https://github.com/AntelopeJS/tooling-configs/pull/238))
+- **anti-slop:** Report instanceof Function and Object in no-runtime-typeof ([#255](https://github.com/AntelopeJS/tooling-configs/pull/255))
+- **api-diff:** Build with the package manager the workspace root declares ([#256](https://github.com/AntelopeJS/tooling-configs/pull/256))
+- **sync:** Link .claude/skills to the own skill under --verify custom ([#259](https://github.com/AntelopeJS/tooling-configs/pull/259))
+- **api-diff:** Stop the wildcard walk at a link back into a directory it is inside ([#252](https://github.com/AntelopeJS/tooling-configs/pull/252))
+- **anti-slop:** Let no-chained-type-assertions pass a phantom retype of this ([#258](https://github.com/AntelopeJS/tooling-configs/pull/258))
+- **checks:** Run an optional checks:prepare script before the parallel steps ([#274](https://github.com/AntelopeJS/tooling-configs/pull/274))
+- **verify:** Keep no module cache when one non-ajs command installs several modules ([#223](https://github.com/AntelopeJS/tooling-configs/pull/223))
+- **sync:** Keep comments under an empty key in place when rewriting ci.yml ([#233](https://github.com/AntelopeJS/tooling-configs/pull/233))
+- **comment-proof:** Emit with the pack's TypeScript when the package's has no compiler API ([#228](https://github.com/AntelopeJS/tooling-configs/pull/228))
+- **verify:** Load companion modules in the module kind's fixture project ([#251](https://github.com/AntelopeJS/tooling-configs/pull/251))
+- **verify:** Let context.dev drive a template that is not an ajs project ([#241](https://github.com/AntelopeJS/tooling-configs/pull/241))
+- **verify:** Clean refuses shared run folders and other checkouts' runs ([#218](https://github.com/AntelopeJS/tooling-configs/pull/218))
+- **ratchet:** Link gitignored entries into the staged baseline tree ([#270](https://github.com/AntelopeJS/tooling-configs/pull/270))
+- **api-diff:** Describe wildcard runtime entries that print or exit on import ([#237](https://github.com/AntelopeJS/tooling-configs/pull/237))
+- **docs:** Check the module's own version in config examples ([#253](https://github.com/AntelopeJS/tooling-configs/pull/253))
+- **verify:** Send request headers through JourneyContext.http ([#248](https://github.com/AntelopeJS/tooling-configs/pull/248))
+- **anti-slop:** Report JSDoc casts in JavaScript files without a SAFETY comment ([#249](https://github.com/AntelopeJS/tooling-configs/pull/249))
+- **capture:** Play each screenshot scene in a fresh context seeded with the setup session ([#271](https://github.com/AntelopeJS/tooling-configs/pull/271))
+- **checks:** Fail a lockfile that resolves an interface package at two versions ([#257](https://github.com/AntelopeJS/tooling-configs/pull/257))
+- **checks:** Split readiness out of verify context and guard the bench site address ([#277](https://github.com/AntelopeJS/tooling-configs/pull/277))
+- **capture:** Refuse an unbuilt module and keep the demo logs on failure ([#269](https://github.com/AntelopeJS/tooling-configs/pull/269))
+- **verify:** Drive an interface of the module's own package without a self link ([#247](https://github.com/AntelopeJS/tooling-configs/pull/247))
+- **verify:** Keep the registry modules of a cache that also holds a git module ([#225](https://github.com/AntelopeJS/tooling-configs/pull/225))
+- **guardrails:** Let comment-proof skip a workspace base tsconfig and resolve tsconfig types per package ([#234](https://github.com/AntelopeJS/tooling-configs/pull/234))
+- **verify:** Create module templates with ajs module init ([#250](https://github.com/AntelopeJS/tooling-configs/pull/250))
+- **api-diff:** Follow `@/` path aliases in declarations and at runtime ([#235](https://github.com/AntelopeJS/tooling-configs/pull/235))
+- **comment-proof:** Skip a package whose tsconfig extends an uncommitted file ([#230](https://github.com/AntelopeJS/tooling-configs/pull/230))
+- **api-diff:** Fail declaration errors only in modules a published entry reaches ([#245](https://github.com/AntelopeJS/tooling-configs/pull/245))
+- **docs:** Flag framework and tool versions in standard-mode prose ([#273](https://github.com/AntelopeJS/tooling-configs/pull/273))
+- **verify:** Report a registry outage as NOT VERIFIED only after a live probe ([#222](https://github.com/AntelopeJS/tooling-configs/pull/222))
+- **eslint:** Run the type-aware rules on Vue script blocks ([#226](https://github.com/AntelopeJS/tooling-configs/pull/226))
+- **sync:** Write the scripts checks runs under the template profile ([#227](https://github.com/AntelopeJS/tooling-configs/pull/227))
+- **guardrails:** Report computed destructures, unknown aliases and unguarded reads in no-inherited-key-lookup ([#264](https://github.com/AntelopeJS/tooling-configs/pull/264))
+- **guardrails:** Measure staged files the working tree deleted or changed after staging ([#265](https://github.com/AntelopeJS/tooling-configs/pull/265))
+- **formal:** Deterministic BROKEN traces and violating-state counts for findings ([#266](https://github.com/AntelopeJS/tooling-configs/pull/266))
+- **api-diff:** Build each revision against its own workspace packages ([#272](https://github.com/AntelopeJS/tooling-configs/pull/272))
+- **verify:** Narrow the probe test's server address with a type guard ([#278](https://github.com/AntelopeJS/tooling-configs/pull/278))
+- **sync:** Add the capture tool's optional peers to repos with docs/captures.ts ([#263](https://github.com/AntelopeJS/tooling-configs/pull/263))
+- **verify:** Seed prepared copies from the run's module cache ([#217](https://github.com/AntelopeJS/tooling-configs/pull/217))
+- **lint:** Report a tsconfig that lists no types under type-aware lint ([#232](https://github.com/AntelopeJS/tooling-configs/pull/232))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.4.1
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.4.0...v0.4.1)
