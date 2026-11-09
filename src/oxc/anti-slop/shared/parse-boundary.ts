@@ -1,17 +1,25 @@
 import type { ESTree, Reference, SourceCode, Variable } from "@oxlint/plugins";
 
 import { variableOf } from "./binding-origin.ts";
-import { calleeIsWrittenHere } from "./callee-origin.ts";
 import { containsUnknownType } from "./function-parameters.ts";
 import type { RuntimeFunction } from "./type-guards.ts";
 
-/**
- * Callee names that read as a schema or decoder: `parse`, `safeParse` and their `Async` forms, `decode`,
- * `parseX` and `decodeX` helpers in either case, and interface-api-util's `assertValidation`. A name proves
- * nothing alone. A callee declared in the same file never counts (see `calleeIsWrittenHere`), so a chain of wrappers
- * cannot close on itself, and an imported callee that takes `unknown` is checked where it is declared.
- */
-const DECODER_NAME = /^(?:assertValidation|safeParse(?:Async)?|[Pp]arse(?:[A-Z]\w*)?|[Dd]ecode(?:[A-Z]\w*)?)$/;
+/** Callee names that read as a decoder: `parse`, `safeParse` and their `Async` forms, `decode`, and `parseX` and `decodeX` in either case. */
+const DECODER_NAME = /^(?:safeParse(?:Async)?|[Pp]arse(?:[A-Z]\w*)?|[Dd]ecode(?:[A-Z]\w*)?)$/;
+
+/** Packages whose exports are schemas or decoders. A subpath such as `zod/v4` counts as its package. */
+const SCHEMA_LIBRARIES: readonly string[] = ["zod", "valibot", "yup", "joi", "superstruct", "io-ts", "@sinclair/typebox", "arktype", "effect", "@effect/schema"];
+
+/** Calls that write properties of the object they are handed first. */
+const PROPERTY_WRITERS: ReadonlySet<string> = new Set([
+	"Object.assign",
+	"Object.defineProperty",
+	"Object.defineProperties",
+	"Object.setPrototypeOf",
+	"Reflect.set",
+	"Reflect.defineProperty",
+	"Reflect.setPrototypeOf",
+]);
 
 const PROMISE_TYPES: ReadonlySet<string> = new Set(["Promise", "PromiseLike"]);
 
@@ -34,13 +42,84 @@ function constInitializerOf(variable: Variable | null): ESTree.Expression | null
 		: null;
 }
 
+function isSchemaLibrary(source: string): boolean {
+	return SCHEMA_LIBRARIES.some((library) => source === library || source.startsWith(`${library}/`));
+}
+
+/** Return the `a.b` name of a non-computed member callee, or null. */
+function dottedName(node: ESTree.Node): string | null {
+	return node.type === "MemberExpression" && !node.computed && node.object.type === "Identifier" && node.property.type === "Identifier"
+		? `${node.object.name}.${node.property.name}`
+		: null;
+}
+
+/** Return the outermost member expression a reference is the object of, or the reference itself. */
+function memberChainTop(identifier: Reference["identifier"]): ESTree.Node {
+	let current: ESTree.Node = identifier;
+	while (current.parent?.type === "MemberExpression" && current.parent.object === current) current = current.parent;
+	return current;
+}
+
 /**
- * Return the decoder call whose direct argument a reference is. An `unknown` value is not callable, so it is
- * never the callee. A callee written in this file carries its own row and is no decoder.
+ * Return whether this file writes a property of a variable's value: an assignment, update or `delete` on a member read from it,
+ * or a call such as `Object.assign` handed it first. A write through another name is not seen.
+ */
+function hasPropertyWrites(variable: Variable): boolean {
+	return variable.references.some(({ identifier }) => {
+		const top = memberChainTop(identifier);
+		const holder = top.parent;
+		if (holder === null) return false;
+		if (top !== identifier) {
+			if (holder.type === "AssignmentExpression" && holder.left === top) return true;
+			if (holder.type === "UpdateExpression") return true;
+			if (holder.type === "UnaryExpression" && holder.operator === "delete") return true;
+		}
+		return holder.type === "CallExpression" && holder.arguments[0] === top && PROPERTY_WRITERS.has(dottedName(holder.callee) ?? "");
+	});
+}
+
+/** Return whether a variable is an import from a schema library, or a `const` whose initializer is rooted at one. */
+function isSchemaVariable(variable: Variable, sourceCode: SourceCode, seen: ReadonlySet<Variable>): boolean {
+	const [definition, ...others] = variable.defs;
+	if (definition === undefined || others.length > 0 || seen.has(variable) || hasPropertyWrites(variable)) return false;
+	if (variable.references.some((reference) => reference.isWrite() && !reference.init)) return false;
+	if (definition.type === "ImportBinding") {
+		const declaration = definition.parent;
+		return declaration?.type === "ImportDeclaration" && isSchemaLibrary(declaration.source.value);
+	}
+	const initializer = constInitializerOf(variable);
+	return initializer !== null && isRootedAtSchemaLibrary(initializer, sourceCode, new Set([...seen, variable]));
+}
+
+/** Return whether a value is read, through members, calls, type wrappers and `const` aliases, from a schema library's import. */
+function isRootedAtSchemaLibrary(node: ESTree.Node, sourceCode: SourceCode, seen: ReadonlySet<Variable>): boolean {
+	switch (node.type) {
+		case "TSAsExpression":
+		case "TSSatisfiesExpression":
+		case "TSNonNullExpression":
+		case "TSTypeAssertion":
+		case "ChainExpression":
+			return isRootedAtSchemaLibrary(node.expression, sourceCode, seen);
+		case "MemberExpression":
+			return isRootedAtSchemaLibrary(node.object, sourceCode, seen);
+		case "CallExpression":
+			return isRootedAtSchemaLibrary(node.callee, sourceCode, seen);
+		case "Identifier": {
+			const variable = variableOf(node, sourceCode);
+			return variable !== null && isSchemaVariable(variable, sourceCode, seen);
+		}
+		default:
+			return false;
+	}
+}
+
+/**
+ * Return the decoder call whose direct argument a reference is: a call of a decoder name read from a schema library's import.
+ * An `unknown` value is not callable, so it is never the callee. A decoder of any other origin can do anything with the value.
  */
 function decoderCallOf(identifier: Reference["identifier"], sourceCode: SourceCode): ESTree.CallExpression | null {
 	const call = identifier.parent;
-	return call.type === "CallExpression" && DECODER_NAME.test(calleeName(call) ?? "") && !calleeIsWrittenHere(call, sourceCode)
+	return call.type === "CallExpression" && DECODER_NAME.test(calleeName(call) ?? "") && isRootedAtSchemaLibrary(call.callee, sourceCode, new Set())
 		? call
 		: null;
 }
@@ -87,7 +166,7 @@ function returnedExpressions(
 
 /**
  * Return whether a parameter typed exactly `unknown` is a parse boundary: every read of it is a direct argument
- * to a schema or decoder declared outside this file, every value the function returns is such a call's result,
+ * to a decoder read from a schema library, every value the function returns is such a call's result,
  * and the function declares a return type that states what it parsed. A function that stores, forwards, reads
  * by hand (through `arguments` or `eval` too) or discards the parsed value is not one.
  */

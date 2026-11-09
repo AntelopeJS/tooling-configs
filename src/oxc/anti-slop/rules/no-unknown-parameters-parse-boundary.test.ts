@@ -5,69 +5,26 @@ import { noUnknownParametersRule } from "./no-unknown-parameters.ts";
 const tester = new RuleTester({ languageOptions: { parserOptions: { lang: "ts" } } });
 const error = { messageId: "unknownParameter" };
 
-tester.run("anti-slop/no-unknown-parameters at a parse boundary", noUnknownParametersRule, {
+const SCHEMAS = ["schema", "userSchema", "leftSchema", "rightSchema", "ConfigSchema", "EXPR_SENTINEL", "EXPR_CARRIER", "declarationSchema", "keySchema", "templateDetailsSchema"];
+
+/** Root every schema name a case reads at a `zod` import, so that a case tests the shape of the function and not where its schema comes from. */
+const PRELUDE = `import { z } from "zod";\n${SCHEMAS.map((name) => `const ${name} = z.object({});`).join("\n")}\n`;
+
+function withSchemas<Case extends { code: string }>(test: Case): Case {
+	return { ...test, code: `${PRELUDE}${test.code}` };
+}
+
+const cases = {
 	valid: [
-		{
-			name: "dms-lang@a399cf8 src/validation/validate.ts:28 assertValidation with a schema",
-			code: `export function validate<Output, Input>(
-  schema: ZodType<Output, ZodTypeDef, Input>,
-  input: unknown,
-): Output {
-  return assertValidation(
-    input,
-    (value) => schema.parse(value),
-    (error) => (error instanceof ZodError ? refusal(error) : errorBody(INVALID_BODY)),
-    errorStatus(INVALID_BODY),
-  );
-}`,
-		},
-		{
-			name: "dms-media@df1cc55 src/validation/media.schema.ts:68 parseBody",
-			code: `export function parseBody<Output>(
-  body: unknown,
-  schema: z.ZodType<Output, z.ZodTypeDef, unknown>,
-): Output {
-  return assertValidation(
-    body,
-    (value) => schema.parse(value),
-    (error) => {
-      const message = error instanceof ZodError ? error.issues[0]?.message : "";
-      return message?.startsWith("$") ? message : MEDIA_ERRORS.invalidRequest;
-    },
-  );
-}`,
-		},
-		{
-			name: "postgres@887faab src/implementations/database/external-payload.ts:104 Decoded refuses nothing decoded",
-			code: `function Decoded(walk: ExternalWalk, value: unknown): Compiled {
-  const decoded = DecodeValue(value, walk.context);
-  if (!decoded) {
-    throw new Error(\`A payload value for '\${walk.path}' could not be read\`);
-  }
-  return decoded;
-}`,
-		},
-		{
-			name: "postgres@887faab src/implementations/database/payload.ts:109 Decoded asserts then returns",
-			code: `function Decoded(walk: PayloadWalk, value: unknown): Compiled {
-  const compiled = DecodeValue(value, walk.context);
-  assert(compiled, "A supplied payload value always decodes");
-  return compiled;
-}`,
-		},
-		"function parseUser(value: unknown): User { return userSchema.parse(value); }",
-		"const parseUser = (value: unknown): User => userSchema.parse(value);",
-		"const parseUser = function (value: unknown): User { return userSchema.parse(value); };",
-		"class Users { parse(value: unknown): User { return userSchema.parse(value); } }",
-		"const users = { parse(value: unknown): User { return userSchema.parse(value); } };",
-		"function parseUser(value?: unknown): User { return userSchema.parse(value); }",
-		"function parseUser(value: unknown = {}): User { return userSchema.parse(value); }",
-		"function parseUser(value: unknown): User { return v.parse(userSchema, value); }",
-		"function parseUser(value: unknown): User { return codec.decode(value); }",
-		"function readUser(value: unknown): User { return parseUser(value); }",
-		"function readUser(value: unknown): User { return ParseUser(value); }",
-		"function readUser(value: unknown): User { return decodeUser(value); }",
-		"function value(value: unknown): User { return userSchema.parse(value); }",
+		{ code: "function parseUser(value: unknown): User { return userSchema.parse(value); }" },
+		{ code: "const parseUser = (value: unknown): User => userSchema.parse(value);" },
+		{ code: "const parseUser = function (value: unknown): User { return userSchema.parse(value); };" },
+		{ code: "class Users { parse(value: unknown): User { return userSchema.parse(value); } }" },
+		{ code: "const users = { parse(value: unknown): User { return userSchema.parse(value); } };" },
+		{ code: "function parseUser(value?: unknown): User { return userSchema.parse(value); }" },
+		{ code: "function parseUser(value: unknown = {}): User { return userSchema.parse(value); }" },
+		{ code: 'import * as v from "valibot";\nfunction parseUser(value: unknown): User { return v.parse(userSchema, value); }' },
+		{ code: "function value(value: unknown): User { return userSchema.parse(value); }" },
 		{
 			name: "an awaited parse returned in place",
 			code: "async function parseUser(value: unknown): Promise<User> { return await userSchema.parseAsync(value); }",
@@ -102,6 +59,63 @@ tester.run("anti-slop/no-unknown-parameters at a parse boundary", noUnknownParam
 		},
 	],
 	invalid: [
+		{
+			name: "dms-lang@a399cf8 src/validation/validate.ts:28 a schema the caller hands in, which one file cannot place",
+			code: `export function validate<Output, Input>(
+  schema: ZodType<Output, ZodTypeDef, Input>,
+  input: unknown,
+): Output {
+  return assertValidation(
+    input,
+    (value) => schema.parse(value),
+    (error) => (error instanceof ZodError ? refusal(error) : errorBody(INVALID_BODY)),
+    errorStatus(INVALID_BODY),
+  );
+}`,
+			errors: [error],
+		},
+		{
+			name: "dms-media@df1cc55 src/validation/media.schema.ts:68 parseBody through assertValidation, which takes any validator",
+			code: `export function parseBody<Output>(
+  body: unknown,
+  schema: z.ZodType<Output, z.ZodTypeDef, unknown>,
+): Output {
+  return assertValidation(
+    body,
+    (value) => schema.parse(value),
+    (error) => {
+      const message = error instanceof ZodError ? error.issues[0]?.message : "";
+      return message?.startsWith("$") ? message : MEDIA_ERRORS.invalidRequest;
+    },
+  );
+}`,
+			errors: [error],
+		},
+		{
+			name: "postgres@887faab src/implementations/database/external-payload.ts:104 Decoded through a decoder written in the repository",
+			code: `function Decoded(walk: ExternalWalk, value: unknown): Compiled {
+  const decoded = DecodeValue(value, walk.context);
+  if (!decoded) {
+    throw new Error(\`A payload value for '\${walk.path}' could not be read\`);
+  }
+  return decoded;
+}`,
+			errors: [error],
+		},
+		{
+			name: "postgres@887faab src/implementations/database/payload.ts:109 Decoded through a decoder written in the repository, asserted then returned",
+			code: `function Decoded(walk: PayloadWalk, value: unknown): Compiled {
+  const compiled = DecodeValue(value, walk.context);
+  assert(compiled, "A supplied payload value always decodes");
+  return compiled;
+}`,
+			errors: [error],
+		},
+		{
+			name: "#115: a decoder read from a name no import binds",
+			code: "function parseUser(value: unknown): User { return codec.decode(value); }",
+			errors: [error],
+		},
 		{
 			name: "an unknown parameter passed through untouched",
 			code: "function forward(value: unknown): void { sink(value); }",
@@ -339,4 +353,6 @@ tester.run("anti-slop/no-unknown-parameters at a parse boundary", noUnknownParam
 			errors: [{ ...error, data: { parameter: "err" } }],
 		},
 	],
-});
+};
+
+tester.run("anti-slop/no-unknown-parameters at a parse boundary", noUnknownParametersRule, { valid: cases.valid.map(withSchemas), invalid: cases.invalid.map(withSchemas) });
