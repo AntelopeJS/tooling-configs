@@ -2,8 +2,8 @@ import type { ESTree, SourceCode } from "@oxlint/plugins";
 
 export type RuntimeFunction = ESTree.ArrowFunctionExpression | ESTree.Function;
 
-/** Files whose functions may declare a type predicate in JSDoc instead of a TypeScript return type. */
-const JSDOC_PREDICATE_FILE = /\.[cm]?js$/;
+/** JavaScript files, where TypeScript reads types from JSDoc instead of from syntax. */
+export const JSDOC_TYPED_FILE = /\.[cm]?js$/;
 
 /** A `@returns {x is T}` type, `x` captured: `asserts x is T` does not match. */
 const JSDOC_PREDICATE = /^\s*([A-Za-z_$][\w$]*)\s+is\s+\S/;
@@ -38,11 +38,11 @@ function documentedNode(fn: RuntimeFunction): ESTree.Node {
 		: node;
 }
 
-/** Return the type inside the braces of the first `@returns {...}` tag of a JSDoc block. */
-function jsDocReturnType(text: string): string | null {
-	const tag = /@returns\s*\{/.exec(text);
-	if (tag === null) return null;
-	const start = tag.index + tag[0].length;
+/** Return the type inside the braces of the first `@<tag> {...}` tag of a JSDoc block. */
+export function jsDocTagType(text: string, tag: "returns" | "type"): string | null {
+	const match = new RegExp(String.raw`@${tag}\s*\{`, "u").exec(text);
+	if (match === null) return null;
+	const start = match.index + match[0].length;
 	let depth = 1;
 	for (let index = start; index < text.length; index++) {
 		if (text[index] === "{") depth++;
@@ -57,7 +57,7 @@ function hasJsDocTypePredicate(fn: RuntimeFunction, sourceCode: SourceCode): boo
 	if (comment === undefined || comment.type !== "Block" || !comment.value.startsWith("*")) {
 		return false;
 	}
-	const returnType = jsDocReturnType(comment.value);
+	const returnType = jsDocTagType(comment.value, "returns");
 	const subject = returnType === null ? undefined : JSDOC_PREDICATE.exec(returnType)?.[1];
 	return (
 		subject !== undefined &&
@@ -68,7 +68,7 @@ function hasJsDocTypePredicate(fn: RuntimeFunction, sourceCode: SourceCode): boo
 /** Return whether a function declares a type predicate or assertion, or a JSDoc `@returns {x is T}` in a `.js`, `.mjs` or `.cjs` file. */
 function isTypeGuard(fn: RuntimeFunction, sourceCode: SourceCode, filename: string): boolean {
 	if (fn.returnType?.typeAnnotation.type === "TSTypePredicate") return true;
-	return JSDOC_PREDICATE_FILE.test(filename) && hasJsDocTypePredicate(fn, sourceCode);
+	return JSDOC_TYPED_FILE.test(filename) && hasJsDocTypePredicate(fn, sourceCode);
 }
 
 /** Return the nearest runtime function around a node when that function is a type guard. */

@@ -70,3 +70,93 @@ tester.run(
     ],
   },
 );
+
+const jsTester = new RuleTester();
+
+jsTester.run(
+  "anti-slop/require-safety-comment-for-type-assertion (JSDoc casts)",
+  requireSafetyCommentForTypeAssertionRule,
+  {
+    valid: [
+      {
+        name: "agent-skills scripts/lib/*.mjs JSDoc cast with its SAFETY comment",
+        filename: "values.mjs",
+        code: "// SAFETY: JSON.parse of a manifest the loader validated.\nconst manifest = /** @type {Manifest} */ (JSON.parse(text));",
+      },
+      {
+        filename: "values.js",
+        code: "const id = /* SAFETY: Validation established the invariant. */ /** @type {UserId} */ (value);",
+      },
+      {
+        filename: "values.cjs",
+        code: "function parse() {\n// SAFETY: Validation above established the UserId invariant.\nreturn /** @type {UserId} */ (value);\n}",
+      },
+      { filename: "values.mjs", code: "const values = /** @type {const} */ ([1, 2]);" },
+      { filename: "values.mjs", code: "/** @type {UserId} */\nconst id = value;" },
+      { filename: "values.mjs", code: "const id = /** @satisfies {UserId} */ (value);" },
+      { filename: "values.mjs", code: "const id = /* @type {UserId} */ (value);" },
+      { filename: "values.ts", code: "const id = /** @type {UserId} */ (value);" },
+      {
+        name: "a JSDoc type on an arrow function annotates it, it does not cast",
+        filename: "handlers.js",
+        code: "const handler = /** @type {Handler} */ (request, response) => response.end();\nitems.map(/** @type {Mapper} */ (item) => item);",
+      },
+    ],
+    invalid: [
+      {
+        name: "agent-skills#28 bare JSDoc cast in an .mjs file",
+        filename: "values.mjs",
+        code: "const manifest = /** @type {Manifest} */ (\n  JSON.parse(text)\n);",
+        errors: [{ ...error, line: 1, column: 17, endLine: 1, endColumn: 42 }],
+      },
+      {
+        name: "two JSDoc types before one parenthesis are one cast",
+        filename: "values.mjs",
+        code: "const id = /** @type {Raw} */ /** @type {UserId} */ (value);",
+        errors: [error],
+      },
+      {
+        name: "a SAFETY comment above the enclosing function does not cover a cast in its body",
+        filename: "values.mjs",
+        code: "// SAFETY: The function validates its input.\nfunction parse() {\nreturn /** @type {UserId} */ (value);\n}",
+        errors: [error],
+      },
+      {
+        filename: "values.js",
+        code: "export const id = /** @type {UserId} */ (value);",
+        errors: [error],
+      },
+      {
+        filename: "values.cjs",
+        code: "function parse() {\nreturn /** @type {UserId} */ (value);\n}",
+        errors: [error],
+      },
+      {
+        name: "a parenthesized arrow function after a JSDoc type is a cast",
+        filename: "handlers.js",
+        code: "const handler = /** @type {Handler} */ ((request) => request);",
+        errors: [error],
+      },
+      {
+        filename: "values.mjs",
+        code: "const name = /** @type {User} */ (value).name;",
+        errors: [error],
+      },
+      {
+        filename: "values.mjs",
+        code: "use(/** @type {UserId} */ (first), /** @type {UserId} */ (second));",
+        errors: [error, error],
+      },
+      {
+        filename: "values.mjs",
+        code: "// SAFETY:\nconst id = /** @type {UserId} */ (value);",
+        errors: [error],
+      },
+      {
+        filename: "values.mjs",
+        code: "const id = /** @type {UserId} SAFETY: inside the cast. */ (value);",
+        errors: [error],
+      },
+    ],
+  },
+);
