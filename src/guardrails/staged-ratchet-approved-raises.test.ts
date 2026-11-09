@@ -183,3 +183,13 @@ test("a ceiling raised for a rule the variable does not list is refused next to 
   );
   assert.match(result.stderr, /raises its ceiling from 1 to 50/);
 });
+
+test("an approved raise does not count a directory git excludes through info/exclude", (t) => {
+  const root = ratchetRepo(t);
+  put(root, "scratch/wip.ts", "export const wip: any = 1;\n");
+  put(root, ".git/info/exclude", "scratch/\n");
+  stageAdding(root, 1, 3);
+  const result = check(root, `${RULE}=3`);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /APPROVED RAISE/);
+});
