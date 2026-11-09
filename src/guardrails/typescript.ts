@@ -219,7 +219,10 @@ function copyDeclarations(
   return files;
 }
 
-function parseConfig(directory: string, javascriptOnly = false) {
+/** TS18002: `"files": []` without references. */
+const EMPTY_FILES_LIST = 18002;
+
+function readConfig(directory: string, javascriptOnly = false) {
   const { compiler, root, notice } = loadTypeScript(directory, javascriptOnly);
   const file = join(directory, "tsconfig.json");
   const config = compiler.readConfigFile(file, compiler.sys.readFile);
@@ -231,8 +234,38 @@ function parseConfig(directory: string, javascriptOnly = false) {
     undefined,
     file,
   );
-  failDiagnostics(compiler, parsed.errors);
   return { compiler, root, notice, parsed };
+}
+
+/** Parses `tsconfig.json` as `tsc -p` would from the package directory, failing on any configuration error. */
+function parseConfig(directory: string, javascriptOnly = false) {
+  const config = readConfig(directory, javascriptOnly);
+  failDiagnostics(config.compiler, config.parsed.errors);
+  return config;
+}
+
+/** Whether `tsconfig.json` has an empty `files` list, references nothing, and so parses to no inputs; read for a JavaScript-only emit, so a compiler without the API falls back as `emitPackage` does. */
+export function listsNoFiles(directory: string): boolean {
+  const { parsed } = readConfig(directory, true);
+  return (
+    parsed.fileNames.length === 0 &&
+    parsed.errors.some((error) => error.code === EMPTY_FILES_LIST)
+  );
+}
+
+/** The absolute paths of the configs `tsconfig.json` extends, directly or through another config; read for a JavaScript-only emit, as `listsNoFiles` is. */
+export function extendedConfigs(directory: string): string[] {
+  const { compiler } = loadTypeScript(directory, true);
+  const file = join(directory, "tsconfig.json");
+  const source = compiler.readJsonConfigFile(file, compiler.sys.readFile);
+  compiler.parseJsonSourceFileConfigFileContent(
+    source,
+    compiler.sys,
+    directory,
+    undefined,
+    file,
+  );
+  return (source.extendedSourceFiles ?? []).map((path) => resolve(path));
 }
 
 /** The configured `outDir`, the root under which the declaration half already judges a built path as test output. */

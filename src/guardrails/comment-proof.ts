@@ -1,11 +1,36 @@
 import { copyFileSync, mkdirSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 import { stampProof } from "./proof-stamp.ts";
 import { compareRevisions, revisionCounts } from "./revisions.ts";
-import { emitPackage, packagesAt } from "./typescript.ts";
+import {
+  emitPackage,
+  extendedConfigs,
+  listsNoFiles,
+  packagesAt,
+} from "./typescript.ts";
 
-/** Proves comment-free JavaScript emit matches, including private packages and excluding tests. */
+type TrackedPackage = ReturnType<typeof packagesAt>[number];
+
+/** A private repository root whose `tsconfig.json` parses to no inputs and is extended by another tracked package: the base its packages extend, which compiles nothing on its own. */
+function isWorkspaceBase(
+  worktree: string,
+  { directory, manifest }: TrackedPackage,
+  tracked: TrackedPackage[],
+): boolean {
+  if (directory !== "." || manifest.private !== true) return false;
+  const base = resolve(worktree, "tsconfig.json");
+  return (
+    listsNoFiles(worktree) &&
+    tracked.some(
+      (other) =>
+        other.directory !== "." &&
+        extendedConfigs(join(worktree, other.directory)).includes(base),
+    )
+  );
+}
+
+/** Proves comment-free JavaScript emit matches, including private packages and excluding tests. A workspace base tsconfig is left out. */
 export function commentProof(root: string, baseRef: string) {
   const notices = new Set<string>();
   const result = compareRevisions(
@@ -13,7 +38,10 @@ export function commentProof(root: string, baseRef: string) {
     baseRef,
     "Comment proof",
     (worktree, output, scratch) => {
-      const packages = packagesAt(worktree, false);
+      const tracked = packagesAt(worktree, false);
+      const packages = tracked.filter(
+        (candidate) => !isWorkspaceBase(worktree, candidate, tracked),
+      );
       let entries = 0;
       for (const { directory } of packages) {
         const key = directory === "." ? "_root" : directory;

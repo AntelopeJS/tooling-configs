@@ -161,7 +161,7 @@ test("api-diff fails when an @internal file under internal/ adds an auto-import,
   assert.match(result.text, /@internal does not hide an auto-import/u);
 });
 
-test("api-diff lists each auto-import's name and signature and passes when only unexported helpers, private app/build files or file layout change", (t) => {
+test("api-diff lists each auto-import's name and signature and passes when only unexported helpers, private app/build files or file utility change", (t) => {
   const root = frontendRepo(t);
   const unchanged = apiDiff(root);
   assert.equal(unchanged.status, 0, unchanged.text);
@@ -243,4 +243,57 @@ test("api-diff compares an auto-imported interface by its members: a reorder pas
     narrowed.text,
     /^\+PageQuery \(type\): \{ "page": number; "sort"\?: string \| undefined; \}$/mu,
   );
+});
+
+test("api-diff types an auto-import with the module tsconfig's types resolved from the module directory", (t) => {
+  const root = testRepo(t);
+  symlinkSync(
+    join(PACKAGE_ROOT, "node_modules"),
+    join(root, "node_modules"),
+    "dir",
+  );
+  put(
+    root,
+    `${FRONTEND}/package.json`,
+    JSON.stringify({ name: "frontend", private: true, type: "module" }),
+  );
+  put(
+    root,
+    `${FRONTEND}/dms.frontend.build.ts`,
+    `import { defineDmsFrontendBuild } from "#dms/frontend-build";
+
+export default defineDmsFrontendBuild((build) => {
+  build.registerAutoImports(["layers/*/app/utils"]);
+});
+`,
+  );
+  put(
+    root,
+    `${FRONTEND}/tsconfig.json`,
+    JSON.stringify({
+      compilerOptions: {
+        target: "ES2020",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        types: ["fixture"],
+        strict: true,
+      },
+    }),
+  );
+  put(
+    root,
+    `${FRONTEND}/node_modules/@types/fixture/index.d.ts`,
+    "interface FixtureShape {\n  size: number;\n}\n",
+  );
+  const utility = `${FRONTEND}/layers/core/app/utils/shape.ts`;
+  put(
+    root,
+    utility,
+    "declare const fixture: FixtureShape;\nexport const size = fixture.size;\n",
+  );
+  commit(root);
+  put(root, utility, "export const other = 1;\n");
+  commit(root);
+  const result = bin(root, "api-diff", ["HEAD~1"]);
+  assert.match(result.stdout, /^-size \(value\): number$/m, result.stdout);
 });

@@ -130,3 +130,112 @@ test("comment-proof emits a package whose TypeScript has no compiler API with th
     result.stdout,
   );
 });
+
+test("comment-proof compiles workspace packages under a private root tsconfig that lists no files", (t) => {
+  const root = testRepo(t);
+  symlinkSync(
+    join(PACKAGE_ROOT, "node_modules"),
+    join(root, "node_modules"),
+    "dir",
+  );
+  put(root, "package.json", JSON.stringify({ private: true, type: "module" }));
+  put(
+    root,
+    "tsconfig.json",
+    JSON.stringify({
+      files: [],
+      compilerOptions: {
+        target: "ES2020",
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        types: [],
+      },
+    }),
+  );
+  put(
+    root,
+    "packages/lib/package.json",
+    JSON.stringify({ name: "lib", type: "module", main: "dist/index.js" }),
+  );
+  put(
+    root,
+    "packages/lib/tsconfig.json",
+    JSON.stringify({
+      extends: "../../tsconfig.json",
+      compilerOptions: { rootDir: "src", outDir: "dist" },
+      include: ["src/**/*.ts"],
+    }),
+  );
+  put(root, "packages/lib/src/index.ts", "export const value = 1;\n");
+  commit(root);
+  put(
+    root,
+    "packages/lib/src/index.ts",
+    "/** The value. */\nexport const value = 1;\n",
+  );
+  commit(root);
+  const unchanged = bin(root, "comment-proof", ["HEAD~1"]);
+  assert.equal(unchanged.status, 0, unchanged.stdout + unchanged.stderr);
+  assert.match(unchanged.stdout, /1 packages, 1 entries unchanged/);
+  put(root, "packages/lib/src/index.ts", "export const value = 2;\n");
+  commit(root);
+  const changed = bin(root, "comment-proof", ["HEAD~1"]);
+  assert.equal(changed.status, 1, changed.stdout + changed.stderr);
+  assert.match(changed.stdout, /\+export const value = 2/);
+});
+
+test("comment-proof fails on a root tsconfig that lists no files unless it parses to no inputs and a package extends it", (t) => {
+  const root = testRepo(t);
+  symlinkSync(
+    join(PACKAGE_ROOT, "node_modules"),
+    join(root, "node_modules"),
+    "dir",
+  );
+  put(root, "package.json", JSON.stringify({ private: true, type: "module" }));
+  put(root, "tsconfig.json", JSON.stringify({ files: [] }));
+  put(
+    root,
+    "tsconfig.build.json",
+    JSON.stringify({ compilerOptions: { types: [] }, include: ["src"] }),
+  );
+  put(root, "src/index.ts", "export const value = 1;\n");
+  commit(root);
+  put(root, "src/index.ts", "export const value = 2;\n");
+  commit(root);
+  const alone = bin(root, "comment-proof", ["HEAD~1"]);
+  assert.equal(alone.status, 1, alone.stdout);
+  assert.match(alone.stderr, /TS18002/);
+  put(
+    root,
+    "packages/lib/package.json",
+    JSON.stringify({ name: "lib", private: true, type: "module" }),
+  );
+  put(
+    root,
+    "packages/lib/tsconfig.json",
+    JSON.stringify({ compilerOptions: { types: [] }, include: ["src"] }),
+  );
+  put(root, "packages/lib/src/index.ts", "export const lib = 1;\n");
+  commit(root);
+  const unextended = bin(root, "comment-proof", ["HEAD~1"]);
+  assert.equal(unextended.status, 1, unextended.stdout);
+  assert.match(unextended.stderr, /TS18002/);
+  put(
+    root,
+    "tsconfig.json",
+    JSON.stringify({
+      files: [],
+      include: ["src"],
+      compilerOptions: { types: [] },
+    }),
+  );
+  put(
+    root,
+    "packages/lib/tsconfig.json",
+    JSON.stringify({ extends: "../../tsconfig.json", include: ["src"] }),
+  );
+  commit(root);
+  const included = bin(root, "comment-proof", ["HEAD~1"]);
+  assert.equal(included.status, 1, included.stdout);
+  assert.match(included.stderr, /TS18002/);
+});
