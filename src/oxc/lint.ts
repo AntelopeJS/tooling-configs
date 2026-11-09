@@ -211,7 +211,7 @@ function guardrailsPreset(typeAware: boolean) {
     },
     overrides: [
       {
-        files: PRESET_CONFIGS.map(({ path }) => path),
+        files: PRESET_CONFIGS.map(({ path }) => `./${path}`),
         rules: { "antelopejs/require-tsconfig-include": "off" },
       },
     ],

@@ -143,3 +143,18 @@ test("a file listed by a referenced tsconfig, or by an ancestor tsconfig above a
   project.write("packages/tool/test/index.test.ts", NODE_CALLS);
   assert.deepEqual(findings(project.run(true).diagnostics), []);
 });
+
+test("only the root configs sync writes are exempt: a hand-written package config with a synced name is reported like any other unlisted file (dms-marketing packages/<pkg>/knip.config.ts)", (t) => {
+  const project = lintProject(true);
+  t.after(project.remove);
+  project.write("tsconfig.json", packageTsconfig());
+  project.write("src/index.ts", NODE_CALLS);
+  project.write("knip.config.ts", "export default {};\n");
+  project.write("oxfmt.config.ts", "export default {};\n");
+  project.write("packages/site/knip.config.ts", "export default {};\n");
+  project.write("packages/site/oxfmt.config.ts", "export default {};\n");
+  assert.deepEqual(findings(project.run(true).diagnostics), [
+    "packages/site/knip.config.ts:1 antelopejs(require-tsconfig-include)",
+    "packages/site/oxfmt.config.ts:1 antelopejs(require-tsconfig-include)",
+  ]);
+});
