@@ -81,10 +81,12 @@ export function modulesBlock(): string {
 export function placeModulesBlock(current: string): string {
   const start = current.indexOf(DMS_MODULES_START);
   const end = current.indexOf(DMS_MODULES_END);
-  if (start === -1 && end === -1) return current;
-  if (start === -1 || end < start)
+  const starts = current.split(DMS_MODULES_START).length - 1;
+  const ends = current.split(DMS_MODULES_END).length - 1;
+  if (starts === 0 && ends === 0) return current;
+  if (starts !== 1 || ends !== 1 || end < start)
     throw new Error(
-      "incomplete antelopejs-dms-modules markers. Repair or delete them, then rerun antelopejs-sync.",
+      "invalid antelopejs-dms-modules markers: a README holds exactly one start marker followed by one end marker. Repair or delete them, then rerun antelopejs-sync.",
     );
   return `${current.slice(0, start)}${modulesBlock()}${current.slice(end + DMS_MODULES_END.length).replace(/^\r?\n/, "")}`;
 }

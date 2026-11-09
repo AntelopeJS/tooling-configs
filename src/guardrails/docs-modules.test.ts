@@ -5,7 +5,6 @@ import {
   DMS_MODULES_END,
   DMS_MODULES_START,
   modulesBlock,
-  placeModulesBlock,
 } from "./docs-modules.ts";
 import { syncRepository } from "./sync.ts";
 import { formatCheck, put, read, testRepo } from "./helpers/test-repo.ts";
@@ -90,17 +89,29 @@ test("a README without the markers gets no table, and --check stays clean", (t) 
   assert.deepEqual(syncRepository(root, { check: true }).paths, []);
 });
 
-test("a start marker without its end marker, or an end before its start, is an error naming the fix", (t) => {
-  for (const broken of [
-    `# Example\n\n${DMS_MODULES_START}\n\nNo end.\n`,
-    `# Example\n\n${DMS_MODULES_END}\n\n${DMS_MODULES_START}\n`,
-  ]) {
-    const root = repoWithReadme(t, broken);
-    const { errors } = syncRepository(root, { check: true });
-    assert.match(
-      errors.join("\n"),
-      /README\.md: incomplete antelopejs-dms-modules markers.*rerun antelopejs-sync/,
-    );
-    assert.throws(() => placeModulesBlock(broken), /incomplete/);
-  }
-});
+const S = DMS_MODULES_START;
+const E = DMS_MODULES_END;
+
+const BROKEN_MARKERS = {
+  "a start marker without its end marker": `# X\n\n${S}\n\nKeep me.\n`,
+  "an end marker without its start marker": `# X\n\n${E}\n\nKeep me.\n`,
+  "an end marker before its start marker": `# X\n\n${E}\n\nKeep me.\n\n${S}\n`,
+  "a duplicate start marker": `# X\n\n${S}\n\nKeep me.\n\n${S}\n\n${E}\n`,
+  "a duplicate end marker": `# X\n\n${S}\n\nKeep me.\n\n${E}\n\n${E}\n`,
+  "an orphan start marker before a valid pair": `# X\n\n${S}\n\n## Install\n\nKeep me.\n\n${STALE}`,
+  "a second pair holding a stale table": `# X\n\n${BLOCK}\nKeep me.\n\n${STALE}`,
+};
+
+for (const [name, readme] of Object.entries(BROKEN_MARKERS))
+  test(`${name} is an error naming the fix, and sync writes nothing`, (t) => {
+    const root = repoWithReadme(t, readme);
+    for (const check of [true, false]) {
+      const { errors } = syncRepository(root, { check });
+      assert.match(
+        errors.join("\n"),
+        /README\.md: invalid antelopejs-dms-modules markers.*rerun antelopejs-sync/,
+      );
+      assert.equal(read(root, "README.md"), readme);
+    }
+    assert.match(read(root, "README.md"), /Keep me\./);
+  });

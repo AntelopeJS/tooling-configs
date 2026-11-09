@@ -153,8 +153,8 @@ identical in every README that opts in. Put both markers anywhere in the
 Sync writes the table between them, from the list in `src/guardrails/docs-modules.ts`,
 so adding or renaming a module changes that list once. A README without the
 markers gets nothing. Text outside the markers stays. `antelopejs-sync --check`
-reports a README whose table differs as drift, and fails on a start marker
-without its end marker.
+reports a README whose table differs as drift, and fails on any README that
+does not hold exactly one start marker followed by one end marker.
 
 ## Declare compatibility explicitly
 
