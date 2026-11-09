@@ -485,11 +485,8 @@ export class VerifyContext implements JourneyContext {
     recordProcesses(this.state, { drop: [pid] });
   }
 
-  async scaffold(
-    name: string,
-    project: string,
-    flags: string[] = ["--pm", "pnpm", "--git-init"],
-  ): Promise<CommandResult> {
+  /** Points `ajs` at the run's offline manifest in the HOME the next commands get. */
+  async configureGit(): Promise<void> {
     const set = await this.ajs("config set git", [
       "config",
       "set",
@@ -507,6 +504,14 @@ export class VerifyContext implements JourneyContext {
       ],
       { critical: true },
     );
+  }
+
+  async scaffold(
+    name: string,
+    project: string,
+    flags: string[] = ["--pm", "pnpm", "--git-init"],
+  ): Promise<CommandResult> {
+    await this.configureGit();
     const init = await this.ajs(name, [
       "project",
       "init",
