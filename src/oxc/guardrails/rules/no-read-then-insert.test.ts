@@ -10,6 +10,12 @@ const error = { messageId: "readThenInsert" };
 tester.run("antelopejs/no-read-then-insert", noReadThenInsertRule, {
   valid: [
     {
+      name: "fails on a rule that lets any arrow body carry the value: a registered handler runs later",
+      code: `app.post("/seed", (req) =>
+  Promise.all([model.get(id), limit(() => model.insert(seeds[0]))]),
+);`,
+    },
+    {
       name: "fails on a rule that reports any read: a read on another receiver",
       code: `async function seed(users, orders) {
   await users.get(id);
