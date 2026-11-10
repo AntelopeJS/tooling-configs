@@ -1,57 +1,13 @@
 import assert from "node:assert/strict";
-import {
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import test, { after } from "node:test";
+import test from "node:test";
 
-import type { JsonValue } from "../garden/json.ts";
-import { PACKAGE_ROOT } from "../guardrails/helpers/test-repo.ts";
+import { surfaceOf } from "./helpers/surface-fixture.ts";
 import {
-  declaredSurface,
   diffSurface,
   minorRule,
   releaseType,
   type SurfaceDiff,
 } from "./surface.ts";
-
-const folders: string[] = [];
-
-after(() => {
-  for (const folder of folders)
-    rmSync(folder, { recursive: true, force: true });
-});
-
-function surfaceOf(
-  manifest: JsonValue,
-  files: [string, string][],
-  nodeTypes = false,
-): Record<string, string> {
-  const folder = mkdtempSync(join(tmpdir(), "surface-"));
-  folders.push(folder);
-  const all: [string, string][] = [
-    ["package.json", JSON.stringify(manifest)],
-    ...files,
-  ];
-  for (const [name, content] of all) {
-    mkdirSync(dirname(join(folder, name)), { recursive: true });
-    writeFileSync(join(folder, name), content);
-  }
-  if (nodeTypes) {
-    mkdirSync(join(folder, "node_modules", "@types"), { recursive: true });
-    symlinkSync(
-      join(PACKAGE_ROOT, "node_modules", "@types", "node"),
-      join(folder, "node_modules", "@types", "node"),
-      "dir",
-    );
-  }
-  return Object.fromEntries(declaredSurface(folder));
-}
 
 /** The public part of the class the class test declares, as a function reaching it records it. */
 const STORE =
@@ -267,54 +223,6 @@ test("a member type changing inside a declaration a function answers is a change
     verdict.reason,
     /changed \.:Sample: needs at least 1\.5\.0 against 1\.4\.2/,
   );
-});
-
-const TYPES_MANIFEST = { name: "a", types: "index.d.ts" };
-
-function changedPaths(before: string, after: string): string[] {
-  const published = surfaceOf(TYPES_MANIFEST, [["index.d.ts", before]]);
-  const head = surfaceOf(TYPES_MANIFEST, [["index.d.ts", after]]);
-  const diff = diffSurface(
-    new Map(Object.entries(published)),
-    new Map(Object.entries(head)),
-  );
-  return diff.changed.map((entry) => entry.path);
-}
-
-test("a member type changing in a base interface is a changed function that answers the derived interface", () => {
-  const source = (type: string) =>
-    `interface Base { id: ${type}; }\ninterface Row extends Base { name: string; }\nexport declare function row(): Row;\n`;
-  assert.deepEqual(changedPaths(source("number"), source("string")), [".:row"]);
-});
-
-test("a constraint changing on a generic parameter is a changed function", () => {
-  const source = (type: string) =>
-    `interface Shape { size: ${type}; }\nexport declare function measure<T extends Shape>(value: T): T;\n`;
-  assert.deepEqual(changedPaths(source("number"), source("string")), [
-    ".:measure",
-  ]);
-});
-
-test("an enum member value changing is a changed function that takes the member", () => {
-  const source = (value: number) =>
-    `export declare enum Mode { Fast = ${value}, Slow = 5 }\nexport declare function run(mode: Mode.Fast): void;\n`;
-  assert.deepEqual(changedPaths(source(1), source(2)), [".:run"]);
-});
-
-test("two declarations of one name in different modules are both reached", () => {
-  const source = () =>
-    `import type { Item as Left } from "./left";\nimport type { Item as Right } from "./right";\nexport declare function pair(left: Left, right: Right): void;\n`;
-  const published = surfaceOf(TYPES_MANIFEST, [
-    ["index.d.ts", source()],
-    ["left.d.ts", "export interface Item { a: number; }\n"],
-    ["right.d.ts", "export interface Item { b: number; }\n"],
-  ]);
-  const head = surfaceOf(TYPES_MANIFEST, [
-    ["index.d.ts", source()],
-    ["left.d.ts", "export interface Item { a: number; }\n"],
-    ["right.d.ts", "export interface Item { b: string; }\n"],
-  ]);
-  assert.notEqual(head[".:pair"], published[".:pair"]);
 });
 
 test("diffSurface lists added, removed and changed paths sorted", () => {

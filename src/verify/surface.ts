@@ -10,7 +10,7 @@ import {
   type JsonObject,
   type JsonValue,
 } from "../garden/json.ts";
-import { referencedDeclarations } from "./surface-types.ts";
+import { outsideVisible, referencedDeclarations } from "./surface-types.ts";
 
 /** The declared function surface of a package: function path to normalized signature text. */
 export type Surface = Map<string, string>;
@@ -42,6 +42,7 @@ interface Walk {
   checker: ts.TypeChecker;
   folder: string;
   surface: Surface;
+  visible: readonly ts.Symbol[];
 }
 
 function exportedDeclaration(value: JsonValue): string | undefined {
@@ -77,7 +78,7 @@ function declarationEntries(manifest: JsonObject): Map<string, string> {
   return entries;
 }
 
-function inPackage(walk: Walk, file: string): boolean {
+function inPackage(walk: Pick<Walk, "folder">, file: string): boolean {
   const path = relative(walk.folder, file);
   return (
     path !== "" &&
@@ -110,7 +111,11 @@ function signatureTexts(
   );
 }
 
-function callableText(walk: Walk, type: ts.Type): string | undefined {
+function callableText(
+  walk: Walk,
+  type: ts.Type,
+  path: readonly ts.Symbol[],
+): string | undefined {
   const callable = walk.checker.getNonNullableType(type);
   const calls = callable.getCallSignatures();
   const constructs = callable.getConstructSignatures();
@@ -121,8 +126,10 @@ function callableText(walk: Walk, type: ts.Type): string | undefined {
   if (texts.length === 0) return undefined;
   const reached = referencedDeclarations(
     walk.checker,
-    (symbol) => declaredHere(walk, symbol),
+    (file) => inPackage(walk, file.fileName),
     [...calls, ...constructs],
+    path,
+    walk.visible,
   );
   return reached.length === 0
     ? texts.join(" | ")
@@ -145,22 +152,32 @@ function recordMembers(
   type: ts.Type,
   prefix: string,
   skip: string,
+  owners: readonly ts.Symbol[],
 ): void {
   for (const property of walk.checker.getPropertiesOfType(type)) {
     if (property.name === skip || !isPublic(property)) continue;
     if (!declaredHere(walk, property)) continue;
-    const text = callableText(walk, typeOf(walk, property));
+    const text = callableText(walk, typeOf(walk, property), [
+      ...owners,
+      property,
+    ]);
     if (text !== undefined) walk.surface.set(`${prefix}${property.name}`, text);
   }
 }
 
-function recordClass(walk: Walk, symbol: ts.Symbol, path: string): void {
-  recordMembers(walk, typeOf(walk, symbol), `${path}.`, "prototype");
+function recordClass(
+  walk: Walk,
+  symbol: ts.Symbol,
+  path: string,
+  owners: readonly ts.Symbol[],
+): void {
+  recordMembers(walk, typeOf(walk, symbol), `${path}.`, "prototype", owners);
   recordMembers(
     walk,
     walk.checker.getDeclaredTypeOfSymbol(symbol),
     `${path}.prototype.`,
     "",
+    owners,
   );
 }
 
@@ -190,14 +207,14 @@ function visit(
   const depth = path.split(":")[1]?.split(".").length ?? MAX_DEPTH;
   const value = symbol.flags & ts.SymbolFlags.Value;
   const type = value ? typeOf(walk, symbol) : undefined;
-  const text = type && callableText(walk, type);
+  const next = [...trail, symbol];
+  const text = type && callableText(walk, type, next);
   if (text !== undefined) walk.surface.set(path, text);
   if (symbol.flags & ts.SymbolFlags.Class && declaredHere(walk, symbol)) {
-    recordClass(walk, symbol, path);
+    recordClass(walk, symbol, path, next);
     return;
   }
   if (depth >= MAX_DEPTH || !declaredHere(walk, symbol)) return;
-  const next = [...trail, symbol];
   if (symbol.flags & ts.SymbolFlags.Module) {
     for (const member of walk.checker.getExportsOfModule(symbol)) {
       visit(walk, member, `${path}.${member.name}`, next);
@@ -279,10 +296,18 @@ export function declaredSurface(packageFolder: string): Surface {
       ? { types: [] }
       : { typeRoots: [nodeTypes], types: ["node"] }),
   });
+  const checker = program.getTypeChecker();
+  const local = (file: ts.SourceFile): boolean =>
+    inPackage({ folder }, file.fileName);
   const walk: Walk = {
-    checker: program.getTypeChecker(),
+    checker,
     folder,
     surface: new Map(),
+    visible: outsideVisible(
+      checker,
+      program.getSourceFiles().filter(local),
+      local,
+    ),
   };
   const missing = unresolvedImports(walk, program);
   if (missing.length > 0) {
