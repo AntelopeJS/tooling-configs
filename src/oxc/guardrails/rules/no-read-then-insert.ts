@@ -67,7 +67,7 @@ function enclosingScope(node: ESTree.Node): Scope | null {
   return null;
 }
 
-/** A callback that runs while its caller waits: handed to `map`, `then` or the like, or to a call the caller awaits. A handler registered by `app.post(...)` or wrapped by `export const POST = withAuth(...)` runs later, on its own. */
+/** A callback that runs while its caller waits: handed to `map`, `then` or the like, or to a call whose value the caller awaits or returns. A handler registered by `app.post(...)` or wrapped by `export const POST = withAuth(...)` runs later, on its own. */
 function isInlineCallback(scope: Scope): boolean {
   const call = scope.parent;
   if (
@@ -80,9 +80,27 @@ function isInlineCallback(scope: Scope): boolean {
   const method =
     call.callee.type === "MemberExpression" ? memberName(call.callee) : null;
   return (
-    (method !== null && INLINE_CALLBACK_METHODS.has(method)) ||
-    call.parent?.type === "AwaitExpression"
+    (method !== null && INLINE_CALLBACK_METHODS.has(method)) || isAwaited(call)
   );
+}
+
+/** Whether the call's value reaches an `await` or a `return`, through array elements, call arguments or a `.then` chain. */
+function isAwaited(call: ESTree.CallExpression): boolean {
+  let node: ESTree.Node = call;
+  let parent: ESTree.Node | null = node.parent;
+  while (parent !== null) {
+    if (parent.type === "AwaitExpression" || parent.type === "ReturnStatement")
+      return true;
+    const carries =
+      parent.type === "ArrayExpression" ||
+      parent.type === "SpreadElement" ||
+      parent.type === "CallExpression" ||
+      (parent.type === "MemberExpression" && parent.object === node);
+    if (!carries) return false;
+    node = parent;
+    parent = node.parent;
+  }
+  return false;
 }
 
 /** The function a read or an insert runs in, seen through inline callbacks such as `withRetry(() => model.getAll())` or `rows.map((row) => model.insert(row))`. */
@@ -160,7 +178,7 @@ interface Facts {
   duplicateChecks: Range[];
   throwRanges: Range[];
   throwBlocks: ESTree.Node[];
-  returnRanges: Range[];
+  exitRanges: Range[];
   testRanges: Range[];
   text: (node: ESTree.Node) => string;
 }
@@ -173,7 +191,7 @@ function sameTable(read: Read, insert: Insert): boolean {
   );
 }
 
-/** A catch that returns, or keeps every `throw` inside a branch, can finish without rethrowing. */
+/** A catch that returns, continues or breaks, or keeps every `throw` inside a branch, can finish without rethrowing. */
 function canFinish(facts: Facts, handler: ESTree.Node): boolean {
   const block =
     handler.type === "BlockStatement"
@@ -184,7 +202,7 @@ function canFinish(facts: Facts, handler: ESTree.Node): boolean {
         ? handler.body
         : null;
   return (
-    facts.returnRanges.some((returned) => contains(handler.range, returned)) ||
+    facts.exitRanges.some((exit) => contains(handler.range, exit)) ||
     !facts.throwBlocks.some((thrownIn) => thrownIn === block)
   );
 }
@@ -300,7 +318,7 @@ export const noReadThenInsertRule = defineRule({
       duplicateChecks: [],
       throwRanges: [],
       throwBlocks: [],
-      returnRanges: [],
+      exitRanges: [],
       testRanges: [],
       text: (node) => context.sourceCode.getText(node),
     };
@@ -325,7 +343,7 @@ export const noReadThenInsertRule = defineRule({
         duplicateChecks.length = 0;
         throwRanges.length = 0;
         facts.throwBlocks.length = 0;
-        facts.returnRanges.length = 0;
+        facts.exitRanges.length = 0;
         testRanges.length = 0;
       },
       IfStatement(node) {
@@ -342,7 +360,13 @@ export const noReadThenInsertRule = defineRule({
         if (node.parent !== null) facts.throwBlocks.push(node.parent);
       },
       ReturnStatement(node) {
-        facts.returnRanges.push(node.range);
+        facts.exitRanges.push(node.range);
+      },
+      ContinueStatement(node) {
+        facts.exitRanges.push(node.range);
+      },
+      BreakStatement(node) {
+        facts.exitRanges.push(node.range);
       },
       Identifier(node) {
         if (DUPLICATE_CHECK.test(node.name)) duplicateChecks.push(node.range);

@@ -112,6 +112,23 @@ export const POST = withAuth(async (req) => users.insert(req.body));`,
   ],
   invalid: [
     {
+      name: "fails on a rule that lifts only directly awaited calls: the retried read sits in Promise.all",
+      code: `async function seed(model, other) {
+  const [rows] = await Promise.all([withRetry(() => model.getAll()), other.getAll()]);
+  if (rows.length === 0) await model.insert(row);
+}`,
+      errors: [error],
+    },
+    {
+      name: "fails on a rule that lifts only directly awaited calls: the retried read is chained with then",
+      code: `function seed(model) {
+  return withRetry(() => model.getAll()).then(async (rows) => {
+    if (rows.length === 0) await model.insert(row);
+  });
+}`,
+      errors: [error],
+    },
+    {
       name: "fails on a rule that applies the shadow exemption to the read's own callback: db is the read's table too",
       code: `async function seed(withDatabase, row) {
   await withDatabase(async (db) => {

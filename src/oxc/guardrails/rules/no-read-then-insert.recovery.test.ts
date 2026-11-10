@@ -10,6 +10,36 @@ const error = { messageId: "readThenInsert" };
 tester.run("antelopejs/no-read-then-insert", noReadThenInsertRule, {
   valid: [
     {
+      name: "fails on a rule that counts only return as an exit: the catch continues the loop on a duplicate",
+      code: `async function seed(model, rows) {
+  const existing = await model.getAll();
+  for (const row of rows) {
+    if (existing.includes(row)) continue;
+    try {
+      await model.insert(row);
+    } catch (error) {
+      if (isDuplicate(error)) continue;
+      throw error;
+    }
+  }
+}`,
+    },
+    {
+      name: "fails on a rule that counts only return as an exit: the catch breaks out on the Postgres code",
+      code: `async function seed(model, rows) {
+  const existing = await model.getAll();
+  for (const row of rows) {
+    if (existing.length > 0) break;
+    try {
+      await model.insert(row);
+    } catch (error) {
+      if (error.code === "23505") break;
+      throw error;
+    }
+  }
+}`,
+    },
+    {
       name: "fails on a rule that reads only if conditions: a switch case returns on the MySQL duplicate code",
       code: `async function seed(model) {
   if (await model.get(id)) return;
