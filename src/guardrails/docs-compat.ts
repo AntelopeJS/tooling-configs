@@ -360,14 +360,13 @@ function readLock(
   root: string,
   shared: boolean,
   directory: string,
+  documents: Map<string, Document>,
 ): Lock | undefined {
   const path = join(root, lockPath(shared, directory));
-  return existsSync(path)
-    ? {
-        document: parseDocument(readFileSync(path, "utf8")),
-        importer: shared ? directory || "." : ".",
-      }
-    : undefined;
+  if (!documents.has(path) && existsSync(path))
+    documents.set(path, parseDocument(readFileSync(path, "utf8")));
+  const document = documents.get(path);
+  return document && { document, importer: shared ? directory || "." : "." };
 }
 
 interface PlannedPackage {
@@ -449,10 +448,13 @@ export function planDocs(root: string, manager: PackageManager): DocsPlan {
     exists: (path) => existsSync(join(root, path)),
   };
   const shared = sharesLockfile(root);
+  const documents = new Map<string, Document>();
   const locks = new Map(
-    packages.map(({ directory }) => [
+    qualifying.map(({ directory }) => [
       directory,
-      manager === "pnpm" ? readLock(root, shared, directory) : undefined,
+      manager === "pnpm"
+        ? readLock(root, shared, directory, documents)
+        : undefined,
     ]),
   );
   const missing =
