@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import ts from "typescript";
 
 import { lintProject } from "./helpers/lint-project.ts";
 
@@ -232,6 +233,26 @@ export function patch(target: ValueProxy<number>, update: { value?: number | und
     ["exact.ts:5"],
   );
 });
+
+test(
+  "two files whose names differ only in case stay two types (fails when parsed files are shared by a case-folded path)",
+  { skip: !ts.sys.useCaseSensitiveFileNames },
+  () => {
+    const token = "export class Token { private brand = 1; value = 0; }\n";
+    const source = `
+import type { Token as Upper } from "./Token.ts";
+import type { Token as Lower } from "./token.ts";
+
+export function swap(holder: { token: Upper }, lower: Lower): object {
+  return Object.assign(holder, { token: lower });
+}
+`;
+    assert.deepEqual(
+      findings({ "Token.ts": token, "token.ts": token, "swap.ts": source }),
+      ["swap.ts:6"],
+    );
+  },
+);
 
 test("Object.assign adding new fields, writing assignable values or copying into a fresh object passes", () => {
   assert.deepEqual(findings({ "proxy.ts": proxy, "checked.ts": checked }), []);
