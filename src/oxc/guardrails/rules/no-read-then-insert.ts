@@ -12,6 +12,18 @@ const READ_METHODS = new Set([
   "findOne",
 ]);
 const INSERT_METHODS = new Set(["insert", "insertOne", "insertMany"]);
+const INLINE_CALLBACK_METHODS = new Set([
+  "map",
+  "flatMap",
+  "forEach",
+  "filter",
+  "reduce",
+  "some",
+  "every",
+  "then",
+  "catch",
+  "finally",
+]);
 const DUPLICATE_CHECK =
   /duplicate|unique|conflict|E11000|^11000$|23505|ER_DUP_ENTRY/iu;
 
@@ -27,6 +39,7 @@ interface Read {
 
 interface Insert {
   call: ESTree.CallExpression;
+  scope: Scope;
   callee: ESTree.MemberExpression;
   receiver: string;
   receivers: ReadonlySet<string>;
@@ -55,20 +68,40 @@ function enclosingScope(node: ESTree.Node): Scope | null {
   return null;
 }
 
-function isCallback(scope: Scope): boolean {
+/** A callback that runs while its caller waits: handed to `map`, `then` or the like, or to a call whose result the caller uses. A route handler registered by a bare `app.post(...)` statement runs later. */
+function isInlineCallback(scope: Scope): boolean {
+  const call = scope.parent;
+  if (
+    scope.type === "Program" ||
+    scope.type === "FunctionDeclaration" ||
+    call?.type !== "CallExpression" ||
+    !call.arguments.some((argument) => argument === scope)
+  )
+    return false;
+  const method =
+    call.callee.type === "MemberExpression" ? memberName(call.callee) : null;
   return (
-    scope.type !== "Program" &&
-    scope.type !== "FunctionDeclaration" &&
-    scope.parent?.type === "CallExpression" &&
-    scope.parent.arguments.some((argument) => argument === scope)
+    (method !== null && INLINE_CALLBACK_METHODS.has(method)) ||
+    call.parent?.type !== "ExpressionStatement"
   );
 }
 
-/** A read inside a callback, such as `withRetry(() => model.getAll())`, belongs to the function that awaits it. */
-function readScope(node: ESTree.Node): Scope | null {
+/** The function a read or an insert runs in, seen through inline callbacks such as `withRetry(() => model.getAll())` or `rows.map((row) => model.insert(row))`. */
+function runningScope(node: ESTree.Node): Scope | null {
   let scope = enclosingScope(node);
-  while (scope !== null && isCallback(scope)) scope = enclosingScope(scope);
+  while (scope !== null && isInlineCallback(scope))
+    scope = enclosingScope(scope);
   return scope;
+}
+
+function chainsFrom(node: ESTree.Node, call: ESTree.CallExpression): boolean {
+  let current: ESTree.Node = node;
+  while (current !== call) {
+    if (current.type === "CallExpression") current = current.callee;
+    else if (current.type === "MemberExpression") current = current.object;
+    else return false;
+  }
+  return true;
 }
 
 function rootName(node: ESTree.Node): string | null {
@@ -95,21 +128,6 @@ function declares(scope: Scope, name: string): boolean {
   );
 }
 
-/** A literal the code compares an error against, such as `error.code === 11000` or `message.includes("duplicate key")`, not one it only throws. */
-function isTested(node: ESTree.Node): boolean {
-  const parent = node.parent;
-  if (parent === null) return false;
-  return (
-    parent.type === "BinaryExpression" ||
-    parent.type === "SwitchCase" ||
-    (parent.type === "CallExpression" &&
-      parent.arguments.some((argument) => argument === node)) ||
-    (parent.type === "MemberExpression" &&
-      parent.object === node &&
-      parent.parent?.type === "CallExpression")
-  );
-}
-
 function calledMember(
   node: ESTree.CallExpression,
   methods: ReadonlySet<string>,
@@ -120,23 +138,25 @@ function calledMember(
 }
 
 function isUpsert(node: ESTree.CallExpression): boolean {
-  return node.arguments.some(
-    (argument) =>
-      argument.type === "ObjectExpression" &&
-      argument.properties.some(
-        (property) =>
-          property.type === "Property" &&
-          !property.computed &&
-          ((property.key.type === "Identifier" &&
-            property.key.name === "conflict") ||
-            (property.key.type === "Literal" &&
-              property.key.value === "conflict")) &&
-          !(
-            property.value.type === "Literal" &&
-            property.value.value === "error"
-          ),
-      ),
-  );
+  return node.arguments
+    .slice(1)
+    .some(
+      (argument) =>
+        argument.type === "ObjectExpression" &&
+        argument.properties.some(
+          (property) =>
+            property.type === "Property" &&
+            !property.computed &&
+            ((property.key.type === "Identifier" &&
+              property.key.name === "conflict") ||
+              (property.key.type === "Literal" &&
+                property.key.value === "conflict")) &&
+            !(
+              property.value.type === "Literal" &&
+              property.value.value === "error"
+            ),
+        ),
+    );
 }
 
 /** What one file's traversal collected, read once it ends. */
@@ -144,6 +164,8 @@ interface Facts {
   reads: Read[];
   duplicateChecks: Range[];
   throwRanges: Range[];
+  testRanges: Range[];
+  branchRanges: Range[];
   text: (node: ESTree.Node) => string;
 }
 
@@ -154,14 +176,38 @@ function sameTable(read: Read, insert: Insert): boolean {
   );
 }
 
-function recovers(facts: Facts, body: ESTree.Node, insert: Insert): boolean {
-  const range = body.range;
+/** Whether `range` reads the table back or recognises a duplicate. */
+function checksTheLoss(facts: Facts, range: Range, insert: Insert): boolean {
   return (
-    !facts.throwRanges.some((thrown) => contains(range, thrown)) ||
     facts.reads.some(
       (read) => contains(range, read.range) && sameTable(read, insert),
-    ) ||
-    facts.duplicateChecks.some((check) => contains(range, check))
+    ) || facts.duplicateChecks.some((check) => contains(range, check))
+  );
+}
+
+function recovers(facts: Facts, handler: ESTree.Node, insert: Insert): boolean {
+  if (
+    handler.type !== "BlockStatement" &&
+    handler.type !== "ArrowFunctionExpression" &&
+    handler.type !== "FunctionExpression"
+  )
+    return DUPLICATE_CHECK.test(facts.text(handler));
+  const range = handler.range;
+  const throws = facts.throwRanges.filter((thrown) => contains(range, thrown));
+  if (throws.length === 0) return true;
+  if (
+    facts.testRanges.some(
+      (test) => contains(range, test) && checksTheLoss(facts, test, insert),
+    )
+  )
+    return true;
+  return (
+    checksTheLoss(facts, range, insert) &&
+    throws.every((thrown) =>
+      facts.branchRanges.some(
+        (branch) => contains(range, branch) && contains(branch, thrown),
+      ),
+    )
   );
 }
 
@@ -192,7 +238,7 @@ function recoveryOf(
   if (
     parent.type === "MemberExpression" &&
     parent.object === child &&
-    child === insert.call &&
+    chainsFrom(child, insert.call) &&
     memberName(parent) === "catch" &&
     parent.parent?.type === "CallExpression" &&
     parent.parent.callee === parent
@@ -222,12 +268,12 @@ function isRaced(facts: Facts, insert: Insert): boolean {
     (read) =>
       sameTable(read, insert) &&
       read.range[1] <= start &&
-      contains(read.scope.range, insert.call.range) &&
+      read.scope === insert.scope &&
       !isGuarded(facts, insert, read.scope),
   );
 }
 
-/** Writing a row that a startup read found missing races every other replica that read the same. A catch that rethrows nothing, reads the row back or checks for a duplicate tolerates the lost race, and so does an upsert or a helper handed the table. */
+/** Writing a row that a startup read found missing races every other replica that read the same. A catch that rethrows nothing, or rethrows only under a condition after it reads the row back or recognises a duplicate, tolerates the lost race, and so does an upsert or a helper handed the table. */
 export const noReadThenInsertRule = defineRule({
   meta: {
     type: "problem",
@@ -246,9 +292,12 @@ export const noReadThenInsertRule = defineRule({
       reads: [],
       duplicateChecks: [],
       throwRanges: [],
+      testRanges: [],
+      branchRanges: [],
       text: (node) => context.sourceCode.getText(node),
     };
-    const { reads, duplicateChecks, throwRanges } = facts;
+    const { reads, duplicateChecks, throwRanges, testRanges, branchRanges } =
+      facts;
 
     function receiverChain(start: ESTree.Node): Set<string> {
       const texts = new Set<string>();
@@ -268,6 +317,21 @@ export const noReadThenInsertRule = defineRule({
         inserts.length = 0;
         duplicateChecks.length = 0;
         throwRanges.length = 0;
+        testRanges.length = 0;
+        branchRanges.length = 0;
+      },
+      IfStatement(node) {
+        testRanges.push(node.test.range);
+        branchRanges.push(node.consequent.range);
+        if (node.alternate !== null) branchRanges.push(node.alternate.range);
+      },
+      ConditionalExpression(node) {
+        testRanges.push(node.test.range);
+        branchRanges.push(node.consequent.range, node.alternate.range);
+      },
+      SwitchCase(node) {
+        if (node.test !== null) testRanges.push(node.test.range);
+        branchRanges.push(node.range);
       },
       ThrowStatement(node) {
         throwRanges.push(node.range);
@@ -276,12 +340,14 @@ export const noReadThenInsertRule = defineRule({
         if (DUPLICATE_CHECK.test(node.name)) duplicateChecks.push(node.range);
       },
       Literal(node) {
-        if (isTested(node) && DUPLICATE_CHECK.test(String(node.value)))
+        if (DUPLICATE_CHECK.test(String(node.value)))
           duplicateChecks.push(node.range);
       },
       CallExpression(node) {
+        if (facts.text(node.callee) === "Promise.reject")
+          throwRanges.push(node.range);
         const read = calledMember(node, READ_METHODS);
-        const scope = readScope(node);
+        const scope = runningScope(node);
         if (read !== null && scope !== null) {
           reads.push({
             range: node.range,
@@ -291,9 +357,10 @@ export const noReadThenInsertRule = defineRule({
           });
         }
         const insert = calledMember(node, INSERT_METHODS);
-        if (insert !== null && !isUpsert(node)) {
+        if (insert !== null && scope !== null && !isUpsert(node)) {
           inserts.push({
             call: node,
+            scope,
             callee: insert,
             receiver: facts.text(insert.object),
             receivers: receiverChain(insert.object),
