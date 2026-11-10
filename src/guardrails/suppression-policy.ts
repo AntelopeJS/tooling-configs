@@ -29,6 +29,10 @@ const NEVER_SUPPRESSED: ReadonlyMap<string, string> = new Map([
     "drive the behaviour through the public interface, or read from fixtures/",
   ],
   [
+    "antelopejs/no-read-then-insert",
+    "insert first, then read the row back in a catch and rethrow only when it is missing",
+  ],
+  [
     "antelopejs/no-self-import-in-tests",
     "import the module under test by relative path, or publish the subpath in exports and link the package to itself",
   ],

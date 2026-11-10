@@ -5,6 +5,7 @@ import { noConstantValueAssertionRule } from "./rules/no-constant-value-assertio
 import { noFsReadInTestsRule } from "./rules/no-fs-read-in-tests.ts";
 import { noInheritedKeyLookupRule } from "./rules/no-inherited-key-lookup.ts";
 import { noPresenceOnlyTypeGuardRule } from "./rules/no-presence-only-type-guard.ts";
+import { noReadThenInsertRule } from "./rules/no-read-then-insert.ts";
 import { noSelfImportInTestsRule } from "./rules/no-self-import-in-tests.ts";
 import { noTypeofFunctionOnlyTestRule } from "./rules/no-typeof-function-only-test.ts";
 import { noUnsafeObjectAssignRule } from "./rules/no-unsafe-object-assign.ts";
@@ -14,7 +15,7 @@ import { requireTsconfigTypesRule } from "./rules/require-tsconfig-types.ts";
 
 export { ASSERTION_FUNCTION_NAMES, TEST_FILE_GLOBS } from "./shared.ts";
 
-/** AntelopeJS rules that reject comments, inherited-key lookups, presence-only type guards, unchecked Object.assign writes, low-evidence tests, files no tsconfig lists and tsconfigs that list no `types`. */
+/** AntelopeJS rules that reject comments, inherited-key lookups, presence-only type guards, inserts that follow a read of the same table, unchecked Object.assign writes, low-evidence tests, files no tsconfig lists and tsconfigs that list no `types`. */
 const guardrailsPlugin = eslintCompatPlugin({
   meta: { name: "antelopejs" },
   rules: {
@@ -22,6 +23,7 @@ const guardrailsPlugin = eslintCompatPlugin({
     "no-fs-read-in-tests": noFsReadInTestsRule,
     "no-inherited-key-lookup": noInheritedKeyLookupRule,
     "no-presence-only-type-guard": noPresenceOnlyTypeGuardRule,
+    "no-read-then-insert": noReadThenInsertRule,
     "no-constant-value-assertion": noConstantValueAssertionRule,
     "no-self-import-in-tests": noSelfImportInTestsRule,
     "no-typeof-function-only-test": noTypeofFunctionOnlyTestRule,

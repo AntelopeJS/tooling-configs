@@ -173,11 +173,13 @@ export function guardrailsRules() {
       "antelopejs/no-comments": "error",
       "antelopejs/no-inherited-key-lookup": "error",
       "antelopejs/no-presence-only-type-guard": "error",
+      "antelopejs/no-read-then-insert": "error",
     },
     overrides: [
       {
         files: TEST_FILE_GLOBS,
         rules: {
+          "antelopejs/no-read-then-insert": "off",
           "antelopejs/no-fs-read-in-tests": "error",
           "antelopejs/no-constant-value-assertion": "error",
           "antelopejs/no-self-import-in-tests": "error",
