@@ -153,6 +153,25 @@ test("the locked version decides currency, and a Renovate PR under 7 days old ex
   );
 });
 
+test("the repository publishing @antelopejs/tooling-configs needs no dependency on it, a repository naming another package does", async () => {
+  const named = (name: string) =>
+    conformant(world()).repo("mongodb", {
+      ".github/workflows/ci.yml": CALLER,
+      "renovate.json": RENOVATE,
+      "package.json": JSON.stringify({ name }),
+    });
+  assert.deepEqual(
+    subjects(
+      await conformance.run(named("@antelopejs/tooling-configs").context()),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    subjects(await conformance.run(named("@antelopejs/mongodb").context())),
+    ["tooling-configs"],
+  );
+});
+
 test("a red ci / checks on the newest push and a repository still reporting the legacy context are told apart", async () => {
   const red = conformant(world()).ci(
     "mongodb",

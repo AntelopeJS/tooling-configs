@@ -16,7 +16,7 @@ import {
 import type { GardenApi } from "../api.ts";
 import { perRepo, type Check } from "../check.ts";
 import { GardenContext, ORG, type GardenRepo } from "../context.ts";
-import { tooling } from "../npm.ts";
+import { TOOLING_PACKAGE, tooling } from "../npm.ts";
 import { finding, found, type CheckResult, type Finding } from "../types.ts";
 
 const CHECK = "conformance";
@@ -133,6 +133,7 @@ async function toolingVersion(
   repo: GardenRepo,
 ): Promise<Finding[]> {
   const manifests = await context.packages(repo);
+  if (manifests.some(({ name }) => name === TOOLING_PACKAGE)) return [];
   const range = manifests
     .map(({ tooling: declared }) => declared)
     .find((declared) => declared !== undefined);
