@@ -83,3 +83,53 @@ function c(implementation: UnparsedRecord, key: string) {
     ],
   },
 );
+
+const inOperator = { messageId: "inOperator" };
+
+tester.run(
+  "antelopejs/no-inherited-key-lookup Object.prototype name guards",
+  noInheritedKeyLookupRule,
+  {
+    valid: [
+      {
+        name: "interface-core@main src/index.ts:217 and :219, implementedAt reads inherited members except those only Object.prototype answers",
+        code: `
+type UnparsedRecord = Record<string, unknown>;
+function implementedAt(implementation: UnparsedRecord, key: string) {
+  const answeredByRoot =
+    Object.hasOwn(Object.prototype, key) &&
+    !Object.hasOwn(implementation, key) &&
+    implementation[key] ===
+      Object.getOwnPropertyDescriptor(Object.prototype, key)?.value;
+  return answeredByRoot ? undefined : implementation[key];
+}`,
+      },
+      {
+        name: "a key that is not an Object.prototype name, and a read compared with Object.prototype's own value of that key",
+        code: "const T: Record<string, number> = { a: 1 }; function f(key: string) { if (Object.hasOwn(Object.prototype, key)) return; return T[key]; } function g(key: string) { return T[key] !== Object.prototype[key]; }",
+      },
+    ],
+    invalid: [
+      {
+        name: "an unguarded read",
+        code: "const T: Record<string, number> = { a: 1 }; function f(key: string) { return T[key]; }",
+        errors: [lookup],
+      },
+      {
+        name: "a read guarded only by in",
+        code: "const T: Record<string, number> = { a: 1 }; function f(key: string) { return key in T ? T[key] : undefined; }",
+        errors: [inOperator, lookup],
+      },
+      {
+        name: "a read where the key is an Object.prototype name, and a const whose false outcome may come from an unrelated conjunct",
+        code: "const T: Record<string, number> = { a: 1 }; function f(key: string, x: boolean) { const root = Object.hasOwn(Object.prototype, key) && x; use(Object.hasOwn(Object.prototype, key) && T[key]); return root ? undefined : T[key]; }",
+        errors: [lookup, lookup],
+      },
+      {
+        name: "a read compared with Object.prototype's value of another key, or with a value it does not own",
+        code: "const T: Record<string, number> = { a: 1 }; function f(key: string, other: string) { return [T[key] === Object.getOwnPropertyDescriptor(Object.prototype, other)?.value, T[key] === undefined]; }",
+        errors: [lookup, lookup],
+      },
+    ],
+  },
+);

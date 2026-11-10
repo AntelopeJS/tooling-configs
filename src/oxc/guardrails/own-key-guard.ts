@@ -99,7 +99,64 @@ function isBooleanValued(
   );
 }
 
-/** Whether the own-key check holds whenever `node` evaluates to `outcome`. */
+/** `Object.getOwnPropertyDescriptor(Object.prototype, key)?.value` or `Object.prototype[key]`: the value `Object.prototype` itself holds under the key. */
+function isRootValue(node: ESTree.Node, read: OwnKey): boolean {
+  const value = node.type === "ChainExpression" ? node.expression : node;
+  if (value.type !== "MemberExpression") return false;
+  const text = (part: ESTree.Node): string => read.source.getText(part);
+  if (value.computed)
+    return (
+      text(value.object) === "Object.prototype" &&
+      text(value.property) === read.key
+    );
+  const call = value.object;
+  return (
+    value.property.type === "Identifier" &&
+    value.property.name === "value" &&
+    call.type === "CallExpression" &&
+    callName(call.callee) === "Object.getOwnPropertyDescriptor" &&
+    call.arguments.length === 2 &&
+    text(call.arguments[0]) === "Object.prototype" &&
+    text(call.arguments[1]) === read.key
+  );
+}
+
+/** The outcome of `table[key] === <root value>` (or `!==`, either order) under which the read differs from `Object.prototype`'s own value, or `null` for another comparison. */
+function differsFromRootWhen(
+  node: { operator: string; left: ESTree.Node; right: ESTree.Node },
+  read: OwnKey,
+): boolean | null {
+  const equal = EQUALITY.has(node.operator);
+  if (!equal && !INEQUALITY.has(node.operator)) return null;
+  const reads = (side: ESTree.Node): boolean =>
+    side.type === "MemberExpression" &&
+    side.computed &&
+    read.source.getText(side.object) === read.table &&
+    read.source.getText(side.property) === read.key;
+  const compares =
+    (reads(node.left) && isRootValue(node.right, read)) ||
+    (reads(node.right) && isRootValue(node.left, read));
+  return compares ? !equal : null;
+}
+
+/** `a && b` that is true, or `a || b` that is false, needs one operand to hold; `a || b` that is true, or `a && b` that is false, needs both. */
+function combinedHolds(
+  node: ESTree.LogicalExpression,
+  outcome: boolean,
+  read: OwnKey,
+  depth: number,
+): boolean {
+  const left = holds(node.left, outcome, read, depth);
+  const right = holds(node.right, outcome, read, depth);
+  if (node.operator === (outcome ? "&&" : "||")) return left || right;
+  return node.operator === (outcome ? "||" : "&&") && left && right;
+}
+
+/**
+ * Whether the key is safe to read whenever `node` evaluates to `outcome`: the table owns the key,
+ * the key is no `Object.prototype` name, or the table answers it with something other than
+ * `Object.prototype`'s own value.
+ */
 function holds(
   node: ESTree.Node,
   outcome: boolean,
@@ -111,7 +168,9 @@ function holds(
     case "ParenthesizedExpression":
       return holds(node.expression, outcome, read, depth);
     case "CallExpression":
-      return outcome && checksOwnKey(node, read);
+      return outcome
+        ? checksOwnKey(node, read)
+        : checksOwnKey(node, { ...read, table: "Object.prototype" });
     case "Identifier": {
       const value = constValue(node, read);
       return value !== null && holds(value, outcome, read, depth + 1);
@@ -121,6 +180,7 @@ function holds(
         node.operator === "!" && holds(node.argument, !outcome, read, depth)
       );
     case "BinaryExpression": {
+      if (differsFromRootWhen(node, read) === outcome) return true;
       const compared = comparedOutcome(node, outcome);
       return (
         compared !== null &&
@@ -129,11 +189,7 @@ function holds(
       );
     }
     case "LogicalExpression":
-      return (
-        node.operator === (outcome ? "&&" : "||") &&
-        (holds(node.left, outcome, read, depth) ||
-          holds(node.right, outcome, read, depth))
-      );
+      return combinedHolds(node, outcome, read, depth);
     default:
       return false;
   }
@@ -245,10 +301,14 @@ function guardsChild(
 }
 
 /**
- * Whether an own-key check of `table` and `key` (`Object.hasOwn`, `hasOwnProperty.call`,
- * `table.hasOwnProperty`, directly, negated, compared with a boolean or held in a `const`) guards
- * `node`: it holds in the branch of a conditional, `if`, `&&`/`||`, `while` or `for` that holds
- * `node`, or an earlier statement asserts it, or leaves the block or stores the key where it fails.
+ * Whether `node`, a read of `table[key]`, cannot answer a key only `Object.prototype` holds. It is
+ * compared with `Object.prototype`'s own value of the key, or a check guards it: an own-key check of
+ * `table` and `key` (`Object.hasOwn`, `hasOwnProperty.call`, `table.hasOwnProperty`), a failed
+ * `Object.prototype` membership check of `key`, or the read differing from `Object.prototype`'s
+ * value, directly, negated, combined with `&&`/`||`, compared with a boolean or held in a `const`.
+ * The check guards it when it holds in the branch of a conditional, `if`, `&&`/`||`, `while` or
+ * `for` that holds `node`, or an earlier statement asserts it, or leaves the block or stores the
+ * key where it fails.
  */
 export function isOwnKeyGuarded(
   node: ESTree.Node,
@@ -257,6 +317,11 @@ export function isOwnKeyGuarded(
   source: SourceCode,
 ): boolean {
   const read = { table, key, source };
+  if (
+    node.parent?.type === "BinaryExpression" &&
+    differsFromRootWhen(node.parent, read) !== null
+  )
+    return true;
   let child = node;
   let parent: ESTree.Node | null = node.parent;
   while (parent !== null) {
