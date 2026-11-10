@@ -7,6 +7,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   envFor,
+  externalEnv,
   firstLine,
   gitInit,
   lease,
@@ -77,7 +78,7 @@ test(
 );
 
 test(
-  "run fails and names the holder when a foreign process took the mongo port of a lease whose mongod stopped (fails when readiness is any socket that accepts, which hands the command a MONGO_URL pointing at a stranger)",
+  "run fails and names the holder when a foreign process took the mongo port of a lease whose mongod does not run (fails when readiness is any socket that accepts, which hands the command a MONGO_URL pointing at a stranger)",
   {
     skip:
       binary === undefined &&
@@ -86,21 +87,15 @@ test(
   async (t) => {
     const root = scratch(t);
     const worktree = gitInit(join(root, "w"));
-    const env = envFor(join(root, ".home"));
-    const printed = await leasedEnv(worktree, env);
-    const port = Number(new URL(String(printed.MONGO_URL)).port);
-    const [row] = await statusRows(worktree, env);
-    const pid = row?.mongod;
-    if (pid === undefined) assert.fail("status shows no mongod for the lease");
-    t.after(() => {
-      if (alive(pid)) process.kill(pid, "SIGKILL");
-    });
-    process.kill(pid, "SIGTERM");
-    while (alive(pid)) await sleep(50);
+    const home = join(root, ".home");
+    await leasedEnv(worktree, externalEnv(home));
+    const [row] = await statusRows(worktree, externalEnv(home));
+    const port = row?.ports?.mongo;
+    if (port === undefined) assert.fail("status shows no ports for the lease");
     const foreign = await claimPort(port, "127.0.0.1");
-    if (foreign === undefined) assert.fail(`port ${port} did not free up`);
+    if (foreign === undefined) assert.fail(`port ${port} is already taken`);
     t.after(() => closeServer(foreign));
-    const outcome = await lease(["run", "--", "true"], worktree, env);
+    const outcome = await lease(["run", "--", "true"], worktree, envFor(home));
     assert.equal(outcome.code, 1);
     assert.match(
       outcome.stderr,
