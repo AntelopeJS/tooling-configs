@@ -10,6 +10,33 @@ const error = { messageId: "readThenInsert" };
 tester.run("antelopejs/no-read-then-insert", noReadThenInsertRule, {
   valid: [
     {
+      name: "fails on a rule that reads only if conditions: a switch case returns on the MySQL duplicate code",
+      code: `async function seed(model) {
+  if (await model.get(id)) return;
+  try {
+    await model.insert(row);
+  } catch (error) {
+    switch (error.code) {
+      case "ER_DUP_ENTRY":
+        return;
+    }
+    throw error;
+  }
+}`,
+    },
+    {
+      name: "fails on a rule that knows only numeric Mongo codes: the message carries E11000",
+      code: `async function seed(model) {
+  if (await model.get(id)) return;
+  try {
+    await model.insert(row);
+  } catch (error) {
+    if (String(error).includes("E11000")) return;
+    throw error;
+  }
+}`,
+    },
+    {
       name: "fails on a rule that rejects .catch: a read-back in the callback guards the insert",
       code: `async function seed(model) {
   if (await model.get(id)) return;
@@ -183,6 +210,19 @@ tester.run("antelopejs/no-read-then-insert", noReadThenInsertRule, {
     },
   ],
   invalid: [
+    {
+      name: "fails on a rule that trusts any duplicate test: the catch only warns on it, then always rethrows",
+      code: `async function seed(model) {
+  if (await model.get(id)) return;
+  try {
+    await model.insert(row);
+  } catch (error) {
+    if (error.code === "23505") console.warn("lost the race");
+    throw error;
+  }
+}`,
+      errors: [error],
+    },
     {
       name: "fails on a rule that accepts any throwing catch: it rethrows on a condition that never reads back",
       code: `async function seed(model) {

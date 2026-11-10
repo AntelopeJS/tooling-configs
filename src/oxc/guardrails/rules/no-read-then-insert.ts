@@ -159,6 +159,8 @@ interface Facts {
   reads: Read[];
   duplicateChecks: Range[];
   throwRanges: Range[];
+  throwBlocks: ESTree.Node[];
+  returnRanges: Range[];
   testRanges: Range[];
   text: (node: ESTree.Node) => string;
 }
@@ -171,7 +173,23 @@ function sameTable(read: Read, insert: Insert): boolean {
   );
 }
 
-/** A catch tolerates the lost race when it rethrows nothing, when a condition in it recognises a duplicate, or when it reads the table back and branches on a condition. */
+/** A catch that returns, or keeps every `throw` inside a branch, can finish without rethrowing. */
+function canFinish(facts: Facts, handler: ESTree.Node): boolean {
+  const block =
+    handler.type === "BlockStatement"
+      ? handler
+      : (handler.type === "ArrowFunctionExpression" ||
+            handler.type === "FunctionExpression") &&
+          handler.body?.type === "BlockStatement"
+        ? handler.body
+        : null;
+  return (
+    facts.returnRanges.some((returned) => contains(handler.range, returned)) ||
+    !facts.throwBlocks.some((thrownIn) => thrownIn === block)
+  );
+}
+
+/** A catch tolerates the lost race when it rethrows nothing, or when it can finish without rethrowing and either reads the table back or recognises a duplicate in a condition. */
 function recovers(facts: Facts, handler: ESTree.Node, insert: Insert): boolean {
   if (
     handler.type !== "BlockStatement" &&
@@ -181,12 +199,13 @@ function recovers(facts: Facts, handler: ESTree.Node, insert: Insert): boolean {
     return DUPLICATE_CHECK.test(facts.text(handler));
   const range = handler.range;
   if (!facts.throwRanges.some((thrown) => contains(range, thrown))) return true;
+  if (!canFinish(facts, handler)) return false;
   const tests = facts.testRanges.filter((test) => contains(range, test));
   const readsBack = facts.reads.some(
     (read) => contains(range, read.range) && sameTable(read, insert),
   );
   return (
-    (readsBack && tests.length > 0) ||
+    readsBack ||
     tests.some((test) =>
       facts.duplicateChecks.some((check) => contains(test, check)),
     )
@@ -229,13 +248,19 @@ function recoveryOf(
   return null;
 }
 
-function isGuarded(facts: Facts, insert: Insert, scope: Scope): boolean {
+function isGuarded(facts: Facts, insert: Insert, read: Read): boolean {
   let child: ESTree.Node = insert.call;
   let parent: ESTree.Node | null = child.parent;
-  while (parent !== null && child !== scope) {
-    if (insert.root !== null && isScope(child) && declares(child, insert.root))
+  while (parent !== null && child !== read.scope) {
+    const between = !contains(child.range, read.range);
+    if (
+      between &&
+      insert.root !== null &&
+      isScope(child) &&
+      declares(child, insert.root)
+    )
       return true;
-    if (isHandedToHelper(facts, insert, child, parent)) return true;
+    if (between && isHandedToHelper(facts, insert, child, parent)) return true;
     const recovery = recoveryOf(insert, child, parent);
     if (recovery !== null && recovers(facts, recovery, insert)) return true;
     child = parent;
@@ -251,7 +276,7 @@ function isRaced(facts: Facts, insert: Insert): boolean {
       sameTable(read, insert) &&
       read.range[1] <= start &&
       read.scope === insert.scope &&
-      !isGuarded(facts, insert, read.scope),
+      !isGuarded(facts, insert, read),
   );
 }
 
@@ -274,6 +299,8 @@ export const noReadThenInsertRule = defineRule({
       reads: [],
       duplicateChecks: [],
       throwRanges: [],
+      throwBlocks: [],
+      returnRanges: [],
       testRanges: [],
       text: (node) => context.sourceCode.getText(node),
     };
@@ -297,6 +324,8 @@ export const noReadThenInsertRule = defineRule({
         inserts.length = 0;
         duplicateChecks.length = 0;
         throwRanges.length = 0;
+        facts.throwBlocks.length = 0;
+        facts.returnRanges.length = 0;
         testRanges.length = 0;
       },
       IfStatement(node) {
@@ -310,6 +339,10 @@ export const noReadThenInsertRule = defineRule({
       },
       ThrowStatement(node) {
         throwRanges.push(node.range);
+        if (node.parent !== null) facts.throwBlocks.push(node.parent);
+      },
+      ReturnStatement(node) {
+        facts.returnRanges.push(node.range);
       },
       Identifier(node) {
         if (DUPLICATE_CHECK.test(node.name)) duplicateChecks.push(node.range);

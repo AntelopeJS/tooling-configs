@@ -112,6 +112,25 @@ export const POST = withAuth(async (req) => users.insert(req.body));`,
   ],
   invalid: [
     {
+      name: "fails on a rule that applies the shadow exemption to the read's own callback: db is the read's table too",
+      code: `async function seed(withDatabase, row) {
+  await withDatabase(async (db) => {
+    const found = await db.collection("settings").findOne({ _id: id });
+    if (!found) await db.collection("settings").insertOne(row);
+  });
+}`,
+      errors: [error],
+    },
+    {
+      name: "fails on a rule that applies the helper exemption to the read's own callback: both run inside withRetry",
+      code: `async function seed(model, row) {
+  await withRetry(model, async () => {
+    if (!(await model.get(id))) await model.insert(row);
+  });
+}`,
+      errors: [error],
+    },
+    {
       name: "fails on a rule that skips every conflict option: conflict error is a plain insert",
       code: `async function seed(table) {
   if (await table.get(id).run()) return;
