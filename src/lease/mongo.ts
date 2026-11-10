@@ -11,6 +11,8 @@ import { assertSignallable } from "./procs.ts";
 const READY_TIMEOUT_MS = 30_000;
 const KILL_WAIT_MS = 2_000;
 const POLL_MS = 50;
+const STAT_START = 19;
+const DEAD_STATES = new Set(["Z", "X"]);
 const CACHED_BINARY = /^mongod-.+-(\d+)\.(\d+)\.(\d+)$/u;
 
 /** Where a lease's mongod keeps its data and its log. */
@@ -107,53 +109,50 @@ function serves(pid: number, dbpath: string): boolean {
   return commandLine(pid).includes(dbpath);
 }
 
-/** The state letter of each thread of `pid`, the main thread's included; empty once the pid has none. */
-function threadStates(pid: number): string[] {
+/** The fields of `/proc/<path>/stat` after the command name, the state first. */
+function statFields(path: string): string[] | undefined {
+  try {
+    const stat = readFileSync(`/proc/${path}/stat`, "utf8");
+    return stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+  } catch {
+    return undefined;
+  }
+}
+
+/** True while some thread of `pid` has not exited; a dying main thread can outlive or predate the others. */
+function anyThreadRuns(pid: number): boolean {
   let tids: string[];
   try {
     tids = readdirSync(`/proc/${pid}/task`);
   } catch {
-    return [];
+    return false;
   }
-  return tids.map((tid) => {
-    try {
-      const stat = readFileSync(`/proc/${pid}/task/${tid}/stat`, "utf8");
-      return stat.charAt(stat.lastIndexOf(")") + 2);
-    } catch {
-      return "X";
-    }
+  return tids.some((tid) => {
+    const state = statFields(`${pid}/task/${tid}`)?.[0];
+    return state !== undefined && !DEAD_STATES.has(state);
   });
 }
 
 /**
- * True while the main thread of `pid` has exited and other threads of it still run. Its command
- * line already reads empty, yet those threads keep its listening socket open. Linux only.
+ * A check that answers whether the mongod `pid` serving `dbpath` still runs. On Linux it holds
+ * until no thread of the process started at the same time as `pid` now runs: the command line
+ * reads empty from the moment mongod drops its memory, while its threads still hold its port. A
+ * reused pid has another start time. Elsewhere it holds while the command line names `dbpath`.
  */
-function exiting(pid: number): boolean {
-  if (process.platform !== "linux") return false;
-  const states = threadStates(pid);
-  return (
-    states.includes("Z") &&
-    states.some((state) => state !== "Z" && state !== "X")
-  );
+function runningCheck(pid: number, dbpath: string): () => boolean {
+  if (process.platform !== "linux") return () => serves(pid, dbpath);
+  const start = statFields(String(pid))?.[STAT_START];
+  return () =>
+    start !== undefined &&
+    statFields(String(pid))?.[STAT_START] === start &&
+    anyThreadRuns(pid);
 }
 
-function running(pid: number, dbpath: string): boolean {
-  return serves(pid, dbpath) || exiting(pid);
-}
-
-/**
- * Waits for the process itself, every thread of it: mongod empties `mongod.lock` before it exits,
- * and its main thread can exit before the threads that hold its port.
- */
-async function untilGone(
-  pid: number,
-  dbpath: string,
-  ms: number,
-): Promise<boolean> {
+/** Waits up to `ms` for `runs` to answer false; answers whether it did. */
+async function untilGone(runs: () => boolean, ms: number): Promise<boolean> {
   const deadline = Date.now() + ms;
-  while (running(pid, dbpath) && Date.now() < deadline) await sleep(POLL_MS);
-  return !running(pid, dbpath);
+  while (runs() && Date.now() < deadline) await sleep(POLL_MS);
+  return !runs();
 }
 
 function signal(pid: number, name: NodeJS.Signals): void {
@@ -175,12 +174,13 @@ export async function stopMongod(
 ): Promise<void> {
   const pid = mongodPid(dbpath);
   if (pid === undefined) return;
+  const runs = runningCheck(pid, dbpath);
   if (graceMs > 0) {
     signal(pid, "SIGTERM");
-    if (await untilGone(pid, dbpath, graceMs)) return;
+    if (await untilGone(runs, graceMs)) return;
   }
   signal(pid, "SIGKILL");
-  if (await untilGone(pid, dbpath, KILL_WAIT_MS)) return;
+  if (await untilGone(runs, KILL_WAIT_MS)) return;
   throw new Error(
     `antelopejs-lease: mongod ${pid} was still running ${KILL_WAIT_MS / 1000} s after SIGKILL`,
   );
