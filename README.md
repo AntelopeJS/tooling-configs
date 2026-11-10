@@ -224,6 +224,32 @@ The steps run at the same time, `test` last and alone. When two steps read somet
 
 When the repository has `.github/compose.yml`, the file the shared CI starts through its `services-compose-file` input, and the `test` step runs, `pnpm run checks` runs `docker compose -f .github/compose.yml up -d --wait` before the steps and `docker compose -f .github/compose.yml down -v` after them, also when a step fails or the run is interrupted (SIGINT, SIGTERM or SIGHUP stops the running step or `up`, removes the services and exits 130, 143 or 129; a repeated signal does not cut the teardown short). The compose project is `COMPOSE_PROJECT_NAME` when set, else the file's own `name:`, else one named after the repository root, so checkouts never share the `github` project compose would derive from the file's directory. Services are left alone when every port the file publishes already accepts connections, so a stack you started yourself is reused and kept. A run's project that already had containers before the run is started but not removed. When Docker Compose cannot run, the run fails before any step, naming the compose file, because the tests that need those services would wait for them forever. On GitHub Actions (`GITHUB_ACTIONS=true`) the workflow owns the services, and `--no-services` skips all of this anywhere.
 
+### Module locks update
+
+A repository that commits `antelope-lock/` installs each module from its recorded lock, so its modules and their dependencies move only when someone records the locks again. Renovate does not read `antelope-lock/`. The shared `modules-update.yml` workflow of `AntelopeJS/.github` records the locks again and opens or updates one pull request per base branch, from `antelopejs/modules-update/<base>`. Its body lists the modules that moved from which version to which, the direct dependencies of each, and the npm advisories it fixes or leaves. A scheduled run refreshes on its `weekday` (Monday by default), and on any other day only when the npm advisory API reports an advisory not seen since the last successful run; a manual run always refreshes.
+
+`antelopejs-sync` does not write this caller. Add `.github/workflows/modules-update.yml` to each repository that commits `antelope-lock/`:
+
+```yaml
+name: Modules update
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+permissions: {}
+jobs:
+  modules-update:
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    uses: AntelopeJS/.github/.github/workflows/modules-update.yml@v1
+```
+
+A project needs no `with`: the default `refresh-command` is `pnpm exec ajs project modules update`. That command refuses to run in a module repository, so a module passes `refresh-command: rm -rf antelope-lock && pnpm run test`, which records the locks of its test configuration.
+
+A push made with `GITHUB_TOKEN` starts no workflow, so the workflow then dispatches `ci.yml` on the branch. Sync keeps `workflow_dispatch` on the `ci.yml` it owns, so `ci / checks` runs on the new head. A repository whose checks live in another workflow passes its file as `ci-workflow`. `GITHUB_TOKEN` opens the pull request only where the repository allows GitHub Actions to create pull requests; otherwise pass a `token` secret that may, and its push starts the checks with nothing dispatched. Without either, the run pushes the branch and fails with a link to open the pull request by hand. The other inputs and the failure rules are in [Module locks update](https://github.com/AntelopeJS/.github#module-locks-update).
+
 ### Ratchet
 
 `guardrails.ratchet.json` holds the debt a repository had when it adopted the pack:
