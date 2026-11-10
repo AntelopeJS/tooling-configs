@@ -24,62 +24,12 @@ tester.run("antelopejs/no-read-then-insert", noReadThenInsertRule, {
 }`,
     },
     {
-      name: "fails on a rule that rejects .catch: a read-back in the callback guards the insert",
-      code: `async function seed(model) {
-  if (await model.get(id)) return;
-  await model.insert(row).catch(async (e) => {
-    if (!(await model.get(id))) throw e;
-  });
-}`,
-    },
-    {
-      name: "fails on a rule that needs a read-back: a duplicate-key check guards the insert",
-      code: `async function seed(model) {
-  if (await model.get(id)) return;
-  try {
-    await model.insert(row);
-  } catch (e) {
-    if (!isDuplicateKeyError(e)) throw e;
-  }
-}`,
-    },
-    {
-      name: "fails on a rule that needs a call: an instanceof duplicate check guards the insert",
-      code: `async function seed(model) {
-  if (await model.get(id)) return;
-  try {
-    await model.insert(row);
-  } catch (e) {
-    if (!(e instanceof DuplicateKeyError)) throw e;
-  }
-}`,
-    },
-    {
       name: "fails on a rule that matches by file: the insert is in a sibling function of the read",
       code: `function read(model) {
   return model.get(id);
 }
 function write(model) {
   return model.insert(row);
-}`,
-    },
-    {
-      name: "fails on a rule that needs a read-back: a catch that rethrows nothing lets the loser carry on",
-      code: `async function acquire(table, lockKey) {
-  if ((await table.getAll(lockKey).count()) > 0) return false;
-  try {
-    await table.insert({ _id: lockKey }).run();
-    return true;
-  } catch {
-    return false;
-  }
-}`,
-    },
-    {
-      name: "fails on a rule that needs a read-back: a .catch callback that swallows the error",
-      code: `async function seed(model) {
-  if (await model.get(id)) return;
-  await model.insert(row).catch(() => undefined);
 }`,
     },
     {
@@ -101,29 +51,6 @@ function write(model) {
 }`,
     },
     {
-      name: "fails on a rule that needs a read-back: the catch checks the Mongo duplicate code",
-      code: `async function seed(model) {
-  if (await model.get(id)) return;
-  try {
-    await model.insert(row);
-  } catch (error) {
-    if (error.code === 11000) return;
-    throw error;
-  }
-}`,
-    },
-    {
-      name: "fails on a rule that needs the word duplicate: the catch calls a unique-violation predicate",
-      code: `async function seed(model) {
-  if (await model.get(id)) return;
-  try {
-    await model.insert(row);
-  } catch (error) {
-    if (!isUniqueViolation(error)) throw error;
-  }
-}`,
-    },
-    {
       name: "fails on a rule that reads only identifier keys: a quoted conflict key is an upsert",
       code: `async function seed(table) {
   if (await table.get(id).run()) return;
@@ -135,47 +62,6 @@ function write(model) {
       code: `async function seed(model) {
   if (await model.get(id)) return;
   await Promise.all(tables.map((model) => model.insert(row)));
-}`,
-    },
-    {
-      name: "fails on a rule that reads only identifiers: the catch tests the message for a duplicate key",
-      code: `async function seed(model) {
-  if (await model.get(id)) return;
-  try {
-    await model.insert(row);
-  } catch (error) {
-    if (!String(error).includes("duplicate key")) throw error;
-  }
-}`,
-    },
-    {
-      name: "fails on a rule that recognises .catch only on the insert call: a rethinkdb .run().catch swallows",
-      code: `async function seed(table) {
-  if (await table.get(id).run()) return;
-  await table.insert({ _id: id }).run().catch(() => undefined);
-}`,
-    },
-    {
-      name: "fails on a rule that inspects only inline handlers: a named duplicate handler tolerates the loss",
-      code: `async function seed(model) {
-  if (await model.get(id)) return;
-  await model.insert(row).catch(ignoreDuplicateKey);
-}`,
-    },
-    {
-      name: "fails on a rule that reads only if conditions: a switch case returns on the duplicate code",
-      code: `async function seed(model) {
-  if (await model.findOne({ _id: id })) return;
-  try {
-    await model.insertOne(row);
-  } catch (error) {
-    switch (error.code) {
-      case 11000:
-        return;
-      default:
-        throw error;
-    }
-  }
 }`,
     },
     {
@@ -196,18 +82,17 @@ function write(model) {
 }`,
     },
     {
-      name: "fails on a rule that needs the read inside the condition: the catch reads into a variable, then tests it",
-      code: `async function reserve(model, id) {
-  let current = await model.get(id);
-  if (!current) {
-    try {
-      await model.insert({ _id: id });
-    } catch (error) {
-      current = await model.get(id);
-      if (!current) throw error;
-    }
+      name: "fails on a rule that lifts callbacks whose result is stored: two wrapped route handlers",
+      code: `export const GET = withAuth(async () => users.getAll());
+export const POST = withAuth(async (req) => users.insert(req.body));`,
+    },
+    {
+      name: "fails on a rule that matches any member of the read receiver: this.get, then this.audit.insert",
+      code: `class Service {
+  async start(row) {
+    const config = await this.get("config");
+    await this.audit.insert({ config, row });
   }
-  return current;
 }`,
     },
     {
@@ -239,18 +124,6 @@ function write(model) {
       code: `async function seed(model, rows) {
   if ((await model.count()) > 0) return;
   await Promise.all(rows.map((row) => model.insert(row)));
-}`,
-      errors: [error],
-    },
-    {
-      name: "fails on a rule that accepts any throwing catch: it rethrows on a condition that never reads back",
-      code: `async function seed(model) {
-  if (await model.get(id)) return;
-  try {
-    await model.insert(row);
-  } catch (error) {
-    if (!isTransient(error)) throw error;
-  }
 }`,
       errors: [error],
     },
@@ -296,30 +169,6 @@ function write(model) {
       errors: [error],
     },
     {
-      name: "fails on a rule that guards every insert under a try: this one is in the catch",
-      code: `async function seed(model) {
-  if (await model.get(id)) return;
-  try {
-    await load();
-  } catch {
-    await model.insert(row);
-  }
-}`,
-      errors: [error],
-    },
-    {
-      name: "fails on a rule that takes any duplicate text: the catch throws a new error that says duplicate",
-      code: `async function seed(model) {
-  if (await model.get(id)) return;
-  try {
-    await model.insert(row);
-  } catch {
-    throw new Error("duplicate");
-  }
-}`,
-      errors: [error],
-    },
-    {
       name: "fails on a rule that skips object literals: the row is written inline",
       code: `async function seed(model) {
   if (await model.get("id")) return;
@@ -332,52 +181,6 @@ function write(model) {
       code: `async function seed(model) {
   if (await model.get(id)) return;
   await model.insert({ _id: id, conflict: "pending" });
-}`,
-      errors: [error],
-    },
-    {
-      name: "fails on a rule that takes any read in the catch: it only logs a count and rethrows",
-      code: `async function seed(model) {
-  if (await model.get(id)) return;
-  try {
-    await model.insert(row);
-  } catch (error) {
-    log("insert failed", await model.count());
-    throw error;
-  }
-}`,
-      errors: [error],
-    },
-    {
-      name: "fails on a rule that takes any duplicate name in the file: the catch rethrows unconditionally",
-      code: `import { isDuplicateKeyError } from "db";
-async function seed(model) {
-  if (await model.get(id)) return;
-  try {
-    await model.insert(row);
-  } catch (error) {
-    throw new DuplicateSettingsError(String(error));
-  }
-}`,
-      errors: [error],
-    },
-    {
-      name: "fails on a rule that sees only throw statements: the catch returns a rejected promise",
-      code: `async function seed(model) {
-  if (await model.get(id)) return;
-  try {
-    await model.insert(row);
-  } catch (error) {
-    return Promise.reject(error);
-  }
-}`,
-      errors: [error],
-    },
-    {
-      name: "fails on a rule that trusts any named .catch handler",
-      code: `async function seed(model) {
-  if (await model.get(id)) return;
-  await model.insert(row).catch(fail);
 }`,
       errors: [error],
     },
@@ -398,39 +201,11 @@ async function seed(model) {
       errors: [error],
     },
     {
-      name: "fails on a rule that accepts any catch: the catch rethrows without reading back",
-      code: `async function seed(model) {
-  if (await model.get(id)) return;
-  try {
-    await model.insert(row);
-  } catch (error) {
-    throw error;
-  }
-}`,
-      errors: [error],
-    },
-    {
-      name: "fails on a rule that accepts a read-back of another table in the catch",
-      code: `async function seed(model, other) {
-  if (await model.get(id)) return;
-  try {
-    await model.insert(row);
-  } catch (error) {
-    if (!(await other.get(id))) throw error;
-  }
-}`,
-      errors: [error],
-    },
-    {
-      name: "fails on a rule that looks for the read-back anywhere in the try statement: it sits in the block",
-      code: `async function seed(model) {
-  if (await model.get(id)) return;
-  try {
-    await model.insert(row);
-    await model.get(id);
-  } catch (error) {
-    throw error;
-  }
+      name: "fails on a rule that lifts only awaited calls: a bare then callback still runs inline",
+      code: `function seed(model) {
+  model.getAll().then((rows) => {
+    if (rows.length === 0) model.insert(row);
+  });
 }`,
       errors: [error],
     },

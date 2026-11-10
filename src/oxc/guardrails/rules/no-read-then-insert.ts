@@ -42,7 +42,6 @@ interface Insert {
   scope: Scope;
   callee: ESTree.MemberExpression;
   receiver: string;
-  receivers: ReadonlySet<string>;
   root: string | null;
 }
 
@@ -68,7 +67,7 @@ function enclosingScope(node: ESTree.Node): Scope | null {
   return null;
 }
 
-/** A callback that runs while its caller waits: handed to `map`, `then` or the like, or to a call whose result the caller uses. A route handler registered by a bare `app.post(...)` statement runs later. */
+/** A callback that runs while its caller waits: handed to `map`, `then` or the like, or to a call the caller awaits. A handler registered by `app.post(...)` or wrapped by `export const POST = withAuth(...)` runs later, on its own. */
 function isInlineCallback(scope: Scope): boolean {
   const call = scope.parent;
   if (
@@ -82,7 +81,7 @@ function isInlineCallback(scope: Scope): boolean {
     call.callee.type === "MemberExpression" ? memberName(call.callee) : null;
   return (
     (method !== null && INLINE_CALLBACK_METHODS.has(method)) ||
-    call.parent?.type !== "ExpressionStatement"
+    call.parent?.type === "AwaitExpression"
   );
 }
 
@@ -119,11 +118,7 @@ function declares(scope: Scope, name: string): boolean {
   return (
     scope.type !== "Program" &&
     scope.params.some(
-      (param) =>
-        (param.type === "Identifier" && param.name === name) ||
-        (param.type === "AssignmentPattern" &&
-          param.left.type === "Identifier" &&
-          param.left.name === name),
+      (param) => param.type === "Identifier" && param.name === name,
     )
   );
 }
@@ -165,26 +160,18 @@ interface Facts {
   duplicateChecks: Range[];
   throwRanges: Range[];
   testRanges: Range[];
-  branchRanges: Range[];
   text: (node: ESTree.Node) => string;
 }
 
-/** `model.get` and `model.insert` touch one table, and so do `model.get` and `model.table.insert`, but not `db.table("a")` and `db.table("b")`. */
+/** `model.get` and `model.insert` touch one table, and so do `model.get` and the model's raw `model.table.insert`, but not `db.table("a")` and `db.table("b")`, nor `this.get` and `this.audit.insert`. */
 function sameTable(read: Read, insert: Insert): boolean {
   return (
-    read.receivers.has(insert.receiver) || insert.receivers.has(read.receiver)
+    read.receivers.has(insert.receiver) ||
+    insert.receiver === `${read.receiver}.table`
   );
 }
 
-/** Whether `range` reads the table back or recognises a duplicate. */
-function checksTheLoss(facts: Facts, range: Range, insert: Insert): boolean {
-  return (
-    facts.reads.some(
-      (read) => contains(range, read.range) && sameTable(read, insert),
-    ) || facts.duplicateChecks.some((check) => contains(range, check))
-  );
-}
-
+/** A catch tolerates the lost race when it rethrows nothing, when a condition in it recognises a duplicate, or when it reads the table back and branches on a condition. */
 function recovers(facts: Facts, handler: ESTree.Node, insert: Insert): boolean {
   if (
     handler.type !== "BlockStatement" &&
@@ -193,20 +180,15 @@ function recovers(facts: Facts, handler: ESTree.Node, insert: Insert): boolean {
   )
     return DUPLICATE_CHECK.test(facts.text(handler));
   const range = handler.range;
-  const throws = facts.throwRanges.filter((thrown) => contains(range, thrown));
-  if (throws.length === 0) return true;
-  if (
-    facts.testRanges.some(
-      (test) => contains(range, test) && checksTheLoss(facts, test, insert),
-    )
-  )
-    return true;
+  if (!facts.throwRanges.some((thrown) => contains(range, thrown))) return true;
+  const tests = facts.testRanges.filter((test) => contains(range, test));
+  const readsBack = facts.reads.some(
+    (read) => contains(range, read.range) && sameTable(read, insert),
+  );
   return (
-    checksTheLoss(facts, range, insert) &&
-    throws.every((thrown) =>
-      facts.branchRanges.some(
-        (branch) => contains(range, branch) && contains(branch, thrown),
-      ),
+    (readsBack && tests.length > 0) ||
+    tests.some((test) =>
+      facts.duplicateChecks.some((check) => contains(test, check)),
     )
   );
 }
@@ -273,7 +255,7 @@ function isRaced(facts: Facts, insert: Insert): boolean {
   );
 }
 
-/** Writing a row that a startup read found missing races every other replica that read the same. A catch that rethrows nothing, or rethrows only under a condition after it reads the row back or recognises a duplicate, tolerates the lost race, and so does an upsert or a helper handed the table. */
+/** Writing a row that a startup read found missing races every other replica that read the same. A catch that rethrows nothing, recognises a duplicate in a condition, or reads the row back and branches, tolerates the lost race, and so does an upsert or a helper handed the table. */
 export const noReadThenInsertRule = defineRule({
   meta: {
     type: "problem",
@@ -293,11 +275,9 @@ export const noReadThenInsertRule = defineRule({
       duplicateChecks: [],
       throwRanges: [],
       testRanges: [],
-      branchRanges: [],
       text: (node) => context.sourceCode.getText(node),
     };
-    const { reads, duplicateChecks, throwRanges, testRanges, branchRanges } =
-      facts;
+    const { reads, duplicateChecks, throwRanges, testRanges } = facts;
 
     function receiverChain(start: ESTree.Node): Set<string> {
       const texts = new Set<string>();
@@ -318,26 +298,25 @@ export const noReadThenInsertRule = defineRule({
         duplicateChecks.length = 0;
         throwRanges.length = 0;
         testRanges.length = 0;
-        branchRanges.length = 0;
       },
       IfStatement(node) {
         testRanges.push(node.test.range);
-        branchRanges.push(node.consequent.range);
-        if (node.alternate !== null) branchRanges.push(node.alternate.range);
       },
       ConditionalExpression(node) {
         testRanges.push(node.test.range);
-        branchRanges.push(node.consequent.range, node.alternate.range);
       },
       SwitchCase(node) {
         if (node.test !== null) testRanges.push(node.test.range);
-        branchRanges.push(node.range);
       },
       ThrowStatement(node) {
         throwRanges.push(node.range);
       },
       Identifier(node) {
         if (DUPLICATE_CHECK.test(node.name)) duplicateChecks.push(node.range);
+      },
+      TemplateLiteral(node) {
+        if (node.quasis.some((quasi) => DUPLICATE_CHECK.test(quasi.value.raw)))
+          duplicateChecks.push(node.range);
       },
       Literal(node) {
         if (DUPLICATE_CHECK.test(String(node.value)))
@@ -363,7 +342,6 @@ export const noReadThenInsertRule = defineRule({
             scope,
             callee: insert,
             receiver: facts.text(insert.object),
-            receivers: receiverChain(insert.object),
             root: rootName(insert.object),
           });
         }
