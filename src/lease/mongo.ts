@@ -109,7 +109,7 @@ function serves(pid: number, dbpath: string): boolean {
   return commandLine(pid).includes(dbpath);
 }
 
-/** The fields of `/proc/<path>/stat` after the command name, the state first. */
+/** The fields of `/proc/<path>/stat` after the command name, the state first; `undefined` when it cannot be read. */
 function statFields(path: string): string[] | undefined {
   try {
     const stat = readFileSync(`/proc/${path}/stat`, "utf8");
@@ -119,7 +119,7 @@ function statFields(path: string): string[] | undefined {
   }
 }
 
-/** True while some thread of `pid` has not exited; a dying main thread can outlive or predate the others. */
+/** True while some thread of `pid` has not exited, a main thread that exited before the others included. */
 function anyThreadRuns(pid: number): boolean {
   let tids: string[];
   try {
@@ -175,6 +175,7 @@ export async function stopMongod(
   const pid = mongodPid(dbpath);
   if (pid === undefined) return;
   const runs = runningCheck(pid, dbpath);
+  if (!runs()) return;
   if (graceMs > 0) {
     signal(pid, "SIGTERM");
     if (await untilGone(runs, graceMs)) return;
