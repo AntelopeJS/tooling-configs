@@ -12,6 +12,9 @@ export interface TypedFile {
 
 const programs = new Map<string, ts.Program>();
 
+/** The source files every program of the lint run shares, parsed once per text and per set of compiler options that change a parse. */
+const documents = ts.createDocumentRegistry(ts.sys.useCaseSensitiveFileNames);
+
 function normalize(file: string): string {
   return resolve(file).replaceAll("\\", "/");
 }
@@ -24,11 +27,19 @@ function build(
   const parsed = project(config);
   if (parsed === undefined) return undefined;
   const host = ts.createCompilerHost(parsed.options, true);
-  const read = host.getSourceFile.bind(host);
-  host.getSourceFile = (name, language, ...rest) =>
-    normalize(name) === path
-      ? ts.createSourceFile(name, text, language, true)
-      : read(name, language, ...rest);
+  host.getSourceFile = (name, language) => {
+    const content = normalize(name) === path ? text : host.readFile(name);
+    return content === undefined
+      ? undefined
+      : documents.acquireDocument(
+          name,
+          parsed.options,
+          ts.ScriptSnapshot.fromString(content),
+          content,
+          undefined,
+          language,
+        );
+  };
   const program = ts.createProgram({
     rootNames: [...parsed.files],
     options: parsed.options,
