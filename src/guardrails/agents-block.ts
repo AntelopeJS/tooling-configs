@@ -90,6 +90,10 @@ const SHARED_RULES = [
     "review; no tool",
   ],
   [
+    "A startup read does not decide an insert another replica can race",
+    "`antelopejs/no-read-then-insert`",
+  ],
+  [
     "`Object.assign` writes no `unknown`, `any` or mistyped value over a field",
     "`antelopejs/no-unsafe-object-assign`",
   ],
