@@ -12,7 +12,8 @@ const READ_METHODS = new Set([
   "findOne",
 ]);
 const INSERT_METHODS = new Set(["insert", "insertOne", "insertMany"]);
-const DUPLICATE_NAME = /duplicate/iu;
+const DUPLICATE_CHECK =
+  /duplicate|unique|conflict|E11000|^11000$|23505|ER_DUP_ENTRY/iu;
 
 type Range = readonly [number, number];
 type Scope = ESTree.Program | ESTree.Function | ESTree.ArrowFunctionExpression;
@@ -20,6 +21,7 @@ type Scope = ESTree.Program | ESTree.Function | ESTree.ArrowFunctionExpression;
 interface Read {
   range: Range;
   scope: Scope;
+  receiver: string;
   receivers: ReadonlySet<string>;
 }
 
@@ -27,6 +29,8 @@ interface Insert {
   call: ESTree.CallExpression;
   callee: ESTree.MemberExpression;
   receiver: string;
+  receivers: ReadonlySet<string>;
+  root: string | null;
 }
 
 function contains(outer: Range, inner: Range): boolean {
@@ -51,6 +55,61 @@ function enclosingScope(node: ESTree.Node): Scope | null {
   return null;
 }
 
+function isCallback(scope: Scope): boolean {
+  return (
+    scope.type !== "Program" &&
+    scope.type !== "FunctionDeclaration" &&
+    scope.parent?.type === "CallExpression" &&
+    scope.parent.arguments.some((argument) => argument === scope)
+  );
+}
+
+/** A read inside a callback, such as `withRetry(() => model.getAll())`, belongs to the function that awaits it. */
+function readScope(node: ESTree.Node): Scope | null {
+  let scope = enclosingScope(node);
+  while (scope !== null && isCallback(scope)) scope = enclosingScope(scope);
+  return scope;
+}
+
+function rootName(node: ESTree.Node): string | null {
+  let current: ESTree.Node = node;
+  while (
+    current.type === "MemberExpression" ||
+    current.type === "CallExpression"
+  )
+    current =
+      current.type === "MemberExpression" ? current.object : current.callee;
+  return current.type === "Identifier" ? current.name : null;
+}
+
+function declares(scope: Scope, name: string): boolean {
+  return (
+    scope.type !== "Program" &&
+    scope.params.some(
+      (param) =>
+        (param.type === "Identifier" && param.name === name) ||
+        (param.type === "AssignmentPattern" &&
+          param.left.type === "Identifier" &&
+          param.left.name === name),
+    )
+  );
+}
+
+/** A literal the code compares an error against, such as `error.code === 11000` or `message.includes("duplicate key")`, not one it only throws. */
+function isTested(node: ESTree.Node): boolean {
+  const parent = node.parent;
+  if (parent === null) return false;
+  return (
+    parent.type === "BinaryExpression" ||
+    parent.type === "SwitchCase" ||
+    (parent.type === "CallExpression" &&
+      parent.arguments.some((argument) => argument === node)) ||
+    (parent.type === "MemberExpression" &&
+      parent.object === node &&
+      parent.parent?.type === "CallExpression")
+  );
+}
+
 function calledMember(
   node: ESTree.CallExpression,
   methods: ReadonlySet<string>,
@@ -68,8 +127,10 @@ function isUpsert(node: ESTree.CallExpression): boolean {
         (property) =>
           property.type === "Property" &&
           !property.computed &&
-          property.key.type === "Identifier" &&
-          property.key.name === "conflict" &&
+          ((property.key.type === "Identifier" &&
+            property.key.name === "conflict") ||
+            (property.key.type === "Literal" &&
+              property.key.value === "conflict")) &&
           !(
             property.value.type === "Literal" &&
             property.value.value === "error"
@@ -81,19 +142,26 @@ function isUpsert(node: ESTree.CallExpression): boolean {
 /** What one file's traversal collected, read once it ends. */
 interface Facts {
   reads: Read[];
-  duplicateNames: Range[];
+  duplicateChecks: Range[];
   throwRanges: Range[];
   text: (node: ESTree.Node) => string;
 }
 
-function recovers(facts: Facts, body: ESTree.Node, receiver: string): boolean {
+/** `model.get` and `model.insert` touch one table, and so do `model.get` and `model.table.insert`, but not `db.table("a")` and `db.table("b")`. */
+function sameTable(read: Read, insert: Insert): boolean {
+  return (
+    read.receivers.has(insert.receiver) || insert.receivers.has(read.receiver)
+  );
+}
+
+function recovers(facts: Facts, body: ESTree.Node, insert: Insert): boolean {
   const range = body.range;
   return (
     !facts.throwRanges.some((thrown) => contains(range, thrown)) ||
     facts.reads.some(
-      (read) => contains(range, read.range) && read.receivers.has(receiver),
+      (read) => contains(range, read.range) && sameTable(read, insert),
     ) ||
-    facts.duplicateNames.some((name) => contains(range, name))
+    facts.duplicateChecks.some((check) => contains(range, check))
   );
 }
 
@@ -137,10 +205,11 @@ function isGuarded(facts: Facts, insert: Insert, scope: Scope): boolean {
   let child: ESTree.Node = insert.call;
   let parent: ESTree.Node | null = child.parent;
   while (parent !== null && child !== scope) {
+    if (insert.root !== null && isScope(child) && declares(child, insert.root))
+      return true;
     if (isHandedToHelper(facts, insert, child, parent)) return true;
     const recovery = recoveryOf(insert, child, parent);
-    if (recovery !== null && recovers(facts, recovery, insert.receiver))
-      return true;
+    if (recovery !== null && recovers(facts, recovery, insert)) return true;
     child = parent;
     parent = child.parent;
   }
@@ -151,7 +220,7 @@ function isRaced(facts: Facts, insert: Insert): boolean {
   const start = insert.call.range[0];
   return facts.reads.some(
     (read) =>
-      read.receivers.has(insert.receiver) &&
+      sameTable(read, insert) &&
       read.range[1] <= start &&
       contains(read.scope.range, insert.call.range) &&
       !isGuarded(facts, insert, read.scope),
@@ -175,11 +244,11 @@ export const noReadThenInsertRule = defineRule({
     const inserts: Insert[] = [];
     const facts: Facts = {
       reads: [],
-      duplicateNames: [],
+      duplicateChecks: [],
       throwRanges: [],
       text: (node) => context.sourceCode.getText(node),
     };
-    const { reads, duplicateNames, throwRanges } = facts;
+    const { reads, duplicateChecks, throwRanges } = facts;
 
     function receiverChain(start: ESTree.Node): Set<string> {
       const texts = new Set<string>();
@@ -197,22 +266,27 @@ export const noReadThenInsertRule = defineRule({
       before() {
         reads.length = 0;
         inserts.length = 0;
-        duplicateNames.length = 0;
+        duplicateChecks.length = 0;
         throwRanges.length = 0;
       },
       ThrowStatement(node) {
         throwRanges.push(node.range);
       },
       Identifier(node) {
-        if (DUPLICATE_NAME.test(node.name)) duplicateNames.push(node.range);
+        if (DUPLICATE_CHECK.test(node.name)) duplicateChecks.push(node.range);
+      },
+      Literal(node) {
+        if (isTested(node) && DUPLICATE_CHECK.test(String(node.value)))
+          duplicateChecks.push(node.range);
       },
       CallExpression(node) {
         const read = calledMember(node, READ_METHODS);
-        const scope = enclosingScope(node);
+        const scope = readScope(node);
         if (read !== null && scope !== null) {
           reads.push({
             range: node.range,
             scope,
+            receiver: facts.text(read.object),
             receivers: receiverChain(read.object),
           });
         }
@@ -222,6 +296,8 @@ export const noReadThenInsertRule = defineRule({
             call: node,
             callee: insert,
             receiver: facts.text(insert.object),
+            receivers: receiverChain(insert.object),
+            root: rootName(insert.object),
           });
         }
       },
