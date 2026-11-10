@@ -10,6 +10,18 @@ const error = { messageId: "readThenInsert" };
 tester.run("antelopejs/no-read-then-insert", noReadThenInsertRule, {
   valid: [
     {
+      name: "fails on a rule that needs the duplicate check in the condition: it is stored in a flag first",
+      code: `async function seed(model) {
+  if (await model.get(id)) return;
+  try {
+    await model.insert(row);
+  } catch (error) {
+    const isDup = error.code === "23505" || error.code === "ER_DUP_ENTRY";
+    if (!isDup) throw error;
+  }
+}`,
+    },
+    {
       name: "fails on a rule that counts only return as an exit: the catch continues the loop on a duplicate",
       code: `async function seed(model, rows) {
   const existing = await model.getAll();
@@ -240,6 +252,32 @@ tester.run("antelopejs/no-read-then-insert", noReadThenInsertRule, {
     },
   ],
   invalid: [
+    {
+      name: "fails on a rule that counts a return in a nested callback: the catch itself always rethrows",
+      code: `async function seed(model) {
+  if (await model.get(id)) return;
+  try {
+    await model.insert(row);
+  } catch (error) {
+    log((await model.getAll()).map((stored) => {
+      return stored.id;
+    }));
+    throw error;
+  }
+}`,
+      errors: [error],
+    },
+    {
+      name: "fails on a rule that counts any return: returning a rejection after a logged read-back still rethrows",
+      code: `async function seed(model) {
+  if (await model.get(id)) return;
+  await model.insert(row).catch(async (error) => {
+    console.error("insert failed", await model.get(id));
+    return Promise.reject(error);
+  });
+}`,
+      errors: [error],
+    },
     {
       name: "fails on a rule that trusts any duplicate test: the catch only warns on it, then always rethrows",
       code: `async function seed(model) {

@@ -112,6 +112,22 @@ export const POST = withAuth(async (req) => users.insert(req.body));`,
   ],
   invalid: [
     {
+      name: "fails on a rule that stops at an arrow body: p-limit wraps the insert inside a map",
+      code: `async function seed(model, seeds) {
+  if ((await model.getAll()).length > 0) return;
+  await Promise.all(seeds.map((seed) => limit(() => model.insert(seed))));
+}`,
+      errors: [error],
+    },
+    {
+      name: "fails on a rule that stops at optional chaining: the queue call is awaited through ?.",
+      code: `async function seed(model, queue) {
+  if (await model.get(id)) return;
+  await queue.add?.(() => model.insert(row));
+}`,
+      errors: [error],
+    },
+    {
       name: "fails on a rule that lifts only directly awaited calls: the retried read sits in Promise.all",
       code: `async function seed(model, other) {
   const [rows] = await Promise.all([withRetry(() => model.getAll()), other.getAll()]);

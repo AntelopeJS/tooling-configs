@@ -84,15 +84,18 @@ function isInlineCallback(scope: Scope): boolean {
   );
 }
 
-/** Whether the call's value reaches an `await` or a `return`, through array elements, call arguments or a `.then` chain. */
+/** Whether the call's value reaches an `await` or a `return`, through array elements, call arguments, `?.` or a `.then` chain, or is the body of an inline arrow. */
 function isAwaited(call: ESTree.CallExpression): boolean {
   let node: ESTree.Node = call;
   let parent: ESTree.Node | null = node.parent;
   while (parent !== null) {
     if (parent.type === "AwaitExpression" || parent.type === "ReturnStatement")
       return true;
+    if (parent.type === "ArrowFunctionExpression" && parent.body === node)
+      return isInlineCallback(parent);
     const carries =
       parent.type === "ArrayExpression" ||
+      parent.type === "ChainExpression" ||
       parent.type === "SpreadElement" ||
       parent.type === "CallExpression" ||
       (parent.type === "MemberExpression" && parent.object === node);
@@ -178,8 +181,7 @@ interface Facts {
   duplicateChecks: Range[];
   throwRanges: Range[];
   throwBlocks: ESTree.Node[];
-  exitRanges: Range[];
-  testRanges: Range[];
+  exits: ESTree.Node[];
   text: (node: ESTree.Node) => string;
 }
 
@@ -191,8 +193,10 @@ function sameTable(read: Read, insert: Insert): boolean {
   );
 }
 
-/** A catch that returns, continues or breaks, or keeps every `throw` inside a branch, can finish without rethrowing. */
+/** A catch that returns, continues or breaks in its own function without a rejection, or keeps every `throw` inside a branch, can finish without rethrowing. */
 function canFinish(facts: Facts, handler: ESTree.Node): boolean {
+  const own =
+    handler.type === "BlockStatement" ? enclosingScope(handler) : handler;
   const block =
     handler.type === "BlockStatement"
       ? handler
@@ -202,12 +206,16 @@ function canFinish(facts: Facts, handler: ESTree.Node): boolean {
         ? handler.body
         : null;
   return (
-    facts.exitRanges.some((exit) => contains(handler.range, exit)) ||
-    !facts.throwBlocks.some((thrownIn) => thrownIn === block)
+    facts.exits.some(
+      (exit) =>
+        contains(handler.range, exit.range) &&
+        enclosingScope(exit) === own &&
+        !facts.throwRanges.some((thrown) => contains(exit.range, thrown)),
+    ) || !facts.throwBlocks.some((thrownIn) => thrownIn === block)
   );
 }
 
-/** A catch tolerates the lost race when it rethrows nothing, or when it can finish without rethrowing and either reads the table back or recognises a duplicate in a condition. */
+/** A catch tolerates the lost race when it rethrows nothing, or when it can finish without rethrowing and either reads the table back or checks for a duplicate outside a `throw`. */
 function recovers(facts: Facts, handler: ESTree.Node, insert: Insert): boolean {
   if (
     handler.type !== "BlockStatement" &&
@@ -218,14 +226,14 @@ function recovers(facts: Facts, handler: ESTree.Node, insert: Insert): boolean {
   const range = handler.range;
   if (!facts.throwRanges.some((thrown) => contains(range, thrown))) return true;
   if (!canFinish(facts, handler)) return false;
-  const tests = facts.testRanges.filter((test) => contains(range, test));
-  const readsBack = facts.reads.some(
-    (read) => contains(range, read.range) && sameTable(read, insert),
-  );
   return (
-    readsBack ||
-    tests.some((test) =>
-      facts.duplicateChecks.some((check) => contains(test, check)),
+    facts.reads.some(
+      (read) => contains(range, read.range) && sameTable(read, insert),
+    ) ||
+    facts.duplicateChecks.some(
+      (check) =>
+        contains(range, check) &&
+        !facts.throwRanges.some((thrown) => contains(thrown, check)),
     )
   );
 }
@@ -318,11 +326,10 @@ export const noReadThenInsertRule = defineRule({
       duplicateChecks: [],
       throwRanges: [],
       throwBlocks: [],
-      exitRanges: [],
-      testRanges: [],
+      exits: [],
       text: (node) => context.sourceCode.getText(node),
     };
-    const { reads, duplicateChecks, throwRanges, testRanges } = facts;
+    const { reads, duplicateChecks, throwRanges, exits } = facts;
 
     function receiverChain(start: ESTree.Node): Set<string> {
       const texts = new Set<string>();
@@ -343,30 +350,20 @@ export const noReadThenInsertRule = defineRule({
         duplicateChecks.length = 0;
         throwRanges.length = 0;
         facts.throwBlocks.length = 0;
-        facts.exitRanges.length = 0;
-        testRanges.length = 0;
-      },
-      IfStatement(node) {
-        testRanges.push(node.test.range);
-      },
-      ConditionalExpression(node) {
-        testRanges.push(node.test.range);
-      },
-      SwitchCase(node) {
-        if (node.test !== null) testRanges.push(node.test.range);
+        exits.length = 0;
       },
       ThrowStatement(node) {
         throwRanges.push(node.range);
         if (node.parent !== null) facts.throwBlocks.push(node.parent);
       },
       ReturnStatement(node) {
-        facts.exitRanges.push(node.range);
+        exits.push(node);
       },
       ContinueStatement(node) {
-        facts.exitRanges.push(node.range);
+        exits.push(node);
       },
       BreakStatement(node) {
-        facts.exitRanges.push(node.range);
+        exits.push(node);
       },
       Identifier(node) {
         if (DUPLICATE_CHECK.test(node.name)) duplicateChecks.push(node.range);
@@ -380,8 +377,15 @@ export const noReadThenInsertRule = defineRule({
           duplicateChecks.push(node.range);
       },
       CallExpression(node) {
-        if (facts.text(node.callee) === "Promise.reject")
+        if (facts.text(node.callee) === "Promise.reject") {
           throwRanges.push(node.range);
+          const statement = node.parent;
+          if (
+            statement?.type === "ReturnStatement" &&
+            statement.parent !== null
+          )
+            facts.throwBlocks.push(statement.parent);
+        }
         const read = calledMember(node, READ_METHODS);
         const scope = runningScope(node);
         if (read !== null && scope !== null) {
