@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -53,7 +53,8 @@ const USAGE = `Usage: antelopejs-verify <command>
   formal <run> [--all]               run the formal checks that cover the diff and gate them on changed behaviour
   doors [patch] [--base <ref>]       print the One-way-door line for a patch, or for the diff
   clean <run>                        stop what the run started, keep only the evidence
-  verdict <run> --pr <n>             render evidence/verdict.md from the results and evidence/judgement.json
+  verdict <run> --pr <n> [--judgement <file>]
+                                     store the judgement as evidence/judgement.json, then write evidence/verdict.md from it and the results
 `;
 
 function print(text: string): void {
@@ -273,16 +274,23 @@ function printDoors(workspace: Workspace, files: string[]): number {
   return 0;
 }
 
-function judge(workspace: Workspace, dir: string, pr: number): number {
+function judge(
+  workspace: Workspace,
+  dir: string,
+  pr: number,
+  source: string | undefined,
+): number {
+  const state = loadRun(dir);
+  for (const output of ["verdict.md", "verdict.json", "plan.json"])
+    rmSync(join(state.evidence, output), { force: true });
   if (!Number.isInteger(pr) || pr <= 0)
     throw new Error("verdict needs --pr <number>");
-  const state = loadRun(dir);
-  const verdict = renderVerdict(
-    workspace,
-    state,
-    pr,
-    readJudgement(join(state.evidence, "judgement.json")),
-  );
+  const stored = join(state.evidence, "judgement.json");
+  if (source !== undefined) {
+    readJudgement(source);
+    writeFileSync(stored, readFileSync(source));
+  }
+  const verdict = renderVerdict(workspace, state, pr, readJudgement(stored));
   print(verdict.markdown);
   return verdict.result === "PASS" || verdict.result === "PASS+NOTES" ? 0 : 1;
 }
@@ -295,6 +303,7 @@ async function main(argv: string[]): Promise<number> {
       base: { type: "string", default: "origin/main" },
       title: { type: "string", default: "" },
       pr: { type: "string" },
+      judgement: { type: "string" },
       all: { type: "boolean" },
       kind: { type: "string" },
       plan: { type: "boolean" },
@@ -363,7 +372,7 @@ async function main(argv: string[]): Promise<number> {
   else if (command === "clean")
     for (const line of clean(ownRun(workspace, rest[0]))) print(line);
   else if (command === "verdict")
-    return judge(workspace, rest[0], Number(values.pr));
+    return judge(workspace, rest[0], Number(values.pr), values.judgement);
   else {
     print(USAGE);
     return 2;

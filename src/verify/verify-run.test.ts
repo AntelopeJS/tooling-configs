@@ -185,6 +185,29 @@ test("a verdict without a One-way doors section or a verifier is void", (t) => {
   assert.match(noVerifier.stderr, /verifier must say who judged this run/);
 });
 
+test("verdict --judgement stores the judgement and writes verdict.md in one command, and a bad or missing judgement leaves the stored one and no verdict", (t) => {
+  const { root, tmp } = runRepo(t);
+  const run = newRun(root, tmp);
+  assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
+  const file = join(tmp, "judgement.json");
+  const args = ["verdict", run, "--pr", "7", "--judgement", file];
+  put(tmp, "judgement.json", JSON.stringify(JUDGED));
+  const passed = verify(root, tmp, args);
+  assert.equal(passed.status, 0, passed.stderr);
+  assert.equal(read(run, "evidence/verdict.md"), passed.stdout);
+  assert.deepEqual(evidence(run, "judgement.json"), JUDGED);
+  put(tmp, "judgement.json", JSON.stringify({ ...JUDGED, verifier: "" }));
+  const invalid = verify(root, tmp, args);
+  assert.equal(invalid.status, 1);
+  assert.deepEqual(evidence(run, "judgement.json"), JUDGED);
+  assert.equal(existsSync(join(run, "evidence/verdict.json")), false);
+  rmSync(file);
+  const missing = verify(root, tmp, args);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /judgement\.json is missing/);
+  assert.equal(existsSync(join(run, "evidence/verdict.md")), false);
+});
+
 test("the verdict passes only when every registered journey ran and passed, with the doors section right after the result", (t) => {
   const { root, tmp } = runRepo(t);
   const run = newRun(root, tmp);
