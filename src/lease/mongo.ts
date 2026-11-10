@@ -107,15 +107,53 @@ function serves(pid: number, dbpath: string): boolean {
   return commandLine(pid).includes(dbpath);
 }
 
-/** Waits for the process itself: mongod empties `mongod.lock` before it exits. */
+/** The state letter of each thread of `pid`, the main thread's included; empty once the pid has none. */
+function threadStates(pid: number): string[] {
+  let tids: string[];
+  try {
+    tids = readdirSync(`/proc/${pid}/task`);
+  } catch {
+    return [];
+  }
+  return tids.map((tid) => {
+    try {
+      const stat = readFileSync(`/proc/${pid}/task/${tid}/stat`, "utf8");
+      return stat.charAt(stat.lastIndexOf(")") + 2);
+    } catch {
+      return "X";
+    }
+  });
+}
+
+/**
+ * True while the main thread of `pid` has exited and other threads of it still run. Its command
+ * line already reads empty, yet those threads keep its listening socket open. Linux only.
+ */
+function exiting(pid: number): boolean {
+  if (process.platform !== "linux") return false;
+  const states = threadStates(pid);
+  return (
+    states.includes("Z") &&
+    states.some((state) => state !== "Z" && state !== "X")
+  );
+}
+
+function running(pid: number, dbpath: string): boolean {
+  return serves(pid, dbpath) || exiting(pid);
+}
+
+/**
+ * Waits for the process itself, every thread of it: mongod empties `mongod.lock` before it exits,
+ * and its main thread can exit before the threads that hold its port.
+ */
 async function untilGone(
   pid: number,
   dbpath: string,
   ms: number,
 ): Promise<boolean> {
   const deadline = Date.now() + ms;
-  while (serves(pid, dbpath) && Date.now() < deadline) await sleep(POLL_MS);
-  return !serves(pid, dbpath);
+  while (running(pid, dbpath) && Date.now() < deadline) await sleep(POLL_MS);
+  return !running(pid, dbpath);
 }
 
 function signal(pid: number, name: NodeJS.Signals): void {
