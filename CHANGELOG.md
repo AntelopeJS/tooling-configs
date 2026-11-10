@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.5.1
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.0...v0.5.1)
+
+### 🚀 Enhancements
+
+- **checks:** Fail when the repository's git config sets a commit identity ([#280](https://github.com/AntelopeJS/tooling-configs/pull/280))
+- **sync:** Write the AntelopeJS DMS module table ([#279](https://github.com/AntelopeJS/tooling-configs/pull/279))
+- **anti-slop:** Trust only schema-library decoders and report typeof in messages ([#281](https://github.com/AntelopeJS/tooling-configs/pull/281))
+- **sync:** Fail --check on the release-typecheck and skipLibCheck rules ([#282](https://github.com/AntelopeJS/tooling-configs/pull/282))
+- **verify:** Store the judgement and render the verdict in one command ([#286](https://github.com/AntelopeJS/tooling-configs/pull/286))
+- **rules:** Report a read followed by an unguarded insert on the same table ([#287](https://github.com/AntelopeJS/tooling-configs/pull/287))
+
+### 🔥 Performance
+
+- **sync:** Parse each pnpm lockfile once per run ([#288](https://github.com/AntelopeJS/tooling-configs/pull/288))
+- **lint:** Share parsed source files across the object-assign rule's programs ([#289](https://github.com/AntelopeJS/tooling-configs/pull/289))
+
+### 🩹 Fixes
+
+- **garden:** Exempt the repository publishing tooling-configs from the dependency check ([#283](https://github.com/AntelopeJS/tooling-configs/pull/283))
+- **garden:** Exempt tooling-configs from the ci-caller conformance check ([#285](https://github.com/AntelopeJS/tooling-configs/pull/285))
+- **guardrails:** Accept Object.prototype name guards in no-inherited-key-lookup ([#291](https://github.com/AntelopeJS/tooling-configs/pull/291))
+- **lease:** Stop the Mongo test depending on a released port ([#292](https://github.com/AntelopeJS/tooling-configs/pull/292))
+- **verify:** Read declarations instead of instantiating types so the declared-surface walk terminates ([#290](https://github.com/AntelopeJS/tooling-configs/pull/290))
+
+### 📖 Documentation
+
+- **readme:** Document the scheduled antelope-lock/ modules update in the guardrail pack ([#284](https://github.com/AntelopeJS/tooling-configs/pull/284))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.5.0
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.4.1...v0.5.0)
