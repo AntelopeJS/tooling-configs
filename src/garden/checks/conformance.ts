@@ -22,6 +22,8 @@ import { finding, found, type CheckResult, type Finding } from "../types.ts";
 const CHECK = "conformance";
 const DAY = 24 * 60 * 60 * 1000;
 const MEND_EXEMPT = new Set(["k8s-gitops-infra"]);
+/** Repositories whose ci.yml runs its own jobs: tooling-configs shards its tests and checks its docs action at HEAD, which ci-node.yml cannot do. */
+const CI_CALLER_EXEMPT = new Set(["tooling-configs"]);
 
 function problem(
   repo: GardenRepo,
@@ -40,6 +42,7 @@ async function ciCaller(
   context: GardenContext,
   repo: GardenRepo,
 ): Promise<Finding[]> {
+  if (CI_CALLER_EXEMPT.has(repo.name)) return [];
   const text = await context.file(repo, CI_PATH);
   if (text === undefined)
     return [

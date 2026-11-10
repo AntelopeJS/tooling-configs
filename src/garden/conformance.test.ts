@@ -88,6 +88,33 @@ test("a caller pinned to another ref or missing is a ci-caller finding", async (
   );
 });
 
+test("tooling-configs runs its own CI jobs without a ci-caller finding", async () => {
+  const api = new FakeApi();
+  api.npmPackage(
+    "@antelopejs/tooling-configs",
+    fixture("npm-tooling-configs.json"),
+  );
+  api.route("/search/issues", {
+    items: [
+      {
+        repository_url:
+          "https://api.github.com/repos/AntelopeJS/tooling-configs",
+      },
+    ],
+  });
+  const inline = conformant(
+    api.org([{ name: "tooling-configs" }]),
+    "tooling-configs",
+  ).repo("tooling-configs", {
+    ".github/workflows/ci.yml":
+      "name: ci\non: push\njobs:\n  checks:\n    runs-on: ubuntu-latest\n    steps:\n      - run: pnpm run checks\n",
+    "renovate.json": RENOVATE,
+    "package.json": PACKAGE,
+    "pnpm-lock.yaml": LOCK("0.2.7"),
+  });
+  assert.deepEqual(subjects(await conformance.run(inline.context())), []);
+});
+
 test("a caller without a ci-renovate-sync job, or pinned to another ref, is a ci-renovate-sync finding", async () => {
   const withCaller = (workflow: string) =>
     conformant(world()).repo("mongodb", {
