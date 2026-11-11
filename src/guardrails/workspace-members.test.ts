@@ -80,3 +80,20 @@ test("a member catalog: spec that Bun's top-level catalogs resolve to another ra
   assert.equal(failures.length, 1);
   assert.match(failures[0] ?? "", /member\/package\.json.*catalog:legacy/);
 });
+
+test("a member's plain pack range moves to the root's catalog: spec when pnpm-workspace.yaml builds the catalog with a YAML merge key, where an aligner that reads only the catalog's own keys leaves the member on its own range", (t) => {
+  const root = bunWorkspace(
+    t,
+    { workspaces: ["member"] },
+    { root: "catalog:", member: "^0.4.0" },
+  );
+  put(
+    root,
+    "pnpm-workspace.yaml",
+    `packages:\n  - member\nbase: &base\n  "${PACK}": ^0.5.3\ncatalog:\n  <<: *base\n`,
+  );
+  assert.deepEqual(align(root), {
+    paths: ["member/package.json"],
+    failures: [],
+  });
+});
