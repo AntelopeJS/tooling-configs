@@ -328,7 +328,6 @@ test("delete_branch_on_merge off is a conformance finding, and unreadable fails 
     })
     .route("/repos/AntelopeJS/mongodb", {});
   const outcome = await garden(hidden, {
-    applyPauses: false,
     checks: [conformance, deleteBranchOnMerge],
   });
   assert.deepEqual(
@@ -352,10 +351,10 @@ test("--apply turns delete_branch_on_merge on where it is off, writes nothing fo
       .route("/repos/AntelopeJS/mongodb", body);
   const checks = [conformance, deleteBranchOnMerge];
   const dry = setup({ delete_branch_on_merge: false });
-  await garden(dry, { applyPauses: false, checks });
+  await garden(dry, { checks });
   assert.deepEqual(dry.writes, []);
   const wet = setup({ delete_branch_on_merge: false });
-  await garden(wet, { applyPauses: false, apply: true, checks });
+  await garden(wet, { apply: true, checks });
   assert.deepEqual(wet.writes, [
     {
       method: "PATCH",
@@ -364,12 +363,11 @@ test("--apply turns delete_branch_on_merge on where it is off, writes nothing fo
     },
   ]);
   const on = setup({ delete_branch_on_merge: true });
-  await garden(on, { applyPauses: false, apply: true, checks });
+  await garden(on, { apply: true, checks });
   assert.deepEqual(on.writes, []);
   const refused = setup({ delete_branch_on_merge: false });
   refused.refuse("/repos/AntelopeJS/mongodb", 422);
   const outcome = await garden(refused, {
-    applyPauses: false,
     apply: true,
     checks,
   });

@@ -82,9 +82,9 @@ function evidence(result: CheckResult): string[] {
 }
 
 async function prunes(api: FakeApi): Promise<string[]> {
-  return (
-    await garden(api, { applyPauses: false, checks: [staleBranches] })
-  ).report.prunes.map(({ branch, reason }) => `${branch}: ${reason}`);
+  return (await garden(api, { checks: [staleBranches] })).report.prunes.map(
+    ({ branch, reason }) => `${branch}: ${reason}`,
+  );
 }
 
 test("a branch that heads a merged PR, or a closed one, is pruned whatever its age", async () => {
@@ -183,11 +183,10 @@ test("--apply-prunes deletes exactly the listed refs, slashes kept, and a dry ru
     return closed(api, "feat/x y", [{ number: 1, head: "feat/x y" }]);
   };
   const dry = setup();
-  await garden(dry, { applyPauses: false, checks: [staleBranches] });
+  await garden(dry, { checks: [staleBranches] });
   assert.deepEqual(dry.writes, []);
   const wet = setup();
   await garden(wet, {
-    applyPauses: false,
     applyPrunes: true,
     checks: [staleBranches],
   });
@@ -205,7 +204,6 @@ test("a repository whose branches could not be read fails the check and is never
     new ApiError(500, "GET pulls: HTTP 500"),
   );
   const outcome = await garden(api, {
-    applyPauses: false,
     applyPrunes: true,
     checks: [staleBranches],
   });
@@ -223,7 +221,6 @@ test("a refused deletion is reported and the remaining prunes still run", async 
   ]);
   api.refuse(`/repos/${REPO}/git/refs/heads/a-old`, 422);
   const outcome = await garden(api, {
-    applyPauses: false,
     applyPrunes: true,
     checks: [staleBranches],
   });
@@ -249,7 +246,6 @@ test("a branch that gains an open PR after the scan is not deleted, because prun
     },
   };
   const outcome = await garden(api, {
-    applyPauses: false,
     applyPrunes: true,
     checks: [staleBranches, later],
   });
@@ -274,7 +270,6 @@ test("an organization listing that fails when prunes are re-read keeps the repor
     },
   };
   const outcome = await garden(api, {
-    applyPauses: false,
     applyPrunes: true,
     checks: [staleBranches, later],
   });
