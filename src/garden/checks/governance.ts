@@ -27,10 +27,20 @@ const REQUIRED_RULES = [
   "pull_request",
 ] as const;
 
+/** Repositories the organization ruleset excludes because their own ruleset governs them, with the required rules that ruleset does not hold. */
+const OWN_POLICY: ReadonlyMap<
+  string,
+  readonly (typeof REQUIRED_RULES)[number][]
+> = new Map([["k8s-gitops-infra", ["required_linear_history"]]]);
+
+/** The packs that Required CI covers. */
+const CI_PACKS = ["full", "template"] as const;
+
 interface Requirement {
   subject: string;
   severity: Severity;
   need: string;
+  applies(repo: GardenRepo): boolean;
   met(rules: readonly JsonObject[]): boolean;
 }
 
@@ -51,12 +61,14 @@ const REQUIREMENTS: readonly Requirement[] = [
     subject: `rule:${type}`,
     severity: "urgent",
     need: `a ${type} rule`,
+    applies: (repo) => !OWN_POLICY.get(repo.name)?.includes(type),
     met: (rules) => rules.some((rule) => optStr(rule, "type") === type),
   })),
   {
     subject: "checks",
     severity: "normal",
     need: `${CI_CONTEXT} from GitHub Actions as a required status check`,
+    applies: (repo) => CI_PACKS.some((pack) => pack === repo.pack),
     met: requiresCi,
   },
 ];
@@ -152,7 +164,9 @@ async function scanBranch(
       doneMeans,
       severity,
     );
-  const unmet = REQUIREMENTS.filter((entry) => !entry.met(rules)).map((entry) =>
+  const unmet = REQUIREMENTS.filter(
+    (entry) => entry.applies(repo) && !entry.met(rules),
+  ).map((entry) =>
     report(
       entry.subject,
       `The rules in force on ${branch} hold no ${entry.need}.`,
@@ -180,7 +194,7 @@ export const branchGovernance: Check = {
   id: "branch-governance",
   async run(context) {
     const read = rulesetReader(context);
-    return perRepo(await context.scope(), (repo) =>
+    return perRepo(await context.repos(), (repo) =>
       scanBranch(context, read, repo),
     );
   },
@@ -223,12 +237,20 @@ const ON_BRANCHES: Expectation = {
   holds: (set) => optStr(set, "target") === "branch",
 };
 
+function condition(set: JsonObject, name: string, key: string): string[] {
+  return strings(child(child(set, "conditions"), name), key);
+}
+
+function sameNames(actual: readonly string[], wanted: readonly string[]) {
+  return [...actual].sort().join() === [...wanted].sort().join();
+}
+
 const ON_DEFAULT_BRANCH: Expectation = {
-  what: `ref ${DEFAULT_BRANCH_REF}`,
+  what: `ref ${DEFAULT_BRANCH_REF} with no ref excluded`,
   holds: (set) =>
-    strings(child(child(set, "conditions"), "ref_name"), "include").includes(
-      DEFAULT_BRANCH_REF,
-    ),
+    condition(set, "ref_name", "include").some(
+      (ref) => ref === DEFAULT_BRANCH_REF || ref === "~ALL",
+    ) && !condition(set, "ref_name", "exclude").length,
 };
 
 const ORG_RULESETS: readonly {
@@ -242,12 +264,12 @@ const ORG_RULESETS: readonly {
       ON_BRANCHES,
       ON_DEFAULT_BRANCH,
       {
-        what: "repository_name include ~ALL",
+        what: `repository_name include ~ALL, exclude only ${[...OWN_POLICY.keys()].join(", ")}`,
         holds: (set) =>
-          strings(
-            child(child(set, "conditions"), "repository_name"),
-            "include",
-          ).includes("~ALL"),
+          condition(set, "repository_name", "include").includes("~ALL") &&
+          sameNames(condition(set, "repository_name", "exclude"), [
+            ...OWN_POLICY.keys(),
+          ]),
       },
     ],
   },
@@ -266,7 +288,7 @@ const ORG_RULESETS: readonly {
           ).some(
             (entry) =>
               optStr(entry, "name") === "pack" &&
-              ["full", "template"].every((value) =>
+              CI_PACKS.every((value) =>
                 strings(entry, "property_values").includes(value),
               ),
           ),
@@ -295,11 +317,18 @@ async function orgDrift(
       `The organization ruleset "${policy.name}" is back to its policy.`,
       "urgent",
     );
-  const summary = summaries.find(
+  const named = summaries.filter(
     (entry) => optStr(entry, "name") === policy.name,
   );
+  const [summary] = named;
   if (summary === undefined)
     return [make(`The organization has no ruleset named "${policy.name}".`)];
+  if (named.length > 1)
+    return [
+      make(
+        `${named.length} organization rulesets are named "${policy.name}": ${named.map((entry) => num(entry, "id")).join(", ")}.`,
+      ),
+    ];
   const detail = object(
     await context.api.json(`/orgs/${ORG}/rulesets/${num(summary, "id")}`),
     "ruleset",

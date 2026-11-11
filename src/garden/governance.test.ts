@@ -163,9 +163,36 @@ test("an organization ruleset is read once however many repositories it covers",
   );
 });
 
-test("a repository outside the Gardener scope is not read", async () => {
-  const api = new FakeApi().org([{ name: "mongodb", pack: "none" }]);
+test("a repository outside the Required CI packs still needs the four rules, not the check", async () => {
+  const api = new FakeApi()
+    .org([{ name: "interfaces", pack: "none" }])
+    .route("/repos/AntelopeJS/interfaces/rules/branches/main", []);
+  assert.deepEqual(subjects(await branchGovernance.run(api.context())), [
+    "main:rule:deletion:urgent",
+    "main:rule:non_fast_forward:urgent",
+    "main:rule:required_linear_history:urgent",
+    "main:rule:pull_request:urgent",
+  ]);
+});
+
+test("k8s-gitops-infra under its own ruleset needs every rule but linear history", async () => {
+  const own = ["deletion", "non_fast_forward", "pull_request"].map((type) =>
+    rule(type, 9, "Repository"),
+  );
+  const api = new FakeApi()
+    .org([{ name: "k8s-gitops-infra", pack: "none" }])
+    .route("/repos/AntelopeJS/k8s-gitops-infra/rules/branches/main", own)
+    .route(
+      "/repos/AntelopeJS/k8s-gitops-infra/rulesets/9",
+      ruleset(9, "main-protection"),
+    );
   assert.deepEqual(subjects(await branchGovernance.run(api.context())), []);
+  api.route("/repos/AntelopeJS/k8s-gitops-infra/rules/branches/main", []);
+  assert.deepEqual(subjects(await branchGovernance.run(api.context())), [
+    "main:rule:deletion:urgent",
+    "main:rule:non_fast_forward:urgent",
+    "main:rule:pull_request:urgent",
+  ]);
 });
 
 test("an organization owner outside the allowed three is drift, the three themselves are not", async () => {
@@ -269,6 +296,54 @@ test("Default branch protection that no longer covers every repository is urgent
     ),
     ["ruleset:Default branch protection:urgent"],
   );
+});
+
+test("Default branch protection that excludes another repository or a ref is urgent", async () => {
+  for (const conditions of [
+    {
+      ref_name: { include: ["~DEFAULT_BRANCH"], exclude: [] },
+      repository_name: {
+        include: ["~ALL"],
+        exclude: ["k8s-gitops-infra", "dms-api"],
+      },
+    },
+    {
+      ref_name: { include: ["~DEFAULT_BRANCH"], exclude: ["refs/heads/main"] },
+      repository_name: { include: ["~ALL"], exclude: ["k8s-gitops-infra"] },
+    },
+  ])
+    assert.deepEqual(
+      subjects(
+        await orgChecksRuleset.run(
+          orgWorld([protection({ conditions }), requiredCi()]).context(),
+        ),
+      ),
+      ["ruleset:Default branch protection:urgent"],
+    );
+});
+
+test("a ruleset on every branch covers the default branch", async () => {
+  const everyBranch = protection({
+    conditions: {
+      ref_name: { include: ["~ALL"], exclude: [] },
+      repository_name: { include: ["~ALL"], exclude: ["k8s-gitops-infra"] },
+    },
+  });
+  assert.deepEqual(
+    subjects(
+      await orgChecksRuleset.run(
+        orgWorld([everyBranch, requiredCi()]).context(),
+      ),
+    ),
+    [],
+  );
+});
+
+test("two organization rulesets with the same name are urgent", async () => {
+  const api = orgWorld([protection(), protection({ id: 1 }), requiredCi()]);
+  assert.deepEqual(subjects(await orgChecksRuleset.run(api.context())), [
+    "ruleset:Default branch protection:urgent",
+  ]);
 });
 
 test("Required CI that lost its ci / checks requirement is urgent", async () => {
