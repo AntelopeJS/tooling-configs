@@ -424,3 +424,56 @@ test("sync replaces the previous oxlint.config.ts template, whose preset ignores
     'import { defineConfig } from "oxlint";\nimport {\n  ANTELOPE_IGNORE_PATTERNS,\n  antelopePreset,\n} from "@antelopejs/tooling-configs/oxc/lint";\n\nexport default defineConfig({\n  extends: [antelopePreset()],\n  ignorePatterns: ANTELOPE_IGNORE_PATTERNS,\n  options: { typeAware: true },\n});\n',
   );
 });
+
+test("sync names each step of the replaced checks script that antelopejs-checks does not run (cloud-sdk)", (t) => {
+  const root = testRepo(t);
+  put(root, "guardrails.ratchet.json", '{"rules":{},"oversizeFiles":{}}\n');
+  put(
+    root,
+    "package.json",
+    JSON.stringify({
+      packageManager: "pnpm@10.0.0",
+      scripts: {
+        checks:
+          "pnpm run lint && pnpm run format:check && pnpm run typecheck && pnpm run check:generated && pnpm run test && node scripts/audit.mjs",
+        "check:generated": "node scripts/generate.mjs --check",
+        lint: "oxlint",
+        test: "node --test",
+      },
+    }),
+  );
+  const result = bin(root, "sync");
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(
+    result.stdout,
+    /Note: package\.json: the checks script now runs antelopejs-checks, which does not run "check:generated", "node scripts\/audit\.mjs" from the replaced script\./,
+  );
+  assert.equal(
+    parseManifest(read(root, "package.json")).scripts?.checks,
+    "antelopejs-checks",
+  );
+});
+
+test("sync adds no note when antelopejs-checks runs every step of the replaced checks script", (t) => {
+  const root = testRepo(t);
+  put(
+    root,
+    "package.json",
+    JSON.stringify({
+      packageManager: "npm@11.0.0",
+      scripts: {
+        checks: "npm run lint && oxfmt --check . && npm test",
+        "format:check": "oxfmt --check .",
+        lint: "oxlint",
+        test: "node --test",
+      },
+    }),
+  );
+  const result = syncRepository(root, { profile: "template" });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.notes, []);
+  assert.equal(
+    parseManifest(read(root, "package.json")).scripts?.checks,
+    "antelopejs-checks",
+  );
+});
