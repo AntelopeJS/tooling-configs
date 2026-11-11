@@ -330,7 +330,7 @@ function ensureSyncJob(
   syncCallers: { id: string }[],
 ): boolean {
   if (!syncCallers.length) {
-    jobs.set(RENOVATE_SYNC_JOB_ID, canonicalSyncJob());
+    jobs.add(document.createPair(RENOVATE_SYNC_JOB_ID, canonicalSyncJob()));
     return true;
   }
   let changed = false;
@@ -398,7 +398,14 @@ export function ciWorkflow(
   docsFiles?: DocsFilesPlan,
   placeholderTests = false,
 ): string {
-  if (current === undefined) return newCaller(placeholderTests);
+  if (current === undefined)
+    return ciWorkflow(
+      newCaller(placeholderTests),
+      [{ id: CI_JOB_ID, named: false }],
+      [{ id: RENOVATE_SYNC_JOB_ID }],
+      docsFiles,
+      placeholderTests,
+    );
   if (!callers.length) return current;
   const document = parseDocument(current);
   if (document.errors.length)
