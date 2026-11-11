@@ -86,6 +86,21 @@ test("the default caller reports the context ci / checks, because its job id is 
   assert.equal(CI_CONTEXT, "ci / checks");
 });
 
+test("a new caller lists the computed docs-files, so a second run that still has to add them fails", () => {
+  const plan = { docsFiles: ["README.md"], exists: () => true };
+  const created = ciWorkflow(undefined, [], [], plan);
+  assert.equal(jobs(created).ci.with?.["docs-files"], "README.md\n");
+  assert.equal(
+    ciWorkflow(
+      created,
+      ciNodeCallers(created),
+      ciRenovateSyncCallers(created),
+      plan,
+    ),
+    created,
+  );
+});
+
 test("a caller under another id is renamed to ci, loses its name, keeps its inputs and drags its dependents along", () => {
   const rewritten = rewrite(LEGACY);
   assert.deepEqual(ciNodeCallers(rewritten), [

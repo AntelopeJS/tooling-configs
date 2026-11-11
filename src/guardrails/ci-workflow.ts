@@ -398,7 +398,14 @@ export function ciWorkflow(
   docsFiles?: DocsFilesPlan,
   placeholderTests = false,
 ): string {
-  if (current === undefined) return newCaller(placeholderTests);
+  if (current === undefined)
+    return ciWorkflow(
+      newCaller(placeholderTests),
+      [{ id: CI_JOB_ID, named: false }],
+      [{ id: RENOVATE_SYNC_JOB_ID }],
+      docsFiles,
+      placeholderTests,
+    );
   if (!callers.length) return current;
   const document = parseDocument(current);
   if (document.errors.length)
