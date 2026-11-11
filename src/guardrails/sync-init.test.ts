@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
@@ -45,6 +46,58 @@ test("one --init run leaves a bare repository with no conformance finding; a run
   assert.deepEqual(subjects(await deleteBranchOnMerge.run(api.context())), []);
   assert.equal(read(root, ".gitignore"), "node_modules\n");
   assert.deepEqual(patches(tools.calls()), [ENABLE_BRANCH_CLEANUP]);
+});
+
+test("the last install of --init sees every tool the synced scripts and hooks call, where an init that skips the second install or leaves oxfmt undeclared breaks `pnpm install --frozen-lockfile` or `format`", (t) => {
+  const root = bareRepo(t);
+  const tools = fakeTools(t);
+  assert.equal(bin(root, "sync", ["--init"], tools.env).status, 0);
+  const last = tools.installs().at(-1) ?? [];
+  for (const tool of [
+    "@antelopejs/tooling-configs",
+    "oxlint",
+    "oxlint-tsgolint",
+    "oxfmt",
+    "knip",
+    "lefthook",
+  ])
+    assert.ok(last.includes(tool), `${tool} is missing from ${last}`);
+});
+
+test("--init leaves package.json passing `oxfmt --check` and names it once, where an init that leaves the appended keys unsorted fails the repository's format:check and one that prints each writer's path lists it twice", (t) => {
+  const root = bareRepo(t);
+  const tools = fakeTools(t);
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const check = spawnSync(
+    process.execPath,
+    [join(root, "node_modules/oxfmt/bin/oxfmt"), "--check", "package.json"],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+  assert.equal(result.stdout.split("Updated: package.json").length - 1, 1);
+});
+
+test("--init still turns delete_branch_on_merge on and exits 1 when an install fails, where an init that skips gh after a failure leaves the setting off", (t) => {
+  for (const failingInstall of [1, 2]) {
+    const root = bareRepo(t);
+    const tools = fakeTools(t, { failingInstall });
+    const result = bin(root, "sync", ["--init"], tools.env);
+    assert.equal(result.status, 1, result.stdout);
+    assert.match(result.stderr, /ERR_PNPM_IGNORED_BUILDS/);
+    assert.match(result.stderr, /rerun antelopejs-sync --init/);
+    assert.deepEqual(patches(tools.calls()), [ENABLE_BRANCH_CLEANUP]);
+    assert.equal(tools.patched(), true);
+  }
+});
+
+test("--init tells the user to rerun itself when sync reports an error, where an init that repeats sync's advice sends them to plain sync and never reaches the second install or gh", (t) => {
+  const root = bareRepo(t);
+  const tools = fakeTools(t);
+  put(root, "renovate.json", '{"extends":["config:recommended"]}\n');
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /rerun antelopejs-sync --init/);
 });
 
 test("a second --init run changes no file and makes no second PATCH, where a run that writes without reading delete_branch_on_merge patches twice", (t) => {

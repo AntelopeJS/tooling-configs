@@ -41,26 +41,32 @@ function printSync(
 
 function init(verify: VerifyChoice | undefined): number {
   const result = initRepository(repositoryRoot(), { verify });
-  for (const path of result.paths) process.stdout.write(`Updated: ${path}\n`);
+  const reportedBySync =
+    result.sync && !result.sync.errors.length ? result.sync.paths : [];
+  for (const path of result.paths)
+    if (!reportedBySync.includes(path))
+      process.stdout.write(`Updated: ${path}\n`);
   const synced = result.sync
     ? printSync(result.sync, { check: false, installed: true })
     : 0;
-  if (result.installFailure !== undefined) {
-    process.stderr.write(`${result.installFailure}\n`);
-    return 1;
-  }
-  if (synced) return synced;
-  process.stdout.write(
-    `Commit and push to the default branch so ${CI_CONTEXT} is reported.\n`,
-  );
+  if (result.failure !== undefined) process.stderr.write(`${result.failure}\n`);
+  const failed = synced !== 0 || result.failure !== undefined;
+  if (failed)
+    process.stderr.write(
+      "Fix the errors above, then rerun antelopejs-sync --init.\n",
+    );
+  else
+    process.stdout.write(
+      `Commit and push to the default branch so ${CI_CONTEXT} is reported.\n`,
+    );
   const cleanup = result.branchCleanup;
-  if (cleanup?.kind === "enabled")
+  if (cleanup.kind === "enabled")
     process.stdout.write("Updated: delete_branch_on_merge on GitHub\n");
-  if (cleanup?.kind !== "unavailable") return 0;
-  process.stderr.write(
-    `delete_branch_on_merge is not on (${cleanup.reason}). Run: ${ENABLE_BRANCH_CLEANUP}\n`,
-  );
-  return 1;
+  if (cleanup.kind === "unavailable")
+    process.stderr.write(
+      `delete_branch_on_merge is not on (${cleanup.reason}). Run: ${ENABLE_BRANCH_CLEANUP}\n`,
+    );
+  return failed || cleanup.kind === "unavailable" ? 1 : 0;
 }
 
 runCli(() => {
