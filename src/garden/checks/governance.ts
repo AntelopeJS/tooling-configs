@@ -4,6 +4,7 @@ import { GardenContext, Memo, ORG, type GardenRepo } from "../context.ts";
 import {
   child,
   children,
+  list,
   num,
   object,
   optNum,
@@ -108,9 +109,14 @@ async function bypassOffenders(
   const offenders: string[] = [];
   for (const path of paths) {
     const set = await read(path);
-    const actors = children(set, "bypass_actors").filter(
-      (actor) => !mayBypass(actor),
-    );
+    const listed = set["bypass_actors"];
+    if (listed === undefined)
+      throw new Error(
+        `${rulesetLabel(path, str(set, "name"))} returned no bypass list; the Gardener token must belong to an administrator.`,
+      );
+    const actors = list(listed, "bypass_actors")
+      .map((actor) => object(actor, "bypass_actors"))
+      .filter((actor) => !mayBypass(actor));
     if (actors.length)
       offenders.push(
         `${rulesetLabel(path, str(set, "name"))}: ${actors.map(describeActor).join(", ")}`,

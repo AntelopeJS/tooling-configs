@@ -138,6 +138,17 @@ test("an administrator bypass in any mode, and an organization administrator, ra
   assert.deepEqual(subjects(await branchGovernance.run(api.context())), []);
 });
 
+test("a ruleset read without its bypass list fails the repository instead of passing it", async () => {
+  const api = repoWorld(PROTECTED, [
+    { id: 1, name: "Default branch protection" },
+    ruleset(2, "Required CI"),
+  ]);
+  await assert.rejects(
+    branchGovernance.run(api.context()),
+    /mongodb: Default branch protection \(organization ruleset 1\) returned no bypass list/,
+  );
+});
+
 test("an organization ruleset is read once however many repositories it covers", async () => {
   const api = new FakeApi().org([{ name: "mongodb" }, { name: "redis" }]);
   for (const name of ["mongodb", "redis"])
