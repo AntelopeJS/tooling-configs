@@ -232,6 +232,7 @@ test("--init names docs-typescript-project for the docs files whose TypeScript f
     '# onboarded\n\n```ts\nimport { value } from "onboarded";\n```\n',
   );
   put(root, "docs/guide.md", "# Guide\n\n```ts fragment\nvalue;\n```\n");
+  put(root, "docs/api.md", "# API\n\n<!-- docs-api: ../src/index.ts -->\n");
   const result = bin(root, "sync", ["--init"], tools.env);
   assert.equal(result.status, 0, result.stderr + result.stdout);
   assert.match(read(root, ".github/workflows/ci.yml"), /docs-files:/);
@@ -240,6 +241,7 @@ test("--init names docs-typescript-project for the docs files whose TypeScript f
     .filter((line) => line.includes("docs-typescript-project"));
   assert.equal(note.length, 1, result.stdout);
   assert.ok(note[0].includes("README.md"), note[0]);
+  assert.ok(note[0].includes("docs/api.md"), note[0]);
   assert.ok(!note[0].includes("docs/guide.md"), note[0]);
   put(
     root,

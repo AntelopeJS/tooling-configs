@@ -51,7 +51,7 @@ function init(verify: VerifyChoice | undefined): number {
     : 0;
   if (result.untypedDocs.length)
     process.stdout.write(
-      `Note: ${result.untypedDocs.join(", ")} hold TypeScript fences the docs check typechecks. Set docs-typescript-project in ${CI_PATH} to a tsconfig whose program resolves their imports, or mark illustrative fences \`fragment\`. Without it the check uses the root tsconfig.json and fails when there is none.\n`,
+      `Note: ${result.untypedDocs.join(", ")} hold TypeScript fences or docs-api pages the docs check typechecks. Set docs-typescript-project in ${CI_PATH} to a tsconfig whose program resolves their imports, or mark illustrative fences \`fragment\`. Without it the check uses the root tsconfig.json and fails when there is none.\n`,
     );
   if (result.failure !== undefined) process.stderr.write(`${result.failure}\n`);
   const failed = synced !== 0 || result.failure !== undefined;

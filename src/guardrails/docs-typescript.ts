@@ -44,16 +44,12 @@ function markdownFiles(root: string, path: string, base = path): string[] {
   const stat = statSync(absolute, { throwIfNoEntry: false });
   if (!stat) return [];
   if (!stat.isDirectory()) return MARKDOWN.test(path) ? [path] : [];
-  return readdirSync(absolute, { withFileTypes: true }).flatMap((entry) => {
-    const child = `${path}/${entry.name}`;
-    if (entry.isDirectory())
-      return child === `${base}/${UNPUBLISHED_FOLDER}`
-        ? []
-        : markdownFiles(root, child, base);
-    return MARKDOWN.test(entry.name) && !UNPUBLISHED_FILE.test(entry.name)
-      ? [child]
-      : [];
-  });
+  return readdirSync(absolute).flatMap((name) =>
+    `${path}/${name}` === `${base}/${UNPUBLISHED_FOLDER}` ||
+    UNPUBLISHED_FILE.test(name)
+      ? []
+      : markdownFiles(root, `${path}/${name}`, base),
+  );
 }
 
 /**
