@@ -263,7 +263,8 @@ function workspacePatterns(root: string): string[] {
   );
 }
 
-function workspaceDirectories(root: string): string[] {
+/** The workspace package directories, relative to `root` and sorted, that `pnpm-workspace.yaml` or package.json `workspaces` list. */
+export function workspaceDirectories(root: string): string[] {
   const patterns = workspacePatterns(root);
   const excluded = patterns
     .filter((pattern) => pattern.startsWith("!"))

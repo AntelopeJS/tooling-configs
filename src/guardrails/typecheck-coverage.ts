@@ -47,7 +47,7 @@ function reach(
     for (const step of stepsOf(text)) {
       if (step.kind !== "script") continue;
       for (const script of matchingScripts(step.names, scripts.keys()))
-        if (step.elsewhere) reached.elsewhere.add(script);
+        if (step.targets.length) reached.elsewhere.add(script);
         else enter(script, depth + 1);
     }
   return reached;
