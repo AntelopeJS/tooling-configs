@@ -97,3 +97,31 @@ test("a member's plain pack range moves to the root's catalog: spec when pnpm-wo
     failures: [],
   });
 });
+
+test("a merge key whose source is an alias to a list of maps still gives the catalog entry, where an aligner that expands only a literal list leaves the member on its own range", (t) => {
+  const root = bunWorkspace(
+    t,
+    { workspaces: ["member"] },
+    { root: "catalog:", member: "^0.4.0" },
+  );
+  put(
+    root,
+    "pnpm-workspace.yaml",
+    `packages:\n  - member\na: &a\n  "${PACK}": ^0.5.3\nl: &l [*a]\ncatalog:\n  <<: *l\n`,
+  );
+  assert.deepEqual(align(root).paths, ["member/package.json"]);
+});
+
+test("a catalog that merges itself leaves the aligner to pnpm's own error, where an aligner that follows aliases without a visited set overflows the stack", (t) => {
+  const root = bunWorkspace(
+    t,
+    { workspaces: ["member"] },
+    { root: "catalog:", member: "^0.4.0" },
+  );
+  put(
+    root,
+    "pnpm-workspace.yaml",
+    `packages:\n  - member\ncatalog: &a\n  <<: *a\n  "${PACK}": ^0.5.3\n`,
+  );
+  assert.deepEqual(align(root).paths, ["member/package.json"]);
+});
