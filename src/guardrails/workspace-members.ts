@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type ts from "typescript";
+import { isAlias, isMap, isScalar, parseDocument, type Document } from "yaml";
 
 import { workspaceDirectories } from "./docs-compat.ts";
 import {
@@ -241,12 +242,105 @@ const ALIGNED_TOOLS = [
   "lefthook",
 ] as const;
 
-/** The range each pack tool resolves to at the root: the one it declares, else the one `--init` and sync add. A protocol or path spec stays root-only, since a member would resolve it elsewhere. */
-function rootRanges(
+const CATALOG = "catalog:";
+
+/** Each catalog the workspace declares, by name, with the range it gives each package; `catalog` is the one named `default`. */
+type Catalogs = Map<string, Map<string, string>>;
+
+/** The scalar keys of the mapping at `path`, each with its value node, following YAML aliases on the way. */
+function mapEntries(document: Document, path: string[]): [string, unknown][] {
+  let node: unknown = document.contents;
+  for (const key of path) {
+    const map = isAlias(node) ? node.resolve(document) : node;
+    node = isMap(map) ? map.get(key, true) : undefined;
+  }
+  const map = isAlias(node) ? node.resolve(document) : node;
+  return isMap(map)
+    ? map.items.flatMap(({ key, value }) =>
+        isScalar(key)
+          ? [
+              [
+                String(key.value),
+                isAlias(value) ? value.resolve(document) : value,
+              ],
+            ]
+          : [],
+      )
+    : [];
+}
+
+/** The package names of the catalog at `path`, each with its range. */
+function catalogEntries(
+  document: Document,
+  path: string[],
+): [string, string][] {
+  return mapEntries(document, path).flatMap(([name, value]) =>
+    isScalar(value) ? [[name, String(value.value)]] : [],
+  );
+}
+
+/** The document that declares the workspace's catalogs and the paths in it that hold `catalog` and `catalogs`: pnpm's `pnpm-workspace.yaml`, else Bun's root package.json, under `workspaces` or at its top level. */
+interface CatalogSource {
+  document: Document;
+  prefixes: string[][];
+}
+
+function catalogSource(root: string): CatalogSource {
+  const pnpm = join(root, "pnpm-workspace.yaml");
+  if (existsSync(pnpm))
+    return {
+      document: parseDocument(readFileSync(pnpm, "utf8")),
+      prefixes: [[]],
+    };
+  return {
+    document: parseDocument(readFileSync(join(root, "package.json"), "utf8")),
+    prefixes: [["workspaces"], []],
+  };
+}
+
+function workspaceCatalogs(root: string): Catalogs {
+  const { document, prefixes } = catalogSource(root);
+  const catalogs: Catalogs = new Map();
+  const add = (name: string, path: string[]) =>
+    catalogs.set(
+      name,
+      new Map([
+        ...(catalogs.get(name) ?? []),
+        ...catalogEntries(document, path),
+      ]),
+    );
+  for (const prefix of prefixes) {
+    add("default", [...prefix, "catalog"]);
+    for (const [name] of mapEntries(document, [...prefix, "catalogs"]))
+      add(name, [...prefix, "catalogs", name]);
+  }
+  return catalogs;
+}
+
+/** The range `spec` installs `name` at: `spec` itself, its catalog entry for a `catalog:` spec, or undefined for another protocol or a path. */
+function resolvedRange(
+  catalogs: Catalogs,
+  name: string,
+  spec: string,
+): string | undefined {
+  if (spec.startsWith(CATALOG))
+    return catalogs.get(spec.slice(CATALOG.length) || "default")?.get(name);
+  return /[:/]/.test(spec) ? undefined : spec;
+}
+
+/** A pack tool's spec at the root, which a member copies, and the range it resolves to. */
+interface RootSpec {
+  spec: string;
+  range: string;
+}
+
+/** The spec of each pack tool at the root: the one it declares, else the one `--init` and sync add. A `catalog:` spec resolves the same in every member; another protocol or a path stays root-only, since a member would resolve it elsewhere. */
+function rootSpecs(
   root: Manifest,
   versions: ReturnType<typeof toolingVersions>,
-): Map<string, string> {
-  const ranges = new Map<string, string>([
+  catalogs: Catalogs,
+): Map<string, RootSpec> {
+  const declared = new Map<string, string>([
     ["@antelopejs/tooling-configs", `^${versions.pack}`],
     ["oxlint", versions.oxlint],
     ["oxlint-tsgolint", versions.tsgolint],
@@ -255,30 +349,47 @@ function rootRanges(
     ["lefthook", versions.lefthook],
   ]);
   for (const field of [root.dependencies, root.devDependencies])
-    for (const [name, range] of Object.entries(field ?? {}))
-      if (ranges.has(name)) ranges.set(name, range);
-  for (const [name, range] of ranges)
-    if (/[:/]/.test(range)) ranges.delete(name);
-  return ranges;
+    for (const [name, spec] of Object.entries(field ?? {}))
+      if (declared.has(name)) declared.set(name, spec);
+  const specs = new Map<string, RootSpec>();
+  for (const [name, spec] of declared) {
+    const range = resolvedRange(catalogs, name, spec);
+    if (range !== undefined) specs.set(name, { spec, range });
+  }
+  return specs;
 }
 
-/** Sets each pack tool the member declares to the root's range, so the workspace installs one copy of the pack; returns whether it changed one. */
-function alignRanges(member: Manifest, ranges: Map<string, string>): boolean {
+/** Sets each pack tool the member declares as a plain range to the root's spec, so the workspace installs one copy of the pack, and names each member `catalog:` spec that resolves to another range; returns whether it changed one. */
+function alignRanges(
+  member: Manifest,
+  manifestPath: string,
+  specs: Map<string, RootSpec>,
+  catalogs: Catalogs,
+  failures: string[],
+): boolean {
   let changed = false;
   for (const field of [member.dependencies, member.devDependencies])
     for (const name of ALIGNED_TOOLS) {
       const declared =
         field && Object.hasOwn(field, name) ? field[name] : undefined;
-      const wanted = ranges.get(name);
+      const wanted = specs.get(name);
       if (
         !field ||
         declared === undefined ||
         wanted === undefined ||
-        declared === wanted ||
-        declared.includes(":")
+        declared === wanted.spec
       )
         continue;
-      field[name] = wanted;
+      if (declared.startsWith(CATALOG)) {
+        const range = resolvedRange(catalogs, name, declared);
+        if (range !== undefined && range !== wanted.range)
+          failures.push(
+            `${manifestPath} declares ${name} as ${declared}, which resolves to ${range}, while the root resolves it to ${wanted.range}, so the workspace would install two copies. Give both the same catalog entry or range, then rerun antelopejs-sync --init.`,
+          );
+        continue;
+      }
+      if (declared.includes(":")) continue;
+      field[name] = wanted.spec;
       changed = true;
     }
   return changed;
@@ -287,13 +398,19 @@ function alignRanges(member: Manifest, ranges: Map<string, string>): boolean {
 function alignMember(
   root: string,
   directory: string,
-  ranges: Map<string, string>,
+  workspace: { specs: Map<string, RootSpec>; catalogs: Catalogs },
   result: MemberAlignment,
 ): void {
   const manifestPath = join(root, directory, "package.json");
   const current = readFileSync(manifestPath, "utf8");
   const member = parseManifest(current);
-  let changed = alignRanges(member, ranges);
+  let changed = alignRanges(
+    member,
+    `${directory}/package.json`,
+    workspace.specs,
+    workspace.catalogs,
+    result.failures,
+  );
   for (const name of LINT_CONFIGS) {
     const relative = `${directory}/${name}`;
     const path = join(root, relative);
@@ -329,9 +446,13 @@ export function alignWorkspaceMembers(
   manifest: Manifest,
   versions: ReturnType<typeof toolingVersions>,
 ): MemberAlignment {
-  const ranges = rootRanges(manifest, versions);
+  const catalogs = workspaceCatalogs(root);
+  const workspace = {
+    specs: rootSpecs(manifest, versions, catalogs),
+    catalogs,
+  };
   const result: MemberAlignment = { paths: [], failures: [] };
   for (const directory of workspaceDirectories(root))
-    alignMember(root, directory, ranges, result);
+    alignMember(root, directory, workspace, result);
   return result;
 }
