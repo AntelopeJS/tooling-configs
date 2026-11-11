@@ -257,9 +257,14 @@ const CATALOG = "catalog:";
 type Catalogs = Map<string, Map<string, string>>;
 
 /** The scalar keys of the mapping `node` holds, each with its value node, following YAML aliases and `<<` merge keys; a key the mapping sets itself comes after the merged one it overrides. */
-function mapPairs(document: Document, node: Node | null): [string, unknown][] {
+function mapPairs(
+  document: Document,
+  node: Node | null,
+  seen: ReadonlySet<Node> = new Set(),
+): [string, unknown][] {
   const map = isAlias(node) ? node.resolve(document) : node;
-  if (!isMap(map)) return [];
+  if (!isMap(map) || seen.has(map)) return [];
+  const within = new Set([...seen, map]);
   const merged: [string, unknown][] = [];
   const own: [string, unknown][] = [];
   for (const { key, value } of map.items) {
@@ -271,9 +276,10 @@ function mapPairs(document: Document, node: Node | null): [string, unknown][] {
       ]);
       continue;
     }
-    const sources = isSeq(value) ? [...value.items].reverse() : [value];
+    const merge = isAlias(value) ? value.resolve(document) : value;
+    const sources = isSeq(merge) ? [...merge.items].reverse() : [merge];
     for (const source of sources)
-      if (isNode(source)) merged.push(...mapPairs(document, source));
+      if (isNode(source)) merged.push(...mapPairs(document, source, within));
   }
   return [...merged, ...own];
 }
