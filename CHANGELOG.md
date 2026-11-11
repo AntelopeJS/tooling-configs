@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.5.3
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.2...v0.5.3)
+
+### 🚀 Enhancements
+
+- **garden:** Check default branch protection on every repository ([#302](https://github.com/AntelopeJS/tooling-configs/pull/302))
+- **garden:** Audit repository administrators per person ([#309](https://github.com/AntelopeJS/tooling-configs/pull/309))
+
+### 🩹 Fixes
+
+- **sync:** Drop the redundant checks job in the run that adds renovate-sync ([#301](https://github.com/AntelopeJS/tooling-configs/pull/301))
+- **sync:** Report checks steps antelopejs-checks does not run ([#304](https://github.com/AntelopeJS/tooling-configs/pull/304))
+- **sync:** Name docs-typescript-project when --init enables the docs check over TypeScript fences ([#303](https://github.com/AntelopeJS/tooling-configs/pull/303))
+- **sync:** Make --init onboard a bare JavaScript repository to a green ci / checks ([#306](https://github.com/AntelopeJS/tooling-configs/pull/306))
+- **sync:** Let pnpm 11 install lefthook without ERR_PNPM_IGNORED_BUILDS ([#307](https://github.com/AntelopeJS/tooling-configs/pull/307))
+- **sync:** Align workspace members and move their oxlint options to flags in --init ([#305](https://github.com/AntelopeJS/tooling-configs/pull/305))
+
+### 💅 Refactors
+
+- **garden:** ⚠️  Drop the NEXT_AUTOMERGE pause machinery ([#308](https://github.com/AntelopeJS/tooling-configs/pull/308))
+
+#### ⚠️ Breaking Changes
+
+- **garden:** ⚠️  Drop the NEXT_AUTOMERGE pause machinery ([#308](https://github.com/AntelopeJS/tooling-configs/pull/308))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.5.2
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.1...v0.5.2)
