@@ -59,6 +59,22 @@ test("sync keeps a repository's own pnpm-workspace.yaml settings and leaves a fi
   assert.equal(read(root, "pnpm-workspace.yaml"), decided);
 });
 
+for (const [current, written] of [
+  ["---\n", "---\nallowBuilds:\n  lefthook: false\n"],
+  ["\n\n# settings\n", "# settings\nallowBuilds:\n  lefthook: false\n"],
+  [
+    'packages: ["a"]\nallowBuilds: {}\n',
+    'packages: ["a"]\nallowBuilds:\n  lefthook: false\n',
+  ],
+  ["allowBuilds:\n  lefthook:\n", "allowBuilds:\n  lefthook: false\n"],
+])
+  test(`sync writes ${JSON.stringify(current)} as oxfmt leaves it, where a sync that pads flow maps, keeps leading blank lines, rejects a bare document marker or counts a null lefthook as decided fails format:check or the install`, (t) => {
+    const root = pinnedRepo(t, "pnpm@11.0.0");
+    put(root, "pnpm-workspace.yaml", current);
+    synced(root);
+    assert.equal(read(root, "pnpm-workspace.yaml"), written);
+  });
+
 for (const current of ["", "# workspace settings\n", "allowBuilds:\n"])
   test(`sync completes a pnpm-workspace.yaml that pnpm accepts as ${JSON.stringify(current)}, where a sync that demands a mapping exits 1 on it`, (t) => {
     const root = pinnedRepo(t, "pnpm@11.0.0");

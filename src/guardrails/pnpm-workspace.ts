@@ -25,17 +25,21 @@ function withLefthookDecided(current = ""): string {
     throw new Error(
       `${PATH}: ${document.errors.map(({ message }) => message).join("; ")}`,
     );
-  if (document.contents === null)
-    return `${current}${current === "" || current.endsWith("\n") ? "" : "\n"}allowBuilds:\n  lefthook: false\n`;
+  if (document.toJS() == null) {
+    const kept = current.trimStart();
+    return `${kept}${kept === "" || kept.endsWith("\n") ? "" : "\n"}allowBuilds:\n  lefthook: false\n`;
+  }
   if (!isMap(document.contents))
     throw new Error(`${PATH} must contain a YAML mapping.`);
-  document.contents.flow = false;
   if (document.get("allowBuilds") == null)
     document.set("allowBuilds", document.createNode({}));
-  if (!isMap(document.get("allowBuilds")))
+  const builds = document.get("allowBuilds");
+  if (!isMap(builds))
     throw new Error(`${PATH}: allowBuilds must be a mapping.`);
-  if (document.hasIn(["allowBuilds", "lefthook"])) return current;
-  document.setIn(["allowBuilds", "lefthook"], false);
+  if (builds.get("lefthook") != null) return current;
+  document.contents.flow = false;
+  builds.flow = false;
+  builds.set("lefthook", false);
   return document.toString({ lineWidth: 0, flowCollectionPadding: false });
 }
 
