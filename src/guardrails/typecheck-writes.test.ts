@@ -112,3 +112,10 @@ test("an unreadable workspace manifest counts as writing instead of failing the 
   put(root, "packages/broken/package.json", "{\n<<<<<<< HEAD\n}");
   assert.equal(typecheckWrites(root), true);
 });
+
+test("a pnpm option that takes a separate value is not read as the script name, so pnpm -r --workspace-concurrency 1 build writes", (t) => {
+  const root = workspace(t, "pnpm -r --workspace-concurrency 1 build", {
+    build: "tsc",
+  });
+  assert.equal(typecheckWrites(root), true);
+});

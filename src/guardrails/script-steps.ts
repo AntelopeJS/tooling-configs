@@ -10,8 +10,26 @@ const RUN_ALL = new Set(["run-s", "run-p", "npm-run-all", "npm-run-all2"]);
 const RUN_ALL_VALUED = new Set(["--max-parallel", "--npm-path"]);
 const EXEC_VALUED = new Set(["-p", "--package", "-c", "--call"]);
 const DIR_OPTIONS = new Set(["--dir", "-C", "--prefix", "--cwd"]);
-const SELECT_OPTIONS = new Set(["--filter", "-F", "--workspace"]);
-const TARGET_VALUED = new Set([...DIR_OPTIONS, ...SELECT_OPTIONS]);
+const SELECT_OPTIONS = new Set([
+  "--filter",
+  "-F",
+  "--filter-prod",
+  "--workspace",
+]);
+/** Manager options that take their value as the next word and point at no package. */
+const OTHER_VALUED = [
+  "--workspace-concurrency",
+  "--reporter",
+  "--loglevel",
+  "--test-pattern",
+  "--changed-files-ignore-pattern",
+  "--resume-from",
+];
+const MANAGER_VALUED = new Set([
+  ...DIR_OPTIONS,
+  ...SELECT_OPTIONS,
+  ...OTHER_VALUED,
+]);
 const TARGET_FLAGS = new Set(["-r", "--recursive", "--workspaces", "-ws"]);
 
 /** A package a manager option points a command at, instead of the package the script belongs to. */
@@ -146,7 +164,7 @@ function trailingTargets(
 }
 
 function managerSteps(manager: string, args: readonly string[]): Step[] {
-  const valued = new Set(TARGET_VALUED);
+  const valued = new Set(MANAGER_VALUED);
   if (manager === "npm") valued.add("-w");
   const first = skipOptions(args, 0, valued);
   const verb = args[first.index];
