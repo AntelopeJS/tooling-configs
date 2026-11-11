@@ -117,8 +117,9 @@ dependency: the root package and each workspace package (pnpm-workspace.yaml
 
 Supported is the declared range, taken from `peerDependencies` before
 `dependencies` before `optionalDependencies`. Tested with is the version
-`pnpm-lock.yaml` resolves for that package; a workspace link shows the linked
-package's version, and a dependency the lockfile does not resolve shows `—`.
+`pnpm-lock.yaml` resolves for that package; a workspace link shows `workspace`,
+so a release that bumps the linked package leaves the README in sync, and a
+dependency the lockfile does not resolve shows `—`.
 When `.npmrc` sets `shared-workspace-lockfile=false` (or `pnpm-workspace.yaml`
 sets `sharedWorkspaceLockfile: false`), each package keeps its own
 `pnpm-lock.yaml` and sync reads that one. Without the lockfile a pnpm repository

@@ -20,6 +20,7 @@ const LOCKFILE = "pnpm-lock.yaml";
 const REQUIREMENTS_HEADING = /^##\s+Requirements\s*$/i;
 const SCOPE = "@antelopejs/";
 const UNRESOLVED = "—";
+const WORKSPACE = "workspace";
 const LEGACY_MARKER = /^<!--\s*docs-compat:\s*\.\/package\.json#\w+\s*-->\s*$/;
 const COMPATIBILITY_HEADING = /^##\s+Compatibility\s*$/i;
 const RESOLVED_SECTIONS = [
@@ -299,21 +300,9 @@ function readManifest(root: string, directory: string): Manifest {
   );
 }
 
-function linkedVersion(
-  root: string,
-  directory: string,
-  link: string,
-): string | undefined {
-  const target = join(root, directory, link);
-  return existsSync(join(target, "package.json"))
-    ? parseManifest(readFileSync(join(target, "package.json"), "utf8")).version
-    : undefined;
-}
-
+/** The version the lockfile resolves for a dependency; a `link:` resolves to `workspace`, so a release that bumps the linked package leaves this README unchanged. */
 function resolvedVersion(
-  root: string,
   { document, importer }: Lock,
-  directory: string,
   name: string,
 ): string | undefined {
   for (const section of RESOLVED_SECTIONS) {
@@ -321,9 +310,7 @@ function resolvedVersion(
     const version = isMap(entry) ? entry.get("version", true) : entry;
     if (!isScalar(version)) continue;
     const resolved = String(version.value).split("(")[0];
-    return resolved.startsWith("link:")
-      ? linkedVersion(root, directory, resolved.slice("link:".length))
-      : resolved;
+    return resolved.startsWith("link:") ? WORKSPACE : resolved;
   }
   return undefined;
 }
@@ -398,7 +385,7 @@ function planPackage(
   const rows = [...ranges].map(([name, supported]) => ({
     name,
     supported,
-    tested: lock && resolvedVersion(root, lock, directory, name),
+    tested: lock && resolvedVersion(lock, name),
   }));
   try {
     const withRequirements =
@@ -425,7 +412,7 @@ function planPackage(
  * Plans the docs-compat block of the root and of every workspace package that is not private and declares an
  * `@antelopejs/*` peer, runtime or optional dependency, and the `docs-files` lines covering the root and every workspace
  * package that is not private.
- * Tested with comes from pnpm-lock.yaml, each package's own when `shared-workspace-lockfile=false`; other package managers get a dash.
+ * Tested with comes from pnpm-lock.yaml, each package's own when `shared-workspace-lockfile=false`, and is `workspace` for a `link:` dependency; other package managers get a dash.
  */
 export function planDocs(root: string, manager: PackageManager): DocsPlan {
   const rootManifest = readManifest(root, "");

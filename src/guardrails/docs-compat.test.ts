@@ -271,7 +271,7 @@ test("sync writes the block of every qualifying workspace package, lists every p
   assert.equal(
     read(root, "packages/a/README.md"),
     `# A\n\n## Compatibility\n\n${compatBlock([
-      { name: "@antelopejs/b", supported: "workspace:*", tested: "0.4.1" },
+      { name: "@antelopejs/b", supported: "workspace:*", tested: "workspace" },
       { name: "@antelopejs/core", supported: ">=1.17.0 <2", tested: "1.17.2" },
       {
         name: "@antelopejs/interface-core",
@@ -317,6 +317,21 @@ test("sync writes the block of every qualifying workspace package, lists every p
     "packages/d/README.md",
   ]);
   assert.equal(style.status, 0, style.stdout + style.stderr);
+  assert.deepEqual(syncRepository(root, { check: true }).paths, []);
+});
+
+test("a release that bumps a linked workspace sibling leaves --check clean", (t) => {
+  const root = workspace(t);
+  assert.deepEqual(syncRepository(root).errors, []);
+  put(
+    root,
+    "packages/b/package.json",
+    manifest({
+      name: "@antelopejs/b",
+      version: "0.4.2",
+      devDependencies: { "@antelopejs/core": "^1.17.0" },
+    }),
+  );
   assert.deepEqual(syncRepository(root, { check: true }).paths, []);
 });
 
