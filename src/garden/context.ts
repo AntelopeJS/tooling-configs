@@ -59,7 +59,7 @@ function isMissing(error: Error): boolean {
   return error instanceof ApiError && error.status === 404;
 }
 
-class Memo<T> {
+export class Memo<T> {
   private readonly values = new Map<string, Promise<T>>();
 
   get(key: string, make: () => Promise<T>): Promise<T> {

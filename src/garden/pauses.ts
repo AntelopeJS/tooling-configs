@@ -14,7 +14,7 @@ function reasons(repo: string, findings: readonly Finding[]): string[] {
     )
       ? ["the ratchet file is back on a Clean repository"]
       : []),
-    ...(own.some((entry) => entry.check === "next-governance")
+    ...(own.some((entry) => entry.check === "branch-governance")
       ? ["governance drift"]
       : []),
   ];

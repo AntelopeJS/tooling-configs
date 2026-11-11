@@ -13,8 +13,8 @@ import {
   deleteBranchOnMerge,
 } from "./checks/conformance.ts";
 import {
+  branchGovernance,
   governanceDrift,
-  nextGovernance,
   orgChecksRuleset,
 } from "./checks/governance.ts";
 import { captureScenes, webBuild } from "./checks/pipelines.ts";
@@ -38,7 +38,7 @@ const CHECKS: readonly Check[] = [
   advisories,
   stuckRenovate,
   governanceDrift,
-  nextGovernance,
+  branchGovernance,
   orgChecksRuleset,
   aiApps,
   orbSecrets,
