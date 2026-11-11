@@ -8,11 +8,13 @@ import {
   bootstrappedManifest,
   packageManager,
   parseManifest,
+  repositoryTools,
   toolingVersions,
   usesNuxt,
   type PackageManager,
 } from "./package.ts";
 import { syncRepository } from "./sync.ts";
+import { PRESET_CONFIGS, presetConfig } from "./templates.ts";
 import type { VerifyChoice } from "./verify-skill.ts";
 
 /** The `gh` arguments that turn `delete_branch_on_merge` on; `gh` fills `{owner}/{repo}` from the git remote. */
@@ -123,7 +125,7 @@ function resolveOxfmt(root: string): string {
 }
 
 interface Formatted {
-  /** The files oxfmt listed as differing before it wrote them. */
+  /** The files oxfmt listed as differing before it wrote them; empty when the write failed. */
   rewritten: string[];
   /** The output of an oxfmt run that failed. */
   failure: string | undefined;
@@ -153,10 +155,10 @@ function formatRepository(root: string): Formatted {
     .filter(Boolean);
   const result = oxfmt([]);
   if (result.error)
-    return { rewritten, failure: `oxfmt failed: ${result.error.message}` };
+    return { rewritten: [], failure: `oxfmt failed: ${result.error.message}` };
   if (result.status === 0) return { rewritten, failure: undefined };
   return {
-    rewritten,
+    rewritten: [],
     failure:
       `oxfmt failed (exit ${result.status}).\n${result.stdout}${result.stderr}`.trimEnd(),
   };
@@ -170,7 +172,6 @@ const NODE_TSCONFIG = `{
     "moduleResolution": "NodeNext",
     "allowJs": true,
     "checkJs": true,
-    "strict": true,
     "noEmit": true,
     "types": ["node"]
   }
@@ -189,7 +190,8 @@ interface Bootstrap {
 /**
  * The file steps before the first install: `node_modules` ignored, the pnpm version the pack's CI runs pinned when
  * `packageManager` is unset, the bootstrap devDependencies, a tsconfig for a Node repository without one or its own
- * `typecheck`, and npm's lockfile replaced by a pnpm lockfile holding the versions it resolved.
+ * `typecheck`, the pack's oxfmt config when there is none, and npm's lockfile replaced by a pnpm lockfile holding the
+ * versions it resolved.
  */
 function bootstrap(root: string): Bootstrap {
   const path = join(root, "package.json");
@@ -220,6 +222,14 @@ function bootstrap(root: string): Bootstrap {
     writeFileSync(join(root, "tsconfig.json"), NODE_TSCONFIG);
     paths.push("tsconfig.json");
   }
+  const fmt = PRESET_CONFIGS[1];
+  if (![fmt.path, ...fmt.legacy].some((file) => existsSync(join(root, file)))) {
+    writeFileSync(
+      join(root, fmt.path),
+      presetConfig(undefined, fmt, repositoryTools(manifest)),
+    );
+    paths.push(fmt.path);
+  }
   const npmLock = manager === "pnpm" && existsSync(join(root, NPM_LOCKFILE));
   const imported =
     npmLock && !existsSync(join(root, "pnpm-lock.yaml"))
@@ -237,15 +247,25 @@ function bootstrap(root: string): Bootstrap {
 }
 
 /**
- * Onboards a repository in one run: the bootstrap file steps and an install, a full-profile sync, a second install
- * when sync added devDependencies, the repository formatted by oxfmt, and `delete_branch_on_merge` on GitHub, which
- * runs whatever the file steps did. Every step is idempotent, so a second run changes nothing.
+ * Onboards a repository in one run: the bootstrap file steps and an install, the repository formatted by oxfmt before
+ * sync measures its lint and size baseline, a full-profile sync, a second install when sync added devDependencies, a
+ * second oxfmt pass over what sync wrote, and `delete_branch_on_merge` on GitHub, which runs whatever the file steps
+ * did. Every step is idempotent, so a second run changes nothing.
  */
 export function initRepository(
   root: string,
   options: { verify?: VerifyChoice } = {},
 ): InitResult {
-  const { manager, paths, removed, failure: first } = bootstrap(root);
+  const { manager, paths, removed, failure: installed } = bootstrap(root);
+  const format = () => {
+    const formatted = formatRepository(root);
+    for (const file of formatted.rewritten)
+      if (!paths.includes(file)) paths.push(file);
+    return formatted.failure;
+  };
+  const first =
+    installed ??
+    (existsSync(join(root, PRESET_CONFIGS[1].path)) ? format() : undefined);
   if (first !== undefined)
     return {
       paths,
@@ -261,12 +281,7 @@ export function initRepository(
   let failure: string | undefined;
   if (!sync.errors.length) {
     failure = sync.dependenciesAdded ? install(root, manager) : undefined;
-    if (failure === undefined) {
-      const formatted = formatRepository(root);
-      failure = formatted.failure;
-      for (const file of formatted.rewritten)
-        if (!paths.includes(file)) paths.push(file);
-    }
+    failure ??= format();
   }
   return {
     paths,
