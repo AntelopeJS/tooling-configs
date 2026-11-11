@@ -6,6 +6,7 @@ import {
   meanWeights,
   parseWeights,
   shardFiles,
+  unweightedFiles,
 } from "./shards.ts";
 
 const WEIGHTS = { a: 10, b: 6, c: 5, d: 4, e: 3 };
@@ -96,4 +97,11 @@ test("files measured at zero seconds spread across shards instead of piling onto
     shards.map((shard) => shard.length),
     [2, 2],
   );
+});
+
+test("unweightedFiles lists each file the weights leave out, a key the weights object only inherits included", () => {
+  assert.deepEqual(unweightedFiles(["a", "z", "constructor"], { a: 1 }), [
+    "z",
+    "constructor",
+  ]);
 });

@@ -32,6 +32,14 @@ export function parseWeights(text: string, source: string): TestWeights {
   );
 }
 
+/** The files the weights leave out, which `assignShards` can only place at the median weight. */
+export function unweightedFiles(
+  files: readonly string[],
+  weights: TestWeights,
+): string[] {
+  return files.filter((file) => !Object.hasOwn(weights, file));
+}
+
 /** The per-file mean over several measurements, sorted by path so the committed file diffs cleanly. */
 export function meanWeights(
   measurements: readonly TestWeights[],
