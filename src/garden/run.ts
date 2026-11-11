@@ -16,6 +16,7 @@ import {
   branchGovernance,
   governanceDrift,
   orgChecksRuleset,
+  repoAdmins,
 } from "./checks/governance.ts";
 import { captureScenes, webBuild } from "./checks/pipelines.ts";
 import { advisories, packageSize, stuckRenovate } from "./checks/supply.ts";
@@ -37,6 +38,7 @@ const CHECKS: readonly Check[] = [
   advisories,
   stuckRenovate,
   governanceDrift,
+  repoAdmins,
   branchGovernance,
   orgChecksRuleset,
   aiApps,

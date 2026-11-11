@@ -1,5 +1,5 @@
 import { CI_CONTEXT } from "../../guardrails/ci-workflow.ts";
-import { perRepo, type Check } from "../check.ts";
+import { PartialFailure, perRepo, scanEach, type Check } from "../check.ts";
 import { GardenContext, Memo, ORG, type GardenRepo } from "../context.ts";
 import {
   child,
@@ -15,7 +15,14 @@ import {
 } from "../json.ts";
 import { finding, found, type Finding, type Severity } from "../types.ts";
 
-const ALLOWED_ADMINS = ["Upd4ting", "mwesto", "dada-sudo"];
+const ALLOWED_OWNERS = ["Upd4ting", "mwesto", "dada-sudo"];
+const ALLOWED_REPO_ADMINS = [
+  "Upd4ting",
+  "mwesto",
+  "dada-sudo",
+  "Thomasims",
+  "alessaloisio",
+];
 const ACTIONS_APP = 15368;
 const ADMIN_ROLE = 5;
 const DEFAULT_BRANCH_REF = "~DEFAULT_BRANCH";
@@ -205,7 +212,7 @@ export const governanceDrift: Check = {
     const owners = await context.organizationOwners();
     return found(
       owners
-        .filter((login) => !ALLOWED_ADMINS.includes(login))
+        .filter((login) => !ALLOWED_OWNERS.includes(login))
         .map((login) =>
           finding(
             {
@@ -218,6 +225,36 @@ export const governanceDrift: Check = {
           ),
         ),
     );
+  },
+};
+
+/** One finding per login that holds `admin` on a repository and is not an allowed repo administrator, listing the repositories; `maintain` has no bypass and is not read. */
+export const repoAdmins: Check = {
+  id: "repo-admins",
+  async run(context) {
+    const { results, failures } = await scanEach(
+      await context.repos(),
+      async (repo) =>
+        (await context.repoAdmins(repo))
+          .filter((login) => !ALLOWED_REPO_ADMINS.includes(login))
+          .map((login) => ({ login, repo: repo.name })),
+    );
+    const held = new Map<string, string[]>();
+    for (const { login, repo } of results)
+      held.set(login, [...(held.get(login) ?? []), repo]);
+    const findings = [...held].map(([login, repos]) =>
+      finding(
+        {
+          repo: ORG,
+          check: "repo-admins",
+          subject: `repo-admin:${login}`,
+        },
+        `${login} holds admin on ${repos.length} ${repos.length === 1 ? "repository" : "repositories"}: ${repos.join(", ")}.`,
+        `${login} holds no admin role on those repositories, or the allowed repository administrators change.`,
+      ),
+    );
+    if (failures.length) throw new PartialFailure(findings, failures);
+    return found(findings);
   },
 };
 

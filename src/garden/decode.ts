@@ -212,3 +212,11 @@ export function logins(value: JsonValue): string[] {
     str(object(entry, "member"), "login"),
   );
 }
+
+/** The logins of a collaborator list whose role on the repository is `admin`; `maintain` is not. */
+export function adminLogins(value: JsonValue): string[] {
+  return list(value, "collaborators")
+    .map((entry) => object(entry, "collaborator"))
+    .filter((entry) => optStr(entry, "role_name") === "admin")
+    .map((entry) => str(entry, "login"));
+}
