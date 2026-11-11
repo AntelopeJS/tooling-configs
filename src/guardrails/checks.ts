@@ -12,6 +12,7 @@ import {
   stopServices,
 } from "./services.ts";
 import { checkSingletonPackages, pnpmLockfiles } from "./singleton-packages.ts";
+import { typecheckWrites } from "./typecheck-writes.ts";
 import { typecheckLayers, verifyLayers } from "./verify-layers.ts";
 import { checkLockfiles, verifyInstallFolders } from "./verify-lockfiles.ts";
 
@@ -57,6 +58,20 @@ function hasWork(root: string, step: string): boolean {
 /** The step that runs after the others, never beside them: tests often hold time limits that CPU contention would break. */
 const RUNS_ALONE = "test";
 
+/** The step that runs before the others when it writes files, such as a workspace package's `dist`, that they read. */
+const RUNS_FIRST = "typecheck";
+
+/** The groups of steps that run one after another, the steps of a group at the same time. */
+function phases(root: string, steps: readonly string[]): string[][] {
+  const first =
+    steps.includes(RUNS_FIRST) && typecheckWrites(root) ? [RUNS_FIRST] : [];
+  const last = steps.includes(RUNS_ALONE) ? [RUNS_ALONE] : [];
+  const together = steps.filter(
+    (step) => !first.includes(step) && !last.includes(step),
+  );
+  return [first, together, last].filter((phase) => phase.length > 0);
+}
+
 /** The environment variable naming, comma-separated, the steps `runChecks` leaves to another CI job. */
 export const CHECKS_SKIP_ENV = "ANTELOPEJS_CHECKS_SKIP";
 
@@ -100,13 +115,10 @@ async function runSteps(
     return result.status === 0 ? [] : [`[${step}]\n${result.output}`];
   };
   const failures = new Map<string, string[]>();
-  await Promise.all(
-    steps
-      .filter((step) => step !== RUNS_ALONE)
-      .map(async (step) => failures.set(step, await runStep(step))),
-  );
-  if (steps.includes(RUNS_ALONE))
-    failures.set(RUNS_ALONE, await runStep(RUNS_ALONE));
+  for (const phase of phases(root, steps))
+    await Promise.all(
+      phase.map(async (step) => failures.set(step, await runStep(step))),
+    );
   return steps.flatMap((step) => failures.get(step) ?? []);
 }
 
@@ -147,7 +159,8 @@ function summary(failures: string[], passed: number, skipped: number): string {
 
 /**
  * Runs the `checks:prepare` package script first when it exists and a step will run, and stops there if it fails.
- * Then runs every check step except `test` at the same time, then `test` alone, and reports only what failed, each step's
+ * Then runs `typecheck` first when it writes files the other steps read (see `typecheckWrites`), every other check step
+ * except `test` at the same time, then `test` alone, and reports only what failed, each step's
  * output buffered and listed in step order whichever step finishes first. `skipSetting` is the comma-separated value of
  * `ANTELOPEJS_CHECKS_SKIP`: the steps it names are not run and are counted as skipped, never as passed, and a name that
  * is not a step fails the run before any step starts so a typo cannot skip nothing. Unless `services` is false, the

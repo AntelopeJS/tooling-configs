@@ -9,16 +9,19 @@ const EXEC_VERBS = new Set(["exec", "x", "dlx"]);
 const RUN_ALL = new Set(["run-s", "run-p", "npm-run-all", "npm-run-all2"]);
 const RUN_ALL_VALUED = new Set(["--max-parallel", "--npm-path"]);
 const EXEC_VALUED = new Set(["-p", "--package", "-c", "--call"]);
-const TARGET_VALUED = new Set([
-  "--filter",
-  "-F",
-  "--dir",
-  "-C",
-  "--prefix",
-  "--cwd",
-  "--workspace",
-]);
+const DIR_OPTIONS = new Set(["--dir", "-C", "--prefix", "--cwd"]);
+const SELECT_OPTIONS = new Set(["--filter", "-F", "--workspace"]);
+const TARGET_VALUED = new Set([...DIR_OPTIONS, ...SELECT_OPTIONS]);
 const TARGET_FLAGS = new Set(["-r", "--recursive", "--workspaces", "-ws"]);
+
+/** A package a manager option points a command at, instead of the package the script belongs to. */
+export type Target =
+  /** `--dir`, `-C`, `--prefix`, `--cwd`: the package in that directory, relative to where the command runs. */
+  | { kind: "dir"; path: string }
+  /** `--filter`, `-F`, `--workspace`, npm's `-w`: the workspace packages a name or path selector matches. */
+  | { kind: "select"; selector: string }
+  /** `-r`, `--recursive`, `--workspaces`: every workspace package. */
+  | { kind: "all" };
 
 /** One thing a command line of a script runs: scripts of the same package, or a `tsc` with its arguments. */
 export type Step =
@@ -26,14 +29,28 @@ export type Step =
       kind: "script";
       /** Script names, or `run-s` patterns where `*` matches within a `:` segment and `**` across them. */
       names: string[];
-      /** The package manager was pointed at another package (`--filter`, `-C`, `-r`), so the names are not this package's scripts. */
-      elsewhere: boolean;
+      /** The packages the manager was pointed at (`--filter`, `-C`, `-r`); when any, the names are not this package's scripts. */
+      targets: Target[];
     }
   | { kind: "tsc"; args: string[] };
 
 interface Options {
   index: number;
-  elsewhere: boolean;
+  targets: Target[];
+}
+
+/** The package an option points at; npm's `-w` selects only where `valued` lists it, since pnpm's `-w` is the workspace root. */
+function target(
+  name: string,
+  value: string | undefined,
+  valued: ReadonlySet<string>,
+): Target | undefined {
+  if (TARGET_FLAGS.has(name)) return { kind: "all" };
+  if (value === undefined) return undefined;
+  if (DIR_OPTIONS.has(name)) return { kind: "dir", path: value };
+  if (SELECT_OPTIONS.has(name) || (name === "-w" && valued.has(name)))
+    return { kind: "select", selector: value };
+  return undefined;
 }
 
 function words(segment: string): string[] {
@@ -52,20 +69,26 @@ function lines(script: string): string[][] {
     .filter((list) => list.length > 0);
 }
 
-/** Skips the options from `from`, and the values of those that take one; `elsewhere` when one points at another package. */
+/** Skips the options from `from`, and the values of those that take one; `targets` are the packages they point at. */
 function skipOptions(
   args: readonly string[],
   from: number,
   valued: ReadonlySet<string>,
 ): Options {
   let index = from;
-  let elsewhere = false;
+  const targets: Target[] = [];
   while (index < args.length && args[index].startsWith("-")) {
-    const [name, ...value] = args[index].split("=");
-    elsewhere ||= TARGET_VALUED.has(name) || TARGET_FLAGS.has(name);
-    index += valued.has(name) && value.length === 0 ? 2 : 1;
+    const [name, ...inline] = args[index].split("=");
+    const separate = valued.has(name) && inline.length === 0;
+    const pointed = target(
+      name,
+      separate ? args[index + 1] : inline.length ? inline.join("=") : undefined,
+      valued,
+    );
+    if (pointed) targets.push(pointed);
+    index += separate ? 2 : 1;
   }
-  return { index, elsewhere };
+  return { index, targets };
 }
 
 function isTsc(word: string): boolean {
@@ -79,7 +102,7 @@ function programSteps(line: readonly string[]): Step[] {
   if (isTsc(head)) return [{ kind: "tsc", args: rest }];
   if (head !== "node") return [];
   if (rest[0] === "--run" && rest[1] !== undefined)
-    return [{ kind: "script", names: [rest[1]], elsewhere: false }];
+    return [{ kind: "script", names: [rest[1]], targets: [] }];
   const at = rest.findIndex((word) => !word.startsWith("-"));
   return at !== -1 && isTsc(rest[at])
     ? [{ kind: "tsc", args: rest.slice(at + 1) }]
@@ -107,13 +130,13 @@ function managerSteps(manager: string, args: readonly string[]): Step[] {
           {
             kind: "script",
             names: [name],
-            elsewhere: first.elsewhere || second.elsewhere,
+            targets: [...first.targets, ...second.targets],
           },
         ];
   }
   if (isTsc(verb)) return programSteps(args.slice(first.index));
   if (manager === "npm" && !NPM_BUILTINS.has(verb)) return [];
-  return [{ kind: "script", names: [verb], elsewhere: first.elsewhere }];
+  return [{ kind: "script", names: [verb], targets: first.targets }];
 }
 
 function runAllSteps(args: readonly string[]): Step[] {
@@ -121,9 +144,7 @@ function runAllSteps(args: readonly string[]): Step[] {
   for (let index = 0; index < args.length && args[index] !== "--"; index++)
     if (!args[index].startsWith("-")) names.push(args[index]);
     else if (RUN_ALL_VALUED.has(args[index])) index++;
-  return names.length === 0
-    ? []
-    : [{ kind: "script", names, elsewhere: false }];
+  return names.length === 0 ? [] : [{ kind: "script", names, targets: [] }];
 }
 
 /** The line without its leading environment assignments and wrappers (`cross-env A=1`, `env`, `corepack`). */

@@ -25,7 +25,7 @@ const READS_DIST = [
   "",
 ].join("\n");
 
-const BUILD_INTERFACE = "npm run build --workspace packages/interface";
+const BUILD_INTERFACE = "npm --workspace packages/interface run build";
 
 function workspace(t: TestContext, scripts: Record<string, string>) {
   const root = testRepo(t);
@@ -64,14 +64,12 @@ function builds(root: string): number {
     : 0;
 }
 
-test("without checks:prepare, lint reading a dist that typecheck builds runs before the build and fails", (t) => {
+test("without checks:prepare, a typecheck that builds a workspace package runs before lint, so lint reads the built dist", (t) => {
   const root = workspace(t, {});
   const result = bin(root, "checks", ["--no-services"]);
-  assert.equal(result.status, 1);
-  assert.match(
-    result.stdout,
-    /^\[lint\]\n[\s\S]*packages\/interface\/dist\/index\.js is not built\nChecks: 8 passed, 1 failed\.\n$/,
-  );
+  assert.equal(result.status, 0, result.stdout);
+  assert.equal(result.stdout, "Checks: 9 passed, 0 failed.\n");
+  assert.equal(builds(root), 1);
 });
 
 test("checks:prepare builds the dist once before the steps start, so lint beside typecheck passes", (t) => {
