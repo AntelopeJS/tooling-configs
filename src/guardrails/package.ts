@@ -293,9 +293,9 @@ export function bootstrapDependencies(
 const NPM_INIT_TEST = 'echo "Error: no test specified" && exit 1';
 
 /**
- * `current` with `added` in its sorted devDependencies, `packageManager` set to `pin` when it has none, and a `test`
- * script running Node's test runner when it has none or only npm's failing default, which passes with no test file
- * and runs the ones the repository adds. An explicit `"type": "commonjs"`, which `npm init` writes, is dropped: under
+ * `current` with `added` in its sorted devDependencies, `packageManager` set to `pin` unless it names pnpm, the only
+ * manager the pack's CI installs with, and a `test` script running Node's test runner when it has none or only npm's
+ * failing default, which passes with no test file and runs the ones the repository adds. An explicit `"type": "commonjs"`, which `npm init` writes, is dropped: under
  * it Node refuses to load the pack's ESM `*.config.ts` files, while without it `.js` files stay CommonJS unless they
  * use ESM syntax, which `commonjs` rejected anyway. Formatted as the rest of the sync writers do.
  */
@@ -309,7 +309,11 @@ export function bootstrappedManifest(
     ...manifest.devDependencies,
     ...Object.fromEntries(added),
   });
-  manifest.packageManager ??= pin;
+  if (
+    manifest.packageManager === undefined ||
+    packageManager(manifest) !== "pnpm"
+  )
+    manifest.packageManager = pin;
   if (manifest.type === "commonjs") delete manifest.type;
   const scripts = (manifest.scripts ??= {});
   if (scripts.test === undefined || scripts.test === NPM_INIT_TEST)

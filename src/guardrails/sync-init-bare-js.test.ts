@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -44,6 +44,53 @@ test("--init deletes npm's lockfile without importing it when pnpm's already exi
   assert.equal(tools.calls().includes("pnpm import"), false);
   assert.equal(existsSync(join(root, "package-lock.json")), false);
   assert.equal(read(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+});
+
+test("--init pins pnpm over an npm, yarn or bun pin, where an init that keeps the pin fails the pnpm-only ci / checks", (t) => {
+  for (const pin of ["npm@11.6.0", "yarn@4.9.1", "bun@1.2.20"]) {
+    const root = bareJsRepo(t);
+    const current = manifest(root);
+    put(
+      root,
+      "package.json",
+      `${JSON.stringify({ ...current, packageManager: pin }, null, 2)}\n`,
+    );
+    const result = bin(root, "sync", ["--init"], fakeTools(t).env);
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    assert.equal(
+      manifest(root).packageManager,
+      toolingVersions().packageManager,
+    );
+  }
+});
+
+test("--init imports yarn's lockfile into pnpm and deletes it, where an init that skips it leaves two lockfiles and drops yarn's resolved versions", (t) => {
+  const root = bareJsRepo(t);
+  const tools = fakeTools(t);
+  rmSync(join(root, "package-lock.json"));
+  put(root, "yarn.lock", "# yarn lockfile v1\n");
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const calls = tools.calls().filter((call) => call.startsWith("pnpm"));
+  assert.equal(calls[0], "pnpm import");
+  assert.match(calls[1] ?? "", /^pnpm install/);
+  assert.equal(existsSync(join(root, "yarn.lock")), false);
+  assert.match(result.stdout, /^Removed: yarn\.lock$/m);
+});
+
+test("--init deletes bun's lockfiles without importing them, which pnpm cannot read, where an init that keeps them leaves two lockfiles", (t) => {
+  const root = bareJsRepo(t);
+  const tools = fakeTools(t);
+  rmSync(join(root, "package-lock.json"));
+  put(root, "bun.lock", "{}\n");
+  put(root, "bun.lockb", "binary\n");
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.equal(tools.calls().includes("pnpm import"), false);
+  for (const file of ["bun.lock", "bun.lockb"]) {
+    assert.equal(existsSync(join(root, file)), false);
+    assert.match(result.stdout, new RegExp(`^Removed: ${file}$`, "m"));
+  }
 });
 
 /** The diagnostics a tool printed for the repository's JavaScript, leaving out the synced `*.config.ts` files, which import the fake pack that ships no type declarations. */

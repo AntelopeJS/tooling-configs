@@ -7,12 +7,10 @@ import { untypedDocsFiles } from "./docs-typescript.ts";
 import {
   bootstrapDependencies,
   bootstrappedManifest,
-  packageManager,
   parseManifest,
   repositoryTools,
   toolingVersions,
   usesNuxt,
-  type PackageManager,
 } from "./package.ts";
 import { syncRepository } from "./sync.ts";
 import { PRESET_CONFIGS, presetConfig } from "./templates.ts";
@@ -40,7 +38,7 @@ type BranchCleanup =
 export interface InitResult {
   /** The files `--init` wrote itself, before sync ran or in its oxfmt pass after. */
   paths: string[];
-  /** The files `--init` deleted: npm's lockfile once pnpm's replaced it. */
+  /** The files `--init` deleted: npm's, yarn's and bun's lockfiles once pnpm's replaced them. */
   removed: string[];
   /** Why a workspace member could not be aligned, or the output of the install or the oxfmt run that failed. Set before sync when a member or the first install failed, after it otherwise. */
   failure: string | undefined;
@@ -106,21 +104,17 @@ function ensureBranchCleanup(root: string): BranchCleanup {
     : { kind: "enabled" };
 }
 
-/** Runs `manager` with `args` quietly; returns its output only when it failed. */
-function run(
-  root: string,
-  manager: PackageManager,
-  args: readonly string[],
-): string | undefined {
-  const command = [manager, ...args].join(" ");
-  const result = spawnSync(manager, args, { cwd: root, encoding: "utf8" });
+/** Runs pnpm, the only manager the pack's CI installs with, with `args` quietly; returns its output only when it failed. */
+function run(root: string, args: readonly string[]): string | undefined {
+  const command = ["pnpm", ...args].join(" ");
+  const result = spawnSync("pnpm", args, { cwd: root, encoding: "utf8" });
   if (result.error) return `${command} failed: ${result.error.message}`;
   if (result.status === 0) return undefined;
   return `${command} failed (exit ${result.status}).\n${result.stdout}${result.stderr}`.trimEnd();
 }
 
-function install(root: string, manager: PackageManager): string | undefined {
-  return run(root, manager, ["install"]);
+function install(root: string): string | undefined {
+  return run(root, ["install"]);
 }
 
 function resolveOxfmt(root: string): string {
@@ -182,10 +176,16 @@ const NODE_TSCONFIG = `{
 }
 `;
 
-const NPM_LOCKFILE = "package-lock.json";
+/** The other package managers' lockfiles `--init` deletes once pnpm's replaces them, and whether `pnpm import` reads the versions they resolved. */
+const FOREIGN_LOCKFILES = [
+  { file: "package-lock.json", importable: true },
+  { file: "npm-shrinkwrap.json", importable: true },
+  { file: "yarn.lock", importable: true },
+  { file: "bun.lock", importable: false },
+  { file: "bun.lockb", importable: false },
+] as const;
 
 interface Bootstrap {
-  manager: PackageManager;
   paths: string[];
   removed: string[];
   failure: string | undefined;
@@ -193,9 +193,10 @@ interface Bootstrap {
 
 /**
  * The file steps before the first install: `node_modules` ignored, the pnpm version the pack's CI runs pinned when
- * `packageManager` is unset, the bootstrap devDependencies, a tsconfig for a Node repository without one or its own
- * `typecheck`, the pack's oxfmt config when there is none, each workspace member on the root's tool ranges with its
- * oxlint `options` moved to flags, and npm's lockfile replaced by a pnpm lockfile holding the versions it resolved.
+ * `packageManager` names no pnpm, the bootstrap devDependencies, a tsconfig for a Node repository without one or its
+ * own `typecheck`, the pack's oxfmt config when there is none, each workspace member on the root's tool ranges with
+ * its oxlint `options` moved to flags, and the other managers' lockfiles deleted once `pnpm import` carried the
+ * versions npm's or yarn's resolved into a pnpm lockfile.
  */
 function bootstrap(root: string): Bootstrap {
   const path = join(root, "package.json");
@@ -205,7 +206,6 @@ function bootstrap(root: string): Bootstrap {
     );
   const current = readFileSync(path, "utf8");
   const manifest = parseManifest(current);
-  const manager = packageManager(manifest);
   const versions = toolingVersions();
   const paths: string[] = [];
   if (ensureGitignore(root)) paths.push(".gitignore");
@@ -238,24 +238,24 @@ function bootstrap(root: string): Bootstrap {
   paths.push(...members.paths);
   if (members.failures.length)
     return {
-      manager,
       paths,
       removed: [],
       failure: members.failures.join("\n"),
     };
-  const npmLock = manager === "pnpm" && existsSync(join(root, NPM_LOCKFILE));
+  const foreign = FOREIGN_LOCKFILES.filter(({ file }) =>
+    existsSync(join(root, file)),
+  );
   const imported =
-    npmLock && !existsSync(join(root, "pnpm-lock.yaml"))
-      ? run(root, manager, ["import"])
+    foreign.some(({ importable }) => importable) &&
+    !existsSync(join(root, "pnpm-lock.yaml"))
+      ? run(root, ["import"])
       : undefined;
-  if (imported !== undefined)
-    return { manager, paths, removed: [], failure: imported };
-  if (npmLock) unlinkSync(join(root, NPM_LOCKFILE));
+  if (imported !== undefined) return { paths, removed: [], failure: imported };
+  for (const { file } of foreign) unlinkSync(join(root, file));
   return {
-    manager,
     paths,
-    removed: npmLock ? [NPM_LOCKFILE] : [],
-    failure: install(root, manager),
+    removed: foreign.map(({ file }) => file),
+    failure: install(root),
   };
 }
 
@@ -269,7 +269,7 @@ export function initRepository(
   root: string,
   options: { verify?: VerifyChoice } = {},
 ): InitResult {
-  const { manager, paths, removed, failure: installed } = bootstrap(root);
+  const { paths, removed, failure: installed } = bootstrap(root);
   const format = () => {
     const formatted = formatRepository(root);
     for (const file of formatted.rewritten)
@@ -294,7 +294,7 @@ export function initRepository(
   });
   let failure: string | undefined;
   if (!sync.errors.length) {
-    failure = sync.dependenciesAdded ? install(root, manager) : undefined;
+    failure = sync.dependenciesAdded ? install(root) : undefined;
     failure ??= format();
   }
   return {
