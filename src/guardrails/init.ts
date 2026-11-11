@@ -42,7 +42,7 @@ type BranchCleanup =
 export interface InitResult {
   /** The files `--init` wrote itself, before sync ran or in its oxfmt pass after. */
   paths: string[];
-  /** The files `--init` deleted: npm's, yarn's and bun's lockfiles once pnpm's replaced them. */
+  /** The files `--init` deleted: npm's, yarn's and bun's lockfiles and yarn's Plug'n'Play loaders once pnpm's lockfile replaced them. */
   removed: string[];
   /** Why a workspace member could not be aligned, or the output of the install or the oxfmt run that failed. Set before sync when a member or the first install failed, after it otherwise. */
   failure: string | undefined;
@@ -180,11 +180,17 @@ const NODE_TSCONFIG = `{
 }
 `;
 
-/** The other package managers' lockfiles `--init` deletes once pnpm's replaces them, and whether `pnpm import` reads the versions they resolved. */
-const FOREIGN_LOCKFILES = [
+/**
+ * The other package managers' install state `--init` deletes once pnpm's lockfile replaces it, and whether
+ * `pnpm import` reads the versions it resolved. Yarn's Plug'n'Play loaders go too: left in place, Node resolves every
+ * package through them and misses what pnpm installed.
+ */
+const FOREIGN_INSTALL_FILES = [
   { file: "package-lock.json", importable: true },
   { file: "npm-shrinkwrap.json", importable: true },
   { file: "yarn.lock", importable: true },
+  { file: ".pnp.cjs", importable: false },
+  { file: ".pnp.loader.mjs", importable: false },
   { file: "bun.lock", importable: false },
   { file: "bun.lockb", importable: false },
 ] as const;
@@ -270,7 +276,7 @@ function bootstrap(root: string): Bootstrap {
       failure: members.failures.join("\n"),
     };
   paths.push(...ensurePnpmWorkspace(root));
-  const foreign = FOREIGN_LOCKFILES.filter(({ file }) =>
+  const foreign = FOREIGN_INSTALL_FILES.filter(({ file }) =>
     existsSync(join(root, file)),
   );
   const imported =

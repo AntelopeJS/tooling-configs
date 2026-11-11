@@ -64,18 +64,25 @@ test("--init pins pnpm over an npm, yarn or bun pin, where an init that keeps th
   }
 });
 
-test("--init imports yarn's lockfile into pnpm and deletes it, where an init that skips it leaves two lockfiles and drops yarn's resolved versions", (t) => {
+test("--init imports yarn's lockfile into pnpm and deletes it with yarn's Plug'n'Play loaders, where an init that skips it leaves two lockfiles and drops yarn's resolved versions, and one that keeps the loaders hides what pnpm installed from Node", (t) => {
   const root = bareJsRepo(t);
   const tools = fakeTools(t);
   rmSync(join(root, "package-lock.json"));
-  put(root, "yarn.lock", "# yarn lockfile v1\n");
+  put(root, "yarn.lock", "__metadata:\n  version: 8\n");
+  put(root, ".pnp.cjs", "module.exports = {};\n");
+  put(root, ".pnp.loader.mjs", "export {};\n");
   const result = bin(root, "sync", ["--init"], tools.env);
   assert.equal(result.status, 0, result.stderr + result.stdout);
   const calls = tools.calls().filter((call) => call.startsWith("pnpm"));
   assert.equal(calls[0], "pnpm import");
   assert.match(calls[1] ?? "", /^pnpm install/);
-  assert.equal(existsSync(join(root, "yarn.lock")), false);
-  assert.match(result.stdout, /^Removed: yarn\.lock$/m);
+  for (const file of ["yarn.lock", ".pnp.cjs", ".pnp.loader.mjs"]) {
+    assert.equal(existsSync(join(root, file)), false, file);
+    assert.match(
+      result.stdout,
+      new RegExp(`^Removed: ${file.replaceAll(".", "\\.")}$`, "m"),
+    );
+  }
 });
 
 test("--init lists package.json workspaces for pnpm and links members by version before the import, where an init that skips them imports only the root and deletes the members' locked versions", (t) => {
