@@ -1,7 +1,16 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type ts from "typescript";
-import { isAlias, isMap, isScalar, parseDocument, type Document } from "yaml";
+import {
+  isAlias,
+  isMap,
+  isNode,
+  isScalar,
+  isSeq,
+  parseDocument,
+  type Document,
+  type Node,
+} from "yaml";
 
 import { workspaceDirectories } from "./docs-compat.ts";
 import {
@@ -247,26 +256,36 @@ const CATALOG = "catalog:";
 /** Each catalog the workspace declares, by name, with the range it gives each package; `catalog` is the one named `default`. */
 type Catalogs = Map<string, Map<string, string>>;
 
-/** The scalar keys of the mapping at `path`, each with its value node, following YAML aliases on the way. */
-function mapEntries(document: Document, path: string[]): [string, unknown][] {
-  let node: unknown = document.contents;
-  for (const key of path) {
-    const map = isAlias(node) ? node.resolve(document) : node;
-    node = isMap(map) ? map.get(key, true) : undefined;
-  }
+/** The scalar keys of the mapping `node` holds, each with its value node, following YAML aliases and `<<` merge keys; a key the mapping sets itself comes after the merged one it overrides. */
+function mapPairs(document: Document, node: Node | null): [string, unknown][] {
   const map = isAlias(node) ? node.resolve(document) : node;
-  return isMap(map)
-    ? map.items.flatMap(({ key, value }) =>
-        isScalar(key)
-          ? [
-              [
-                String(key.value),
-                isAlias(value) ? value.resolve(document) : value,
-              ],
-            ]
-          : [],
-      )
-    : [];
+  if (!isMap(map)) return [];
+  const merged: [string, unknown][] = [];
+  const own: [string, unknown][] = [];
+  for (const { key, value } of map.items) {
+    if (!isScalar(key)) continue;
+    if (key.value !== "<<") {
+      own.push([
+        String(key.value),
+        isAlias(value) ? value.resolve(document) : value,
+      ]);
+      continue;
+    }
+    const sources = isSeq(value) ? [...value.items].reverse() : [value];
+    for (const source of sources)
+      if (isNode(source)) merged.push(...mapPairs(document, source));
+  }
+  return [...merged, ...own];
+}
+
+/** The scalar keys of the mapping at `path`, each with its value node. */
+function mapEntries(document: Document, path: string[]): [string, unknown][] {
+  let pairs = mapPairs(document, document.contents);
+  for (const key of path) {
+    const value = new Map(pairs).get(key);
+    pairs = isNode(value) ? mapPairs(document, value) : [];
+  }
+  return pairs;
 }
 
 /** The package names of the catalog at `path`, each with its range. */
