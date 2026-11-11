@@ -34,16 +34,19 @@ function script(body: string): string {
 
 /**
  * A fake `pnpm install` that logs the dependency names package.json declares
- * and links into `node_modules` only those: oxlint, oxlint-tsgolint and oxfmt
- * from this checkout, and a stub of the pack that serves its presets from
- * source. The install numbered `failingInstall` exits 1 as pnpm 11 does for
- * ignored builds.
+ * and links into `node_modules` only those: oxlint, oxlint-tsgolint, oxfmt,
+ * typescript and @types/node from this checkout, and a stub of the pack that
+ * serves its presets from source. An install without `packageManager`, and the
+ * install numbered `failingInstall`, exit 1 as pnpm 11 does for ignored builds;
+ * `pnpm import` exits 1 without npm's lockfile.
  */
 function pnpmScript(log: string, failingInstall: number): string {
   const links = {
     oxlint: resolved("oxlint/package.json"),
     "oxlint-tsgolint": resolved("oxlint-tsgolint/package.json"),
     oxfmt: resolved("oxfmt/package.json"),
+    typescript: resolved("typescript/package.json"),
+    "@types/node": resolved("@types/node/package.json"),
   };
   const presets = Object.fromEntries(
     Object.entries(PRESET_SOURCES).map(([name, source]) => [
@@ -57,9 +60,18 @@ const path = require("node:path");
 const args = process.argv.slice(2);
 if (args[0] !== "install") {
   fs.appendFileSync(${JSON.stringify(log)}, "pnpm " + args.join(" ") + "\\n");
+  if (args[0] === "import" && !fs.existsSync("package-lock.json")) {
+    process.stderr.write("ERR_PNPM_LOCKFILE_NOT_FOUND\\n");
+    process.exit(1);
+  }
   process.exit(0);
 }
 const manifest = JSON.parse(fs.readFileSync("package.json", "utf8"));
+if (!manifest.packageManager) {
+  fs.appendFileSync(${JSON.stringify(log)}, "pnpm install unpinned\\n");
+  process.stderr.write("ERR_PNPM_IGNORED_BUILDS  Ignored build scripts: lefthook\\n");
+  process.exit(1);
+}
 const declared = { ...manifest.dependencies, ...manifest.devDependencies };
 fs.appendFileSync(${JSON.stringify(log)}, ["pnpm install", ...Object.keys(declared).sort()].join(" ") + "\\n");
 const number = fs.readFileSync(${JSON.stringify(log)}, "utf8").split("\\n").filter((line) => line.startsWith("pnpm install")).length;
@@ -70,7 +82,7 @@ if (number === ${JSON.stringify(failingInstall)}) {
 for (const [name, target] of Object.entries(${JSON.stringify(links)})) {
   if (!declared[name]) continue;
   const link = path.join("node_modules", name);
-  fs.mkdirSync("node_modules", { recursive: true });
+  fs.mkdirSync(path.dirname(link), { recursive: true });
   if (!fs.existsSync(link)) fs.symlinkSync(target, link, "dir");
 }
 if (declared["oxlint-tsgolint"]) {

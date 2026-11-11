@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,6 +8,7 @@ export interface Manifest {
   name?: string;
   version?: string;
   private?: boolean;
+  type?: string;
   packageManager?: string;
   bin?: { tsc?: string };
   scripts?: Record<string, string>;
@@ -61,6 +62,15 @@ export function packageManager(manifest: Manifest): PackageManager {
   }
 }
 
+/** Whether the repository at `root` is a Nuxt app: it depends on `nuxt` or has a `nuxt.config.*`. */
+export function usesNuxt(root: string, manifest: Manifest): boolean {
+  return Boolean(
+    manifest.dependencies?.nuxt ||
+    manifest.devDependencies?.nuxt ||
+    readdirSync(root).some((name) => name.startsWith("nuxt.config.")),
+  );
+}
+
 export function execCommand(manager: PackageManager): string {
   if (manager === "npm") return "npm exec --";
   if (manager === "bun") return "bun x --no-install";
@@ -74,38 +84,35 @@ export function toolingVersions() {
     if (existsSync(path)) {
       const manifest = parseManifest(readFileSync(path, "utf8"));
       if (manifest.name === "@antelopejs/tooling-configs") {
-        const lefthook = manifest.devDependencies?.lefthook;
-        const knip = manifest.devDependencies?.knip;
-        const tsgolint = manifest.devDependencies?.["oxlint-tsgolint"];
-        const oxlint = manifest.devDependencies?.oxlint;
-        const oxfmt = manifest.devDependencies?.oxfmt;
-        if (
-          !lefthook ||
-          !knip ||
-          !tsgolint ||
-          !oxlint ||
-          !oxfmt ||
-          !manifest.version
-        )
-          throw new Error(
-            "tooling-configs must declare its version and lefthook, knip, oxlint, oxfmt and oxlint-tsgolint devDependencies.",
-          );
-        const tested = manifest.devDependencies ?? {};
-        const capture = CAPTURE_PEERS.map((name): [CapturePeer, string] => {
-          const range = tested[name];
+        const declared = (
+          field: "dependencies" | "devDependencies",
+          name: string,
+        ): string => {
+          const range = manifest[field]?.[name];
           if (!range)
             throw new Error(
-              `tooling-configs must declare ${name} as a devDependency.`,
+              `tooling-configs must declare ${name} in ${field}.`,
             );
-          return [name, range];
-        });
+          return range;
+        };
+        const dev = (name: string) => declared("devDependencies", name);
+        if (!manifest.version || !manifest.packageManager)
+          throw new Error(
+            "tooling-configs must declare its version and packageManager.",
+          );
         return {
-          lefthook,
-          knip,
-          tsgolint,
-          oxlint,
-          oxfmt,
-          capture,
+          lefthook: dev("lefthook"),
+          knip: dev("knip"),
+          tsgolint: dev("oxlint-tsgolint"),
+          oxlint: dev("oxlint"),
+          oxfmt: dev("oxfmt"),
+          typescript: declared("dependencies", "typescript"),
+          nodeTypes: dev("@types/node"),
+          capture: CAPTURE_PEERS.map((name): [CapturePeer, string] => [
+            name,
+            dev(name),
+          ]),
+          packageManager: manifest.packageManager,
           pack: manifest.version,
         };
       }
@@ -259,10 +266,16 @@ export function addedDevDependencies(
   ];
 }
 
-/** The pack, oxlint, oxlint-tsgolint and oxfmt with the ranges `--init` declares for a repository that has none of them. Sync needs the first three installed to load its preset and run the type-aware baseline before it writes any devDependency. */
+/**
+ * The pack, oxlint, oxlint-tsgolint, oxfmt and typescript with the ranges `--init` declares for a repository that has
+ * none of them, and `@types/node` when `nodeProject` says init writes the tsconfig that loads it. Sync needs the first
+ * three installed to load its preset and run the type-aware baseline before it writes any devDependency; the synced
+ * `typecheck` script runs typescript's `tsc`.
+ */
 export function bootstrapDependencies(
   manifest: Manifest,
   versions: ReturnType<typeof toolingVersions>,
+  nodeProject: boolean,
 ): [string, string][] {
   const declared = { ...manifest.dependencies, ...manifest.devDependencies };
   const wanted: [string, string][] = [
@@ -270,20 +283,37 @@ export function bootstrapDependencies(
     ["oxlint", versions.oxlint],
     ["oxlint-tsgolint", versions.tsgolint],
     ["oxfmt", versions.oxfmt],
+    ["typescript", versions.typescript],
   ];
+  if (nodeProject) wanted.push(["@types/node", versions.nodeTypes]);
   return wanted.filter(([name]) => !declared[name]);
 }
 
-/** `current` with `added` in its sorted devDependencies, formatted as the rest of the sync writers do. */
-export function withDevDependencies(
+/** The `test` script `npm init` writes, which fails every run. */
+const NPM_INIT_TEST = 'echo "Error: no test specified" && exit 1';
+
+/**
+ * `current` with `added` in its sorted devDependencies, `packageManager` set to `pin` when it has none, and a `test`
+ * script running Node's test runner when it has none or only npm's failing default, which passes with no test file
+ * and runs the ones the repository adds. An explicit `"type": "commonjs"`, which `npm init` writes, is dropped: under
+ * it Node refuses to load the pack's ESM `*.config.ts` files, while without it `.js` files stay CommonJS unless they
+ * use ESM syntax, which `commonjs` rejected anyway. Formatted as the rest of the sync writers do.
+ */
+export function bootstrappedManifest(
   current: string,
   added: readonly [string, string][],
+  pin: string,
 ): string {
   const manifest = parseManifest(current);
   manifest.devDependencies = sortedEntries({
     ...manifest.devDependencies,
     ...Object.fromEntries(added),
   });
+  manifest.packageManager ??= pin;
+  if (manifest.type === "commonjs") delete manifest.type;
+  const scripts = (manifest.scripts ??= {});
+  if (scripts.test === undefined || scripts.test === NPM_INIT_TEST)
+    scripts.test = "node --test";
   return serializeManifest(manifest, current);
 }
 
