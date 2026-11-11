@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -44,6 +44,94 @@ test("--init deletes npm's lockfile without importing it when pnpm's already exi
   assert.equal(tools.calls().includes("pnpm import"), false);
   assert.equal(existsSync(join(root, "package-lock.json")), false);
   assert.equal(read(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+});
+
+test("--init pins pnpm over an npm, yarn or bun pin, where an init that keeps the pin fails the pnpm-only ci / checks", (t) => {
+  for (const pin of ["npm@11.6.0", "yarn@4.9.1", "bun@1.2.20"]) {
+    const root = bareJsRepo(t);
+    const current = manifest(root);
+    put(
+      root,
+      "package.json",
+      `${JSON.stringify({ ...current, packageManager: pin }, null, 2)}\n`,
+    );
+    const result = bin(root, "sync", ["--init"], fakeTools(t).env);
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    assert.equal(
+      manifest(root).packageManager,
+      toolingVersions().packageManager,
+    );
+  }
+});
+
+test("--init imports yarn's lockfile into pnpm and deletes it with yarn's Plug'n'Play loaders, where an init that skips it leaves two lockfiles and drops yarn's resolved versions, and one that keeps the loaders hides what pnpm installed from Node", (t) => {
+  const root = bareJsRepo(t);
+  const tools = fakeTools(t);
+  rmSync(join(root, "package-lock.json"));
+  put(root, "yarn.lock", "__metadata:\n  version: 8\n");
+  put(root, ".pnp.cjs", "module.exports = {};\n");
+  put(root, ".pnp.loader.mjs", "export {};\n");
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const calls = tools.calls().filter((call) => call.startsWith("pnpm"));
+  assert.equal(calls[0], "pnpm import");
+  assert.match(calls[1] ?? "", /^pnpm install/);
+  for (const file of ["yarn.lock", ".pnp.cjs", ".pnp.loader.mjs"]) {
+    assert.equal(existsSync(join(root, file)), false, file);
+    assert.match(
+      result.stdout,
+      new RegExp(`^Removed: ${file.replaceAll(".", "\\.")}$`, "m"),
+    );
+  }
+});
+
+test("--init lists package.json workspaces for pnpm and links members by version before the import, where an init that skips them imports only the root and deletes the members' locked versions", (t) => {
+  const root = bareJsRepo(t);
+  const tools = fakeTools(t);
+  rmSync(join(root, "package-lock.json"));
+  put(root, "yarn.lock", "# yarn lockfile v1\n");
+  put(
+    root,
+    "package.json",
+    `${JSON.stringify({ ...manifest(root), packageManager: "yarn@1.22.22", workspaces: ["packages/*"] }, null, 2)}\n`,
+  );
+  put(root, "packages/a/package.json", '{ "name": "a", "version": "1.0.0" }\n');
+  put(root, ".npmrc", "save-exact=true");
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.match(
+    read(root, "pnpm-workspace.yaml"),
+    /^packages:\n {2}- packages\/\*$/m,
+  );
+  assert.equal(
+    read(root, ".npmrc"),
+    "save-exact=true\nlink-workspace-packages=true\n",
+  );
+  assert.ok(tools.calls().includes("pnpm import"));
+});
+
+test("--init links workspace members by version before importing beside an existing pnpm-workspace.yaml, where an init that links only when it writes that file sends the import to the registry for every member", (t) => {
+  const root = bareJsRepo(t);
+  put(root, "pnpm-workspace.yaml", "packages:\n  - packages/*\n");
+  put(root, "packages/a/package.json", '{ "name": "a", "version": "1.0.0" }\n');
+  const result = bin(root, "sync", ["--init"], fakeTools(t).env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.equal(read(root, ".npmrc"), "link-workspace-packages=true\n");
+});
+
+test("--init deletes bun's lockfiles without importing them, which pnpm cannot read, where an init that keeps them leaves two lockfiles", (t) => {
+  const root = bareJsRepo(t);
+  const tools = fakeTools(t);
+  rmSync(join(root, "package-lock.json"));
+  put(root, "bun.lock", "{}\n");
+  put(root, "bun.lockb", "binary\n");
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.equal(tools.calls().includes("pnpm import"), false);
+  for (const file of ["bun.lock", "bun.lockb"]) {
+    assert.equal(existsSync(join(root, file)), false);
+    assert.match(result.stdout, new RegExp(`^Removed: ${file}$`, "m"));
+  }
 });
 
 /** The diagnostics a tool printed for the repository's JavaScript, leaving out the synced `*.config.ts` files, which import the fake pack that ships no type declarations. */

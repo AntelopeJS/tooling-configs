@@ -36,9 +36,10 @@ function script(body: string): string {
  * A fake `pnpm install` that logs the dependency names package.json declares
  * and links into `node_modules` only those: oxlint, oxlint-tsgolint, oxfmt,
  * typescript and @types/node from this checkout, and a stub of the pack that
- * serves its presets from source. An install without `packageManager`, and the
+ * serves its presets from source. An install under another manager's pin exits
+ * 1 as pnpm's `package-manager-strict` does. An install without `packageManager`, and the
  * install numbered `failingInstall`, exit 1 as pnpm 11 does for ignored builds;
- * `pnpm import` exits 1 without npm's lockfile.
+ * `pnpm import` exits 1 without an npm or yarn lockfile, the ones it reads.
  */
 function pnpmScript(log: string, failingInstall: number): string {
   const links = {
@@ -60,7 +61,7 @@ const path = require("node:path");
 const args = process.argv.slice(2);
 if (args[0] !== "install") {
   fs.appendFileSync(${JSON.stringify(log)}, "pnpm " + args.join(" ") + "\\n");
-  if (args[0] === "import" && !fs.existsSync("package-lock.json")) {
+  if (args[0] === "import" && !["package-lock.json", "npm-shrinkwrap.json", "yarn.lock"].some((file) => fs.existsSync(file))) {
     process.stderr.write("ERR_PNPM_LOCKFILE_NOT_FOUND\\n");
     process.exit(1);
   }
@@ -72,7 +73,11 @@ if (!manifest.packageManager) {
   process.stderr.write("ERR_PNPM_IGNORED_BUILDS  Ignored build scripts: lefthook\\n");
   process.exit(1);
 }
-const declared = { ...manifest.dependencies, ...manifest.devDependencies };
+if (!manifest.packageManager.startsWith("pnpm@")) {
+  process.stderr.write("ERR_PNPM_OTHER_PM_EXPECTED  This project is configured to use " + manifest.packageManager.split("@")[0] + "\\n");
+  process.exit(1);
+}
+const declared ={ ...manifest.dependencies, ...manifest.devDependencies };
 fs.appendFileSync(${JSON.stringify(log)}, ["pnpm install", ...Object.keys(declared).sort()].join(" ") + "\\n");
 const number = fs.readFileSync(${JSON.stringify(log)}, "utf8").split("\\n").filter((line) => line.startsWith("pnpm install")).length;
 if (number === ${JSON.stringify(failingInstall)}) {
