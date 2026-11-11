@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
+import { untypedDocsFiles } from "./docs-typescript.ts";
 import {
   bootstrapDependencies,
   packageManager,
@@ -41,6 +42,8 @@ export interface InitResult {
   sync: ReturnType<typeof syncRepository> | undefined;
   /** What GitHub holds for `delete_branch_on_merge`, whatever the file steps did. */
   branchCleanup: BranchCleanup;
+  /** The docs files whose TypeScript fences the docs check typechecks while the CI caller sets no `docs-typescript-project`; empty when sync did not run or failed. */
+  untypedDocs: string[];
 }
 
 const NODE_MODULES_LINE = /^(?:\*\*\/|\/)?node_modules\/?$/;
@@ -164,6 +167,7 @@ export function initRepository(
       failure: first,
       sync: undefined,
       branchCleanup: ensureBranchCleanup(root),
+      untypedDocs: [],
     };
   const sync = syncRepository(root, {
     profile: "full",
@@ -185,5 +189,6 @@ export function initRepository(
     failure,
     sync,
     branchCleanup: ensureBranchCleanup(root),
+    untypedDocs: sync.errors.length ? [] : untypedDocsFiles(root),
   };
 }
