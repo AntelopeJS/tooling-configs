@@ -59,7 +59,7 @@ test("sync keeps a repository's own pnpm-workspace.yaml settings and leaves a fi
   assert.equal(read(root, "pnpm-workspace.yaml"), decided);
 });
 
-test("sync tells pnpm 11 not to build the capture peer mongodb-memory-server in a repository with docs/captures.ts and keeps a repository's own decision, where a sync that decides lefthook alone leaves that install failing with ERR_PNPM_IGNORED_BUILDS", (t) => {
+test("sync tells pnpm 11 not to build the capture peer mongodb-memory-server in a repository with docs/captures.ts and keeps each build the repository already decides, where a sync that decides lefthook alone or overwrites a decided build leaves that install failing with ERR_PNPM_IGNORED_BUILDS", (t) => {
   const root = pinnedRepo(t, "pnpm@11.0.0");
   put(root, "docs/captures.ts", "export default [];\n");
   synced(root);
@@ -73,6 +73,11 @@ test("sync tells pnpm 11 not to build the capture peer mongodb-memory-server in 
   put(root, "pnpm-workspace.yaml", decided);
   synced(root);
   assert.equal(read(root, "pnpm-workspace.yaml"), decided);
+  put(root, "pnpm-workspace.yaml", "allowBuilds:\n  lefthook: true\n");
+  synced(root);
+  assert.deepEqual(parse(read(root, "pnpm-workspace.yaml")), {
+    allowBuilds: { lefthook: true, "mongodb-memory-server": false },
+  });
 });
 
 for (const [current, written] of [
