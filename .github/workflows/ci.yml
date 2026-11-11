@@ -20,6 +20,7 @@ jobs:
       - run: pnpm run checks
         env:
           ANTELOPEJS_CHECKS_SKIP: test
+      - run: pnpm run --silent ci:weights:check
 
   test:
     runs-on: ubuntu-latest
