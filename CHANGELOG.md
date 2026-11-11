@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.5.2
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.1...v0.5.2)
+
+### 🚀 Enhancements
+
+- **sync:** Onboard a repository in one command with --init ([#299](https://github.com/AntelopeJS/tooling-configs/pull/299))
+
+### 🔥 Performance
+
+- **ci:** Refresh test shard weights from the last 10 main runs ([#294](https://github.com/AntelopeJS/tooling-configs/pull/294))
+
+### 🩹 Fixes
+
+- **sync:** Show workspace as the tested version of a linked sibling ([#295](https://github.com/AntelopeJS/tooling-configs/pull/295))
+- **checks:** Run typecheck before the other steps when it writes files they read ([#296](https://github.com/AntelopeJS/tooling-configs/pull/296))
+- **ci:** Weigh typecheck-writes.test.ts from the last 10 main runs ([#300](https://github.com/AntelopeJS/tooling-configs/pull/300))
+
+### 📖 Documentation
+
+- **readme:** Describe the no-unknown-parameters and no-runtime-typeof behaviour since #281 ([#293](https://github.com/AntelopeJS/tooling-configs/pull/293), [#281](https://github.com/AntelopeJS/tooling-configs/issues/281))
+
+### 🤖 CI
+
+- Fail when a test file has no shard weight ([#298](https://github.com/AntelopeJS/tooling-configs/pull/298))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.5.1
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.0...v0.5.1)
