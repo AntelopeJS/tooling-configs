@@ -65,6 +65,13 @@ test("the redis caller loses its checks job that only re-aggregates ci, so a rew
   assert.equal(synced, HEAD);
 });
 
+test("a caller without the sync job loses its checks job in the run that adds the sync job, so a second run changing the file fails", () => {
+  const withoutSync = `${HEAD.slice(0, HEAD.indexOf("  renovate-sync:\n"))}${AGGREGATOR}`;
+  const once = rewrite(withoutSync);
+  assert.deepEqual(jobIds(once), ["ci", "renovate-sync"]);
+  assert.equal(rewrite(once), once);
+});
+
 test("a caller on a job id other than ci is renamed first, so its checks job needing that id is still removed", () => {
   const before = `${HEAD.replace("  ci:\n", "  verify:\n")}${AGGREGATOR.replace("needs: [ci]", "needs: verify")}`;
   assert.deepEqual(jobIds(rewrite(before)), ["ci", "renovate-sync"]);
