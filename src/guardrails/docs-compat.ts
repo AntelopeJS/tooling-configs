@@ -248,7 +248,7 @@ function scalarItems(document: Document, path: string[]): string[] {
 }
 
 /** pnpm-workspace.yaml `packages`, else package.json `workspaces` as an array or as `{ packages }`; JSON parses as YAML. */
-function workspacePatterns(root: string): string[] {
+export function workspacePatterns(root: string): string[] {
   const pnpm = join(root, "pnpm-workspace.yaml");
   if (existsSync(pnpm))
     return scalarItems(parseDocument(readFileSync(pnpm, "utf8")), ["packages"]);

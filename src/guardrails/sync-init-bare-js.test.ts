@@ -78,6 +78,31 @@ test("--init imports yarn's lockfile into pnpm and deletes it, where an init tha
   assert.match(result.stdout, /^Removed: yarn\.lock$/m);
 });
 
+test("--init lists package.json workspaces for pnpm and links members by version before the import, where an init that skips them imports only the root and deletes the members' locked versions", (t) => {
+  const root = bareJsRepo(t);
+  const tools = fakeTools(t);
+  rmSync(join(root, "package-lock.json"));
+  put(root, "yarn.lock", "# yarn lockfile v1\n");
+  put(
+    root,
+    "package.json",
+    `${JSON.stringify({ ...manifest(root), packageManager: "yarn@1.22.22", workspaces: ["packages/*"] }, null, 2)}\n`,
+  );
+  put(root, "packages/a/package.json", '{ "name": "a", "version": "1.0.0" }\n');
+  put(root, ".npmrc", "save-exact=true");
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.match(
+    read(root, "pnpm-workspace.yaml"),
+    /^packages:\n {2}- packages\/\*$/m,
+  );
+  assert.equal(
+    read(root, ".npmrc"),
+    "save-exact=true\nlink-workspace-packages=true\n",
+  );
+  assert.ok(tools.calls().includes("pnpm import"));
+});
+
 test("--init deletes bun's lockfiles without importing them, which pnpm cannot read, where an init that keeps them leaves two lockfiles", (t) => {
   const root = bareJsRepo(t);
   const tools = fakeTools(t);

@@ -3,10 +3,14 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
+import { stringify } from "yaml";
+
+import { workspacePatterns } from "./docs-compat.ts";
 import { untypedDocsFiles } from "./docs-typescript.ts";
 import {
   bootstrapDependencies,
   bootstrappedManifest,
+  packageManager,
   parseManifest,
   repositoryTools,
   toolingVersions,
@@ -185,6 +189,28 @@ const FOREIGN_LOCKFILES = [
   { file: "bun.lockb", importable: false },
 ] as const;
 
+const LINK_WORKSPACE_PACKAGES = "link-workspace-packages=true";
+
+/**
+ * Lists package.json `workspaces` in a new `pnpm-workspace.yaml`, since pnpm ignores the field, and links members
+ * declared by version as npm, yarn and bun do, so `pnpm import` locks every member. `.npmrc` carries the link setting
+ * because the pinned pnpm reads no settings from `pnpm-workspace.yaml` when importing. Returns the files it wrote.
+ */
+function ensurePnpmWorkspace(root: string): string[] {
+  const workspace = join(root, "pnpm-workspace.yaml");
+  if (existsSync(workspace)) return [];
+  const packages = workspacePatterns(root);
+  if (!packages.length) return [];
+  writeFileSync(workspace, stringify({ packages }));
+  const npmrc = join(root, ".npmrc");
+  const current = existsSync(npmrc) ? readFileSync(npmrc, "utf8") : "";
+  if (/^\s*link-workspace-packages\s*=/m.test(current))
+    return ["pnpm-workspace.yaml"];
+  const separator = current === "" || current.endsWith("\n") ? "" : "\n";
+  writeFileSync(npmrc, `${current}${separator}${LINK_WORKSPACE_PACKAGES}\n`);
+  return ["pnpm-workspace.yaml", ".npmrc"];
+}
+
 interface Bootstrap {
   paths: string[];
   removed: string[];
@@ -195,8 +221,8 @@ interface Bootstrap {
  * The file steps before the first install: `node_modules` ignored, the pnpm version the pack's CI runs pinned when
  * `packageManager` names no pnpm, the bootstrap devDependencies, a tsconfig for a Node repository without one or its
  * own `typecheck`, the pack's oxfmt config when there is none, each workspace member on the root's tool ranges with
- * its oxlint `options` moved to flags, and the other managers' lockfiles deleted once `pnpm import` carried the
- * versions npm's or yarn's resolved into a pnpm lockfile.
+ * its oxlint `options` moved to flags, package.json `workspaces` listed for pnpm, and the other managers' lockfiles
+ * deleted once `pnpm import` carried the versions npm's or yarn's resolved into a pnpm lockfile.
  */
 function bootstrap(root: string): Bootstrap {
   const path = join(root, "package.json");
@@ -206,6 +232,7 @@ function bootstrap(root: string): Bootstrap {
     );
   const current = readFileSync(path, "utf8");
   const manifest = parseManifest(current);
+  packageManager(manifest);
   const versions = toolingVersions();
   const paths: string[] = [];
   if (ensureGitignore(root)) paths.push(".gitignore");
@@ -242,6 +269,7 @@ function bootstrap(root: string): Bootstrap {
       removed: [],
       failure: members.failures.join("\n"),
     };
+  paths.push(...ensurePnpmWorkspace(root));
   const foreign = FOREIGN_LOCKFILES.filter(({ file }) =>
     existsSync(join(root, file)),
   );
