@@ -71,6 +71,11 @@ export function usesNuxt(root: string, manifest: Manifest): boolean {
   );
 }
 
+/** Whether the repository at `root` has `docs/captures.ts`, so it declares the capture tool's peers. */
+export function usesCaptures(root: string): boolean {
+  return existsSync(join(root, "docs/captures.ts"));
+}
+
 export function execCommand(manager: PackageManager): string {
   if (manager === "npm") return "npm exec --";
   if (manager === "bun") return "bun x --no-install";
