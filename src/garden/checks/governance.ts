@@ -1,6 +1,6 @@
 import { CI_CONTEXT } from "../../guardrails/ci-workflow.ts";
 import { perRepo, type Check } from "../check.ts";
-import { GardenContext, ORG, type GardenRepo } from "../context.ts";
+import { GardenContext, Memo, ORG, type GardenRepo } from "../context.ts";
 import {
   child,
   children,
@@ -10,245 +10,172 @@ import {
   optStr,
   str,
   strings,
-  flag,
   type JsonObject,
 } from "../json.ts";
-import { finding, found, skip, type Finding } from "../types.ts";
+import { finding, found, type Finding, type Severity } from "../types.ts";
 
 const ALLOWED_ADMINS = ["Upd4ting", "mwesto", "dada-sudo"];
 export const AUTOMERGE = "NEXT_AUTOMERGE";
-const CHECK = "next-governance";
 const ACTIONS_APP = 15368;
 const ADMIN_ROLE = 5;
-const MAINTAIN_BLOCKED = "altabmachine";
-const CHECKS_CONTEXTS = [CI_CONTEXT, "checks"];
-const VERIFICATION_SKILL =
-  /(?:^|\/)(?:\.agents\/skills|\.claude\/skills|skills)\/[^/]*verif[^/]*\/SKILL\.md$/i;
+const DEFAULT_BRANCH_REF = "~DEFAULT_BRANCH";
+const REQUIRED_RULES = [
+  "deletion",
+  "non_fast_forward",
+  "required_linear_history",
+  "pull_request",
+] as const;
 
-interface Ruleset {
-  name: string;
-  includes: string[];
-  rules: JsonObject[];
-  bypass: JsonObject[];
+interface Requirement {
+  subject: string;
+  severity: Severity;
+  need: string;
+  met(rules: readonly JsonObject[]): boolean;
 }
 
-function branchTargets(ruleset: Ruleset, branch: string): boolean {
-  return ruleset.includes.some(
-    (ref) =>
-      ref === `refs/heads/${branch}` ||
-      (ref === "~DEFAULT_BRANCH" && branch !== "next"),
-  );
-}
-
-async function rulesets(
-  context: GardenContext,
-  repo: GardenRepo,
-): Promise<Ruleset[]> {
-  const summaries = await context.api.pages(
-    `/repos/${ORG}/${repo.name}/rulesets?includes_parents=true`,
-  );
-  const result: Ruleset[] = [];
-  for (const summary of summaries) {
-    const source = object(summary, "ruleset");
-    if (
-      optStr(source, "enforcement") !== "active" ||
-      optStr(source, "target") !== "branch"
-    )
-      continue;
-    const path =
-      optStr(source, "source_type") === "Organization"
-        ? `/orgs/${ORG}/rulesets/${num(source, "id")}`
-        : `/repos/${ORG}/${repo.name}/rulesets/${num(source, "id")}`;
-    const detail = object(await context.api.json(path), "ruleset");
-    result.push({
-      name: str(detail, "name"),
-      includes: strings(
-        child(child(detail, "conditions"), "ref_name"),
-        "include",
-      ),
-      rules: children(detail, "rules"),
-      bypass: children(detail, "bypass_actors"),
-    });
-  }
-  return result;
-}
-
-function bypassWidened(set: Ruleset): boolean {
-  return set.bypass.some((actor) => {
-    const kind = optStr(actor, "actor_type");
-    const admin =
-      kind === "OrganizationAdmin" ||
-      (kind === "RepositoryRole" && optNum(actor, "actor_id") === ADMIN_ROLE);
-    return !admin || optStr(actor, "bypass_mode") !== "pull_request";
-  });
-}
-
-function requiredContexts(sets: Ruleset[]): string[] {
-  return sets.flatMap((set) =>
-    set.rules
-      .filter((rule) => optStr(rule, "type") === "required_status_checks")
-      .flatMap((rule) =>
-        children(child(rule, "parameters"), "required_status_checks")
-          .filter((entry) => optNum(entry, "integration_id") === ACTIONS_APP)
-          .map((entry) => str(entry, "context")),
+function requiresCi(rules: readonly JsonObject[]): boolean {
+  return rules.some(
+    (rule) =>
+      optStr(rule, "type") === "required_status_checks" &&
+      children(child(rule, "parameters"), "required_status_checks").some(
+        (entry) =>
+          optStr(entry, "context") === CI_CONTEXT &&
+          optNum(entry, "integration_id") === ACTIONS_APP,
       ),
   );
 }
 
-function pullRules(sets: Ruleset[]): JsonObject[] {
-  return sets.flatMap((set) =>
-    set.rules
-      .filter((rule) => optStr(rule, "type") === "pull_request")
-      .map((rule) => child(rule, "parameters")),
+const REQUIREMENTS: readonly Requirement[] = [
+  ...REQUIRED_RULES.map((type): Requirement => ({
+    subject: `rule:${type}`,
+    severity: "urgent",
+    need: `a ${type} rule`,
+    met: (rules) => rules.some((rule) => optStr(rule, "type") === type),
+  })),
+  {
+    subject: "checks",
+    severity: "normal",
+    need: `${CI_CONTEXT} from GitHub Actions as a required status check`,
+    met: requiresCi,
+  },
+];
+
+/** Actors that may bypass a default branch ruleset, in any bypass mode: the release workflow pushes with an administrator's token. */
+const ALLOWED_BYPASS: readonly { type: string; id?: number }[] = [
+  { type: "RepositoryRole", id: ADMIN_ROLE },
+  { type: "OrganizationAdmin" },
+];
+
+function mayBypass(actor: JsonObject): boolean {
+  const type = optStr(actor, "actor_type");
+  const id = optNum(actor, "actor_id");
+  return ALLOWED_BYPASS.some(
+    (allowed) =>
+      allowed.type === type && (allowed.id === undefined || allowed.id === id),
   );
 }
 
-function branchFindings(
-  repo: GardenRepo,
-  branch: string,
-  sets: Ruleset[],
-): Finding[] {
-  const hit = sets.filter((set) => branchTargets(set, branch));
-  const findings: Finding[] = [];
-  const report = (subject: string, evidence: string, urgent: boolean) =>
-    findings.push(
-      finding(
-        { repo: repo.name, check: CHECK, subject: `${branch}:${subject}` },
-        evidence,
-        `The ${branch} rulesets match the Next channel merge policy.`,
-        urgent ? "urgent" : "normal",
-      ),
-    );
-  const contexts = requiredContexts(hit);
-  if (!CHECKS_CONTEXTS.some((name) => contexts.includes(name)))
-    report(
-      "checks",
-      `No ruleset on ${branch} requires ${CI_CONTEXT} from GitHub Actions.`,
-      false,
-    );
-  const reviews = pullRules(hit);
-  if (
-    reviews.some(
-      (rule) =>
-        (optNum(rule, "required_approving_review_count") ?? 0) > 0 ||
-        flag(rule, "require_code_owner_review") ||
-        flag(rule, "require_last_push_approval"),
-    )
-  )
-    report("review-rule", `A ruleset on ${branch} requires a review.`, true);
-  if (
-    !reviews.length ||
-    !reviews.every(
-      (rule) => strings(rule, "allowed_merge_methods").join() === "squash",
-    )
-  )
-    report(
-      "squash-only",
-      `${branch} does not allow squash merges only.`,
-      false,
-    );
-  if (hit.some(bypassWidened))
-    report(
-      "bypass",
-      `The bypass list of ${hit
-        .filter(bypassWidened)
-        .map((set) => set.name)
-        .join(", ")} holds more than the pull-request-only administrators.`,
-      true,
-    );
-  return findings;
+function describeActor(actor: JsonObject): string {
+  return `${optStr(actor, "actor_type") ?? "unknown"} ${optNum(actor, "actor_id") ?? "none"} (${optStr(actor, "bypass_mode") ?? "unknown"})`;
 }
 
-async function people(
-  context: GardenContext,
-  repo: GardenRepo,
-): Promise<Finding[]> {
-  const members = await context.api.pages(
-    `/repos/${ORG}/${repo.name}/collaborators?affiliation=all`,
-  );
-  const findings: Finding[] = [];
-  for (const member of members.map((entry) => object(entry, "collaborator"))) {
-    const login = str(member, "login");
-    const role = optStr(member, "role_name");
-    if (role === "admin" && !ALLOWED_ADMINS.includes(login))
-      findings.push(
-        finding(
-          { repo: repo.name, check: CHECK, subject: `admin:${login}` },
-          `${login} holds admin.`,
-          `${login} holds write or lower.`,
-        ),
-      );
-    if (login === MAINTAIN_BLOCKED && (role === "maintain" || role === "admin"))
-      findings.push(
-        finding(
-          { repo: repo.name, check: CHECK, subject: `maintain:${login}` },
-          `${login} holds ${role}.`,
-          `${login} holds no maintain.`,
-        ),
+function rulesetPath(repo: GardenRepo, rule: JsonObject): string {
+  const id = num(rule, "ruleset_id");
+  return optStr(rule, "ruleset_source_type") === "Organization"
+    ? `/orgs/${ORG}/rulesets/${id}`
+    : `/repos/${ORG}/${repo.name}/rulesets/${id}`;
+}
+
+function rulesetLabel(path: string, name: string): string {
+  const scope = path.startsWith("/orgs/") ? "organization" : "repository";
+  return `${name} (${scope} ruleset ${path.slice(path.lastIndexOf("/") + 1)})`;
+}
+
+type RulesetReader = (path: string) => Promise<JsonObject>;
+
+function rulesetReader(context: GardenContext): RulesetReader {
+  const cache = new Memo<JsonObject>();
+  return (path) =>
+    cache.get(path, async () =>
+      object(await context.api.json(path), "ruleset"),
+    );
+}
+
+async function bypassOffenders(
+  read: RulesetReader,
+  paths: readonly string[],
+): Promise<string[]> {
+  const offenders: string[] = [];
+  for (const path of paths) {
+    const set = await read(path);
+    const actors = children(set, "bypass_actors").filter(
+      (actor) => !mayBypass(actor),
+    );
+    if (actors.length)
+      offenders.push(
+        `${rulesetLabel(path, str(set, "name"))}: ${actors.map(describeActor).join(", ")}`,
       );
   }
-  return findings;
+  return offenders;
 }
 
-async function scope(
+async function scanBranch(
   context: GardenContext,
+  read: RulesetReader,
   repo: GardenRepo,
-  value: string,
 ): Promise<Finding[]> {
-  if (value !== "on") return [];
-  const skill = (await context.tree(repo)).some((path) =>
-    VERIFICATION_SKILL.test(path),
+  const branch = repo.defaultBranch;
+  const rules = (
+    await context.api.pages(
+      `/repos/${ORG}/${repo.name}/rules/branches/${encodeURIComponent(branch)}`,
+    )
+  ).map((entry) => object(entry, "rule"));
+  const report = (
+    subject: string,
+    evidence: string,
+    doneMeans: string,
+    severity: Severity,
+  ) =>
+    finding(
+      {
+        repo: repo.name,
+        check: "branch-governance",
+        subject: `${branch}:${subject}`,
+      },
+      evidence,
+      doneMeans,
+      severity,
+    );
+  const unmet = REQUIREMENTS.filter((entry) => !entry.met(rules)).map((entry) =>
+    report(
+      entry.subject,
+      `The rules in force on ${branch} hold no ${entry.need}.`,
+      `The rules in force on ${branch} hold ${entry.need}.`,
+      entry.severity,
+    ),
   );
-  return repo.tier === "N1" || repo.tier === "N2"
-    ? skill
-      ? []
-      : [
-          finding(
-            { repo: repo.name, check: CHECK, subject: "automerge-scope" },
-            `${AUTOMERGE}=on without a Verification skill on ${repo.defaultBranch}.`,
-            `${AUTOMERGE} is shadow or off, or the repository has a Verification skill.`,
-          ),
-        ]
-    : [
-        finding(
-          { repo: repo.name, check: CHECK, subject: "automerge-scope" },
-          `${AUTOMERGE}=on on a ${repo.tier ?? "untiered"} repository.`,
-          `${AUTOMERGE} is on only in N1 and N2.`,
+  const offenders = await bypassOffenders(read, [
+    ...new Set(rules.map((rule) => rulesetPath(repo, rule))),
+  ]);
+  return offenders.length
+    ? [
+        ...unmet,
+        report(
+          "bypass",
+          `Rulesets on ${branch} let actors other than administrators bypass them: ${offenders.join("; ")}.`,
+          `Only the admin role and organization administrators can bypass the rulesets on ${branch}.`,
+          "urgent",
         ),
-      ];
+      ]
+    : unmet;
 }
 
-async function governed(
-  context: GardenContext,
-  repo: GardenRepo,
-  value: string,
-): Promise<Finding[]> {
-  const sets = await rulesets(context, repo);
-  const branches =
-    (await context.targetBranch(repo)) === "next"
-      ? ["next", repo.defaultBranch]
-      : [repo.defaultBranch];
-  return [
-    ...branches.flatMap((branch) => branchFindings(repo, branch, sets)),
-    ...(await people(context, repo)),
-    ...(await scope(context, repo, value)),
-  ];
-}
-
-export const nextGovernance: Check = {
-  id: CHECK,
+export const branchGovernance: Check = {
+  id: "branch-governance",
   async run(context) {
-    const values = new Map<string, string>();
-    const repos = await context.scope();
-    await perRepo(repos, async (repo) => {
-      const value = await context.variable(repo, AUTOMERGE);
-      if (value !== undefined) values.set(repo.name, value);
-      return [];
-    });
-    if (!values.size) return skip(`${AUTOMERGE} exists on no repository yet.`);
-    return perRepo(
-      repos.filter((repo) => values.has(repo.name)),
-      (repo) => governed(context, repo, values.get(repo.name) ?? ""),
+    const read = rulesetReader(context);
+    return perRepo(await context.scope(), (repo) =>
+      scanBranch(context, read, repo),
     );
   },
 };
@@ -275,9 +202,121 @@ export const governanceDrift: Check = {
   },
 };
 
+interface Expectation {
+  what: string;
+  holds(ruleset: JsonObject): boolean;
+}
+
+const ACTIVE: Expectation = {
+  what: "enforcement active",
+  holds: (set) => optStr(set, "enforcement") === "active",
+};
+
+const ON_BRANCHES: Expectation = {
+  what: "target branch",
+  holds: (set) => optStr(set, "target") === "branch",
+};
+
+const ON_DEFAULT_BRANCH: Expectation = {
+  what: `ref ${DEFAULT_BRANCH_REF}`,
+  holds: (set) =>
+    strings(child(child(set, "conditions"), "ref_name"), "include").includes(
+      DEFAULT_BRANCH_REF,
+    ),
+};
+
+const ORG_RULESETS: readonly {
+  name: string;
+  expects: readonly Expectation[];
+}[] = [
+  {
+    name: "Default branch protection",
+    expects: [
+      ACTIVE,
+      ON_BRANCHES,
+      ON_DEFAULT_BRANCH,
+      {
+        what: "repository_name include ~ALL",
+        holds: (set) =>
+          strings(
+            child(child(set, "conditions"), "repository_name"),
+            "include",
+          ).includes("~ALL"),
+      },
+    ],
+  },
+  {
+    name: "Required CI",
+    expects: [
+      ACTIVE,
+      ON_BRANCHES,
+      ON_DEFAULT_BRANCH,
+      {
+        what: "repository property pack in full and template",
+        holds: (set) =>
+          children(
+            child(child(set, "conditions"), "repository_property"),
+            "include",
+          ).some(
+            (entry) =>
+              optStr(entry, "name") === "pack" &&
+              ["full", "template"].every((value) =>
+                strings(entry, "property_values").includes(value),
+              ),
+          ),
+      },
+      {
+        what: `required status check ${CI_CONTEXT} from integration ${ACTIONS_APP}`,
+        holds: (set) => requiresCi(children(set, "rules")),
+      },
+    ],
+  },
+];
+
+async function orgDrift(
+  context: GardenContext,
+  summaries: readonly JsonObject[],
+  policy: (typeof ORG_RULESETS)[number],
+): Promise<Finding[]> {
+  const make = (evidence: string) =>
+    finding(
+      {
+        repo: ORG,
+        check: "org-checks-ruleset",
+        subject: `ruleset:${policy.name}`,
+      },
+      evidence,
+      `The organization ruleset "${policy.name}" is back to its policy.`,
+      "urgent",
+    );
+  const summary = summaries.find(
+    (entry) => optStr(entry, "name") === policy.name,
+  );
+  if (summary === undefined)
+    return [make(`The organization has no ruleset named "${policy.name}".`)];
+  const detail = object(
+    await context.api.json(`/orgs/${ORG}/rulesets/${num(summary, "id")}`),
+    "ruleset",
+  );
+  const unmet = policy.expects.filter((entry) => !entry.holds(detail));
+  return unmet.length
+    ? [
+        make(
+          `"${policy.name}" lacks: ${unmet.map((entry) => entry.what).join(", ")}.`,
+        ),
+      ]
+    : [];
+}
+
 export const orgChecksRuleset: Check = {
   id: "org-checks-ruleset",
-  async run() {
-    return skip("ruleset postponed until the sync fan-out");
+  async run(context) {
+    const summaries = (await context.api.pages(`/orgs/${ORG}/rulesets`)).map(
+      (entry) => object(entry, "ruleset"),
+    );
+    const findings: Finding[] = [];
+    for (const policy of ORG_RULESETS)
+      findings.push(...(await orgDrift(context, summaries, policy)));
+    return found(findings);
   },
 };

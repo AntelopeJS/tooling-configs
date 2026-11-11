@@ -115,7 +115,7 @@ function governed(variable: string, branch = "main"): FakeApi {
 
 const DRIFT = [
   finding(
-    { repo: "mongodb", check: "next-governance", subject: "next:bypass" },
+    { repo: "mongodb", check: "branch-governance", subject: "main:bypass" },
     "e",
     "d",
     "urgent",
@@ -174,7 +174,7 @@ test("--apply-pauses writes the NEXT_AUTOMERGE variable of the paused repository
   const { pauses: planned } = await plannedPauses(api.context(), DRIFT);
   const dry = await garden(api, {
     applyPauses: false,
-    checks: [{ id: "next-governance", run: async () => found(DRIFT) }],
+    checks: [{ id: "branch-governance", run: async () => found(DRIFT) }],
   });
   assert.deepEqual(api.writes, []);
   assert.equal(dry.report.pauses.length, 1);
@@ -192,7 +192,7 @@ test("a full run with the pause flag performs exactly the planned write and no o
   const api = governed("on");
   await garden(api, {
     applyPauses: true,
-    checks: [{ id: "next-governance", run: async () => found(DRIFT) }],
+    checks: [{ id: "branch-governance", run: async () => found(DRIFT) }],
   });
   assert.equal(api.writes.length, 1);
   assert.equal(api.writes[0].method, "PATCH");
@@ -207,7 +207,7 @@ test("a refused pause write is a failure and does not lose the report", async ()
   api.refuse("/repos/AntelopeJS/mongodb/actions/variables/NEXT_AUTOMERGE", 403);
   const outcome = await garden(api, {
     applyPauses: true,
-    checks: [{ id: "next-governance", run: async () => found(DRIFT) }],
+    checks: [{ id: "branch-governance", run: async () => found(DRIFT) }],
   });
   assert.equal(outcome.report.pauses.length, 1);
   assert.deepEqual(outcome.failures, [
@@ -226,7 +226,7 @@ test("an unreadable pause input is a failure for that repository and the report 
   );
   const outcome = await garden(api, {
     applyPauses: true,
-    checks: [{ id: "next-governance", run: async () => found(DRIFT) }],
+    checks: [{ id: "branch-governance", run: async () => found(DRIFT) }],
   });
   assert.deepEqual(
     outcome.report.findings.map(({ check }) => check),
