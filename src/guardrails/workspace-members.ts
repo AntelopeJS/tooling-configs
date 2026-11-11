@@ -187,10 +187,7 @@ function withoutProperty(
       text.slice(0, property.getFullStart()) + text.slice(next.getFullStart())
     );
   if (previous) return text.slice(0, previous.end) + text.slice(property.end);
-  const end = elements.hasTrailingComma
-    ? text.indexOf(",", property.end) + 1
-    : property.end;
-  return text.slice(0, property.getFullStart()) + text.slice(end);
+  return text.slice(0, config.getStart()) + "{}" + text.slice(config.end);
 }
 
 type ConfigMove =
@@ -217,15 +214,21 @@ function moveOptions(path: string, text: string): ConfigMove {
   };
 }
 
-/** `script` with `flags` after each `oxlint` command word, skipping a flag it already passes. */
+/** A shell separator that ends one command of a script. */
+const COMMAND_END = /&&|\|\||[;|]/;
+
+/** `script` with `flags` after each `oxlint` command word, skipping a flag that command already passes. */
 function withFlags(script: string, flags: readonly string[]): string {
-  const missing = flags.filter(
-    (flag) => !script.includes(flag.split("=")[0] ?? flag),
-  );
-  if (!missing.length) return script;
   return script.replace(
     OXLINT_COMMAND,
-    (_match, before: string) => `${before}oxlint ${missing.join(" ")}`,
+    (match: string, before: string, offset: number) => {
+      const rest = script.slice(offset + match.length);
+      const command = rest.split(COMMAND_END)[0] ?? rest;
+      const missing = flags.filter(
+        (flag) => !command.includes(flag.split("=")[0] ?? flag),
+      );
+      return missing.length ? `${before}oxlint ${missing.join(" ")}` : match;
+    },
   );
 }
 

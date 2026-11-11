@@ -328,6 +328,37 @@ test("--init moves a member's oxlint options to flags on the member's oxlint scr
   );
 });
 
+test("--init leaves a member config whose only key was options formatted and flags each oxlint command of a script on its own, where an init that leaves an empty multi-line object fails format:check and one that checks flags per script drops --type-aware from the second command", (t) => {
+  const root = workspaceRepo(t);
+  const tools = fakeTools(t);
+  put(
+    root,
+    "member/oxlint.config.ts",
+    'import { defineConfig } from "oxlint";\n\nexport default defineConfig({\n  options: { typeAware: true },\n});\n',
+  );
+  put(
+    root,
+    "member/package.json",
+    `${JSON.stringify({ ...MEMBER_MANIFEST, scripts: { lint: "oxlint --type-aware src && oxlint test" } }, null, 2)}\n`,
+  );
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const check = spawnSync(
+    process.execPath,
+    [
+      join(root, "node_modules/oxfmt/bin/oxfmt"),
+      "--check",
+      "member/oxlint.config.ts",
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+  assert.equal(
+    parseManifest(read(root, "member/package.json")).scripts?.lint,
+    "oxlint --type-aware src && oxlint --type-aware test",
+  );
+});
+
 test("--init stops before installing when a member's oxlint option has no command-line flag, where an init that drops it silently changes what the member's lint enforces", (t) => {
   const root = workspaceRepo(t);
   const tools = fakeTools(t);
