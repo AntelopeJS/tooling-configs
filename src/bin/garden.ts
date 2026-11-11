@@ -9,13 +9,11 @@ await runCliAsync(async () => {
   const { values } = parseArgs({
     options: {
       json: { type: "boolean" },
-      "apply-pauses": { type: "boolean" },
       apply: { type: "boolean" },
       "apply-prunes": { type: "boolean" },
     },
   });
   const outcome = await garden(createApi(ghToken()), {
-    applyPauses: values["apply-pauses"] === true,
     apply: values.apply === true,
     applyPrunes: values["apply-prunes"] === true,
   });

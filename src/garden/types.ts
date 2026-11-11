@@ -10,13 +10,6 @@ export interface Finding {
   doneMeans: string;
 }
 
-export interface Pause {
-  repo: string;
-  from: string;
-  to: string;
-  reason: string;
-}
-
 /** A branch ref `--apply-prunes` deletes. */
 export interface Prune {
   repo: string;
@@ -32,7 +25,6 @@ export interface Skipped {
 export interface Report {
   generatedAt: string;
   findings: Finding[];
-  pauses: Pause[];
   prunes: Prune[];
   skipped: Skipped[];
 }

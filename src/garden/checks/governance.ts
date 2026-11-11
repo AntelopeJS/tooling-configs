@@ -16,7 +16,6 @@ import {
 import { finding, found, type Finding, type Severity } from "../types.ts";
 
 const ALLOWED_ADMINS = ["Upd4ting", "mwesto", "dada-sudo"];
-export const AUTOMERGE = "NEXT_AUTOMERGE";
 const ACTIONS_APP = 15368;
 const ADMIN_ROLE = 5;
 const DEFAULT_BRANCH_REF = "~DEFAULT_BRANCH";

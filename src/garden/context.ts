@@ -123,7 +123,6 @@ export class GardenContext {
   private readonly checks = new Memo<CheckRun[]>();
   private readonly pulls = new Memo<PullRequest[]>();
   private readonly alertLists = new Memo<Alert[] | undefined>();
-  private readonly variables = new Memo<string | undefined>();
   private readonly packuments = new Memo<JsonValue | undefined>();
   private readonly removals = new Memo<boolean>();
   private readonly searches = new Memo<Set<string>>();
@@ -383,21 +382,6 @@ export class GardenContext {
       if (error instanceof Error && isMissing(error)) return false;
       throw error;
     }
-  }
-
-  /** A repository Actions variable, or undefined when it does not exist. */
-  variable(repo: GardenRepo, name: string): Promise<string | undefined> {
-    return this.variables.get(`${repo.name}:${name}`, async () => {
-      try {
-        const body = await this.api.json(
-          `/repos/${ORG}/${repo.name}/actions/variables/${name}`,
-        );
-        return str(object(body, "variable"), "value");
-      } catch (error) {
-        if (error instanceof Error && isMissing(error)) return undefined;
-        throw error;
-      }
-    });
   }
 
   /** Whether a commit of the default branch history removed the file; looks at the 30 newest commits that touched it. */
