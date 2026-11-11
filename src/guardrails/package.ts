@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import packManifest from "../../package.json" with { type: "json" };
 import { admits } from "../garden/semver.ts";
 
 export interface Manifest {
@@ -96,10 +97,8 @@ export function toolingVersions() {
           return range;
         };
         const dev = (name: string) => declared("devDependencies", name);
-        if (!manifest.version || !manifest.packageManager)
-          throw new Error(
-            "tooling-configs must declare its version and packageManager.",
-          );
+        if (!manifest.version)
+          throw new Error("tooling-configs must declare its version.");
         return {
           lefthook: dev("lefthook"),
           knip: dev("knip"),
@@ -112,7 +111,7 @@ export function toolingVersions() {
             name,
             dev(name),
           ]),
-          packageManager: manifest.packageManager,
+          packageManager: packManifest.packageManager,
           pack: manifest.version,
         };
       }
