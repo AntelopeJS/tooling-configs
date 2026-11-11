@@ -178,13 +178,13 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
   {
     path: "package.json",
     profiles: ["full", "template"],
-    desired: (current, context) => ({
-      content:
+    desired: (current, context) => {
+      const content =
         context.profile === "full"
           ? managedPackage(current, context.versions, context)
-          : templatePackage(current, context.versions, context),
-      notes: droppedChecksSteps(current, context.tools.commands.checks),
-    }),
+          : templatePackage(current, context.versions, context);
+      return { content, notes: droppedChecksSteps(current, content) };
+    },
   },
   {
     path: ".nvmrc",

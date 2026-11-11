@@ -61,9 +61,9 @@ const SCRIPT_RUN =
 
 /**
  * The steps of `script`, a `checks` script sync replaces, that `antelopejs-checks` does not run: each command between
- * `&&`, `||` and `;` that is neither `antelopejs-checks` itself, a run of one of its steps or of `checks:prepare`
- * (sync adds the default script of a step that has none), nor the very command one of those scripts holds. A run of another package script is named by that script, any other
- * command by its text.
+ * `&&`, `||` and `;` that is neither `antelopejs-checks` itself, a run of one of its steps or of `checks:prepare`, nor
+ * the very command one of those holds in `scripts`, the scripts sync writes. A run of another package script is named
+ * by that script, any other command by its text.
  */
 function stepsNotRun(
   script: string,
@@ -81,7 +81,7 @@ function stepsNotRun(
     .filter(
       (command) =>
         command &&
-        !/^(?:\S+\s+)?antelopejs-checks$/.test(command) &&
+        !/(?:^|\s)antelopejs-checks$/.test(command) &&
         !held.has(command),
     )
     .flatMap((command) => {
@@ -93,13 +93,14 @@ function stepsNotRun(
     });
 }
 
-/** The sync note naming the steps of the `checks` script in the package.json text `current` that `command` replaces and does not run, none when the script is kept or loses no step. */
+/** The sync note naming the steps of the `checks` script in the package.json text `current` that the one in `synced`, the text sync writes, replaces and does not run; none when the script is kept or loses no step. */
 export function droppedChecksSteps(
   current: string | undefined,
-  command: string,
+  synced: string,
 ): string[] {
-  const scripts = parseManifest(current ?? "{}").scripts ?? {};
-  const previous = scripts.checks;
+  const previous = parseManifest(current ?? "{}").scripts?.checks;
+  const scripts = parseManifest(synced).scripts ?? {};
+  const command = scripts.checks;
   if (previous === undefined || previous === command) return [];
   const dropped = stepsNotRun(previous, scripts);
   if (!dropped.length) return [];

@@ -462,8 +462,8 @@ test("sync adds no note when antelopejs-checks runs every step of the replaced c
     JSON.stringify({
       packageManager: "npm@11.0.0",
       scripts: {
-        checks: "npm run lint && oxfmt --check . && npm test",
-        "format:check": "oxfmt --check .",
+        checks:
+          "tsc --noEmit && npm run lint; oxfmt --check . && npm test && npm exec -- antelopejs-checks",
         lint: "oxlint",
         test: "node --test",
       },
