@@ -198,23 +198,27 @@ const FOREIGN_INSTALL_FILES = [
 const LINK_WORKSPACE_PACKAGES = "link-workspace-packages=true";
 
 /**
- * Lists package.json `workspaces` in a new `pnpm-workspace.yaml`, since pnpm ignores the field, and links members
- * declared by version as npm, yarn and bun do, so `pnpm import` locks every member. `.npmrc` carries the link setting
- * because the pinned pnpm reads no settings from `pnpm-workspace.yaml` when importing. Returns the files it wrote.
+ * Lists package.json `workspaces` in a new `pnpm-workspace.yaml`, since pnpm ignores the field, and, when `converting`
+ * another manager's install state, links members declared by version as npm, yarn and bun do, so `pnpm import` locks
+ * every member. `.npmrc` carries the link setting because the pinned pnpm reads no settings from `pnpm-workspace.yaml`
+ * when importing, and an explicit setting there is kept. Returns the files it wrote.
  */
-function ensurePnpmWorkspace(root: string): string[] {
-  const workspace = join(root, "pnpm-workspace.yaml");
-  if (existsSync(workspace)) return [];
+function ensurePnpmWorkspace(root: string, converting: boolean): string[] {
   const packages = workspacePatterns(root);
   if (!packages.length) return [];
-  writeFileSync(workspace, stringify({ packages }));
+  const written: string[] = [];
+  const workspace = join(root, "pnpm-workspace.yaml");
+  if (!existsSync(workspace)) {
+    writeFileSync(workspace, stringify({ packages }));
+    written.push("pnpm-workspace.yaml");
+  }
   const npmrc = join(root, ".npmrc");
   const current = existsSync(npmrc) ? readFileSync(npmrc, "utf8") : "";
-  if (/^\s*link-workspace-packages\s*=/m.test(current))
-    return ["pnpm-workspace.yaml"];
+  if (!converting || /^\s*link-workspace-packages\s*=/m.test(current))
+    return written;
   const separator = current === "" || current.endsWith("\n") ? "" : "\n";
   writeFileSync(npmrc, `${current}${separator}${LINK_WORKSPACE_PACKAGES}\n`);
-  return ["pnpm-workspace.yaml", ".npmrc"];
+  return [...written, ".npmrc"];
 }
 
 interface Bootstrap {
@@ -275,10 +279,10 @@ function bootstrap(root: string): Bootstrap {
       removed: [],
       failure: members.failures.join("\n"),
     };
-  paths.push(...ensurePnpmWorkspace(root));
   const foreign = FOREIGN_INSTALL_FILES.filter(({ file }) =>
     existsSync(join(root, file)),
   );
+  paths.push(...ensurePnpmWorkspace(root, foreign.length > 0));
   const imported =
     foreign.some(({ importable }) => importable) &&
     !existsSync(join(root, "pnpm-lock.yaml"))

@@ -110,6 +110,15 @@ test("--init lists package.json workspaces for pnpm and links members by version
   assert.ok(tools.calls().includes("pnpm import"));
 });
 
+test("--init links workspace members by version before importing beside an existing pnpm-workspace.yaml, where an init that links only when it writes that file sends the import to the registry for every member", (t) => {
+  const root = bareJsRepo(t);
+  put(root, "pnpm-workspace.yaml", "packages:\n  - packages/*\n");
+  put(root, "packages/a/package.json", '{ "name": "a", "version": "1.0.0" }\n');
+  const result = bin(root, "sync", ["--init"], fakeTools(t).env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.equal(read(root, ".npmrc"), "link-workspace-packages=true\n");
+});
+
 test("--init deletes bun's lockfiles without importing them, which pnpm cannot read, where an init that keeps them leaves two lockfiles", (t) => {
   const root = bareJsRepo(t);
   const tools = fakeTools(t);
