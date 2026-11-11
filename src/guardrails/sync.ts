@@ -4,7 +4,6 @@ import {
   lstatSync,
   mkdirSync,
   readFileSync,
-  readdirSync,
   readlinkSync,
   statSync,
   unlinkSync,
@@ -32,6 +31,7 @@ import {
   repositoryTools,
   templatePackage,
   toolingVersions,
+  usesNuxt,
   type PackageManager,
 } from "./package.ts";
 import { recordedRelease } from "./adoption.ts";
@@ -374,11 +374,7 @@ function repositoryContext(
     versions: toolingVersions(),
     tools: repositoryTools(manifest),
     typeAware: /\btypeAware["']?\s*:\s*true\b/.test(desiredLint),
-    nuxt: Boolean(
-      manifest.dependencies?.nuxt ||
-      manifest.devDependencies?.nuxt ||
-      readdirSync(root).some((name) => name.startsWith("nuxt.config.")),
-    ),
+    nuxt: usesNuxt(root, manifest),
     claude: profile === "full" ? claudeProse(root, current) : "",
     baseline: "",
     suppressionBudget: adoptedBudget(root, current.get(SUPPRESSIONS_FILE)),

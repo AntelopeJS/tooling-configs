@@ -1,0 +1,105 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import test from "node:test";
+
+import { fakeTools } from "./helpers/fake-tools.ts";
+import { bareJsRepo, bareRepo } from "./helpers/init-repo.ts";
+import { bin, put, read } from "./helpers/test-repo.ts";
+import { parseManifest, toolingVersions } from "./package.ts";
+
+function manifest(root: string) {
+  return parseManifest(read(root, "package.json"));
+}
+
+test("--init pins the pack's pnpm in a repository without packageManager and keeps an existing pin, where an init that leaves it unset fails pnpm/action-setup in ci / checks", (t) => {
+  const unpinned = bareJsRepo(t);
+  assert.equal(bin(unpinned, "sync", ["--init"], fakeTools(t).env).status, 0);
+  const pin = manifest(unpinned).packageManager;
+  assert.match(pin ?? "", /^pnpm@\d+\.\d+\.\d+$/);
+  assert.equal(pin, toolingVersions().packageManager);
+  const pinned = bareRepo(t);
+  assert.equal(bin(pinned, "sync", ["--init"], fakeTools(t).env).status, 0);
+  assert.equal(manifest(pinned).packageManager, "pnpm@10.20.0");
+});
+
+test("--init imports npm's lockfile into pnpm before the first install and deletes it, where an init that keeps it leaves two lockfiles and one that skips the import drops npm's resolved versions", (t) => {
+  const root = bareJsRepo(t);
+  const tools = fakeTools(t);
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const calls = tools.calls().filter((call) => call.startsWith("pnpm"));
+  assert.equal(calls[0], "pnpm import");
+  assert.match(calls[1] ?? "", /^pnpm install/);
+  assert.equal(existsSync(join(root, "package-lock.json")), false);
+  assert.match(result.stdout, /^Removed: package-lock\.json$/m);
+});
+
+test("--init deletes npm's lockfile without importing it when pnpm's already exists, where an init that imports again overwrites the pnpm lockfile", (t) => {
+  const root = bareJsRepo(t);
+  const tools = fakeTools(t);
+  put(root, "pnpm-lock.yaml", "lockfileVersion: '9.0'\n");
+  assert.equal(bin(root, "sync", ["--init"], tools.env).status, 0);
+  assert.equal(tools.calls().includes("pnpm import"), false);
+  assert.equal(existsSync(join(root, "package-lock.json")), false);
+  assert.equal(read(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+});
+
+test("--init declares typescript and @types/node and writes a tsconfig that checks JavaScript for a repository with none, where an init that only adds `tsc --noEmit` fails typecheck with tsc not found", (t) => {
+  const root = bareJsRepo(t);
+  const tools = fakeTools(t);
+  assert.equal(bin(root, "sync", ["--init"], tools.env).status, 0);
+  const installed = tools.installs().at(-1) ?? [];
+  assert.ok(installed.includes("typescript"), installed.join(" "));
+  assert.ok(installed.includes("@types/node"), installed.join(" "));
+  assert.equal(manifest(root).scripts?.typecheck, "tsc --noEmit");
+  const options: unknown = JSON.parse(read(root, "tsconfig.json"));
+  assert.deepEqual(options, {
+    compilerOptions: {
+      target: "ES2024",
+      module: "NodeNext",
+      moduleResolution: "NodeNext",
+      allowJs: true,
+      checkJs: true,
+      strict: true,
+      noEmit: true,
+      types: ["node"],
+    },
+  });
+});
+
+test("--init keeps a repository's own tsconfig and adds no @types/node to it, where an init that writes its tsconfig over the repository's loses its compiler options", (t) => {
+  const root = bareJsRepo(t);
+  const tools = fakeTools(t);
+  const own = '{\n  "compilerOptions": {\n    "strict": true\n  }\n}\n';
+  put(root, "tsconfig.json", own);
+  assert.equal(bin(root, "sync", ["--init"], tools.env).status, 0);
+  assert.equal(read(root, "tsconfig.json"), own);
+  const installed = tools.installs().at(-1) ?? [];
+  assert.ok(installed.includes("typescript"), installed.join(" "));
+  assert.equal(installed.includes("@types/node"), false);
+});
+
+test("--init gives a repository without tests a test script that passes beside its test-job, where an init that writes test-job: true with no script fails `pnpm run test`", (t) => {
+  const root = bareJsRepo(t);
+  assert.equal(bin(root, "sync", ["--init"], fakeTools(t).env).status, 0);
+  assert.match(read(root, ".github/workflows/ci.yml"), /^ {6}test-job: true$/m);
+  const script = manifest(root).scripts?.test;
+  assert.ok(script, "package.json has no test script for the test job to run");
+  const run = spawnSync("sh", ["-c", script], { cwd: root, encoding: "utf8" });
+  assert.equal(run.status, 0, `${script}\n${run.stdout}${run.stderr}`);
+});
+
+test("--init formats the repository's own source and names it, where an init that formats only package.json leaves format:check red on server.js", (t) => {
+  const root = bareJsRepo(t);
+  const result = bin(root, "sync", ["--init"], fakeTools(t).env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.match(result.stdout, /^Updated: server\.js$/m);
+  const check = spawnSync(
+    process.execPath,
+    [join(root, "node_modules/oxfmt/bin/oxfmt"), "--check", "."],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+});

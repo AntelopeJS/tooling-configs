@@ -46,6 +46,7 @@ function init(verify: VerifyChoice | undefined): number {
   for (const path of result.paths)
     if (!reportedBySync.includes(path))
       process.stdout.write(`Updated: ${path}\n`);
+  for (const path of result.removed) process.stdout.write(`Removed: ${path}\n`);
   const synced = result.sync
     ? printSync(result.sync, { check: false, installed: true })
     : 0;

@@ -25,6 +25,29 @@ export function bareRepo(t: TestContext): string {
   return root;
 }
 
+/** A JavaScript repository npm created, as cloud-commit-url-probe was before onboarding: no `packageManager`, no `test` or `typecheck` script, no tsconfig, npm's lockfile, and a `server.js` oxfmt would rewrap. */
+export function bareJsRepo(t: TestContext): string {
+  const root = mkdtempSync(join(tmpdir(), "antelope-init-js-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  put(
+    root,
+    "package.json",
+    '{\n  "name": "probe",\n  "version": "1.0.0",\n  "private": true,\n  "scripts": {\n    "start": "node server.js"\n  }\n}\n',
+  );
+  put(
+    root,
+    "package-lock.json",
+    '{\n  "name": "probe",\n  "version": "1.0.0",\n  "lockfileVersion": 3,\n  "requires": true,\n  "packages": {\n    "": {\n      "name": "probe",\n      "version": "1.0.0"\n    }\n  }\n}\n',
+  );
+  put(
+    root,
+    "server.js",
+    'const http = require("node:http");\nhttp.createServer((request, response) => { response.end("ok\\n"); }).listen(Number(process.env.PORT || 3000));\n',
+  );
+  return root;
+}
+
 /** Every file of the working tree that git does not ignore, by path: what the repository holds once it is committed and pushed. */
 export function workingTree(root: string) {
   return Object.fromEntries(
