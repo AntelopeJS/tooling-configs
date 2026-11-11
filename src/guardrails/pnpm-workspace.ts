@@ -19,22 +19,24 @@ function readsSettings(manifest: Manifest): boolean {
  * `current` with `allowBuilds.lefthook` set to `false` unless the repository already decides it.
  * pnpm 11 fails an install on a dependency build it was not told about, and the synced `prepare` script runs `lefthook install` itself.
  */
-function withLefthookDecided(current: string | undefined): string {
-  const document = parseDocument(current ?? "{}\n");
+function withLefthookDecided(current = ""): string {
+  const document = parseDocument(current);
   if (document.errors.length)
     throw new Error(
       `${PATH}: ${document.errors.map(({ message }) => message).join("; ")}`,
     );
+  if (document.contents === null)
+    return `${current}${current === "" || current.endsWith("\n") ? "" : "\n"}allowBuilds:\n  lefthook: false\n`;
   if (!isMap(document.contents))
     throw new Error(`${PATH} must contain a YAML mapping.`);
-  if (current === undefined) document.contents.flow = false;
-  if (!document.has("allowBuilds"))
+  document.contents.flow = false;
+  if (document.get("allowBuilds") == null)
     document.set("allowBuilds", document.createNode({}));
   if (!isMap(document.get("allowBuilds")))
     throw new Error(`${PATH}: allowBuilds must be a mapping.`);
-  if (!document.hasIn(["allowBuilds", "lefthook"]))
-    document.setIn(["allowBuilds", "lefthook"], false);
-  return document.toString({ lineWidth: 0 });
+  if (document.hasIn(["allowBuilds", "lefthook"])) return current;
+  document.setIn(["allowBuilds", "lefthook"], false);
+  return document.toString({ lineWidth: 0, flowCollectionPadding: false });
 }
 
 /** The `pnpm-workspace.yaml` a full-profile pnpm repository needs so pnpm 11 and later install lefthook without `ERR_PNPM_IGNORED_BUILDS`. */

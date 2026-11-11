@@ -40,7 +40,7 @@ test("sync tells pnpm 11 not to build lefthook and then reports no drift, where 
   assert.equal(check.status, 0, check.stdout + check.stderr);
 });
 
-test("sync keeps a repository's own pnpm-workspace.yaml settings and lefthook choice, where a sync that rewrites the file drops its packages or forces lefthook back to false", (t) => {
+test("sync keeps a repository's own pnpm-workspace.yaml settings and leaves a file that decides lefthook byte for byte, where a sync that rewrites it drops its packages, forces lefthook back to false or fights oxfmt over its formatting", (t) => {
   const root = pinnedRepo(t, "pnpm@11.0.0");
   put(
     root,
@@ -52,18 +52,26 @@ test("sync keeps a repository's own pnpm-workspace.yaml settings and lefthook ch
     packages: ["packages/*"],
     allowBuilds: { esbuild: true, lefthook: false },
   });
-  put(root, "pnpm-workspace.yaml", "allowBuilds:\n  lefthook: true\n");
+  const decided =
+    'packages: ["packages/*"]\nallowBuilds:\n    lefthook: true\n';
+  put(root, "pnpm-workspace.yaml", decided);
   synced(root);
-  assert.equal(
-    read(root, "pnpm-workspace.yaml"),
-    "allowBuilds:\n  lefthook: true\n",
-  );
+  assert.equal(read(root, "pnpm-workspace.yaml"), decided);
 });
 
-test("sync writes no pnpm-workspace.yaml for npm or for a pnpm before 10.5, where a sync that writes it anyway makes that pnpm fail with 'packages field missing or empty'", (t) => {
-  for (const pin of ["pnpm@10.2.0+sha512.abc", "npm@11.0.0"]) {
+for (const current of ["", "# workspace settings\n", "allowBuilds:\n"])
+  test(`sync completes a pnpm-workspace.yaml that pnpm accepts as ${JSON.stringify(current)}, where a sync that demands a mapping exits 1 on it`, (t) => {
+    const root = pinnedRepo(t, "pnpm@11.0.0");
+    put(root, "pnpm-workspace.yaml", current);
+    synced(root);
+    assert.deepEqual(parse(read(root, "pnpm-workspace.yaml")), {
+      allowBuilds: { lefthook: false },
+    });
+  });
+
+for (const pin of ["pnpm@10.2.0+sha512.abc", "npm@11.0.0"])
+  test(`sync writes no pnpm-workspace.yaml for ${pin}, where a sync that writes it anyway makes pnpm before 10.5 fail with 'packages field missing or empty' and leaves an npm repository a stray file`, (t) => {
     const root = pinnedRepo(t, pin);
     synced(root);
-    assert.equal(existsSync(join(root, "pnpm-workspace.yaml")), false, pin);
-  }
-});
+    assert.equal(existsSync(join(root, "pnpm-workspace.yaml")), false);
+  });
