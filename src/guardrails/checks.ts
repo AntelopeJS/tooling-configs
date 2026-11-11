@@ -55,6 +55,60 @@ function hasWork(root: string, step: string): boolean {
   return true;
 }
 
+/** A command that runs a package script: the package manager, an optional `run`, then the script name. */
+const SCRIPT_RUN =
+  /^(?:pnpm|npm|yarn|bun)\s+(?:run(?:-script)?\s+)?([^\s-]\S*)/;
+
+/**
+ * The steps of `script`, a `checks` script sync replaces, that `antelopejs-checks` does not run: each command between
+ * `&&`, `||` and `;` that is neither `antelopejs-checks` itself, a run of one of its steps or of `checks:prepare`, nor
+ * the very command one of those holds in `scripts`, the scripts sync writes. A run of another package script is named
+ * by that script, any other command by its text.
+ */
+function stepsNotRun(
+  script: string,
+  scripts: Readonly<Record<string, string>>,
+): string[] {
+  const run = new Set([...CHECK_STEPS, PREPARE]);
+  const held = new Set(
+    [...run].flatMap((step) =>
+      Object.hasOwn(scripts, step) ? [scripts[step]] : [],
+    ),
+  );
+  return script
+    .split(/&&|\|\||;/)
+    .map((command) => command.trim())
+    .filter(
+      (command) =>
+        command &&
+        !/(?:^|\s)antelopejs-checks$/.test(command) &&
+        !held.has(command),
+    )
+    .flatMap((command) => {
+      const name = SCRIPT_RUN.exec(command)?.[1];
+      if (name !== undefined && run.has(name)) return [];
+      return name !== undefined && Object.hasOwn(scripts, name)
+        ? [name]
+        : [command];
+    });
+}
+
+/** The sync note naming the steps of the `checks` script in the package.json text `current` that the one in `synced`, the text sync writes, replaces and does not run; none when the script is kept or loses no step. */
+export function droppedChecksSteps(
+  current: string | undefined,
+  synced: string,
+): string[] {
+  const previous = parseManifest(current ?? "{}").scripts?.checks;
+  const scripts = parseManifest(synced).scripts ?? {};
+  const command = scripts.checks;
+  if (previous === undefined || previous === command) return [];
+  const dropped = stepsNotRun(previous, scripts);
+  if (!dropped.length) return [];
+  return [
+    `package.json: the checks script now runs ${command}, which does not run ${dropped.map((step) => `"${step}"`).join(", ")} from the replaced script. Call each from one of its steps, such as test or lint, or it no longer runs in checks.`,
+  ];
+}
+
 /** The step that runs after the others, never beside them: tests often hold time limits that CPU contention would break. */
 const RUNS_ALONE = "test";
 
