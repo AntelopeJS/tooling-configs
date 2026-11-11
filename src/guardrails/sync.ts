@@ -31,6 +31,7 @@ import {
   repositoryTools,
   templatePackage,
   toolingVersions,
+  usesCaptures,
   usesNuxt,
   type PackageManager,
 } from "./package.ts";
@@ -395,7 +396,7 @@ function repositoryContext(
     placeholderTests:
       current.has("package.json") &&
       placeholderTestScript(manifest.scripts?.test),
-    captures: existsSync(join(root, "docs/captures.ts")),
+    captures: usesCaptures(root),
   };
 }
 
