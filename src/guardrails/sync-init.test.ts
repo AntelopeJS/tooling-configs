@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 
 import {
   conformance,
@@ -254,6 +254,124 @@ test("--init names docs-typescript-project for the docs files whose TypeScript f
   const rerun = bin(root, "sync", ["--init"], tools.env);
   assert.equal(rerun.status, 0, rerun.stderr + rerun.stdout);
   assert.doesNotMatch(rerun.stdout, /docs-typescript-project/);
+});
+
+const MEMBER_MANIFEST = {
+  name: "member",
+  type: "module",
+  scripts: { lint: "oxlint", "lint:fix": "oxlint --fix && oxfmt ." },
+  devDependencies: {
+    "@antelopejs/tooling-configs": "^0.4.0",
+    oxfmt: "^0.66.0",
+    oxlint: "1.81.0",
+  },
+};
+
+const MEMBER_LINT_CONFIG = `import { antelopePreset } from "@antelopejs/tooling-configs/oxc/lint";
+import { defineConfig } from "oxlint";
+
+export default defineConfig({
+  extends: [antelopePreset()],
+  options: { typeAware: true, maxWarnings: 0 },
+  rules: { "eslint/no-console": "error" },
+});
+`;
+
+/** A pnpm workspace whose `member` package pins older pack and oxfmt ranges and sets root-only oxlint options in its own config. */
+function workspaceRepo(t: TestContext): string {
+  const root = bareRepo(t);
+  put(root, "pnpm-workspace.yaml", "packages:\n  - member\n");
+  put(
+    root,
+    "member/package.json",
+    `${JSON.stringify(MEMBER_MANIFEST, null, 2)}\n`,
+  );
+  put(root, "member/oxlint.config.ts", MEMBER_LINT_CONFIG);
+  put(root, "member/src/index.ts", "export const value = 1;\n");
+  return root;
+}
+
+test("--init on a workspace leaves root oxlint loading the member's config and the member on the root's tool ranges, where an init that keeps the member's options fails root oxlint and one that keeps its ranges installs the pack twice", (t) => {
+  const root = workspaceRepo(t);
+  const tools = fakeTools(t);
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const lint = spawnSync(
+    process.execPath,
+    [join(root, "node_modules/oxlint/bin/oxlint"), "-f", "json"],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.doesNotMatch(lint.stdout + lint.stderr, /only supported in the root/);
+  const rootDeclared = parseManifest(
+    read(root, "package.json"),
+  ).devDependencies;
+  const member = parseManifest(read(root, "member/package.json"));
+  for (const name of ["@antelopejs/tooling-configs", "oxfmt", "oxlint"])
+    assert.equal(member.devDependencies?.[name], rootDeclared?.[name], name);
+  assert.match(result.stdout, /^Updated: member\/oxlint\.config\.ts$/m);
+});
+
+test("--init moves a member's oxlint options to flags on the member's oxlint scripts, where an init that only deletes them drops type-aware rules and the warning limit from the member's own lint", (t) => {
+  const root = workspaceRepo(t);
+  const tools = fakeTools(t);
+  assert.equal(bin(root, "sync", ["--init"], tools.env).status, 0);
+  assert.deepEqual(parseManifest(read(root, "member/package.json")).scripts, {
+    lint: "oxlint --type-aware --max-warnings=0",
+    "lint:fix": "oxlint --type-aware --max-warnings=0 --fix && oxfmt .",
+  });
+  assert.equal(
+    read(root, "member/oxlint.config.ts"),
+    MEMBER_LINT_CONFIG.replace(
+      "  options: { typeAware: true, maxWarnings: 0 },\n",
+      "",
+    ),
+  );
+});
+
+test("--init leaves a member config whose only key was options formatted and flags each oxlint command of a script on its own, where an init that leaves an empty multi-line object fails format:check and one that checks flags per script drops --type-aware from the second command", (t) => {
+  const root = workspaceRepo(t);
+  const tools = fakeTools(t);
+  put(
+    root,
+    "member/oxlint.config.ts",
+    'import { defineConfig } from "oxlint";\n\nexport default defineConfig({\n  options: { typeAware: true },\n});\n',
+  );
+  put(
+    root,
+    "member/package.json",
+    `${JSON.stringify({ ...MEMBER_MANIFEST, scripts: { lint: "oxlint --type-aware src && oxlint test" } }, null, 2)}\n`,
+  );
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const check = spawnSync(
+    process.execPath,
+    [
+      join(root, "node_modules/oxfmt/bin/oxfmt"),
+      "--check",
+      "member/oxlint.config.ts",
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+  assert.equal(
+    parseManifest(read(root, "member/package.json")).scripts?.lint,
+    "oxlint --type-aware src && oxlint --type-aware test",
+  );
+});
+
+test("--init stops before installing when a member's oxlint option has no command-line flag, where an init that drops it silently changes what the member's lint enforces", (t) => {
+  const root = workspaceRepo(t);
+  const tools = fakeTools(t);
+  put(
+    root,
+    "member/oxlint.config.ts",
+    "export default { options: { respectEslintDisableDirectives: true } };\n",
+  );
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /member\/oxlint\.config\.ts/);
+  assert.match(result.stderr, /respectEslintDisableDirectives/);
+  assert.deepEqual(tools.installs(), []);
 });
 
 test("--init without a package.json fails and writes nothing, where an init that creates one hides a wrong directory", (t) => {

@@ -17,6 +17,7 @@ import {
 import { syncRepository } from "./sync.ts";
 import { PRESET_CONFIGS, presetConfig } from "./templates.ts";
 import type { VerifyChoice } from "./verify-skill.ts";
+import { alignWorkspaceMembers } from "./workspace-members.ts";
 
 /** The `gh` arguments that turn `delete_branch_on_merge` on; `gh` fills `{owner}/{repo}` from the git remote. */
 const ENABLE_ARGS = [
@@ -41,9 +42,9 @@ export interface InitResult {
   paths: string[];
   /** The files `--init` deleted: npm's lockfile once pnpm's replaced it. */
   removed: string[];
-  /** The output of the install or the oxfmt run that failed. Set before sync when the first install failed, after it otherwise. */
+  /** Why a workspace member could not be aligned, or the output of the install or the oxfmt run that failed. Set before sync when a member or the first install failed, after it otherwise. */
   failure: string | undefined;
-  /** Undefined when the first install failed, so sync never ran. */
+  /** Undefined when a member or the first install failed, so sync never ran. */
   sync: ReturnType<typeof syncRepository> | undefined;
   /** What GitHub holds for `delete_branch_on_merge`, whatever the file steps did. */
   branchCleanup: BranchCleanup;
@@ -193,8 +194,8 @@ interface Bootstrap {
 /**
  * The file steps before the first install: `node_modules` ignored, the pnpm version the pack's CI runs pinned when
  * `packageManager` is unset, the bootstrap devDependencies, a tsconfig for a Node repository without one or its own
- * `typecheck`, the pack's oxfmt config when there is none, and npm's lockfile replaced by a pnpm lockfile holding the
- * versions it resolved.
+ * `typecheck`, the pack's oxfmt config when there is none, each workspace member on the root's tool ranges with its
+ * oxlint `options` moved to flags, and npm's lockfile replaced by a pnpm lockfile holding the versions it resolved.
  */
 function bootstrap(root: string): Bootstrap {
   const path = join(root, "package.json");
@@ -233,6 +234,15 @@ function bootstrap(root: string): Bootstrap {
     );
     paths.push(fmt.path);
   }
+  const members = alignWorkspaceMembers(root, manifest, versions);
+  paths.push(...members.paths);
+  if (members.failures.length)
+    return {
+      manager,
+      paths,
+      removed: [],
+      failure: members.failures.join("\n"),
+    };
   const npmLock = manager === "pnpm" && existsSync(join(root, NPM_LOCKFILE));
   const imported =
     npmLock && !existsSync(join(root, "pnpm-lock.yaml"))

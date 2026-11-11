@@ -391,7 +391,8 @@ export function templatePackage(
   return serializeManifest(manifest, current);
 }
 
-function serializeManifest(manifest: Manifest, current: string): string {
+/** `manifest` as JSON in the indentation and line endings of `current`, the text it was read from. */
+export function serializeManifest(manifest: Manifest, current: string): string {
   const indent = /^([\t ]+)"/m.exec(current)?.[1] ?? "  ";
   const newline = current.includes("\r\n") ? "\r\n" : "\n";
   return `${JSON.stringify(manifest, null, indent).replaceAll("\n", newline)}${newline}`;
