@@ -65,3 +65,50 @@ test("a --dir read from a variable cannot be resolved and counts as writing, so 
   });
   assert.equal(typecheckWrites(root), true);
 });
+
+test("a pretypecheck hook that builds writes, since the package manager runs it before typecheck", (t) => {
+  const root = workspace(t, "tsc --noEmit");
+  put(
+    root,
+    "package.json",
+    JSON.stringify({
+      scripts: {
+        pretypecheck: "pnpm --filter @scope/iface build",
+        typecheck: "tsc --noEmit",
+      },
+    }),
+  );
+  put(
+    root,
+    "packages/iface/package.json",
+    JSON.stringify({ name: "@scope/iface", scripts: { build: "tsc" } }),
+  );
+  assert.equal(typecheckWrites(root), true);
+});
+
+test("npm reads -w after the script name, so npm run build -w <package> writes", (t) => {
+  const root = workspace(t, "npm run build -w packages/iface", {
+    build: "tsc",
+  });
+  assert.equal(typecheckWrites(root), true);
+});
+
+test("a tsc the manager runs in another package reads that package's tsconfig, not the root one", (t) => {
+  const root = workspace(t, "pnpm --dir packages/iface exec tsc");
+  put(root, "tsconfig.json", '{"compilerOptions":{"noEmit":true}}');
+  put(root, "packages/iface/tsconfig.json", '{"compilerOptions":{}}');
+  assert.equal(typecheckWrites(root), true);
+});
+
+test("a tsc after cd reads the tsconfig of the directory it moved to", (t) => {
+  const root = workspace(t, "cd packages/iface && tsc");
+  put(root, "tsconfig.json", '{"compilerOptions":{"noEmit":true}}');
+  put(root, "packages/iface/tsconfig.json", '{"compilerOptions":{}}');
+  assert.equal(typecheckWrites(root), true);
+});
+
+test("an unreadable workspace manifest counts as writing instead of failing the run", (t) => {
+  const root = workspace(t, "pnpm -r typecheck");
+  put(root, "packages/broken/package.json", "{\n<<<<<<< HEAD\n}");
+  assert.equal(typecheckWrites(root), true);
+});

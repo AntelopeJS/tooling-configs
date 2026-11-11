@@ -5,7 +5,12 @@ import ts from "typescript";
 
 import { workspaceDirectories } from "./docs-compat.ts";
 import { parseManifest } from "./package.ts";
-import { matchingScripts, stepsOf, type Target } from "./script-steps.ts";
+import {
+  matchingScripts,
+  stepsOf,
+  type Step,
+  type Target,
+} from "./script-steps.ts";
 
 const MAX_DEPTH = 5;
 const BUILD = "build";
@@ -101,6 +106,25 @@ function tscWrites(directory: string, args: readonly string[]): boolean {
   return parsed?.options.noEmit !== true;
 }
 
+/** Whether one step, run from `directory`, writes: a `tsc` that emits, or a script that reaches one or a `build`. */
+function stepWrites(
+  walk: Walk,
+  directory: string,
+  step: Exclude<Step, { kind: "cd" }>,
+  depth: number,
+): boolean {
+  const directories = stepDirectories(walk, directory, step.targets);
+  if (directories === undefined) return true;
+  if (step.kind === "tsc")
+    return directories.some((target) => tscWrites(target, step.args));
+  return directories.some((target) =>
+    matchingScripts(step.names, scriptsIn(target).keys()).some((script) =>
+      scriptWrites(walk, target, script, depth + 1),
+    ),
+  );
+}
+
+/** Whether a script or the `pre` and `post` hooks the package manager runs around it write, its lines run from where each `cd` left them. */
 function scriptWrites(
   walk: Walk,
   directory: string,
@@ -112,25 +136,31 @@ function scriptWrites(
   if (text === undefined || walk.seen.has(key)) return false;
   walk.seen.add(key);
   if (name === BUILD || depth > MAX_DEPTH) return true;
-  return stepsOf(text).some((step) => {
-    if (step.kind === "tsc") return tscWrites(directory, step.args);
-    const directories = stepDirectories(walk, directory, step.targets);
-    return (
-      directories === undefined ||
-      directories.some((target) =>
-        matchingScripts(step.names, scriptsIn(target).keys()).some((script) =>
-          scriptWrites(walk, target, script, depth + 1),
-        ),
-      )
-    );
-  });
+  if (
+    scriptWrites(walk, directory, `pre${name}`, depth) ||
+    scriptWrites(walk, directory, `post${name}`, depth)
+  )
+    return true;
+  let current = directory;
+  for (const step of stepsOf(text)) {
+    if (step.kind === "cd") {
+      if (step.path.includes("$") || step.path.startsWith("~")) return true;
+      current = resolve(current, step.path);
+    } else if (stepWrites(walk, current, step, depth)) return true;
+  }
+  return false;
 }
 
 /**
  * Whether the `typecheck` script of the package at `root` can write files other steps read: it reaches a `build`
  * script or a `tsc` run that emits, in this package or a workspace package it points the package manager at. A
- * target it cannot resolve, such as a `--dir` read from a variable or a dependency `--filter`, counts as writing.
+ * target it cannot resolve, such as a `--dir` read from a variable or a dependency `--filter`, counts as writing, and
+ * so does a workspace whose manifests cannot be read.
  */
 export function typecheckWrites(root: string): boolean {
-  return scriptWrites({ root, seen: new Set() }, root, "typecheck", 0);
+  try {
+    return scriptWrites({ root, seen: new Set() }, root, "typecheck", 0);
+  } catch {
+    return true;
+  }
 }

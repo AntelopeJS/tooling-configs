@@ -23,7 +23,7 @@ export type Target =
   /** `-r`, `--recursive`, `--workspaces`: every workspace package. */
   | { kind: "all" };
 
-/** One thing a command line of a script runs: scripts of the same package, or a `tsc` with its arguments. */
+/** One thing a command line of a script runs: scripts, a `tsc` with its arguments, or a `cd` that moves the lines after it. */
 export type Step =
   | {
       kind: "script";
@@ -32,7 +32,13 @@ export type Step =
       /** The packages the manager was pointed at (`--filter`, `-C`, `-r`); when any, the names are not this package's scripts. */
       targets: Target[];
     }
-  | { kind: "tsc"; args: string[] };
+  | {
+      kind: "tsc";
+      args: string[];
+      /** The packages the manager runs it in (`pnpm --filter a exec tsc`, `pnpm -C a tsc`); none for this package. */
+      targets: Target[];
+    }
+  | { kind: "cd"; path: string };
 
 interface Options {
   index: number;
@@ -99,13 +105,13 @@ function isTsc(word: string): boolean {
 function programSteps(line: readonly string[]): Step[] {
   const [head, ...rest] = line;
   if (head === undefined) return [];
-  if (isTsc(head)) return [{ kind: "tsc", args: rest }];
+  if (isTsc(head)) return [{ kind: "tsc", args: rest, targets: [] }];
   if (head !== "node") return [];
   if (rest[0] === "--run" && rest[1] !== undefined)
     return [{ kind: "script", names: [rest[1]], targets: [] }];
   const at = rest.findIndex((word) => !word.startsWith("-"));
   return at !== -1 && isTsc(rest[at])
-    ? [{ kind: "tsc", args: rest.slice(at + 1) }]
+    ? [{ kind: "tsc", args: rest.slice(at + 1), targets: [] }]
     : [];
 }
 
@@ -114,29 +120,60 @@ function execSteps(args: readonly string[]): Step[] {
   return programSteps(args.slice(skipOptions(args, 0, EXEC_VALUED).index));
 }
 
+/** The steps with `targets` added, for a command the manager runs in other packages. */
+function pointedAt(steps: Step[], targets: readonly Target[]): Step[] {
+  return steps.map((step) =>
+    step.kind === "cd"
+      ? step
+      : { ...step, targets: [...targets, ...step.targets] },
+  );
+}
+
+/** The packages npm options after the script name point at, up to `--`: npm reads its options anywhere on the line. */
+function trailingTargets(
+  args: readonly string[],
+  from: number,
+  valued: ReadonlySet<string>,
+): Target[] {
+  const targets: Target[] = [];
+  for (let index = from; index < args.length && args[index] !== "--"; index++)
+    if (args[index].startsWith("-")) {
+      const found = skipOptions(args, index, valued);
+      targets.push(...found.targets);
+      index = found.index - 1;
+    }
+  return targets;
+}
+
 function managerSteps(manager: string, args: readonly string[]): Step[] {
   const valued = new Set(TARGET_VALUED);
   if (manager === "npm") valued.add("-w");
   const first = skipOptions(args, 0, valued);
   const verb = args[first.index];
   if (verb === undefined) return [];
-  if (EXEC_VERBS.has(verb)) return execSteps(args.slice(first.index + 1));
-  if (verb === "run" || verb === "run-script") {
-    const second = skipOptions(args, first.index + 1, valued);
-    const name = args[second.index];
-    return name === undefined
-      ? []
-      : [
-          {
-            kind: "script",
-            names: [name],
-            targets: [...first.targets, ...second.targets],
-          },
-        ];
-  }
-  if (isTsc(verb)) return programSteps(args.slice(first.index));
-  if (manager === "npm" && !NPM_BUILTINS.has(verb)) return [];
-  return [{ kind: "script", names: [verb], targets: first.targets }];
+  if (EXEC_VERBS.has(verb))
+    return pointedAt(execSteps(args.slice(first.index + 1)), first.targets);
+  if (isTsc(verb))
+    return pointedAt(programSteps(args.slice(first.index)), first.targets);
+  const run = verb === "run" || verb === "run-script";
+  const second = run
+    ? skipOptions(args, first.index + 1, valued)
+    : { index: first.index, targets: [] };
+  const name = args[second.index];
+  if (
+    name === undefined ||
+    (!run && manager === "npm" && !NPM_BUILTINS.has(verb))
+  )
+    return [];
+  const trailing =
+    manager === "npm" ? trailingTargets(args, second.index + 1, valued) : [];
+  return [
+    {
+      kind: "script",
+      names: [name],
+      targets: [...first.targets, ...second.targets, ...trailing],
+    },
+  ];
 }
 
 function runAllSteps(args: readonly string[]): Step[] {
@@ -164,6 +201,7 @@ function unwrapped(line: readonly string[]): readonly string[] {
 function lineSteps(line: readonly string[]): Step[] {
   const [head, ...args] = unwrapped(line);
   if (head === undefined) return [];
+  if (head === "cd") return [{ kind: "cd", path: args[0] ?? "~" }];
   if (RUN_ALL.has(head)) return runAllSteps(args);
   if (MANAGERS.has(head)) return managerSteps(head, args);
   if (EXEC_RUNNERS.has(head)) return execSteps(args);
