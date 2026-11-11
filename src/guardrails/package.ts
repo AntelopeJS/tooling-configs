@@ -77,9 +77,18 @@ export function toolingVersions() {
         const lefthook = manifest.devDependencies?.lefthook;
         const knip = manifest.devDependencies?.knip;
         const tsgolint = manifest.devDependencies?.["oxlint-tsgolint"];
-        if (!lefthook || !knip || !tsgolint || !manifest.version)
+        const oxlint = manifest.devDependencies?.oxlint;
+        const oxfmt = manifest.devDependencies?.oxfmt;
+        if (
+          !lefthook ||
+          !knip ||
+          !tsgolint ||
+          !oxlint ||
+          !oxfmt ||
+          !manifest.version
+        )
           throw new Error(
-            "tooling-configs must declare its version and lefthook, knip and oxlint-tsgolint devDependencies.",
+            "tooling-configs must declare its version and lefthook, knip, oxlint, oxfmt and oxlint-tsgolint devDependencies.",
           );
         const tested = manifest.devDependencies ?? {};
         const capture = CAPTURE_PEERS.map((name): [CapturePeer, string] => {
@@ -90,7 +99,15 @@ export function toolingVersions() {
             );
           return [name, range];
         });
-        return { lefthook, knip, tsgolint, capture, pack: manifest.version };
+        return {
+          lefthook,
+          knip,
+          tsgolint,
+          oxlint,
+          oxfmt,
+          capture,
+          pack: manifest.version,
+        };
       }
     }
     const parent = dirname(directory);
@@ -240,6 +257,34 @@ export function addedDevDependencies(
         )
       : []),
   ];
+}
+
+/** The pack, oxlint, oxlint-tsgolint and oxfmt with the ranges `--init` declares for a repository that has none of them. Sync needs the first three installed to load its preset and run the type-aware baseline before it writes any devDependency. */
+export function bootstrapDependencies(
+  manifest: Manifest,
+  versions: ReturnType<typeof toolingVersions>,
+): [string, string][] {
+  const declared = { ...manifest.dependencies, ...manifest.devDependencies };
+  const wanted: [string, string][] = [
+    ["@antelopejs/tooling-configs", `^${versions.pack}`],
+    ["oxlint", versions.oxlint],
+    ["oxlint-tsgolint", versions.tsgolint],
+    ["oxfmt", versions.oxfmt],
+  ];
+  return wanted.filter(([name]) => !declared[name]);
+}
+
+/** `current` with `added` in its sorted devDependencies, formatted as the rest of the sync writers do. */
+export function withDevDependencies(
+  current: string,
+  added: readonly [string, string][],
+): string {
+  const manifest = parseManifest(current);
+  manifest.devDependencies = sortedEntries({
+    ...manifest.devDependencies,
+    ...Object.fromEntries(added),
+  });
+  return serializeManifest(manifest, current);
 }
 
 export function managedPackage(

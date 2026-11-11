@@ -26,7 +26,7 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 | `./oxc/anti-slop`  | Loaded by the oxlint preset as a JS plugin                                | The vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules                                      |
 | `./oxc/guardrails` | Loaded by the oxlint preset as a JS plugin                                | The `antelopejs` comment and test-quality rules                                                            |
 | `./verify`         | `import type { VerifyConfig } from "@antelopejs/tooling-configs/verify"`  | Types and check helpers for a shared verification skill's `verify.config.ts`                               |
-| bin                | `antelopejs-sync`                                                         | Writes the guardrail pack into a repository; `--check` reports drift                                       |
+| bin                | `antelopejs-sync [--init]`                                                | Writes the guardrail pack into a repository; `--check` reports drift; `--init` onboards a bare repository  |
 | bin                | `antelopejs-checks [--no-services]`                                       | Runs every check and prints only the failures; starts `.github/compose.yml` services around them           |
 | bin                | `antelopejs-ratchet`                                                      | Fails when recorded debt grows; `--update` lowers the record and adopts rules a pack release newly enabled |
 | bin                | `antelopejs-suppressions`                                                 | Fails when suppressions exceed their budget or an added one breaks policy; `--update` lowers the budget    |
@@ -189,10 +189,20 @@ export default defineConfig({
 
 ## Guardrail pack
 
-Run `antelopejs-sync` at the repository root, then install dependencies. It is idempotent: a second run changes nothing.
+Onboard a repository with one command at its root. The repository needs a `package.json` and a git remote on GitHub.
 
 ```bash
-pnpm add -D @antelopejs/tooling-configs oxlint@1.81.0 oxlint-tsgolint oxfmt
+pnpm dlx --package=@antelopejs/tooling-configs antelopejs-sync --init
+npx --package=@antelopejs/tooling-configs antelopejs-sync --init
+```
+
+`--init` adds `node_modules` to `.gitignore`, declares `@antelopejs/tooling-configs`, `oxlint`, `oxlint-tsgolint` and `oxfmt` as devDependencies when the repository has none of them, installs with the repository's package manager, runs `antelopejs-sync`, and installs again when sync added devDependencies. It takes the full profile only and rejects `--check` and `--profile template`. Install output shows only when the install fails.
+
+It then sets `delete_branch_on_merge` through `gh` when it can. When `gh` is missing, unauthenticated or refused, `--init` prints the `gh api -X PATCH repos/{owner}/{repo} -F delete_branch_on_merge=true` command to run and exits 1 once the files are written. Commit and push to the default branch afterwards, so the first run reports `ci / checks`.
+
+Every step is idempotent: a second run changes nothing. Plain `antelopejs-sync` also runs from a repository that already has the devDependencies installed:
+
+```bash
 pnpm exec antelopejs-sync
 pnpm install
 ```
