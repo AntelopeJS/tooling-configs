@@ -5,9 +5,12 @@ import {
   branchGovernance,
   governanceDrift,
   orgChecksRuleset,
+  repoAdmins,
 } from "./checks/governance.ts";
+import { ApiError } from "./api.ts";
 import { FakeApi } from "./helpers/fake-api.ts";
 import type { JsonObject, JsonValue } from "./json.ts";
+import { garden } from "./run.ts";
 import type { CheckResult } from "./types.ts";
 
 const ADMIN = {
@@ -208,6 +211,102 @@ test("an organization owner outside the allowed three is drift, the three themse
   ]);
   assert.deepEqual(subjects(await governanceDrift.run(extra.context())), [
     "org-admin:Glastis:normal",
+  ]);
+});
+
+const REPO_ADMINS = [
+  "Upd4ting",
+  "mwesto",
+  "dada-sudo",
+  "Thomasims",
+  "alessaloisio",
+];
+
+function collaborators(
+  api: FakeApi,
+  repo: string,
+  roles: { [login: string]: string },
+): FakeApi {
+  return api.route(
+    `/repos/AntelopeJS/${repo}/collaborators?affiliation=all`,
+    Object.entries(roles).map(([login, role]) => ({
+      login,
+      role_name: role,
+      permissions: { admin: role === "admin", maintain: role === "maintain" },
+    })),
+  );
+}
+
+function admins(...logins: string[]): { [login: string]: string } {
+  return Object.fromEntries(logins.map((login) => [login, "admin"]));
+}
+
+test("no repository administrator outside the allowed five is no finding", async () => {
+  const api = new FakeApi().org([{ name: "mongodb" }, { name: "web" }]);
+  collaborators(api, "mongodb", {
+    ...admins(...REPO_ADMINS),
+    Glastis: "write",
+  });
+  collaborators(api, "web", { ...admins("Upd4ting"), Glastis: "read" });
+  assert.deepEqual(subjects(await repoAdmins.run(api.context())), []);
+});
+
+test("an extra administrator is one finding on the organization listing both repositories, not one per repository", async () => {
+  const api = new FakeApi().org([
+    { name: "mongodb" },
+    { name: "web" },
+    { name: "docs" },
+  ]);
+  collaborators(api, "mongodb", admins("Upd4ting", "Glastis"));
+  collaborators(api, "web", admins("Glastis", "mwesto"));
+  collaborators(api, "docs", admins("Upd4ting"));
+  const result = await repoAdmins.run(api.context());
+  assert.deepEqual(subjects(result), ["repo-admin:Glastis:normal"]);
+  assert.ok(result.kind === "findings");
+  const [only] = result.findings;
+  assert.equal(only.repo, "AntelopeJS");
+  assert.equal(only.key, "AntelopeJS|repo-admins|repo-admin:Glastis");
+  assert.match(only.evidence, /holds admin on 2 repositories: mongodb, web\./);
+});
+
+test("the maintain role is not an administrator, and an archived repository is not read", async () => {
+  const api = new FakeApi().org([
+    { name: "mongodb" },
+    { name: "old", archived: true },
+  ]);
+  collaborators(api, "mongodb", {
+    ...admins("Upd4ting"),
+    altabmachine: "maintain",
+  });
+  collaborators(api, "old", admins("Glastis"));
+  assert.deepEqual(subjects(await repoAdmins.run(api.context())), []);
+});
+
+test("a collaborator listed without a role fails the repository instead of passing it", async () => {
+  const api = new FakeApi()
+    .org([{ name: "mongodb" }])
+    .route("/repos/AntelopeJS/mongodb/collaborators?affiliation=all", [
+      { login: "Glastis", permissions: { admin: true } },
+    ]);
+  const outcome = await garden(api, { checks: [repoAdmins] });
+  assert.equal(outcome.failures.length, 1);
+  assert.match(outcome.failures[0].reason, /^mongodb: .*role_name/);
+});
+
+test("a repository whose collaborators cannot be read fails the check and keeps the findings of the others", async () => {
+  const api = new FakeApi().org([{ name: "mongodb" }, { name: "web" }]);
+  collaborators(api, "mongodb", admins("Glastis"));
+  api.route(
+    "/repos/AntelopeJS/web/collaborators?affiliation=all",
+    new ApiError(403, "GET collaborators: HTTP 403"),
+  );
+  const outcome = await garden(api, { checks: [repoAdmins] });
+  assert.deepEqual(
+    outcome.report.findings.map(({ subject }) => subject),
+    ["repo-admin:Glastis"],
+  );
+  assert.deepEqual(outcome.failures, [
+    { check: "repo-admins", reason: "web: GET collaborators: HTTP 403" },
   ]);
 });
 

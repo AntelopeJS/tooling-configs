@@ -4,6 +4,7 @@ import {
   artifacts,
   branch,
   checkRuns,
+  adminLogins,
   logins,
   orgRepo,
   packageJson,
@@ -444,5 +445,12 @@ export class GardenContext {
 
   organizationOwners(): Promise<string[]> {
     return this.api.pages(`/orgs/${ORG}/members?role=admin`).then(logins);
+  }
+
+  /** Logins holding the admin role on the repository, however they hold it: directly, through a team or as an organization owner. */
+  repoAdmins(repo: GardenRepo): Promise<string[]> {
+    return this.api
+      .pages(`/repos/${ORG}/${repo.name}/collaborators?affiliation=all`)
+      .then(adminLogins);
   }
 }

@@ -19,11 +19,11 @@ export class PartialFailure extends Error {
 
 const CONCURRENCY = 6;
 
-/** Runs a scan on each repository; a failing repository is reported once, not allowed to hide the rest. */
-export async function perRepo(
+/** Runs a scan on each repository, in repository order; a failing repository is listed once in `failures`, not allowed to hide the rest. */
+export async function scanEach<T>(
   repos: readonly GardenRepo[],
-  scan: (repo: GardenRepo) => Promise<Finding[]>,
-): Promise<CheckResult> {
+  scan: (repo: GardenRepo) => Promise<T[]>,
+): Promise<{ results: T[]; failures: string[] }> {
   const failures: string[] = [];
   const results = await mapLimit(repos, CONCURRENCY, async (repo) => {
     try {
@@ -35,7 +35,15 @@ export async function perRepo(
       return [];
     }
   });
-  const findings = results.flat();
-  if (failures.length) throw new PartialFailure(findings, failures.sort());
-  return found(findings);
+  return { results: results.flat(), failures: failures.sort() };
+}
+
+/** Runs a scan on each repository; a failing repository is reported once, not allowed to hide the rest. */
+export async function perRepo(
+  repos: readonly GardenRepo[],
+  scan: (repo: GardenRepo) => Promise<Finding[]>,
+): Promise<CheckResult> {
+  const { results, failures } = await scanEach(repos, scan);
+  if (failures.length) throw new PartialFailure(results, failures);
+  return found(results);
 }
