@@ -56,9 +56,18 @@ interface OxlintReport {
   diagnostics: OxlintDiagnostic[];
 }
 
+const NO_FILES = "No files found to lint.";
+
+/** Whether oxlint matched no file, in which case it prints a notice before its report and exits 1. */
+function foundNoFiles(stdout: string): boolean {
+  return stdout.startsWith(NO_FILES) && stdout.includes("{");
+}
+
 function parseReport(text: string): OxlintDiagnostic[] {
   /* SAFETY: this is oxlint's own -f json report; lintDiagnostics rejects any diagnostic without a plugin(rule) code. */
-  const report = JSON.parse(text) as OxlintReport | null;
+  const report = JSON.parse(
+    foundNoFiles(text) ? text.slice(text.indexOf("{")) : text,
+  ) as OxlintReport | null;
   if (!Array.isArray(report?.diagnostics))
     throw new Error("oxlint did not return a JSON diagnostics array.");
   return report.diagnostics;
@@ -113,7 +122,11 @@ function runOxlint(
         `oxlint failed (${result.status ?? result.signal}): ${result.stderr || result.stdout}`,
       );
     const diagnostics = parseReport(result.stdout);
-    if (result.status !== 0 && diagnostics.length === 0)
+    if (
+      result.status !== 0 &&
+      diagnostics.length === 0 &&
+      !foundNoFiles(result.stdout)
+    )
       throw new Error(
         `oxlint failed without diagnostics: ${result.stderr || result.stdout}`,
       );

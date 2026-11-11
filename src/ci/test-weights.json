@@ -96,6 +96,8 @@
   "src/guardrails/suppression-policy.test.ts": 19.2,
   "src/guardrails/suppressions.test.ts": 0.5,
   "src/guardrails/sync-capture-peers.test.ts": 7.6,
+  "src/guardrails/sync-init.test.ts": 6,
+  "src/guardrails/sync-no-files.test.ts": 1,
   "src/guardrails/sync-prepare.test.ts": 11.2,
   "src/guardrails/sync-renovate.test.ts": 6.4,
   "src/guardrails/sync-safety.test.ts": 29.7,
