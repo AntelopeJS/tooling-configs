@@ -196,9 +196,9 @@ pnpm dlx --package=@antelopejs/tooling-configs antelopejs-sync --init
 npx --package=@antelopejs/tooling-configs antelopejs-sync --init
 ```
 
-`--init` adds `node_modules` to `.gitignore`, declares `@antelopejs/tooling-configs`, `oxlint`, `oxlint-tsgolint` and `oxfmt` as devDependencies when the repository has none of them, installs with the repository's package manager, runs `antelopejs-sync`, and installs again when sync added devDependencies. It takes the full profile only and rejects `--check` and `--profile template`. Install output shows only when the install fails.
+`--init` adds `node_modules` to `.gitignore` and declares each of `@antelopejs/tooling-configs`, `oxlint`, `oxlint-tsgolint` and `oxfmt` the repository does not declare yet. It installs with the repository's package manager, runs `antelopejs-sync`, installs again when sync added devDependencies, and formats `package.json` with the installed oxfmt. It takes the full profile only and rejects `--check` and `--profile template`. Install output shows only when the install fails.
 
-It then sets `delete_branch_on_merge` through `gh` when it can. When `gh` is missing, unauthenticated or refused, `--init` prints the `gh api -X PATCH repos/{owner}/{repo} -F delete_branch_on_merge=true` command to run and exits 1 once the files are written. Commit and push to the default branch afterwards, so the first run reports `ci / checks`.
+It then sets `delete_branch_on_merge` through `gh` when it can, even when an earlier step failed. When `gh` is missing, unauthenticated or refused, `--init` prints the `gh api -X PATCH repos/{owner}/{repo} -F delete_branch_on_merge=true` command to run and exits 1. After any failure, fix what it printed and rerun `antelopejs-sync --init`. Commit and push to the default branch afterwards, so the first run reports `ci / checks`.
 
 Every step is idempotent: a second run changes nothing. Plain `antelopejs-sync` also runs from a repository that already has the devDependencies installed:
 
