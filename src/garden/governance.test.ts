@@ -282,6 +282,17 @@ test("the maintain role is not an administrator, and an archived repository is n
   assert.deepEqual(subjects(await repoAdmins.run(api.context())), []);
 });
 
+test("a collaborator listed without a role fails the repository instead of passing it", async () => {
+  const api = new FakeApi()
+    .org([{ name: "mongodb" }])
+    .route("/repos/AntelopeJS/mongodb/collaborators?affiliation=all", [
+      { login: "Glastis", permissions: { admin: true } },
+    ]);
+  const outcome = await garden(api, { checks: [repoAdmins] });
+  assert.equal(outcome.failures.length, 1);
+  assert.match(outcome.failures[0].reason, /^mongodb: .*role_name/);
+});
+
 test("a repository whose collaborators cannot be read fails the check and keeps the findings of the others", async () => {
   const api = new FakeApi().org([{ name: "mongodb" }, { name: "web" }]);
   collaborators(api, "mongodb", admins("Glastis"));

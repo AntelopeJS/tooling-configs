@@ -217,6 +217,6 @@ export function logins(value: JsonValue): string[] {
 export function adminLogins(value: JsonValue): string[] {
   return list(value, "collaborators")
     .map((entry) => object(entry, "collaborator"))
-    .filter((entry) => optStr(entry, "role_name") === "admin")
+    .filter((entry) => str(entry, "role_name") === "admin")
     .map((entry) => str(entry, "login"));
 }
