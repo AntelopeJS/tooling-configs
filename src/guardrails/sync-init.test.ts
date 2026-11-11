@@ -98,6 +98,65 @@ test("--init tells the user to rerun itself when sync reports an error, where an
   const result = bin(root, "sync", ["--init"], tools.env);
   assert.equal(result.status, 1, result.stdout);
   assert.match(result.stderr, /rerun antelopejs-sync --init/);
+  assert.deepEqual(patches(tools.calls()), [ENABLE_BRANCH_CLEANUP]);
+  assert.equal(tools.installs().length, 1);
+});
+
+test("--init reports an oxfmt that cannot load its config and asks for a rerun, where an init that ignores oxfmt's exit leaves package.json unsorted and format:check red", (t) => {
+  const root = bareRepo(t);
+  const tools = fakeTools(t);
+  put(
+    root,
+    "oxfmt.config.ts",
+    'import { antelopeFmtPreset } from "@antelopejs/tooling-configs/oxc/fmt";\nimport "./missing.ts";\nexport default antelopeFmtPreset();\n',
+  );
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /oxfmt failed/);
+  assert.match(result.stderr, /rerun antelopejs-sync --init/);
+});
+
+test("--init finishes when the repository's oxfmt config ignores package.json, where an init that formats the file by name fails on every rerun", (t) => {
+  const root = bareRepo(t);
+  const tools = fakeTools(t);
+  put(
+    root,
+    "oxfmt.config.ts",
+    'import { antelopeFmtPreset } from "@antelopejs/tooling-configs/oxc/fmt";\nexport default antelopeFmtPreset({ ignorePatterns: ["package.json"] });\n',
+  );
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+});
+
+test("--init names package.json when only its oxfmt pass rewrites it, where an init that formats silently prints 'in sync' over a changed file", (t) => {
+  const root = bareRepo(t);
+  const tools = fakeTools(t);
+  assert.equal(bin(root, "sync", ["--init"], tools.env).status, 0);
+  const manifest = parseManifest(read(root, "package.json"));
+  const { packageManager: pinned, ...rest } = manifest;
+  put(
+    root,
+    "package.json",
+    `${JSON.stringify({ packageManager: pinned, ...rest }, null, 2)}\n`,
+  );
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.match(result.stdout, /^Updated: package\.json$/m);
+});
+
+test("--init with an unsupported package manager fails before it writes, where an init that checks it after the bootstrap leaves a half-onboarded repository", (t) => {
+  const root = bareRepo(t);
+  const tools = fakeTools(t);
+  put(
+    root,
+    "package.json",
+    '{\n  "name": "bare",\n  "packageManager": "deno@2"\n}\n',
+  );
+  const before = workingTree(root);
+  const result = bin(root, "sync", ["--init"], tools.env);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Unsupported package manager deno/);
+  assert.deepEqual(workingTree(root), before);
 });
 
 test("a second --init run changes no file and makes no second PATCH, where a run that writes without reading delete_branch_on_merge patches twice", (t) => {

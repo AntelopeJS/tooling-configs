@@ -121,10 +121,11 @@ function formatManifest(root: string): string | undefined {
   } catch {
     return "oxfmt is not installed in this repository, so package.json is not formatted.";
   }
-  const result = spawnSync(process.execPath, [binary, "package.json"], {
-    cwd: root,
-    encoding: "utf8",
-  });
+  const result = spawnSync(
+    process.execPath,
+    [binary, "--no-error-on-unmatched-pattern", "package.json"],
+    { cwd: root, encoding: "utf8" },
+  );
   if (result.error) return `oxfmt failed: ${result.error.message}`;
   if (result.status === 0) return undefined;
   return `oxfmt failed (exit ${result.status}).\n${result.stdout}${result.stderr}`.trimEnd();
@@ -146,16 +147,16 @@ export function initRepository(
     throw new Error(
       "package.json is missing. antelopejs-sync --init needs a repository that already has one.",
     );
-  const paths: string[] = [];
-  if (ensureGitignore(root)) paths.push(".gitignore");
   const current = readFileSync(path, "utf8");
   const manifest = parseManifest(current);
+  const manager = packageManager(manifest);
+  const paths: string[] = [];
+  if (ensureGitignore(root)) paths.push(".gitignore");
   const added = bootstrapDependencies(manifest, toolingVersions());
   if (added.length) {
     writeFileSync(path, withDevDependencies(current, added));
     paths.push("package.json");
   }
-  const manager = packageManager(manifest);
   const first = install(root, manager);
   if (first !== undefined)
     return {
@@ -171,7 +172,13 @@ export function initRepository(
   let failure: string | undefined;
   if (!sync.errors.length) {
     failure = sync.dependenciesAdded ? install(root, manager) : undefined;
+    const unformatted = readFileSync(path, "utf8");
     failure ??= formatManifest(root);
+    if (
+      readFileSync(path, "utf8") !== unformatted &&
+      !paths.includes("package.json")
+    )
+      paths.push("package.json");
   }
   return {
     paths,
