@@ -2,7 +2,7 @@
 import { parseArgs } from "node:util";
 
 import { runCli } from "../guardrails/cli.ts";
-import { CI_CONTEXT } from "../guardrails/ci-workflow.ts";
+import { CI_CONTEXT, CI_PATH } from "../guardrails/ci-workflow.ts";
 import { repositoryRoot } from "../guardrails/files.ts";
 import { ENABLE_BRANCH_CLEANUP, initRepository } from "../guardrails/init.ts";
 import { syncRepository } from "../guardrails/sync.ts";
@@ -49,6 +49,10 @@ function init(verify: VerifyChoice | undefined): number {
   const synced = result.sync
     ? printSync(result.sync, { check: false, installed: true })
     : 0;
+  if (result.untypedDocs.length)
+    process.stdout.write(
+      `Note: ${result.untypedDocs.join(", ")} hold TypeScript fences the docs check typechecks. Set docs-typescript-project in ${CI_PATH} to a tsconfig whose program resolves their imports, or mark illustrative fences \`fragment\`. Without it the check uses the root tsconfig.json and fails when there is none.\n`,
+    );
   if (result.failure !== undefined) process.stderr.write(`${result.failure}\n`);
   const failed = synced !== 0 || result.failure !== undefined;
   if (failed)
