@@ -29,6 +29,8 @@ const AREAS: readonly FrameworkArea[] = [
       "interface-database",
       "interface-database-decorators",
       "interface-database-catalog",
+      "interface-mongodb",
+      "interface-rethinkdb",
     ],
     providers: ["postgres", "mongodb", "rethinkdb"],
   },
