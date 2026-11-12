@@ -75,7 +75,7 @@ import { loadRun } from ${JSON.stringify(WORKSPACE)};
 const meet = async (context, point) => {
   const folder = join(${JSON.stringify(barrier)}, point);
   mkdirSync(folder, { recursive: true });
-  writeFileSync(join(folder, context.work.replaceAll("/", "_")), "");
+  writeFileSync(join(folder, context.work.replace(/[\\\\/:]/g, "_")), "");
   for (let waited = 0; waited < 5000 && readdirSync(folder).length < 2; waited += 20)
     await new Promise((resolve) => setTimeout(resolve, 20));
 };
@@ -93,6 +93,10 @@ export default {
 };
 `;
 }
+
+const NO_SIGNAL_FORWARDING =
+  process.platform === "win32" &&
+  "Windows has no SIGTERM to forward: kill() ends the process at once with no exit code 143";
 
 function alive(pid: number): boolean {
   try {
@@ -220,7 +224,7 @@ async function interruptible(t: TestContext, features: string) {
 
 test(
   "a SIGTERM to a journey --jobs call reaches each feature's process, which stops its app, and the call exits 143; a call that does not forward it exits at once and leaves both apps running",
-  { skip: TWO_JOBS },
+  { skip: TWO_JOBS || NO_SIGNAL_FORWARDING },
   async (t) => {
     const { call, exited, stopped } = await interruptible(t, "hang,stall");
     call.kill("SIGTERM");
@@ -232,7 +236,7 @@ test(
 
 test(
   "a feature process that ignores SIGTERM is killed with its app once the grace period ends, and the call exits 143; a call that only forwards the signal waits for it forever",
-  { skip: TWO_JOBS },
+  { skip: TWO_JOBS || NO_SIGNAL_FORWARDING },
   async (t) => {
     const { call, exited, stopped } = await interruptible(t, "hang,deaf");
     const sent = Date.now();
@@ -246,7 +250,7 @@ test(
 
 test(
   "a second interrupt kills a feature process that ignores the first at once, with its app, and the call exits with the first signal's code; a call that waits out the grace period after a repeated signal takes 5 s",
-  { skip: TWO_JOBS },
+  { skip: TWO_JOBS || NO_SIGNAL_FORWARDING },
   async (t) => {
     const { call, exited, stopped } = await interruptible(t, "hang,deaf");
     const sent = Date.now();
