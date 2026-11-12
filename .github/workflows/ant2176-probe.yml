@@ -25,9 +25,9 @@ jobs:
           cache: pnpm
       - run: pnpm install
       - run: |
-          for f in src/guardrails/api-diff-cli-entries.test.ts src/guardrails/checks-verify.test.ts src/guardrails/sync-interface-ranges.test.ts src/guardrails/sync-template-scripts.test.ts src/oxc/lint-hidden-any.test.ts src/oxc/guardrails/self-import-lint.test.ts src/oxc/anti-slop/rules/no-module-mocking.test.ts src/oxc/anti-slop/rules/no-shape-in-symbol-names.test.ts src/oxc/guardrails/rules/no-comments.test.ts src/oxc/guardrails/rules/no-self-import-in-tests.test.ts src/guardrails/checks-services.test.ts; do
+          for f in src/guardrails/sync-interface-ranges.test.ts src/guardrails/checks-services.test.ts src/guardrails/sync-packed.test.ts; do
             echo "=== $f"
             if timeout 300 node --test --test-reporter=spec "$f" > out.txt 2>&1; then code=0; else code=$?; fi
-            grep -vE '^\s+at ' out.txt | tail -40
+            grep -vE '^\s+at ' out.txt | tail -150
             echo "=== exit $code $f"
           done
