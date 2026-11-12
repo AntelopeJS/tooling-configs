@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -9,7 +9,7 @@ import {
   utimesSync,
 } from "node:fs";
 import type { Server } from "node:net";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -98,7 +98,7 @@ test("a worktree recreated at the same path gets a fresh lease without the old d
 /** Denies everyone reading the worktree: mode 000 on its parent on POSIX; on Windows, where everyone may pass through a folder they cannot read and chmod only sets the read-only flag, a deny entry for Everyone on the worktree, inherited by its `.git`. */
 function denyReading(path: string): void {
   if (process.platform === "win32")
-    execFileSync("icacls", [path, "/deny", "*S-1-1-0:(OI)(CI)(F)", "/T"]);
+    execFileSync("icacls", [path, "/deny", "*S-1-1-0:(OI)(CI)(F)"]);
   else chmodSync(path, 0o000);
 }
 
@@ -111,14 +111,17 @@ function probeAccess(path: string): string {
   } catch (error) {
     stat = `stat failed: ${String(error)}`;
   }
-  return process.platform === "win32"
-    ? `${stat}\n${execFileSync("icacls", [path], { encoding: "utf8" })}`
-    : stat;
+  if (process.platform !== "win32") return stat;
+  const acls = [path, dirname(path)].map((entry) => {
+    const shown = spawnSync("icacls", [entry], { encoding: "utf8" });
+    return `${shown.stdout}${shown.stderr}`;
+  });
+  return [stat, ...acls].join("\n");
 }
 
 function allowReading(path: string): void {
   if (process.platform === "win32")
-    execFileSync("icacls", [path, "/remove:d", "*S-1-1-0", "/T"]);
+    execFileSync("icacls", [path, "/remove:d", "*S-1-1-0"]);
   else chmodSync(path, 0o755);
 }
 
