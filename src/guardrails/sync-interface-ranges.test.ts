@@ -131,13 +131,49 @@ test("sync --check reports the stale range as drift without writing or installin
   assert.deepEqual(pnpm.calls(), []);
 });
 
-test("sync fails and names the moved manifest when the relock fails, where a sync that reports success leaves a lockfile CI's frozen install refuses", (t) => {
+test("sync fails, names the manifest and leaves its range unmoved when the relock fails, where a sync that keeps the moved range passes on its next run with a lockfile CI's frozen install refuses", (t) => {
   const root = workspace(t, "0.7.0");
-  const pnpm = recordingPnpm(t, 1);
-  const result = bin(root, "sync", [], pnpm.env);
+  const failing = recordingPnpm(t, 1);
+  const result = bin(root, "sync", [], failing.env);
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(
     result.stderr,
-    /Moved the interface ranges in packages\/dms-marketing\/package\.json\. Update the lockfile with an install\. pnpm install --lockfile-only failed \(exit 1\)/,
+    /Left the interface ranges in packages\/dms-marketing\/package\.json unmoved: the lockfile could not follow them\. pnpm install --lockfile-only failed \(exit 1\)/,
   );
+  assert.equal(moduleRange(root), ">=0.6.0 <0.7.0");
+  const pnpm = recordingPnpm(t);
+  const retry = bin(root, "sync", [], pnpm.env);
+  assert.equal(retry.status, 0, retry.stderr + retry.stdout);
+  assert.deepEqual(pnpm.calls(), [`${root} install --lockfile-only`]);
+});
+
+test("sync leaves a range it does not own: an implemented interface published from another repository and a sibling that only consumes the local interface, where a sync that drops either filter rewrites them and relocks from npm", (t) => {
+  const root = workspace(t, "0.6.2");
+  const outsider = {
+    name: "@antelopejs/dms-marketing-extra",
+    version: "0.1.0",
+    dependencies: {
+      "@antelopejs/interface-database": "^0.3.0",
+      [INTERFACE]: "^0.6.0",
+    },
+    antelopeJs: { implements: ["@antelopejs/interface-database"] },
+  };
+  const text = `${JSON.stringify(outsider, null, 2)}\n`;
+  put(root, "packages/extra/package.json", text);
+  commit(root);
+  const pnpm = recordingPnpm(t);
+  const result = bin(root, "sync", [], pnpm.env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.equal(read(root, "packages/extra/package.json"), text);
+  assert.deepEqual(pnpm.calls(), []);
+});
+
+test("sync refuses to move a range in a repository it cannot relock with pnpm and leaves the manifest as it was, where a sync that writes it leaves an npm lockfile its install refuses", (t) => {
+  const root = workspace(t, "0.7.0", "npm@11.0.0");
+  const pnpm = recordingPnpm(t);
+  const result = bin(root, "sync", [], pnpm.env);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /npm is not pnpm, so sync cannot relock them/);
+  assert.equal(moduleRange(root), ">=0.6.0 <0.7.0");
+  assert.deepEqual(pnpm.calls(), []);
 });

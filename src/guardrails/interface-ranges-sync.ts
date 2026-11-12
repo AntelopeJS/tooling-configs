@@ -44,28 +44,38 @@ function movedNote(path: string, violation: RangeViolation): string {
   return `${path}: moved ${violation.field}["${violation.name}"] from "${violation.spec}" to "${violation.expected}", the range of the interface version this repository holds.`;
 }
 
-/** Relocks with pnpm, whose lockfile a frozen install refuses once a range moved; returns why it could not. */
-function relock(root: string, manifests: readonly TrackedManifest[]) {
+/** The relock failure, after which the moved manifests are back as they were so the next sync moves them again. */
+function writeAndRelock(
+  root: string,
+  manifests: readonly TrackedManifest[],
+  moved: ReadonlyMap<string, { before: string; after: string }>,
+): string | undefined {
   const rootManifest = manifests.find(({ path }) => path === "package.json");
   const manager = packageManager(rootManifest?.manifest ?? {});
-  return manager === "pnpm"
-    ? runPnpm(root, ["install", "--lockfile-only"])
-    : `${manager} is not pnpm, so sync did not relock them.`;
+  if (manager !== "pnpm")
+    return `${manager} is not pnpm, so sync cannot relock them.`;
+  for (const [path, { after }] of moved) writeFileSync(join(root, path), after);
+  const failure = runPnpm(root, ["install", "--lockfile-only"]);
+  if (failure !== undefined)
+    for (const [path, { before }] of moved)
+      writeFileSync(join(root, path), before);
+  return failure;
 }
 
 /**
  * Moves each tracked manifest's range for an interface it implements from
  * this repository to the range `antelopejs-check-interface-ranges` expects,
- * then relocks. A minor release of that interface otherwise leaves its
- * module's range below the new version and fails the check on the release
- * commit. It runs before the rest of sync, which then plans the docs-compat
- * READMEs from the moved ranges and the new lockfile. `check` reports the
- * moves without writing.
+ * then relocks, or leaves every manifest as it was when the relock fails. A
+ * minor release of that interface otherwise leaves its module's range below
+ * the new version and fails the check on the release commit. It runs before
+ * the rest of sync, which then plans the docs-compat READMEs from the moved
+ * ranges and the new lockfile. `check` reports the moves without writing.
  */
 export function moveInterfaceRanges(root: string, check: boolean): RangeMoves {
   const manifests = tracked(root);
   const versions = localVersions(manifests.map(({ manifest }) => manifest));
   const moves: RangeMoves = { paths: [], notes: [], errors: [] };
+  const moved = new Map<string, { before: string; after: string }>();
   for (const { path, text, manifest } of manifests) {
     const fixes = checkInterfaceRanges(manifest, versions).filter(
       (violation) =>
@@ -78,16 +88,15 @@ export function moveInterfaceRanges(root: string, check: boolean): RangeMoves {
       const dependencies = manifest[field];
       if (dependencies && expected) dependencies[name] = expected;
     }
-    if (!check)
-      writeFileSync(join(root, path), serializeManifest(manifest, text));
+    moved.set(path, { before: text, after: serializeManifest(manifest, text) });
     moves.paths.push(path);
     moves.notes.push(...fixes.map((fix) => movedNote(path, fix)));
   }
-  if (check || !moves.paths.length) return moves;
-  const failure = relock(root, manifests);
+  if (check || !moved.size) return moves;
+  const failure = writeAndRelock(root, manifests, moved);
   if (failure !== undefined)
     moves.errors.push(
-      `Moved the interface ranges in ${moves.paths.join(", ")}. Update the lockfile with an install. ${failure}`,
+      `Left the interface ranges in ${moves.paths.join(", ")} unmoved: the lockfile could not follow them. ${failure}`,
     );
   return moves;
 }
