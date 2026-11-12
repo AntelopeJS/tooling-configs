@@ -182,7 +182,7 @@ test("a journey whose copy fails as what the run kept vanishes removes the parti
   assert.equal(builds(), 2);
   assert.match(
     read(run, `${COPIER}/prepared.txt`),
-    /^tree: copying what the run kept failed \(ENOENT[^)]*\), so \S+\/work\/tree\/reader\/tree was built here by the steps after this one; kept,/,
+    /^tree: copying what the run kept failed \(ENOENT[^)]*\), so \S+[\\/]work[\\/]tree[\\/]reader[\\/]tree was built here by the steps after this one; kept,/,
   );
   assert.equal(existsSync(join(run, COPIER, "build")), false);
 });

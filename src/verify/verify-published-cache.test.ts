@@ -20,6 +20,7 @@ import {
   verify,
   verifyRepo,
 } from "./helpers/verify-repo.ts";
+import { dumpEvidence } from "./helpers/diag.ts";
 import { entries } from "./helpers/folder-reads.ts";
 import {
   archive,
@@ -75,6 +76,7 @@ function journey(setupResult: Setup) {
     ["journey", folder, "smoke", "--kind", "interface"],
     env,
   );
+  dumpEvidence(folder);
   return { folder, result };
 }
 

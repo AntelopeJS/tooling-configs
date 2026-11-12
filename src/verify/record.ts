@@ -188,7 +188,10 @@ export function startRecorded(
 
 /** Kills the process group a detached command leads, never a lone PID the system may have reused since the command exited. */
 function killOwnGroup(pid: number): void {
-  if (process.platform === "win32") return killTree(pid);
+  if (process.platform === "win32") {
+    killTree(pid);
+    return;
+  }
   try {
     process.kill(-pid, "SIGKILL");
   } catch {
@@ -198,7 +201,10 @@ function killOwnGroup(pid: number): void {
 
 /** Kills the process group of `pid`, or `pid` alone, ignoring a process already gone. */
 export function killGroup(pid: number): void {
-  if (process.platform === "win32") return killTree(pid);
+  if (process.platform === "win32") {
+    killTree(pid);
+    return;
+  }
   try {
     process.kill(-pid, "SIGKILL");
   } catch {

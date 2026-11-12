@@ -92,7 +92,11 @@ export function spawnLaunched(
   });
 }
 
-/** Kills the process `pid` and everything it started, since Windows has no process groups to signal. */
-export function killTree(pid: number): void {
-  spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"], { stdio: "ignore" });
+/** Kills the process `pid` and everything it started, since Windows has no process groups to signal; whether it found the process. */
+export function killTree(pid: number): boolean {
+  return (
+    spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"], {
+      stdio: "ignore",
+    }).status === 0
+  );
 }

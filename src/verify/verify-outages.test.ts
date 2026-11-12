@@ -6,6 +6,7 @@ import test, { type TestContext } from "node:test";
 
 import { put } from "../guardrails/helpers/test-repo.ts";
 import { installFake, pathWith } from "./helpers/fake-bin.ts";
+import { dumpEvidence } from "./helpers/diag.ts";
 import {
   evidence,
   feature,
@@ -276,6 +277,7 @@ function journeys(
   assert.equal(created.status, 0, created.stdout + created.stderr);
   const run = created.stdout.trim().split("\n").at(-1) ?? "";
   const result = verify(root, tmp, ["journey", run, name], env);
+  if (name === "services") dumpEvidence(run);
   verify(root, tmp, ["clean", run], env);
   const statuses = Object.fromEntries(
     evidence(run, `${name}/feature.json`).map(
