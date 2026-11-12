@@ -32,6 +32,7 @@ jobs:
           mapfile -t list <<< "$files"
           for f in "${list[@]}"; do
             start=$SECONDS
-            timeout 100 node --test --test-reporter=dot "$f" > "$RUNNER_TEMP/out.txt" 2>&1
-            echo "== $f exit=$? seconds=$((SECONDS - start))"
+            code=0
+            timeout 100 node --test --test-reporter=dot "$f" > "$RUNNER_TEMP/out.txt" 2>&1 || code=$?
+            echo "== $f exit=$code seconds=$((SECONDS - start))"
           done
