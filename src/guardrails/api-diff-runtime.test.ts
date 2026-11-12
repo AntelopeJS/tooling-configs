@@ -155,9 +155,12 @@ test("api-diff builds each revision against its own workspace packages, dependen
     cwd: join(root, "packages/lib"),
   });
   mkdirSync(join(root, "packages/app/node_modules"));
-  symlinkSync("../../lib", join(root, "packages/app/node_modules/lib"), "dir");
-  const result = bin(root, "api-diff", ["base"], { ANT2176_TRACE: "1" });
-  assert.doesNotMatch(result.stdout, /Execution error/, result.stderr);
+  const lib = join(root, "packages/app/node_modules/lib");
+  if (process.platform === "win32")
+    symlinkSync(join(root, "packages/lib"), lib, "junction");
+  else symlinkSync("../../lib", lib, "dir");
+  const result = bin(root, "api-diff", ["base"]);
+  assert.doesNotMatch(result.stdout, /Execution error/);
   assert.match(result.stdout, /^API: 2 packages, \d+ entries unchanged/m);
   assert.match(result.stdout, /^-.*"key": "v1"/m);
   assert.match(result.stdout, /^\+.*"key": "v2"/m);
