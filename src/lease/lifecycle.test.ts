@@ -132,7 +132,10 @@ test(
           { encoding: "utf8" },
         );
         const listed = `readdir: ${listing.stdout}${listing.stderr}`;
-        seen = `${listed}\n${spawnSync("whoami", ["/priv"], { encoding: "utf8" }).stdout}`;
+        seen = `${listed}\n${(() => {
+          const priv = spawnSync("whoami.exe", ["/priv"], { encoding: "utf8" });
+          return `whoami: ${priv.stdout}${priv.stderr}${String(priv.error ?? "")}`;
+        })()}`;
       }
     } finally {
       allowReading(locked);
