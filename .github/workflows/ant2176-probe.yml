@@ -6,7 +6,7 @@ on:
 jobs:
   probe:
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
@@ -24,4 +24,4 @@ jobs:
           node-version: "24"
           cache: pnpm
       - run: pnpm install
-      - run: node --test --test-timeout=300000 --test-reporter=spec src/guardrails/api-diff-cli-entries.test.ts src/guardrails/checks-verify.test.ts src/guardrails/api-diff-timeout.test.ts src/guardrails/staged-ratchet-base-earlier.test.ts src/guardrails/staged-ratchet-base.test.ts src/guardrails/sync-interface-ranges.test.ts src/guardrails/sync-template-scripts.test.ts src/oxc/lint-hidden-any.test.ts src/guardrails/ratchet-adoption-workspace.test.ts src/guardrails/staged-ratchet-ignored.test.ts src/oxc/guardrails/self-import-lint.test.ts src/guardrails/verify-layers.test.ts src/ci/file-reporter.test.ts src/oxc/anti-slop/rules/no-module-mocking.test.ts src/oxc/anti-slop/rules/no-shape-in-symbol-names.test.ts src/oxc/guardrails/rules/no-comments.test.ts src/oxc/guardrails/rules/no-self-import-in-tests.test.ts src/garden/apps.test.ts src/garden/templates.test.ts
+      - run: node --test --test-timeout=300000 --test-reporter=tap src/guardrails/api-diff-cli-entries.test.ts src/guardrails/checks-verify.test.ts src/guardrails/sync-interface-ranges.test.ts src/guardrails/sync-template-scripts.test.ts src/oxc/lint-hidden-any.test.ts src/oxc/guardrails/self-import-lint.test.ts src/oxc/anti-slop/rules/no-module-mocking.test.ts src/oxc/anti-slop/rules/no-shape-in-symbol-names.test.ts src/oxc/guardrails/rules/no-comments.test.ts src/oxc/guardrails/rules/no-self-import-in-tests.test.ts
