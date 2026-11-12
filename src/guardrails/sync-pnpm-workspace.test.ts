@@ -40,8 +40,8 @@ test("sync tells pnpm 11 not to build lefthook and then reports no drift, where 
   assert.equal(check.status, 0, check.stdout + check.stderr);
 });
 
-test("sync keeps a repository's own pnpm-workspace.yaml settings and leaves a file that decides lefthook byte for byte, where a sync that rewrites it drops its packages, forces lefthook back to false or fights oxfmt over its formatting", (t) => {
-  const root = pinnedRepo(t, "pnpm@11.27.1");
+test("sync keeps a repository's own pnpm-workspace.yaml settings and leaves a file that decides lefthook byte for byte, where a sync that rewrites it drops its packages, forces lefthook back to false, fights oxfmt over its formatting or asks a pnpm 11 pin below 11.27.1 to rise over a file that holds the repository's own settings", (t) => {
+  const root = pinnedRepo(t, "pnpm@11.0.0");
   put(
     root,
     "pnpm-workspace.yaml",
