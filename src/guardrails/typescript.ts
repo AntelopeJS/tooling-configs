@@ -8,6 +8,7 @@ import {
   describePackage,
   repositoryDirectory,
 } from "./declared-typescript.ts";
+import { workspaceDirectories, workspacePatterns } from "./docs-compat.ts";
 import { trackedManifests } from "./files.ts";
 
 export type ExportTarget =
@@ -33,8 +34,12 @@ export interface ProofManifest {
   typesVersions?: Record<string, Record<string, string[]>>;
 }
 
-/** A proof analyses only packages that publish something: not private, and declaring at least one of `exports`, `main`, `types`, `typings` or `typesVersions`. */
-function unpublishedReason(manifest: ProofManifest): string | undefined {
+/** A proof analyses only packages that publish something: in the repository's workspace, not private, and declaring at least one of `exports`, `main`, `types`, `typings` or `typesVersions`. */
+function unpublishedReason(
+  manifest: ProofManifest,
+  member: boolean,
+): string | undefined {
+  if (!member) return "not a workspace package";
   if (manifest.private === true) return "private";
   const publishes = [
     manifest.exports,
@@ -46,7 +51,22 @@ function unpublishedReason(manifest: ProofManifest): string | undefined {
   return publishes ? undefined : "no exports, main or types";
 }
 
+/** Whether the package at `directory` belongs to the workspace at `root`: always when `root` declares none or lists a pattern with glob syntax beyond `*`, `?` and `**`, else when it is `root` or a listed member. */
+function workspaceMember(root: string): (directory: string) => boolean {
+  const pnpm = existsSync(join(root, "pnpm-workspace.yaml"));
+  if (!pnpm && !existsSync(join(root, "package.json"))) return () => true;
+  const patterns = workspacePatterns(root);
+  if (
+    (!pnpm && !patterns.length) ||
+    patterns.some((pattern) => /[{}[\]()]/u.test(pattern))
+  )
+    return () => true;
+  const members = new Set(workspaceDirectories(root));
+  return (directory) => directory === "." || members.has(directory);
+}
+
 function trackedPackages(root: string) {
+  const member = workspaceMember(root);
   return trackedManifests(root).flatMap((file) => {
     const directory = dirname(file);
     if (!existsSync(join(root, directory, "tsconfig.json"))) return [];
@@ -54,21 +74,21 @@ function trackedPackages(root: string) {
     const manifest = JSON.parse(
       readFileSync(join(root, file), "utf8"),
     ) as ProofManifest;
-    return [{ directory, manifest }];
+    return [{ directory, manifest, member: member(directory) }];
   });
 }
 
 export function packagesAt(root: string, publishedOnly: boolean) {
   return trackedPackages(root).filter(
-    ({ manifest }) =>
-      !publishedOnly || unpublishedReason(manifest) === undefined,
+    ({ manifest, member }) =>
+      !publishedOnly || unpublishedReason(manifest, member) === undefined,
   );
 }
 
 /** The packages a published-only proof leaves out, each with the reason, so a skip is reported rather than silent. */
 export function unpublishedAt(root: string) {
-  return trackedPackages(root).flatMap(({ directory, manifest }) => {
-    const reason = unpublishedReason(manifest);
+  return trackedPackages(root).flatMap(({ directory, manifest, member }) => {
+    const reason = unpublishedReason(manifest, member);
     return reason === undefined ? [] : [{ directory, reason }];
   });
 }
