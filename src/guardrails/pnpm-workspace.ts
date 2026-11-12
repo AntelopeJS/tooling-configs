@@ -9,10 +9,18 @@ import type { PlannedArtifact } from "./sync.ts";
 
 const PATH = "pnpm-workspace.yaml";
 
-/** Whether the pinned pnpm reads settings from a `pnpm-workspace.yaml` without `packages`, which pnpm before 10.5 rejects. An unpinned pnpm counts as current. */
-function readsSettings(manifest: Manifest): boolean {
+/** The first pnpm that keeps `pnpm --dir <nested> install` in the nested project when the root `pnpm-workspace.yaml` has no `packages`. Earlier pnpm installs the root instead. */
+const SCOPED_NESTED_INSTALLS = "11.27.1";
+
+/**
+ * What sync does for a repository without a `pnpm-workspace.yaml`, by its pinned pnpm. An unpinned pnpm counts as current.
+ * pnpm 10 and earlier only warn about an undecided build, so they get no file. pnpm 11 fails the install without one, and before 11.27.1 misroutes nested installs with one, so its pin must rise.
+ */
+function creation(manifest: Manifest): "write" | "skip" | "raise" {
   const pinned = manifest.packageManager?.split("@")[1];
-  return pinned === undefined || admits(">=10.5.0", pinned);
+  if (pinned === undefined || admits(`>=${SCOPED_NESTED_INSTALLS}`, pinned))
+    return "write";
+  return admits(">=11.0.0", pinned) ? "raise" : "skip";
 }
 
 /**
@@ -62,8 +70,19 @@ export function pnpmWorkspaceArtifacts(
   if (!managed || packageManager(manifest) !== "pnpm") return [];
   const file = join(root, PATH);
   const current = existsSync(file) ? readFileSync(file, "utf8") : undefined;
-  if (current === undefined && !readsSettings(manifest)) return [];
   const names = skippedBuilds(usesCaptures(root));
+  if (current === undefined) {
+    const action = creation(manifest);
+    if (action === "skip") return [];
+    if (action === "raise")
+      return [
+        {
+          kind: "error",
+          path: PATH,
+          message: `pnpm 11 needs a ${PATH} to install ${names.join(" and ")}, and before ${SCOPED_NESTED_INSTALLS} that file makes a nested \`pnpm install\` install the repository root. Set \`packageManager\` to \`pnpm@${SCOPED_NESTED_INSTALLS}\` or later, then rerun antelopejs-sync.`,
+        },
+      ];
+  }
   try {
     const content = withBuildsDecided(names, current);
     return [
