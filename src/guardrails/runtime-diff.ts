@@ -23,6 +23,7 @@ import {
   type PackageManager,
 } from "./package.ts";
 import { compareRevisions, workspaceManifests } from "./revisions.ts";
+import { shimInvocation } from "./run-command.ts";
 import { testEntryNotice } from "./test-entries.ts";
 import {
   isTestSource,
@@ -277,11 +278,12 @@ function runBuild(directory: string, manager: PackageManager): Manifest {
   const manifest = parseManifest(
     readFileSync(join(directory, "package.json"), "utf8"),
   );
+  const build = shimInvocation(manager, ["run", "build"]);
   if (manifest.scripts?.build)
-    execFileSync(manager, ["run", "build"], {
+    execFileSync(build.command, build.args, {
       cwd: directory,
       encoding: "utf8",
-      shell: process.platform === "win32",
+      shell: build.shell,
       env: { ...process.env, pnpm_config_verify_deps_before_run: "false" },
       timeout: 120_000,
       stdio: ["ignore", "pipe", "pipe"],

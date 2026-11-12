@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TestContext } from "node:test";
 
+import { shimInvocation } from "../run-command.ts";
 import { PACKAGE_ROOT } from "./test-repo.ts";
 
 /**
@@ -38,12 +39,18 @@ export function packedPack(t: TestContext) {
   symlinkSync(modules, join(source, "node_modules"));
   execFileSync("git", ["init", "-q"], { cwd: source });
   const destination = join(scratch, "tarball");
-  execFileSync("pnpm", ["pack", "--pack-destination", destination], {
+  const pack = shimInvocation("pnpm", [
+    "pack",
+    "--pack-destination",
+    destination,
+  ]);
+  execFileSync(pack.command, pack.args, {
     cwd: source,
+    shell: pack.shell,
     stdio: "ignore",
   });
   const [tarball = ""] = readdirSync(destination);
-  execFileSync("tar", ["-xzf", join(destination, tarball), "-C", scratch]);
+  execFileSync("tar", ["-xzf", `tarball/${tarball}`], { cwd: scratch });
   const packed = join(scratch, "package");
   symlinkSync(modules, join(packed, "node_modules"));
   return { source, packed };

@@ -8,10 +8,11 @@ import {
 } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 import type { TestContext } from "node:test";
 import { pathToFileURL } from "node:url";
 
+import { TSGOLINT } from "../../oxc/helpers/tsgolint.ts";
 import { toolingVersions } from "../package.ts";
 import { PACKAGE_ROOT } from "./test-repo.ts";
 
@@ -28,8 +29,18 @@ function resolved(specifier: string): string {
   return dirname(createRequire(import.meta.url).resolve(specifier));
 }
 
-function script(body: string): string {
-  return `#!${process.execPath}\n${body}\n`;
+/** Writes `body` as the Node program `name` in `directory`, run by its name from PATH: a shebang script, or on Windows a `.js` file behind the `.cmd` shim cmd.exe resolves. */
+function writeTool(directory: string, name: string, body: string): void {
+  if (process.platform !== "win32") {
+    writeFileSync(join(directory, name), `#!${process.execPath}\n${body}\n`);
+    chmodSync(join(directory, name), 0o755);
+    return;
+  }
+  writeFileSync(join(directory, `${name}.js`), `${body}\n`);
+  writeFileSync(
+    join(directory, `${name}.cmd`),
+    `@"${process.execPath}" "%~dp0${name}.js" %*\r\n`,
+  );
 }
 
 /**
@@ -55,7 +66,7 @@ function pnpmScript(log: string, failingInstall: number): string {
       pathToFileURL(join(PACKAGE_ROOT, source)).href,
     ]),
   );
-  return script(`
+  return `
 const fs = require("node:fs");
 const path = require("node:path");
 const args = process.argv.slice(2);
@@ -92,8 +103,8 @@ for (const [name, target] of Object.entries(${JSON.stringify(links)})) {
 }
 if (declared["oxlint-tsgolint"]) {
   fs.mkdirSync(path.join("node_modules", ".bin"), { recursive: true });
-  const bin = path.join("node_modules", ".bin", "tsgolint");
-  if (!fs.existsSync(bin)) fs.symlinkSync(${JSON.stringify(join(PACKAGE_ROOT, "node_modules/.bin/tsgolint"))}, bin);
+  const bin = path.join("node_modules", ".bin", ${JSON.stringify(basename(TSGOLINT))});
+  if (!fs.existsSync(bin)) fs.symlinkSync(${JSON.stringify(TSGOLINT)}, bin);
 }
 if (declared["@antelopejs/tooling-configs"]) {
   const stub = path.join("node_modules", "@antelopejs", "tooling-configs");
@@ -113,7 +124,7 @@ if (declared["@antelopejs/tooling-configs"]) {
     JSON.stringify({ name: "@antelopejs/tooling-configs", version: ${JSON.stringify(toolingVersions().pack)}, type: "module", exports }),
   );
 }
-`);
+`;
 }
 
 /**
@@ -121,7 +132,7 @@ if (declared["@antelopejs/tooling-configs"]) {
  * (`false` at first) and turns it on at a PATCH, or refuses the PATCH.
  */
 function ghScript(log: string, state: string, refuses: boolean): string {
-  return script(`
+  return `
 const fs = require("node:fs");
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(log)}, "gh " + args.join(" ") + "\\n");
@@ -134,7 +145,7 @@ if (args.includes("PATCH")) {
   process.exit(0);
 }
 process.stdout.write(fs.existsSync(${JSON.stringify(state)}) ? "true\\n" : "false\\n");
-`);
+`;
 }
 
 export interface FakeTools {
@@ -164,10 +175,8 @@ export function fakeTools(
   for (const [name, content] of [
     ["pnpm", pnpmScript(log, failingInstall)],
     ["gh", ghScript(log, state, refusesPatch)],
-  ]) {
-    writeFileSync(join(directory, name), content);
-    chmodSync(join(directory, name), 0o755);
-  }
+  ])
+    writeTool(directory, name, content);
   const calls = () => readFileSync(log, "utf8").split("\n").filter(Boolean);
   return {
     env: {
