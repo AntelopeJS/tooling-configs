@@ -368,11 +368,11 @@ export function allocateRun(
 
 const INHERITED_PREFIXES = ["ANTELOPEJS_", "npm_", "PNPM_", "XDG_"];
 
-/** The real path of `path`, resolved through its nearest existing ancestor when the path itself is gone. */
-function canonical(path: string): string {
+/** The real path of `path`, resolved through its nearest existing ancestor when the path itself is gone; on Windows also the long spelling of an 8.3 short name such as `RUNNER~1`. */
+export function canonical(path: string): string {
   const full = resolve(path);
   try {
-    return realpathSync(full);
+    return realpathSync.native(full);
   } catch {
     const parent = dirname(full);
     return parent === full ? full : join(canonical(parent), basename(full));

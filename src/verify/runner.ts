@@ -21,6 +21,7 @@ import type { JourneyEnd, JourneyResult, JourneyStatus } from "./results.ts";
 import { stopwatch } from "./timing.ts";
 import type { Journey } from "./types.ts";
 import {
+  canonical,
   git,
   removeTree,
   recordProcesses,
@@ -230,7 +231,7 @@ function gitPaths(root: string, args: string[]): string[] {
  */
 function treeState(root: string, runDir: string): string | undefined {
   try {
-    const own = relativeSlashed(root, runDir);
+    const own = relativeSlashed(canonical(root), canonical(runDir));
     const inside =
       own !== "" && !own.startsWith("..") && !isAbsolute(own)
         ? `${own}/`

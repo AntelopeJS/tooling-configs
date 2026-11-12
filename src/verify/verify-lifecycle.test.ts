@@ -36,7 +36,21 @@ setInterval(() => {}, 1000);`;
 /** Starts a child that holds the command's output open for a minute. */
 const SLOW = `require("child_process").spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "inherit" }); setTimeout(() => {}, 60000);`;
 
-const CONFIG = `import { exitIs } from ${JSON.stringify(CHECKS)};
+const WINDOWS = process.platform === "win32";
+
+/** Folders Windows cannot delete are those a live process holds as its working folder, where POSIX denies the delete by the parent's mode. */
+const NO_SIGNALS =
+  WINDOWS &&
+  "Windows has no SIGTERM or SIGQUIT to send: kill() ends the journey process at once with no exit code to forward";
+
+function lock(pidFile: string): string {
+  return WINDOWS
+    ? `const child = require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' }); child.unref(); fs.writeFileSync(${JSON.stringify(pidFile)}, String(child.pid))`
+    : "fs.chmodSync('..', 0o555)";
+}
+
+function config(pidFile: string): string {
+  return `import { exitIs } from ${JSON.stringify(CHECKS)};
 const install = (context) =>
   context.command("install", process.execPath, ["-e", "const fs = require('fs'); fs.mkdirSync('node_modules/dep', { recursive: true }); fs.writeFileSync('node_modules/dep/index.js', ''); fs.chmodSync('node_modules/dep', 0o555); fs.writeFileSync(process.env.HOME + '/.npmrc', '')"]);
 export default {
@@ -78,29 +92,37 @@ export default {
       title: "installs a folder it cannot delete",
       entryPoint: "node",
       async run(context) {
-        const result = await context.command("install", process.execPath, ["-e", "const fs = require('fs'); fs.mkdirSync('node_modules/locked', { recursive: true }); fs.writeFileSync('node_modules/locked/index.js', ''); fs.chmodSync('..', 0o555)"]);
+        const result = await context.command("install", process.execPath, ["-e", ${JSON.stringify(`const fs = require('fs'); fs.mkdirSync('node_modules/locked', { recursive: true }); fs.writeFileSync('node_modules/locked/index.js', ''); ${lock(pidFile)}`)}]);
         context.expect(result.folder, [exitIs(result, 0)]);
       },
     },
   },
 };
 `;
+}
 
 function lifecycleRepo(t: TestContext) {
   const tmp = mkdtempSync(join(tmpdir(), "verify-lifecycle-"));
+  const leaked: number[] = [];
   t.after(() => {
-    execFileSync("chmod", ["-R", "u+w", tmp]);
-    rmSync(tmp, { recursive: true, force: true });
+    for (const pid of leaked) stop(pid);
+    if (!WINDOWS) execFileSync("chmod", ["-R", "u+w", tmp]);
+    rmSync(tmp, {
+      recursive: true,
+      force: true,
+      maxRetries: 20,
+      retryDelay: 100,
+    });
   });
   const root = verifyRepo(t, {
     "README.md": "# Demo\n",
-    [`${SKILL}/verify.config.ts`]: CONFIG,
+    [`${SKILL}/verify.config.ts`]: config(join(tmp, "locked.pid")),
     [`${SKILL}/features/smoke.md`]: feature([], ["passes", "fails"]),
     [`${SKILL}/features/stuck.md`]: feature(["src/**"], ["hangs"]),
     [`${SKILL}/features/slow.md`]: feature(["src/**"], ["slow"]),
     [`${SKILL}/features/locked.md`]: feature(["src/**"], ["locked"]),
   });
-  return { root, tmp };
+  return { root, tmp, leaked };
 }
 
 function stop(pid: number): void {
@@ -165,30 +187,34 @@ for (const [signal, code] of [
   ["SIGTERM", 143],
   ["SIGQUIT", 131],
 ] as const)
-  test(`a journey interrupted by ${signal} stops its commands and what they started, spares another journey's processes, deletes its install and HOME even when run.json cannot be written, and exits ${code}`, async (t) => {
-    const { root, tmp } = lifecycleRepo(t);
-    const run = newRun(root, tmp);
-    const other = recordSleeper(t, run);
-    const started = join(run, "work/stuck/hangs/started");
-    const child = spawn(
-      process.execPath,
-      [join(PACKAGE_ROOT, "src/bin/verify.ts"), "journey", run, "stuck"],
-      { cwd: root, env: { ...process.env, CI: "1", TMPDIR: tmp } },
-    );
-    const exited = new Promise<number | null>((resolve) =>
-      child.on("exit", (exit) => resolve(exit)),
-    );
-    await until(() => existsSync(started));
-    const hang = Number(read(run, "work/stuck/hangs/started"));
-    t.after(() => stop(hang));
-    chmodSync(join(run, "run.json"), 0o444);
-    child.kill(signal);
-    assert.equal(await exited, code);
-    await until(() => !alive(hang));
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    assert.deepEqual(runEntries(run), ["evidence", "run.json"]);
-    assert.equal(alive(other), true);
-  });
+  test(
+    `a journey interrupted by ${signal} stops its commands and what they started, spares another journey's processes, deletes its install and HOME even when run.json cannot be written, and exits ${code}`,
+    { skip: NO_SIGNALS },
+    async (t) => {
+      const { root, tmp } = lifecycleRepo(t);
+      const run = newRun(root, tmp);
+      const other = recordSleeper(t, run);
+      const started = join(run, "work/stuck/hangs/started");
+      const child = spawn(
+        process.execPath,
+        [join(PACKAGE_ROOT, "src/bin/verify.ts"), "journey", run, "stuck"],
+        { cwd: root, env: { ...process.env, CI: "1", TMPDIR: tmp } },
+      );
+      const exited = new Promise<number | null>((resolve) =>
+        child.on("exit", (exit) => resolve(exit)),
+      );
+      await until(() => existsSync(started));
+      const hang = Number(read(run, "work/stuck/hangs/started"));
+      t.after(() => stop(hang));
+      chmodSync(join(run, "run.json"), 0o444);
+      child.kill(signal);
+      assert.equal(await exited, code);
+      await until(() => !alive(hang));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      assert.deepEqual(runEntries(run), ["evidence", "run.json"]);
+      assert.equal(alive(other), true);
+    },
+  );
 
 test("a command that outlives its timeout is killed with what it started, and the journey ends", (t) => {
   const { root, tmp } = lifecycleRepo(t);
@@ -201,22 +227,33 @@ test("a command that outlives its timeout is killed with what it started, and th
 });
 
 test("a journey whose install cannot be deleted still records its result and names the folder it left", (t) => {
-  const { root, tmp } = lifecycleRepo(t);
+  const { root, tmp, leaked } = lifecycleRepo(t);
   const run = newRun(root, tmp);
   const result = verify(root, tmp, ["journey", run, "locked"]);
+  if (WINDOWS) leaked.push(Number(read(tmp, "locked.pid")));
   assert.match(result.stdout, /^PASS locked\/locked \(\d+\.\d s\)\n$/);
-  assert.match(result.stderr, /could not delete .*work\/locked\/locked/);
+  assert.match(result.stderr, /could not delete .*work[\\/]locked[\\/]locked/);
   assert.equal(evidence(run, "locked/feature.json")[0].status, "PASS");
 });
 
 test("new skips a stale run it cannot delete, says so, and still creates its run", (t) => {
-  const { root, tmp } = lifecycleRepo(t);
+  const { root, tmp, leaked } = lifecycleRepo(t);
   const stale = join(
     tmp,
     "antelopejs-verify/other-repo/20200101T000000-abcdef",
   );
   put(stale, "work/node_modules/dep/index.js", "");
-  chmodSync(join(stale, ".."), 0o555);
+  if (WINDOWS) {
+    const holder = spawn(
+      process.execPath,
+      ["-e", "setInterval(() => {}, 1000)"],
+      {
+        cwd: join(stale, "work"),
+        stdio: "ignore",
+      },
+    );
+    leaked.push(Number(holder.pid));
+  } else chmodSync(join(stale, ".."), 0o555);
   const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
   utimesSync(stale, old, old);
   const created = verify(root, tmp, ["new"]);
