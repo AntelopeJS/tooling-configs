@@ -7,11 +7,11 @@ jobs:
   area:
     name: area ${{ matrix.shard }}
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     defaults:
       run:
         shell: bash
@@ -32,5 +32,19 @@ jobs:
       - env:
           SHARD: ${{ matrix.shard }}
         run: |
-          mapfile -t list < <(find src/verify src/capture src/formal -name '*.test.ts' | sort | awk -v s="$SHARD" 'NR % 6 == s')
-          node --test --test-timeout=240000 --test-reporter=spec "${list[@]}"
+          mkdir -p "$RUNNER_TEMP/out"
+          find src/verify src/capture src/formal -name '*.test.ts' | sort | awk -v s="$SHARD" 'NR % 8 == s' > "$RUNNER_TEMP/list.txt"
+          run_one() {
+            file="$1"
+            log="$RUNNER_TEMP/out/$(echo "$file" | tr '/' '_').log"
+            timeout 420 node --test --test-reporter=spec "$file" > "$log" 2>&1
+            echo "FILE $file exit $?"
+          }
+          export -f run_one
+          export RUNNER_TEMP
+          xargs -P 3 -I{} bash -c 'run_one {}' < "$RUNNER_TEMP/list.txt" | tee "$RUNNER_TEMP/summary.txt"
+          for log in "$RUNNER_TEMP"/out/*.log; do
+            echo "=================== $log"
+            cat "$log"
+          done
+          ! grep -v "exit 0$" "$RUNNER_TEMP/summary.txt"
