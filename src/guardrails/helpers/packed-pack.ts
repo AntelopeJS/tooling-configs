@@ -47,7 +47,8 @@ export function packedPack(t: TestContext) {
   execFileSync(pack.command, pack.args, {
     cwd: source,
     shell: pack.shell,
-    stdio: "ignore",
+    encoding: "utf8",
+    stdio: "pipe",
   });
   const [tarball = ""] = readdirSync(destination);
   execFileSync("tar", ["-xzf", `tarball/${tarball}`], { cwd: scratch });

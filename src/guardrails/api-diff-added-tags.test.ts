@@ -14,7 +14,8 @@ test("api-diff --allow-added accepts a module-level @internal tag or a tag on ev
     root,
     "/** @internal @packageDocumentation */\nexport function help(): number { return 1; }\nexport const extra = 2;\n",
   );
-  assert.equal(bin(root, "api-diff", ["base", ...INTERNAL]).status, 0);
+  const tagged = bin(root, "api-diff", ["base", ...INTERNAL]);
+  assert.equal(tagged.status, 0, tagged.stdout + tagged.stderr);
   addHelper(
     root,
     "/** @internal */\nexport function help(): number { return 1; }\n/** Public. */\nexport const extra = 2;\n",
@@ -29,7 +30,8 @@ test("api-diff --allow-added accepts a module-level @internal tag or a tag on ev
     root,
     "/** @internal */\nexport function help(): number { return 1; }\n/** @internal */\nexport const extra = 2;\n",
   );
-  assert.equal(bin(root, "api-diff", ["base", ...INTERNAL]).status, 0);
+  const everyTagged = bin(root, "api-diff", ["base", ...INTERNAL]);
+  assert.equal(everyTagged.status, 0, everyTagged.stdout + everyTagged.stderr);
 });
 
 test("api-diff --allow-added fails an added internal entry without @internal and names the file and the fix", (t) => {
