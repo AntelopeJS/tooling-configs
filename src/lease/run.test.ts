@@ -57,6 +57,19 @@ console.log("ready");
 setInterval(() => {}, 1000);
 `;
 
+/** The variables libuv adds from its own environment to every process Node starts on Windows, when the one it passes lacks them. */
+const LIBUV_WINDOWS_VARIABLES = [
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "LOGONSERVER",
+  "SYSTEMDRIVE",
+  "TEMP",
+  "USERDOMAIN",
+  "USERNAME",
+  "USERPROFILE",
+  "WINDIR",
+];
+
 const POSIX_SIGNALS =
   process.platform === "win32" &&
   "Windows has no POSIX signals or process groups: run is the parent of its command there, and Ctrl+C reaches both through the console";
@@ -228,8 +241,17 @@ test("run hands its command the caller's environment and arguments unchanged, wi
     Object.entries(env).filter(([key]) => LEASE_VARIABLES.includes(key)),
   );
   const { PORT: _port, ...kept } = caller;
+  const named = new Set(Object.keys(caller).map((key) => key.toUpperCase()));
+  const received = Object.fromEntries(
+    Object.entries(env).filter(
+      ([key]) =>
+        process.platform !== "win32" ||
+        !LIBUV_WINDOWS_VARIABLES.includes(key) ||
+        named.has(key),
+    ),
+  );
   assert.deepEqual(Object.keys(leased).sort(), LEASE_VARIABLES);
-  assert.deepEqual(env, { ...kept, ...leased });
+  assert.deepEqual(received, { ...kept, ...leased });
   assert.deepEqual(strings(printed, "args"), args);
 });
 
