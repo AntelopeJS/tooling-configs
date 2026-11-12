@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, rmSync, symlinkSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { it } from "node:test";
 
@@ -316,22 +315,22 @@ it("reports a TypeScript that does not resolve as a fix instead of crashing", (t
   assert.match(failures[0], /tsconfig\.json: .*install/);
 });
 
-it("fails once, naming TypeScript 7, when the checkout's compiler has no JavaScript API", (t) => {
-  const { root } = typescript7Fixture(
+it("checks the examples with the action's own TypeScript 6 when the checkout's typescript is version 7, which has no JavaScript API", (t) => {
+  const { root, write } = typescript7Fixture(
     t,
     fence("ts docs-check", 'const port: number = "5010";') +
       fence("ts docs-check", "const ok: number = 1;"),
   );
-  const result = checkDocs({ root, files: ["README.md"] });
+  const check = () => checkDocs({ root, files: ["README.md"] });
+  const result = check();
   assert.equal(result.failures.length, 1);
-  assert.match(
-    result.failures[0],
-    /^tsconfig\.json: TypeScript 7\.0\.2 has no JavaScript API.*@typescript\/typescript6.*fragment/,
-  );
-  assert.equal(result.examples, 0);
+  assert.match(result.failures[0], /README\.md:\d+: TS2322/);
+  assert.equal(result.examples, 2);
+  write("README.md", fence("ts docs-check", "const port: number = 5010;"));
+  assert.deepEqual(check().failures, []);
 });
 
-it("counts the TypeScript 7 failure in the CLI instead of crashing", (t) => {
+it("reports a type error in the CLI when the checkout's typescript is version 7", (t) => {
   const { root } = typescript7Fixture(
     t,
     fence("typescript", 'const port: number = "5010";'),
@@ -348,31 +347,11 @@ it("counts the TypeScript 7 failure in the CLI instead of crashing", (t) => {
     { cwd: root, encoding: "utf8" },
   );
   assert.equal(run.status, 1);
-  assert.match(run.stderr, /TypeScript 7\.0\.2 has no JavaScript API/);
-  assert.match(run.stdout, /0 checked examples, 0 API pages; 1 failures\./);
+  assert.match(run.stderr, /TS2322/);
+  assert.match(run.stdout, /1 checked examples, 0 API pages; 1 failures\./);
 });
 
 it("does not read TypeScript 7 for a README with no TypeScript example", (t) => {
   const { root } = typescript7Fixture(t, "# Title\n");
   assert.deepEqual(checkDocs({ root, files: ["README.md"] }).failures, []);
-});
-
-it("checks the examples with @typescript/typescript6 when typescript is version 7", (t) => {
-  const { root, write } = typescript7Fixture(
-    t,
-    fence("ts docs-check", 'const port: number = "5010";'),
-  );
-  mkdirSync(join(root, "node_modules/@typescript"), { recursive: true });
-  symlinkSync(
-    dirname(createRequire(import.meta.url).resolve("typescript/package.json")),
-    join(root, "node_modules/@typescript/typescript6"),
-    "dir",
-  );
-  const check = () => checkDocs({ root, files: ["README.md"] });
-  assert.match(check().failures.join("\n"), /README\.md:4: TS2322/);
-  assert.equal(check().failures.length, 1);
-  write("README.md", fence("ts docs-check", "const port: number = 5010;"));
-  const ok = check();
-  assert.deepEqual(ok.failures, []);
-  assert.equal(ok.examples, 1);
 });

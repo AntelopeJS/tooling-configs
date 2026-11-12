@@ -65,27 +65,12 @@ test("api-diff fails a workspace package whose root declares typescript when it 
   );
 });
 
-test("api-diff falls back to the pack's TypeScript for a package that declares none and says so once", (t) => {
+test("api-diff analyses a package that declares and installs no typescript with the pack's TypeScript", (t) => {
   const root = apiRepo(t);
   prebuiltPackage(root);
   const result = bin(root, "api-diff", ["HEAD"]);
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.equal(
-    result.stdout.match(
-      /^\.: declares no typescript; using the pack's TypeScript \d+\.\d+\.\d+$/gm,
-    )?.length,
-    1,
-    result.stdout,
-  );
-});
-
-test("api-diff prints no fallback notice for a package that resolves its own typescript", (t) => {
-  const root = apiRepo(t);
-  put(root, "src/index.ts", "export const value = 1;\n");
-  commit(root);
-  const result = bin(root, "api-diff", ["HEAD"]);
-  assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.doesNotMatch(result.stdout, /declares no typescript/);
+  assert.match(result.stdout, /^API: 1 packages, 1 entries unchanged/m);
 });
 
 test("api-diff resolves a workspace package's types from its own node_modules, as tsc -p does, not from the repository root", (t) => {

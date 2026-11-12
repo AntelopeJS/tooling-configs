@@ -92,7 +92,7 @@ async function typecheckLayer(
   const configPath = join(root, layer, TSCONFIG);
   if (!existsSync(configPath))
     return `${layer}: has a verify.config.ts and no tsconfig.json. Add a tsconfig.json that includes its TypeScript files; antelopejs-sync writes one for the shared kinds.\n`;
-  const ts = (await import("typescript")).default;
+  const ts = (await import("@typescript/typescript6")).default;
   const parsed = ts.getParsedCommandLineOfConfigFile(configPath, undefined, {
     ...ts.sys,
     onUnRecoverableConfigFileDiagnostic: () => undefined,

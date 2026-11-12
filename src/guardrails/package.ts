@@ -123,7 +123,7 @@ export function toolingVersions() {
     tsgolint: dev("oxlint-tsgolint"),
     oxlint: dev("oxlint"),
     oxfmt: dev("oxfmt"),
-    typescript: declared("dependencies", "typescript"),
+    typescript: dev("typescript"),
     nodeTypes: dev("@types/node"),
     capture: CAPTURE_PEERS.map((name): [CapturePeer, string] => [
       name,

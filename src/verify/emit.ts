@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { dirname, extname, posix } from "node:path";
-import ts from "typescript";
+import ts from "@typescript/typescript6";
 
 /** One top-level item of a covered file: its structure decides equality, its text only describes it. */
 export interface EmitItem {

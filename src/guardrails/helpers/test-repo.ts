@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -122,6 +123,26 @@ export function read(root: string, path: string): string {
 
 export const API_BUILD_SCRIPT =
   "tsc --noEmit false --composite false --declarationMap false";
+
+/** Makes `root`, an `apiRepo`, a repository on TypeScript 5: its `typescript` and the `tsc` its build script runs are the pack's `typescript5`, every other package the pack's own. */
+export function onTypeScript5(root: string): void {
+  const modules = join(root, "node_modules");
+  const pack = join(PACKAGE_ROOT, "node_modules");
+  rmSync(modules);
+  mkdirSync(join(modules, ".bin"), { recursive: true });
+  for (const entry of readdirSync(pack))
+    if (entry !== ".bin" && entry !== "typescript")
+      symlinkSync(join(pack, entry), join(modules, entry), "dir");
+  for (const bin of readdirSync(join(pack, ".bin")))
+    if (bin !== "tsc")
+      symlinkSync(join(pack, ".bin", bin), join(modules, ".bin", bin));
+  symlinkSync(join(pack, "typescript5"), join(modules, "typescript"), "dir");
+  writeFileSync(
+    join(modules, ".bin/tsc"),
+    `#!/bin/sh\nexec node ${JSON.stringify(join(pack, "typescript5/bin/tsc"))} "$@"\n`,
+    { mode: 0o755 },
+  );
+}
 
 /** A repository publishing a compiled `src` through `dist` with a build script, for the proof commands. */
 export function apiRepo(t: TestContext): string {

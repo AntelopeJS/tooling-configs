@@ -1,4 +1,4 @@
-import type ts from "typescript";
+import type ts from "@typescript/typescript6";
 
 type Compiler = typeof ts;
 type Member = ts.TypeElement | ts.ClassElement;

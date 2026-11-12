@@ -9,6 +9,7 @@ import {
   apiRepo,
   bin,
   commit,
+  onTypeScript5,
   put,
 } from "./helpers/test-repo.ts";
 
@@ -76,8 +77,9 @@ test("api-diff follows a `@/` path alias in declarations and at runtime, so a ch
   assertBothHalvesChanged(bin(root, "api-diff", ["HEAD~1"]));
 });
 
-test("api-diff resolves `paths` targets against a tsconfig `baseUrl` that is not the config directory", (t) => {
+test("api-diff resolves `paths` targets against a tsconfig `baseUrl` that is not the config directory, on TypeScript 5, which still reads `baseUrl`", (t) => {
   const root = aliasedRepo(t, { baseUrl: "./src", paths: { "@/*": ["*"] } });
+  onTypeScript5(root);
   changeBehindAlias(root);
   assertBothHalvesChanged(bin(root, "api-diff", ["HEAD~1"]));
 });

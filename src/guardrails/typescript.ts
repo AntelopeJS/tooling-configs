@@ -1,15 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { dirname, join, matchesGlob, relative, resolve, sep } from "node:path";
-import type ts from "typescript";
+import ts from "@typescript/typescript6";
 
-import {
-  declaresTypeScript,
-  describePackage,
-  repositoryDirectory,
-} from "./declared-typescript.ts";
+import { declaresTypeScript, describePackage } from "./declared-typescript.ts";
 import { workspaceDirectories, workspacePatterns } from "./docs-compat.ts";
 import { trackedManifests } from "./files.ts";
+import {
+  installedCompilerDefaults,
+  installedTypeScriptMajor,
+} from "./installed-typescript.ts";
 
 export type ExportTarget =
   | string
@@ -93,84 +92,14 @@ export function unpublishedAt(root: string) {
   });
 }
 
-/** A TypeScript installation and the directory of its package; `notice` says the pack's was used, because the package declares none or, for a JavaScript-only emit, because its own has no compiler API. */
-interface PackageCompiler {
-  compiler: typeof ts;
-  root: string;
-  notice?: string;
-}
-
-function packageRoot(file: string): string {
-  let directory = dirname(file);
-  while (!existsSync(join(directory, "package.json"))) {
-    const parent = dirname(directory);
-    if (parent === directory) return dirname(file);
-    directory = parent;
-  }
-  return directory;
-}
-
-function resolveTypeScript(directory: string) {
-  try {
-    return {
-      file: createRequire(join(directory, "package.json")).resolve(
-        "typescript",
-      ),
-      fallback: false,
-    };
-  } catch (error) {
-    if (declaresTypeScript(directory))
-      throw new Error(
-        `${describePackage(directory)} declares typescript but it cannot be resolved from the package directory, so the compiler it builds with is not available. Install dependencies (run pnpm install) and retry.`,
-        { cause: error },
-      );
-    return { file: packTypeScript(), fallback: true };
-  }
-}
-
-/** The TypeScript `dts-bundle-generator` brings, which the pack falls back to. */
-function packTypeScript(): string {
-  return createRequire(
-    createRequire(import.meta.url).resolve("dts-bundle-generator"),
-  ).resolve("typescript");
-}
-
-/** Loads the TypeScript at `file`; one without the programmatic API (7 and later) yields only its `version`, so the caller reports it rather than crashing. */
-function requireTypeScript(file: string) {
-  /* SAFETY: a resolved typescript package implements the compiler API unless the check below rejects it. */
-  const compiler = createRequire(file)("typescript") as typeof ts;
-  const root = packageRoot(file);
-  if (compiler.sys === undefined || !("createProgram" in compiler))
-    return { root, version: compiler.version };
-  return { root, compiler };
-}
-
-/** Loads the compiler a package builds with, including a package-local installation in a workspace. A package that declares `typescript` (itself or through its workspace root) but cannot resolve it is an error; only a package that declares none falls back to the one `dts-bundle-generator` brings, with a `notice`. A TypeScript without the programmatic API (7 and later) is an error, unless `javascriptOnly` says the caller only strips comments and emits JavaScript, so the pack's TypeScript emits both revisions instead, with a `notice`. */
-export function loadTypeScript(
-  directory: string,
-  javascriptOnly = false,
-): PackageCompiler {
-  const { file, fallback } = resolveTypeScript(directory);
-  const loaded = requireTypeScript(file);
-  if (loaded.compiler !== undefined)
-    return {
-      compiler: loaded.compiler,
-      root: loaded.root,
-      notice: fallback
-        ? `${repositoryDirectory(directory)}: declares no typescript; using the pack's TypeScript ${loaded.compiler.version}\n`
-        : undefined,
-    };
-  const pack =
-    javascriptOnly && !fallback ? requireTypeScript(packTypeScript()) : loaded;
-  if (pack.compiler === undefined)
+/** The TypeScript major the package at `directory` builds with, which decides how its config reads; undefined when it declares none. A package that declares `typescript` (itself or through its workspace root) but cannot resolve it is an error. */
+function packageMajor(directory: string): number | undefined {
+  const major = installedTypeScriptMajor(directory);
+  if (major === undefined && declaresTypeScript(directory))
     throw new Error(
-      `TypeScript ${loaded.version} at ${loaded.root} has no programmatic compiler API (sys, createProgram), so this package cannot be analysed. Build it with a TypeScript that has one, or mark the package private.`,
+      `${describePackage(directory)} declares typescript but it cannot be resolved from the package directory, so the compiler version it builds with is not known. Install dependencies (run pnpm install) and retry.`,
     );
-  return {
-    compiler: pack.compiler,
-    root: pack.root,
-    notice: `${repositoryDirectory(directory)}: TypeScript ${loaded.version} has no programmatic compiler API; emitting JavaScript with the pack's TypeScript ${pack.compiler.version}\n`,
-  };
+  return major;
 }
 
 const TEST_SOURCE_GLOBS = [
@@ -186,14 +115,9 @@ export function isTestSource(root: string, file: string): boolean {
   return TEST_SOURCE_GLOBS.some((pattern) => matchesGlob(path, pattern));
 }
 
-function formatErrors(
-  compiler: typeof ts,
-  diagnostics: readonly ts.Diagnostic[],
-): string {
-  return compiler.formatDiagnostics(
-    diagnostics.filter(
-      (item) => item.category === compiler.DiagnosticCategory.Error,
-    ),
+function formatErrors(diagnostics: readonly ts.Diagnostic[]): string {
+  return ts.formatDiagnostics(
+    diagnostics.filter((item) => item.category === ts.DiagnosticCategory.Error),
     {
       getCanonicalFileName: (file) => file,
       getCurrentDirectory: () => process.cwd(),
@@ -202,11 +126,8 @@ function formatErrors(
   );
 }
 
-function failDiagnostics(
-  compiler: typeof ts,
-  diagnostics: readonly ts.Diagnostic[],
-): void {
-  const errors = formatErrors(compiler, diagnostics);
+function failDiagnostics(diagnostics: readonly ts.Diagnostic[]): void {
+  const errors = formatErrors(diagnostics);
   if (errors) throw new Error(errors);
 }
 
@@ -251,45 +172,53 @@ function copyDeclarations(
 /** TS18002: `"files": []` without references. */
 const EMPTY_FILES_LIST = 18002;
 
-function readConfig(directory: string, javascriptOnly = false) {
-  const { compiler, root, notice } = loadTypeScript(directory, javascriptOnly);
+function readConfig(directory: string) {
   const file = join(directory, "tsconfig.json");
-  const config = compiler.readConfigFile(file, compiler.sys.readFile);
-  if (config.error) failDiagnostics(compiler, [config.error]);
-  const parsed = compiler.parseJsonConfigFileContent(
+  const config = ts.readConfigFile(file, ts.sys.readFile);
+  if (config.error) failDiagnostics([config.error]);
+  return ts.parseJsonConfigFileContent(
     config.config,
-    compiler.sys,
+    ts.sys,
     directory,
     undefined,
     file,
   );
-  return { compiler, root, notice, parsed };
 }
 
-/** Parses `tsconfig.json` as `tsc -p` would from the package directory, failing on any configuration error. */
-function parseConfig(directory: string, javascriptOnly = false) {
-  const config = readConfig(directory, javascriptOnly);
-  failDiagnostics(config.compiler, config.parsed.errors);
-  return config;
+/** Parses `tsconfig.json` as the package's own `tsc -p` would from the package directory, failing on any configuration error. */
+function parseConfig(directory: string) {
+  const parsed = readConfig(directory);
+  failDiagnostics(parsed.errors);
+  const defaults = installedCompilerDefaults(
+    parsed.options,
+    packageMajor(directory),
+  );
+  return {
+    ...parsed,
+    defaults,
+    options: {
+      ...parsed.options,
+      ...ts.convertCompilerOptionsFromJson(defaults, directory).options,
+    },
+  };
 }
 
-/** Whether `tsconfig.json` has an empty `files` list, references nothing, and so parses to no inputs; read for a JavaScript-only emit, so a compiler without the API falls back as `emitPackage` does. */
+/** Whether `tsconfig.json` has an empty `files` list, references nothing, and so parses to no inputs. */
 export function listsNoFiles(directory: string): boolean {
-  const { parsed } = readConfig(directory, true);
+  const parsed = readConfig(directory);
   return (
     parsed.fileNames.length === 0 &&
     parsed.errors.some((error) => error.code === EMPTY_FILES_LIST)
   );
 }
 
-/** The absolute paths of the configs `tsconfig.json` extends, directly or through another config; read for a JavaScript-only emit, as `listsNoFiles` is. */
+/** The absolute paths of the configs `tsconfig.json` extends, directly or through another config. */
 export function extendedConfigs(directory: string): string[] {
-  const { compiler } = loadTypeScript(directory, true);
   const file = join(directory, "tsconfig.json");
-  const source = compiler.readJsonConfigFile(file, compiler.sys.readFile);
-  compiler.parseJsonSourceFileConfigFileContent(
+  const source = ts.readJsonConfigFile(file, ts.sys.readFile);
+  ts.parseJsonSourceFileConfigFileContent(
     source,
-    compiler.sys,
+    ts.sys,
     directory,
     undefined,
     file,
@@ -322,10 +251,7 @@ function absolutePaths(
 
 /** The configured `outDir`, the root under which the declaration half already judges a built path as test output. */
 export function outputRoot(directory: string): string {
-  return resolve(
-    directory,
-    parseConfig(directory).parsed.options.outDir ?? ".",
-  );
+  return resolve(directory, parseConfig(directory).options.outDir ?? ".");
 }
 
 /** The root TypeScript lays its emit out under: `rootDir`, else the common directory of every authored source in `program`, wherever it sits. */
@@ -364,17 +290,14 @@ function withheldDeclarations(
   return withheld;
 }
 
-/** Emits with the package's compiler and config, or for JavaScript alone with the pack's when the package's has no compiler API; test roots and outputs never enter either proof. `modules` maps each emitted, copied or `withheld` file to its source module; `paths` is the configured `paths` with absolute targets. */
+/** Emits with the pack's TypeScript 6, reading the package's config as the TypeScript it installs does, and lays the output out under `rootDir`, else the common directory of its sources as TypeScript 5 does; test roots and outputs never enter either proof. `defaults` is what `installedCompilerDefaults` adds to the config. `modules` maps each emitted, copied or `withheld` file to its source module; `paths` is the configured `paths` with absolute targets. */
 export function emitPackage(
   directory: string,
   output: string,
   declarations: boolean,
 ) {
-  const { compiler, root, notice, parsed } = parseConfig(
-    directory,
-    !declarations,
-  );
-  const options: ts.CompilerOptions = {
+  const parsed = parseConfig(directory);
+  const configured: ts.CompilerOptions = {
     ...parsed.options,
     rootDir:
       parsed.options.rootDir ?? (parsed.options.outDir ? undefined : directory),
@@ -396,15 +319,30 @@ export function emitPackage(
       ? parsed.options.allowImportingTsExtensions
       : false,
   };
-  const program = compiler.createProgram({
-    rootNames: parsed.fileNames.filter(
-      (file) => !isTestSource(directory, file),
-    ),
-    options,
-    projectReferences: parsed.projectReferences,
+  const rootNames = parsed.fileNames.filter(
+    (file) => !isTestSource(directory, file),
+  );
+  const projectReferences = parsed.projectReferences;
+  const laidOut = ts.createProgram({
+    rootNames,
+    options: configured,
+    projectReferences,
   });
+  const options: ts.CompilerOptions = {
+    ...configured,
+    rootDir: configured.rootDir ?? emitRoot(laidOut),
+  };
+  const program =
+    configured.rootDir === undefined
+      ? ts.createProgram({
+          rootNames,
+          options,
+          projectReferences,
+          oldProgram: laidOut,
+        })
+      : laidOut;
   if (declarations)
-    failDiagnostics(compiler, [
+    failDiagnostics([
       ...program.getConfigFileParsingDiagnostics(),
       ...program.getOptionsDiagnostics(),
       ...program.getSyntacticDiagnostics(),
@@ -437,9 +375,7 @@ export function emitPackage(
     files.push(...copyDeclarations(program, directory, output, modules));
   for (const [file, source] of withheld) modules.set(file, source);
   return {
-    compiler,
-    compilerRoot: root,
-    notice,
+    defaults: parsed.defaults,
     files,
     withheld: [...withheld.keys()],
     modules,
@@ -449,7 +385,7 @@ export function emitPackage(
     declarationErrors(sources: readonly string[]): string {
       if (!declarationDiagnostics.length) return "";
       const reached = new Set(
-        compiler
+        ts
           .createProgram({
             rootNames: sources,
             options,
@@ -460,7 +396,6 @@ export function emitPackage(
           .map((source) => source.fileName),
       );
       return formatErrors(
-        compiler,
         declarationDiagnostics.filter(
           (item) => item.file !== undefined && reached.has(item.file.fileName),
         ),

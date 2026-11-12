@@ -1,80 +1,59 @@
 import assert from "node:assert/strict";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 
-import { apiRepo, bin, commit, put } from "./helpers/test-repo.ts";
+import {
+  apiRepo,
+  bin,
+  commit,
+  onTypeScript5,
+  put,
+} from "./helpers/test-repo.ts";
 
-const TYPESCRIPT = dirname(
-  createRequire(import.meta.url).resolve("typescript/package.json"),
-);
-
-function installTypeScript(
-  directory: string,
-  source: string,
-  version: string,
-): void {
+/** Installs at `directory` a `typescript` that is the JavaScript entry of TypeScript 7: its `version` and no compiler API. */
+function installTypeScript7(directory: string): void {
   const root = join(directory, "node_modules/typescript");
   mkdirSync(root, { recursive: true });
   writeFileSync(
     join(root, "package.json"),
-    JSON.stringify({ name: "typescript", version, main: "index.js" }),
+    JSON.stringify({ name: "typescript", version: "7.0.2", main: "index.js" }),
   );
-  writeFileSync(join(root, "index.js"), source);
+  writeFileSync(
+    join(root, "index.js"),
+    'module.exports = { version: "7.0.2" };\n',
+  );
 }
 
-const RECORDING_TYPESCRIPT = `
-const real = require(${JSON.stringify(join(TYPESCRIPT, "lib/typescript.js"))});
-module.exports = {
-  ...real,
-  createProgram(...args) {
-    const origin = new Error().stack.includes("dts-bundle-generator") ? "generator" : "emit";
-    process.stderr.write("program from " + origin + "\\n");
-    return real.createProgram(...args);
-  },
-};
-`;
-
-test("api-diff bundles declarations with the TypeScript the target package builds with, not the one the generator was installed with", (t) => {
+test("api-diff analyses a package on TypeScript 7, whose own typescript and the generator's have no compiler API, with the pack's TypeScript 6", (t) => {
   const root = apiRepo(t);
-  rmSync(join(root, "node_modules"));
-  installTypeScript(root, RECORDING_TYPESCRIPT, "5.9.3");
-  put(
-    root,
-    "package.json",
-    JSON.stringify({
-      name: "public-api",
-      type: "module",
-      scripts: {
-        build: `node ${JSON.stringify(join(TYPESCRIPT, "bin/tsc"))} --noEmit false --composite false --declarationMap false`,
-      },
-      exports: {
-        ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
-      },
-    }),
-  );
   put(root, "src/index.ts", "export const value = 1;\n");
   commit(root);
-  const result = bin(root, "api-diff", ["HEAD"]);
-  assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stderr, /^program from generator$/m);
+  put(root, "src/index.ts", "export const value = 1 as const;\n");
+  commit(root);
+  const result = bin(root, "api-diff", ["HEAD~1"]);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /^-export declare const value = 1;$/m);
+  assert.doesNotMatch(result.stdout, /Execution error/);
 });
 
-test("api-diff names a package whose TypeScript has no compiler API instead of crashing, keeps analysing the rest, and lists unpublished packages", (t) => {
+test("api-diff analyses a package whose TypeScript has no compiler API, keeps analysing the rest, and lists unpublished packages", (t) => {
   const root = apiRepo(t);
   put(root, "src/index.ts", "export const value = 1;\n");
   put(
     root,
     "tools/playground/package.json",
-    JSON.stringify({ name: "playground", main: "dist/index.js" }),
+    JSON.stringify({ name: "playground", types: "dist/index.d.ts" }),
   );
-  put(root, "tools/playground/tsconfig.json", "{}");
-  installTypeScript(
-    join(root, "tools/playground"),
-    'module.exports = { version: "7.0.2" };\n',
-    "7.0.2",
+  put(
+    root,
+    "tools/playground/tsconfig.json",
+    JSON.stringify({
+      compilerOptions: { rootDir: "src", outDir: "dist", types: [] },
+    }),
   );
+  put(root, "tools/playground/src/index.ts", "export const seen = true;\n");
+  installTypeScript7(join(root, "tools/playground"));
   put(root, "tools/private/package.json", '{"private":true}');
   put(root, "tools/private/tsconfig.json", "{}");
   put(root, "tools/bare/package.json", '{"name":"bare"}');
@@ -82,16 +61,66 @@ test("api-diff names a package whose TypeScript has no compiler API instead of c
   put(root, ".gitignore", "dist\n");
   commit(root);
   const result = bin(root, "api-diff", ["HEAD"]);
-  assert.equal(result.status, 1, result.stdout + result.stderr);
-  assert.match(
-    result.stdout,
-    /Execution error: tools\/playground \(playground\): TypeScript 7\.0\.2 .* no programmatic compiler API/,
-  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /^API: 2 packages, 2 entries unchanged/m);
+  assert.doesNotMatch(result.stdout, /Execution error/);
   assert.match(result.stdout, /API: skipped tools\/private, private\./);
   assert.match(
     result.stdout,
     /API: skipped tools\/bare, no exports, main or types\./,
   );
-  assert.doesNotMatch(result.stdout + result.stderr, /\n\s+at .*\(/);
-  assert.match(result.stdout, /Runtime API: .*entries unchanged/);
+});
+
+test("api-diff reads the config of a package on TypeScript 5 with TypeScript 5's defaults for the options TypeScript 6 changed", (t) => {
+  const root = apiRepo(t);
+  onTypeScript5(root);
+  put(
+    root,
+    "package.json",
+    JSON.stringify({
+      name: "legacy",
+      main: "dist/index.js",
+      types: "dist/index.d.ts",
+      scripts: { build: "tsc" },
+      devDependencies: { typescript: "^5.9.3" },
+    }),
+  );
+  put(
+    root,
+    "tsconfig.json",
+    JSON.stringify({
+      compilerOptions: {
+        target: "ES2020",
+        module: "commonjs",
+        baseUrl: ".",
+        outDir: "dist",
+        declaration: true,
+      },
+      include: ["src"],
+    }),
+  );
+  put(
+    root,
+    "src/index.ts",
+    "export function run(input) {\n  return process.cwd() + input;\n}\n",
+  );
+  put(root, ".gitignore", "node_modules\ndist\n");
+  commit(root);
+  put(
+    root,
+    "src/index.ts",
+    "export function run(input: string) {\n  return process.cwd() + input;\n}\n",
+  );
+  commit(root);
+  const result = bin(root, "api-diff", ["HEAD~1"]);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.doesNotMatch(result.stdout, /Execution error/);
+  assert.match(
+    result.stdout,
+    /^-export declare function run\(input: any\): string;$/m,
+  );
+  assert.match(
+    result.stdout,
+    /^\+export declare function run\(input: string\): string;$/m,
+  );
 });

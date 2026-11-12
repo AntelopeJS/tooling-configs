@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type ts from "typescript";
+import type ts from "@typescript/typescript6";
 
 import {
   DEFAULT_SAFETY_MARKERS,

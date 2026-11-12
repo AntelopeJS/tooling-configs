@@ -23,27 +23,20 @@ const DOCS_PROGRAM_OPTIONS = {
   emitDeclarationOnly: undefined,
 };
 
-/** Packages that carry the compiler's JavaScript API, in preference order; `typescript` 7 and later does not. */
-const COMPILER_PACKAGES = ["typescript", "@typescript/typescript6"];
-
 const hasJavaScriptApi = (ts) =>
   ts.sys !== undefined && ts.createProgram !== undefined;
 
-/** The first compiler the tsconfig resolves that has the JavaScript API, else the first compiler it resolved without one. */
+/** The checkout's own compiler when it has the JavaScript API; when it has none (`typescript` 7 and later), the action's own TypeScript 6; undefined when the tsconfig resolves no `typescript`. */
 function loadTypescript(project) {
-  const require = createRequire(project);
-  let unusable;
-  for (const name of COMPILER_PACKAGES) {
-    let ts;
-    try {
-      ts = require(name);
-    } catch {
-      continue;
-    }
-    if (hasJavaScriptApi(ts)) return { ts };
-    unusable ??= ts;
+  let ts;
+  try {
+    ts = createRequire(project)("typescript");
+  } catch {
+    return undefined;
   }
-  return { unusable };
+  return hasJavaScriptApi(ts)
+    ? ts
+    : createRequire(import.meta.url)("@typescript/typescript6");
 }
 
 /**
@@ -53,12 +46,10 @@ function loadTypescript(project) {
  */
 export function checkTypescript({ root, project, documents, fail }) {
   const display = (path) => repoPath(root, path);
-  const { ts, unusable } = loadTypescript(project);
+  const ts = loadTypescript(project);
   if (!ts) {
     fail(
-      unusable
-        ? `${display(project)}: TypeScript ${unusable.version} has no JavaScript API, so the docs action cannot check examples with it; add @typescript/typescript6 to the checkout's devDependencies, or mark illustrative fences \`fragment\``
-        : `${display(project)}: TypeScript does not resolve from this tsconfig; install the checkout's dependencies before the docs action`,
+      `${display(project)}: TypeScript does not resolve from this tsconfig; install the checkout's dependencies before the docs action`,
     );
     return 0;
   }

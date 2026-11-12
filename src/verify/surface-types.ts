@@ -1,4 +1,4 @@
-import ts from "typescript";
+import ts from "@typescript/typescript6";
 
 const NAMED =
   ts.SymbolFlags.Interface |

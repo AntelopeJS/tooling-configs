@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, posix } from "node:path";
-import type ts from "typescript";
+import ts from "@typescript/typescript6";
 
 import {
   autoImports,
@@ -21,15 +21,12 @@ import {
 import { normalizeBundle } from "./declaration-order.ts";
 import { resolveRevision } from "./files.ts";
 import { compareRevisions } from "./revisions.ts";
-import { loadTypeScript } from "./typescript.ts";
+import {
+  asInstalledCompilerReads,
+  installedTypeScriptMajor,
+} from "./installed-typescript.ts";
 
 type Compiler = typeof ts;
-
-/** One frontend module's auto-import lines, and the compiler notice its TypeScript resolution printed, if any. */
-interface ModuleSurface {
-  lines: string[];
-  notice?: string;
-}
 
 /** A comparison result in the shape `apiDiff` joins: whether it differs and what to print. */
 interface ProofHalf {
@@ -160,7 +157,11 @@ function compilerOptions(
       undefined,
       config,
     );
-    return { ...parsed.options, ...scan, paths: parsed.options.paths ?? paths };
+    const options = asInstalledCompilerReads(
+      parsed.options,
+      installedTypeScriptMajor(moduleRoot),
+    );
+    return { ...options, ...scan, paths: options.paths ?? paths };
   }
   return {
     ...scan,
@@ -315,20 +316,19 @@ function describe(
 }
 
 /** The auto-import surface of one frontend module: one sorted line per name and meaning that unimport would expose from its scanned files. Exports are read with the module's compiler, so `export *` and inferred types resolve as the frontend workspace types them. */
-function moduleSurface(worktree: string, directory: string): ModuleSurface {
+function moduleSurface(worktree: string, directory: string): string[] {
   const moduleRoot = join(worktree, directory);
-  const { compiler, notice } = loadTypeScript(moduleRoot);
   const files = scannedFiles(
     moduleRoot,
     declaredDirectories(
-      compiler,
+      ts,
       join(moduleRoot, BUILD_FILE),
       posix.join(directory, BUILD_FILE),
     ),
   );
-  const options = compilerOptions(compiler, moduleRoot);
-  const presets = presetModules(compiler, moduleRoot, options);
-  const plain = compiler.createProgram(
+  const options = compilerOptions(ts, moduleRoot);
+  const presets = presetModules(ts, moduleRoot, options);
+  const plain = ts.createProgram(
     [...files, ...presets.map(({ file }) => file)],
     options,
   );
@@ -349,10 +349,10 @@ function moduleSurface(worktree: string, directory: string): ModuleSurface {
     })),
   ];
   const imports = autoImports(plain.getTypeChecker(), sources);
-  const program = compiler.createProgram(
+  const program = ts.createProgram(
     files,
     options,
-    injectingHost(compiler, options, scanned, imports),
+    injectingHost(ts, options, scanned, imports),
   );
   const checker = program.getTypeChecker();
   const lines = new Set<string>();
@@ -360,10 +360,10 @@ function moduleSurface(worktree: string, directory: string): ModuleSurface {
     const source = program.getSourceFile(file);
     if (source === undefined) continue;
     for (const { name, symbol } of exportedNames(checker, source))
-      for (const line of describe(compiler, checker, name, symbol, source))
+      for (const line of describe(ts, checker, name, symbol, source))
         lines.add(line.split(worktree).join("<root>"));
   }
-  return { lines: [...lines].sort(), notice };
+  return [...lines].sort();
 }
 
 /** Compares the names and signatures each DMS frontend module auto-imports (the exports of the directories its `dms.frontend.build.ts` declares, without `app/build/`) at the base and at committed HEAD. Undefined when neither revision has a frontend module. */
@@ -377,7 +377,6 @@ export function autoImportDiff(
     )
   )
     return undefined;
-  const notices = new Set<string>();
   const result = compareRevisions(
     root,
     baseRef,
@@ -386,8 +385,7 @@ export function autoImportDiff(
       const directories = moduleRoots(worktree, "HEAD");
       let entries = 0;
       for (const directory of directories) {
-        const { lines, notice } = moduleSurface(worktree, directory);
-        if (notice !== undefined) notices.add(notice);
+        const lines = moduleSurface(worktree, directory);
         const path = join(
           output,
           directory === "." ? "_root" : directory,
@@ -402,6 +400,6 @@ export function autoImportDiff(
   );
   return {
     different: result.different,
-    output: `${result.output}${result.different ? HINT : ""}${[...notices].sort().join("")}`,
+    output: `${result.output}${result.different ? HINT : ""}`,
   };
 }
