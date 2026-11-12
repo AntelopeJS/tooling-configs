@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.5.4
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.3...v0.5.4)
+
+### 🩹 Fixes
+
+- **sync:** Align catalog: and plain pack specs across workspace members in --init ([#311](https://github.com/AntelopeJS/tooling-configs/pull/311))
+- **sync:** Let pnpm 11 install the capture peer mongodb-memory-server without ERR_PNPM_IGNORED_BUILDS ([#310](https://github.com/AntelopeJS/tooling-configs/pull/310))
+- **sync:** Move npm, yarn and bun repositories to pnpm in --init ([#313](https://github.com/AntelopeJS/tooling-configs/pull/313))
+- **sync:** Bake the pack's packageManager into dist so a pnpm-packed tarball syncs ([#312](https://github.com/AntelopeJS/tooling-configs/pull/312))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.5.3
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.2...v0.5.3)
