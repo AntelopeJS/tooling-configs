@@ -69,6 +69,7 @@ function typescript5Defaults(options: ts.CompilerOptions) {
     options.esModuleInterop ?? module >= FIRST_NODE_MODULE;
   return {
     strict: false,
+    alwaysStrict: options.strict ?? false,
     types: ["*"],
     noUncheckedSideEffectImports: false,
     target: defaultTarget.name,
