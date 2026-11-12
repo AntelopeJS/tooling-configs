@@ -31,7 +31,7 @@ function skippedBuilds(captures: boolean): string[] {
   return captures ? ["lefthook", "mongodb-memory-server"] : ["lefthook"];
 }
 
-/** Whether `current` holds nothing but builds sync turned off, as sync before 0.5.7 wrote it for a pnpm 10 pin. */
+/** Whether `current` holds nothing but builds sync turns off, so pnpm reads it only to make the repository root a workspace. */
 function onlyDecidedBuilds(current: string): boolean {
   const document = parseDocument(current);
   const builds = document.get("allowBuilds");
@@ -93,32 +93,22 @@ export function pnpmWorkspaceArtifacts(
   const file = join(root, PATH);
   const current = existsSync(file) ? readFileSync(file, "utf8") : undefined;
   const names = skippedBuilds(usesCaptures(root));
-  if (
-    current !== undefined &&
-    creation(manifest) === "skip" &&
-    onlyDecidedBuilds(current)
-  )
-    return [
-      {
-        kind: "error",
-        path: PATH,
-        message: `${PATH} holds only the allowBuilds that antelopejs-sync wrote. pnpm 10 does not need it, and it makes a nested \`pnpm install\` install the repository root. Delete ${PATH}, then rerun antelopejs-sync.`,
-      },
-    ];
-  if (current === undefined) {
+  try {
+    const content = withBuildsDecided(names, current);
     const action = creation(manifest);
-    if (action === "skip") return [];
-    if (action === "raise")
+    if (action !== "write" && onlyDecidedBuilds(content)) {
+      if (action === "skip" && current === undefined) return [];
       return [
         {
           kind: "error",
           path: PATH,
-          message: `pnpm 11 needs a ${PATH} to install ${names.join(" and ")}, and before ${SCOPED_NESTED_INSTALLS} that file makes a nested \`pnpm install\` install the repository root. Set \`packageManager\` to \`pnpm@${SCOPED_NESTED_INSTALLS}\` or later, then rerun antelopejs-sync.`,
+          message:
+            action === "skip"
+              ? `${PATH} holds nothing but the allowBuilds that antelopejs-sync writes. pnpm before 11 does not need it, and it makes a nested \`pnpm install\` install the repository root. Delete ${PATH}, then rerun antelopejs-sync.`
+              : `pnpm 11 needs a ${PATH} to install ${names.join(" and ")}, and before ${SCOPED_NESTED_INSTALLS} that file makes a nested \`pnpm install\` install the repository root. Set \`packageManager\` to \`pnpm@${SCOPED_NESTED_INSTALLS}\` or later, then rerun antelopejs-sync.`,
         },
       ];
-  }
-  try {
-    const content = withBuildsDecided(names, current);
+    }
     return [
       content === current
         ? { kind: "unchanged", path: PATH }
