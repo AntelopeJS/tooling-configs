@@ -57,6 +57,8 @@ export interface ServiceDefinition {
   /** The port the service listens on inside its container. */
   port: number;
   env?: { [name: string]: string };
+  /** Passed after the image to `docker run`, in order, in place of the image's default command; an entrypoint such as MariaDB's or MySQL's hands arguments starting with `-` to its server, as in `["--performance-schema=ON", "--log-bin"]`. */
+  args?: string[];
   /** Runs inside the container until it exits 0: the readiness probe. */
   ready: string[];
   /** Runs inside the container before each journey, so every journey starts from a clean state. */

@@ -23,7 +23,9 @@ esac
 exit 0
 `;
 
-function serviceRepo(t: TestContext, kind: VerifyKind) {
+const CACHE = `{ image: "redis:7", port: 6379, ready: ["redis-cli", "ping"] }`;
+
+function serviceRepo(t: TestContext, kind: VerifyKind, cache = CACHE) {
   const tmp = mkdtempSync(join(tmpdir(), "verify-services-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   const skill = `.agents/skills/verify-${kind}`;
@@ -35,7 +37,7 @@ function serviceRepo(t: TestContext, kind: VerifyKind) {
     [`${skill}/verify.config.ts`]: `export default {
   doors: ${PUBLISH_DOORS},
   setup: [["node", "-e", "0"]],
-  services: { cache: { image: "redis:7", port: 6379, ready: ["redis-cli", "ping"] } },
+  services: { cache: ${cache} },
   template: { name: "demo", probe: { log: /ready/ } },
   journeys: {
     seen: {
@@ -89,6 +91,27 @@ for (const kind of ["interface", "template"] as const)
     verify(root, tmp, ["clean", run, "--kind", kind], env);
     assert.match(read(tmp, "docker.log"), /^rm -f -v verify-/m);
   });
+
+test("a service's args follow its image in docker run, in order", (t) => {
+  const { root, tmp, env } = serviceRepo(
+    t,
+    "interface",
+    `{ image: "redis:7", port: 6379, args: ["--appendonly", "yes", "--save", ""], ready: ["redis-cli", "ping"] }`,
+  );
+  const created = verify(root, tmp, ["new", "--kind", "interface"], env);
+  assert.equal(created.status, 0, created.stdout + created.stderr);
+  assert.match(
+    read(tmp, "docker.log"),
+    /^run -d .* redis:7 --appendonly yes --save $/m,
+  );
+});
+
+test("a service without args runs its image's default command", (t) => {
+  const { root, tmp, env } = serviceRepo(t, "interface");
+  const created = verify(root, tmp, ["new", "--kind", "interface"], env);
+  assert.equal(created.status, 0, created.stdout + created.stderr);
+  assert.match(read(tmp, "docker.log"), /^run -d .* redis:7$/m);
+});
 
 const PHASES = {
   interface: [

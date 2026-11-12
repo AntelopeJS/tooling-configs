@@ -56,8 +56,8 @@ function waitReady(container: string, ready: string[], folder: string): void {
 /**
  * Starts every service of verify.config.ts in its own container, named
  * `<prefix>-<repo>-<service>-<run id>`, publishes its port on a free
- * loopback port chosen by Docker, raises its open-file limit to 64000, and
- * waits for its readiness command. Each
+ * loopback port chosen by Docker, raises its open-file limit to 64000, passes
+ * its `args` after the image, and waits for its readiness command. Each
  * container is recorded before it is probed, so `clean` removes it even when
  * it never became ready.
  */
@@ -86,6 +86,7 @@ export function startServices(
       `nofile=${OPEN_FILES}:${OPEN_FILES}`,
       ...env,
       definition.image,
+      ...(definition.args ?? []),
     ];
     const folder = join(state.evidence, "services", service);
     const elapsed = stopwatch();
