@@ -21,6 +21,12 @@ import { accepting, claimPort, closeServer } from "./ports.ts";
 
 const binary = findMongod(process.env);
 
+const noMongod =
+  process.platform === "win32"
+    ? "a lease runs no mongod of its own on Windows, where mongod has no --fork and holds mongod.lock exclusively"
+    : binary === undefined &&
+      "no mongod on PATH, in MONGOMS_SYSTEM_BINARY or in ~/.cache/mongodb-binaries";
+
 /** True while `pid` runs. A zombie has exited: it holds no port and no file. */
 function alive(pid: number): boolean {
   try {
@@ -49,9 +55,7 @@ function psField(pid: number, column: "ppid" | "stat"): string | undefined {
 test(
   "run starts one mongod per lease and reuses it, and down stops it and deletes the lease (fails when run skips mongod or restarts it on every run, or down leaves it running or its data behind)",
   {
-    skip:
-      binary === undefined &&
-      "no mongod on PATH, in MONGOMS_SYSTEM_BINARY or in ~/.cache/mongodb-binaries",
+    skip: noMongod,
   },
   async (t) => {
     const root = scratch(t);
@@ -80,9 +84,7 @@ test(
 test(
   "run fails and names the holder when a foreign process took the mongo port of a lease whose mongod does not run (fails when readiness is any socket that accepts, which hands the command a MONGO_URL pointing at a stranger)",
   {
-    skip:
-      binary === undefined &&
-      "no mongod on PATH, in MONGOMS_SYSTEM_BINARY or in ~/.cache/mongodb-binaries",
+    skip: noMongod,
   },
   async (t) => {
     const root = scratch(t);
@@ -112,9 +114,7 @@ test(
 test(
   "eight runs starting at once in a fresh worktree all succeed on one mongod (fails when a run gives up as soon as its own mongod exits, before the mongod that won the dbpath lock has written its pid)",
   {
-    skip:
-      binary === undefined &&
-      "no mongod on PATH, in MONGOMS_SYSTEM_BINARY or in ~/.cache/mongodb-binaries",
+    skip: noMongod,
   },
   async (t) => {
     const root = scratch(t);
@@ -142,9 +142,7 @@ test(
 test(
   "mongod is never a child of the command run becomes, and down leaves no entry of it in the process table (fails when run spawns mongod itself and then execs the command, which inherits mongod as a child that stays a zombie after down until the command exits)",
   {
-    skip:
-      binary === undefined &&
-      "no mongod on PATH, in MONGOMS_SYSTEM_BINARY or in ~/.cache/mongodb-binaries",
+    skip: noMongod,
   },
   async (t) => {
     const root = scratch(t);

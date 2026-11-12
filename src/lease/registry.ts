@@ -143,7 +143,11 @@ function probeGit(worktree: string): GitProbe {
   }
 }
 
-/** The worktree containing `cwd`, by the real path of `git rev-parse --show-toplevel`. */
+/**
+ * The worktree containing `cwd`, by the real path of `git rev-parse --show-toplevel`. The native
+ * real path expands a Windows 8.3 short name such as `RUNNER~1`, so the id does not depend on how
+ * the caller spelled the directory.
+ */
 export function locateWorktree(cwd: string): Worktree {
   let top: string;
   try {
@@ -155,7 +159,7 @@ export function locateWorktree(cwd: string): Worktree {
   } catch {
     throw new Error(`antelopejs-lease: ${cwd} is not inside a git worktree`);
   }
-  const path = realpathSync(top);
+  const path = realpathSync.native(top);
   const git = probeGit(path);
   if (git.kind !== "present")
     throw new Error(`antelopejs-lease: ${path} has no .git entry`);
