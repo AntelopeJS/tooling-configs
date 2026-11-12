@@ -6,6 +6,7 @@ import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import {
+  endRun,
   externalEnv,
   firstLine,
   gitInit,
@@ -19,6 +20,10 @@ import { claimPort, closeServer } from "./ports.ts";
 
 const PRINT_DIR_THEN_WAIT =
   "console.log(process.env.ANTELOPEJS_LEASE_DIR); setInterval(() => {}, 1000)";
+
+const TOUCH_OLD_DATA = `require("node:fs").writeFileSync(require("node:path").join(process.env.TMPDIR, "old-data"), "")`;
+
+const PROBE_OLD_DATA = `console.log(require("node:fs").existsSync(require("node:path").join(process.env.TMPDIR, "old-data")) ? "inherited" : "fresh")`;
 
 const ROLE_VARS = [
   "ANTELOPEJS_LEASE",
@@ -66,7 +71,7 @@ test("a worktree recreated at the same path gets a fresh lease without the old d
   const env = externalEnv(scratch(t));
   gitInit(worktree);
   const touched = await lease(
-    ["run", "--", "sh", "-c", 'touch "$TMPDIR/old-data"'],
+    ["run", "--", process.execPath, "-e", TOUCH_OLD_DATA],
     worktree,
     env,
   );
@@ -75,13 +80,7 @@ test("a worktree recreated at the same path gets a fresh lease without the old d
   await sleep(50);
   gitInit(worktree);
   const probed = await lease(
-    [
-      "run",
-      "--",
-      "sh",
-      "-c",
-      'test -e "$TMPDIR/old-data" && echo inherited || echo fresh',
-    ],
+    ["run", "--", process.execPath, "-e", PROBE_OLD_DATA],
     worktree,
     env,
   );
@@ -92,7 +91,10 @@ test(
   "status keeps the lease of a worktree it cannot read and lists it as unreadable until it can (fails when a permission error reads as a deleted worktree and the sweep deletes a live checkout's lease)",
   {
     skip:
-      process.getuid?.() === 0 && "root reads a directory whatever its mode",
+      process.platform === "win32"
+        ? "Windows has no mode 000: chmod only sets the read-only flag, which never denies reading a directory"
+        : process.getuid?.() === 0 &&
+          "root reads a directory whatever its mode",
   },
   async (t) => {
     const root = scratch(t);
@@ -183,12 +185,12 @@ test("gc keeps the lease of a run that is still running, however old its directo
     worktree,
     env,
   );
-  t.after(() => running.child.kill("SIGTERM"));
+  t.after(() => endRun(running));
   const dir = await firstLine(running);
   backdate(dir, 30);
   assert.equal((await lease(["gc", "--idle", "1"], root, env)).code, 0);
   assert.equal(existsSync(join(dir, "tmp")), true);
-  running.child.kill("SIGTERM");
+  endRun(running);
   await running.done;
   assert.equal((await lease(["gc", "--idle", "1"], root, env)).code, 0);
   assert.equal(existsSync(dir), false);

@@ -22,7 +22,7 @@ import {
   type LeaseState,
   type Observed,
 } from "./registry.ts";
-import { stopOwn } from "./stop.ts";
+import { assertStopSupported, stopOwn } from "./stop.ts";
 
 const DOWN_GRACE_MS = 10_000;
 const DAY_MS = 86_400_000;
@@ -44,8 +44,9 @@ export interface LeaseReport {
 
 /**
  * Opens this worktree's lease, makes sure its mongod runs unless `DMS_MONGO_URL` names another
- * server, and replaces this process with `command` under the lease's environment. Answers 127 or
- * 126, as a shell does, only when the command is not found or cannot run.
+ * server, and runs `command` under the lease's environment: as this process on Linux and macOS, as
+ * a child of it on Windows. Answers 127 or 126, as a shell does, when the command is not found or
+ * cannot run, and the command's own exit code on Windows.
  */
 export async function run(
   command: readonly string[],
@@ -179,6 +180,7 @@ export async function down(
   env: NodeJS.ProcessEnv,
   options: DownOptions,
 ): Promise<void> {
+  if (options.stop !== undefined) assertStopSupported();
   const worktree = locateWorktree(process.cwd());
   const entry = readEntries(leaseHome(env)).find(
     (candidate) => candidate.id === worktree.id,

@@ -107,6 +107,14 @@ async function terminate(
     );
 }
 
+/** Throws unless this platform is Linux, the only one where a process's environment can be read to find a lease's processes. */
+export function assertStopSupported(): void {
+  if (process.platform !== "linux")
+    throw new Error(
+      "antelopejs-lease: down --stop reads /proc and runs on Linux only; stop your servers with their own stop command, then run down",
+    );
+}
+
 /**
  * Stops every process of this user whose environment holds `ANTELOPEJS_LEASE=<id>`, which `run`
  * exports and every descendant inherits, except this process and its ancestors. Signals each pid
@@ -119,10 +127,7 @@ export async function stopOwn(
   id: LeaseId,
   report: (line: string) => void,
 ): Promise<void> {
-  if (process.platform !== "linux")
-    throw new Error(
-      "antelopejs-lease: down --stop reads /proc and runs on Linux only; stop your servers with their own stop command, then run down",
-    );
+  assertStopSupported();
   const marker = leaseMarker(id);
   const shield = ancestry();
   for (let round = 0; round < ROUNDS; round += 1) {
