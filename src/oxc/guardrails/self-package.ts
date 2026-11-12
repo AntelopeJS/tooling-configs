@@ -96,7 +96,7 @@ export function isSelfLinked(directory: string, name: string): boolean {
   try {
     return (
       lstatSync(installed).isSymbolicLink() &&
-      realpathSync(installed) === realpathSync(directory)
+      realpathSync.native(installed) === realpathSync.native(directory)
     );
   } catch {
     return false;

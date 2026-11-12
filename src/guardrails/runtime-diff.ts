@@ -317,7 +317,7 @@ function installedPackage(
     const link = join(worktree, at, "node_modules", name);
     if (existsSync(link)) {
       const real =
-        relative(realpathSync(worktree), realpathSync(link))
+        relative(realpathSync.native(worktree), realpathSync.native(link))
           .split(sep)
           .join("/") || ".";
       return manifests.has(real) ? real : undefined;

@@ -108,7 +108,7 @@ function mirrorInstalled(installed: Installed, path: string): void {
       mirrorInstalled(installed, join(path, entry));
       continue;
     }
-    const real = realpathSync(source);
+    const real = realpathSync.native(source);
     const own = ownCopy(relative(realRoot, real), packages);
     const type = directory ? DIRECTORY_LINK : "file";
     if (own !== undefined) symlinkSync(join(worktree, own), target, type);
@@ -128,7 +128,7 @@ function linkDependencies(
   const directories = new Set([".", ...trackedManifests(root).map(dirname)]);
   const installed = {
     root,
-    realRoot: realpathSync(root),
+    realRoot: realpathSync.native(root),
     worktree,
     packages: ownWorkspace ? ownPackages(root, worktree) : new Map(),
   };
