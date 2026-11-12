@@ -180,12 +180,12 @@ export async function down(
   env: NodeJS.ProcessEnv,
   options: DownOptions,
 ): Promise<void> {
-  if (options.stop !== undefined) assertStopSupported();
   const worktree = locateWorktree(process.cwd());
   const entry = readEntries(leaseHome(env)).find(
     (candidate) => candidate.id === worktree.id,
   );
   if (entry === undefined) return;
+  if (options.stop !== undefined) assertStopSupported();
   if (entry.parsed?.kind === "foreign") throw foreignRecord(entry.dir);
   const record =
     entry.parsed?.kind === "current" ? entry.parsed.record : undefined;

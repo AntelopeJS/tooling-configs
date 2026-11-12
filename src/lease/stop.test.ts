@@ -32,27 +32,21 @@ const STOP_UNSUPPORTED =
   "down --stop finds a lease's processes through /proc and signals them one by one, which Windows has neither of: it refuses there";
 
 test(
-  "down --stop refuses with one line naming /proc and Linux, before it touches the lease, with a lease or without one (fails when it runs on a platform that cannot read a process's environment, which stops nothing and deletes the lease's data under running servers)",
+  "down --stop refuses with one line naming /proc and Linux before it touches a lease, and still does nothing without one (fails when it runs on a platform that cannot read a process's environment, which stops nothing and deletes the lease's data under running servers, or when it refuses where there is nothing to stop)",
   { skip: process.platform === "linux" && "Linux supports down --stop" },
   async (t) => {
     const root = scratch(t);
     const worktree = gitInit(join(root, "w"));
     const env = externalEnv(join(root, ".home"));
     const none = await lease(["down", "--stop"], worktree, env);
+    assert.deepEqual([none.code, none.stdout, none.stderr], [0, "", ""]);
     const printed = await leasedEnv(worktree, env);
     const refused = await lease(["down", "--stop"], worktree, env);
-    assert.deepEqual(
-      [none, refused].map((outcome) => [outcome.code, outcome.stdout]),
-      [
-        [1, ""],
-        [1, ""],
-      ],
-    );
+    assert.deepEqual([refused.code, refused.stdout], [1, ""]);
     assert.match(
       refused.stderr,
       /^antelopejs-lease: down --stop reads \/proc and runs on Linux only; .*\n$/u,
     );
-    assert.equal(refused.stderr, none.stderr);
     assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), true);
   },
 );
