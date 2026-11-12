@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, rmSync, utimesSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  statSync,
+  utimesSync,
+} from "node:fs";
 import type { Server } from "node:net";
 import { join } from "node:path";
 import test from "node:test";
@@ -91,13 +98,27 @@ test("a worktree recreated at the same path gets a fresh lease without the old d
 /** Denies everyone reading the worktree: mode 000 on its parent on POSIX; on Windows, where everyone may pass through a folder they cannot read and chmod only sets the read-only flag, a deny entry for Everyone on the worktree, inherited by its `.git`. */
 function denyReading(path: string): void {
   if (process.platform === "win32")
-    execFileSync("icacls", [path, "/deny", "*S-1-1-0:(OI)(CI)(F)"]);
+    execFileSync("icacls", [path, "/deny", "*S-1-1-0:(OI)(CI)(F)", "/T"]);
   else chmodSync(path, 0o000);
+}
+
+/** What a stat of `path` gives while it is denied, and on Windows its ACL, for the failure message. */
+function probeAccess(path: string): string {
+  let stat: string;
+  try {
+    statSync(path);
+    stat = "stat succeeded";
+  } catch (error) {
+    stat = `stat failed: ${String(error)}`;
+  }
+  return process.platform === "win32"
+    ? `${stat}\n${execFileSync("icacls", [path], { encoding: "utf8" })}`
+    : stat;
 }
 
 function allowReading(path: string): void {
   if (process.platform === "win32")
-    execFileSync("icacls", [path, "/remove:d", "*S-1-1-0"]);
+    execFileSync("icacls", [path, "/remove:d", "*S-1-1-0", "/T"]);
   else chmodSync(path, 0o755);
 }
 
@@ -118,14 +139,17 @@ test(
       process.platform === "win32" ? worktree : join(root, "parent");
     denyReading(locked);
     let hidden;
+    let seen = "";
     try {
       hidden = await statusRows(root, env);
+      seen = probeAccess(join(worktree, ".git"));
     } finally {
       allowReading(locked);
     }
     assert.deepEqual(
       hidden.map((row) => row.state),
       [process.platform === "win32" ? "unreadable:EPERM" : "unreadable:EACCES"],
+      seen,
     );
     assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), true);
     const [again] = await statusRows(root, env);
