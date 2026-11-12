@@ -22,10 +22,11 @@ export function isExecutable(root: string, file: string): boolean {
   );
 }
 
-/** Sets `file`'s mode, and where git ignores the filesystem's exec bit, stages it with mode `100755`, the only place a Windows checkout keeps that bit. */
+/** Sets `file`'s mode; where the filesystem drops the exec bit, as on Windows, and git ignores it, also stages the file with mode `100755`, the only place such a checkout keeps that bit. */
 export function makeExecutable(root: string, file: string, mode: number): void {
-  chmodSync(join(root, file), mode);
-  if (ignoresFileMode(root))
+  const path = join(root, file);
+  chmodSync(path, mode);
+  if ((statSync(path).mode & 0o111) === 0 && ignoresFileMode(root))
     execFileSync("git", ["update-index", "--add", "--chmod=+x", "--", file], {
       cwd: root,
     });

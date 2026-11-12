@@ -184,6 +184,7 @@
   "src/verify/emit.test.ts": 2.4,
   "src/verify/formal-gate.test.ts": 0,
   "src/verify/glob.test.ts": 0,
+  "src/verify/launch.test.ts": 0.4,
   "src/verify/record-http.test.ts": 0.1,
   "src/verify/registry.test.ts": 0.1,
   "src/verify/surface-walk.test.ts": 16,
