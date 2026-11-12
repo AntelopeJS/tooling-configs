@@ -18,17 +18,42 @@ const DAEMON = `if (process.env.IGNORE_TERM) process.on("SIGTERM", () => {});
 require("node:net").createServer().listen(Number(process.env.LISTEN_PORT), "127.0.0.1");
 setInterval(() => {}, 1000);`;
 
-/** Whether `pid` is a process that has not exited; a zombie has. */
+function exists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether `pid` is a process that has not exited; a zombie has. Windows has no zombies and no
+ * start time to read, so it only asks whether the pid exists.
+ */
 export function isLive(pid: number): boolean {
-  return identify(pid) !== undefined;
+  return process.platform === "win32"
+    ? exists(pid)
+    : identify(pid) !== undefined;
 }
 
 /**
  * Kills `pid`, with its process group when it leads one, after the test, only while it is still
- * the process it was when this was called.
+ * the process it was when this was called. On Windows it kills the one process: there are no
+ * groups, and a pid cannot be told from a reused one.
  */
 export function reap(t: TestContext, pid: number, group: boolean): void {
   assertSignallable(pid);
+  if (process.platform === "win32") {
+    t.after(() => {
+      try {
+        process.kill(pid);
+      } catch {
+        return;
+      }
+    });
+    return;
+  }
   const start = identify(pid)?.start;
   t.after(() => {
     if (start === undefined || identify(pid)?.start !== start) return;

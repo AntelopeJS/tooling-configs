@@ -58,9 +58,9 @@ test("leaseEnv drops an inherited PORT and maps every role variable onto its own
   assert.deepEqual(
     [env.DMS_BACK_LOG, env.DMS_FRONT_LOG, env.TMPDIR, env.ANTELOPEJS_LEASE_DIR],
     [
-      "/leases/one/logs/back.log",
-      "/leases/one/logs/front.log",
-      "/leases/one/tmp",
+      join("/leases/one", "logs", "back.log"),
+      join("/leases/one", "logs", "front.log"),
+      join("/leases/one", "tmp"),
       "/leases/one",
     ],
   );

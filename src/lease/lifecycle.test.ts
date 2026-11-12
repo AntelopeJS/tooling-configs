@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, rmSync, utimesSync } from "node:fs";
 import type { Server } from "node:net";
 import { join } from "node:path";
@@ -6,6 +7,7 @@ import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import {
+  endRun,
   externalEnv,
   firstLine,
   gitInit,
@@ -19,6 +21,10 @@ import { claimPort, closeServer } from "./ports.ts";
 
 const PRINT_DIR_THEN_WAIT =
   "console.log(process.env.ANTELOPEJS_LEASE_DIR); setInterval(() => {}, 1000)";
+
+const TOUCH_OLD_DATA = `require("node:fs").writeFileSync(require("node:path").join(process.env.TMPDIR, "old-data"), "")`;
+
+const PROBE_OLD_DATA = `console.log(require("node:fs").existsSync(require("node:path").join(process.env.TMPDIR, "old-data")) ? "inherited" : "fresh")`;
 
 const ROLE_VARS = [
   "ANTELOPEJS_LEASE",
@@ -66,7 +72,7 @@ test("a worktree recreated at the same path gets a fresh lease without the old d
   const env = externalEnv(scratch(t));
   gitInit(worktree);
   const touched = await lease(
-    ["run", "--", "sh", "-c", 'touch "$TMPDIR/old-data"'],
+    ["run", "--", process.execPath, "-e", TOUCH_OLD_DATA],
     worktree,
     env,
   );
@@ -75,40 +81,50 @@ test("a worktree recreated at the same path gets a fresh lease without the old d
   await sleep(50);
   gitInit(worktree);
   const probed = await lease(
-    [
-      "run",
-      "--",
-      "sh",
-      "-c",
-      'test -e "$TMPDIR/old-data" && echo inherited || echo fresh',
-    ],
+    ["run", "--", process.execPath, "-e", PROBE_OLD_DATA],
     worktree,
     env,
   );
   assert.equal(probed.stdout.trim(), "fresh");
 });
 
+/** Denies everyone reading `path`: mode 000 on POSIX, a deny entry for Everyone in its ACL on Windows, where chmod only sets the read-only flag. */
+function denyReading(path: string): void {
+  if (process.platform === "win32")
+    execFileSync("icacls", [path, "/deny", "*S-1-1-0:(OI)(CI)(RX)"]);
+  else chmodSync(path, 0o000);
+}
+
+function allowReading(path: string): void {
+  if (process.platform === "win32")
+    execFileSync("icacls", [path, "/remove:d", "*S-1-1-0"]);
+  else chmodSync(path, 0o755);
+}
+
 test(
   "status keeps the lease of a worktree it cannot read and lists it as unreadable until it can (fails when a permission error reads as a deleted worktree and the sweep deletes a live checkout's lease)",
   {
     skip:
-      process.getuid?.() === 0 && "root reads a directory whatever its mode",
+      process.platform !== "win32" &&
+      process.getuid?.() === 0 &&
+      "root reads a directory whatever its mode",
   },
   async (t) => {
     const root = scratch(t);
     const worktree = gitInit(join(root, "parent", "w"));
     const env = externalEnv(join(root, ".home"));
     const printed = await leasedEnv(worktree, env);
-    chmodSync(join(root, "parent"), 0o000);
+    const parent = join(root, "parent");
+    denyReading(parent);
     let hidden;
     try {
       hidden = await statusRows(root, env);
     } finally {
-      chmodSync(join(root, "parent"), 0o755);
+      allowReading(parent);
     }
     assert.deepEqual(
       hidden.map((row) => row.state),
-      ["unreadable:EACCES"],
+      [process.platform === "win32" ? "unreadable:EPERM" : "unreadable:EACCES"],
     );
     assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), true);
     const [again] = await statusRows(root, env);
@@ -183,12 +199,12 @@ test("gc keeps the lease of a run that is still running, however old its directo
     worktree,
     env,
   );
-  t.after(() => running.child.kill("SIGTERM"));
+  t.after(() => endRun(running));
   const dir = await firstLine(running);
   backdate(dir, 30);
   assert.equal((await lease(["gc", "--idle", "1"], root, env)).code, 0);
   assert.equal(existsSync(join(dir, "tmp")), true);
-  running.child.kill("SIGTERM");
+  endRun(running);
   await running.done;
   assert.equal((await lease(["gc", "--idle", "1"], root, env)).code, 0);
   assert.equal(existsSync(dir), false);

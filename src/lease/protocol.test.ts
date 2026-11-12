@@ -81,6 +81,7 @@ test("without ANTELOPEJS_LEASE_HOME the registry is ~/.antelopejs/leases (fails 
   const worktree = gitInit(join(root, "w"));
   const env = envFor("", {
     HOME: root,
+    USERPROFILE: root,
     DMS_MONGO_URL: "mongodb://127.0.0.1:1",
   });
   const { ANTELOPEJS_LEASE_HOME: _unset, ...withoutHome } = env;
