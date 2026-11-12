@@ -101,20 +101,28 @@ export function toolingRoot(): string {
   }
 }
 
+/** The range of `spec` when it is the npm alias `npm:<name>@<range>`. */
+function aliasedRange(spec: string, name: string): string {
+  const prefix = `npm:${name}@`;
+  if (!spec.startsWith(prefix))
+    throw new Error(
+      `tooling-configs must declare @typescript/native as ${prefix}<range>.`,
+    );
+  return spec.slice(prefix.length);
+}
+
 export function toolingVersions() {
   const manifest = parseManifest(
     readFileSync(join(toolingRoot(), "package.json"), "utf8"),
   );
-  const declared = (
-    field: "dependencies" | "devDependencies",
-    name: string,
-  ): string => {
-    const range = manifest[field]?.[name];
+  const dev = (name: string): string => {
+    const range = manifest.devDependencies?.[name];
     if (!range)
-      throw new Error(`tooling-configs must declare ${name} in ${field}.`);
+      throw new Error(
+        `tooling-configs must declare ${name} in devDependencies.`,
+      );
     return range;
   };
-  const dev = (name: string) => declared("devDependencies", name);
   if (!manifest.version)
     throw new Error("tooling-configs must declare its version.");
   return {
@@ -123,7 +131,7 @@ export function toolingVersions() {
     tsgolint: dev("oxlint-tsgolint"),
     oxlint: dev("oxlint"),
     oxfmt: dev("oxfmt"),
-    typescript: dev("typescript"),
+    typescript: aliasedRange(dev("@typescript/native"), "typescript"),
     nodeTypes: dev("@types/node"),
     capture: CAPTURE_PEERS.map((name): [CapturePeer, string] => [
       name,

@@ -64,7 +64,7 @@ export function readManifest(): string {
 }
 `;
 
-/** A consumer as `antelopejs-sync` leaves it: its root `oxlint.config.ts`, a root `tsconfig.json` that sets no `types` (as every AntelopeJS repository's does) beside `@types/node` installed, the verify-interface synced layer and `.claude/skills` link, and the pack resolved by name. */
+/** A consumer as `antelopejs-sync` leaves it: its root `oxlint.config.ts`, a root `tsconfig.json` that sets no `types` (as every AntelopeJS repository's does) beside `@types/node` and TypeScript 5 installed, the verify-interface synced layer and `.claude/skills` link, and the pack resolved by name. */
 function syncedConsumer() {
   const root = mkdtempSync(join(tmpdir(), "antelope-synced-skills-"));
   const write = (path: string, content: string) => {
@@ -91,6 +91,10 @@ function syncedConsumer() {
   write(".gitignore", "node_modules\n");
   mkdirSync(join(root, "node_modules/@types"), { recursive: true });
   symlinkSync(join(nodeTypes, "node"), join(root, "node_modules/@types/node"));
+  write(
+    "node_modules/typescript/package.json",
+    JSON.stringify({ name: "typescript", version: "5.9.3" }),
+  );
   spawnSync("git", ["init", "-q"], { cwd: root });
   write(
     "package.json",

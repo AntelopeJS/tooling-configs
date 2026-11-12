@@ -34,9 +34,8 @@ function loadTypescript(project) {
   } catch {
     return undefined;
   }
-  return hasJavaScriptApi(ts)
-    ? ts
-    : createRequire(import.meta.url)("@typescript/typescript6");
+  const require = createRequire(import.meta.url);
+  return hasJavaScriptApi(ts) ? ts : require("@typescript/typescript6");
 }
 
 /**

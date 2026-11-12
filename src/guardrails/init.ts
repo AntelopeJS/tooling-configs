@@ -164,12 +164,13 @@ function formatRepository(root: string): Formatted {
   };
 }
 
-/** The tsconfig `--init` writes for a Node repository with none, so the synced `typecheck` checks its JavaScript and TypeScript under Node's module rules. */
+/** The tsconfig `--init` writes for a Node repository with none, so the synced `typecheck` checks its JavaScript and TypeScript under Node's module rules; `strict` is off, which TypeScript 6 and later no longer default to, so untyped JavaScript passes. */
 const NODE_TSCONFIG = `{
   "compilerOptions": {
     "target": "ES2024",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "strict": false,
     "allowJs": true,
     "checkJs": true,
     "noEmit": true,

@@ -124,8 +124,11 @@ export function read(root: string, path: string): string {
 export const API_BUILD_SCRIPT =
   "tsc --noEmit false --composite false --declarationMap false";
 
-/** Makes `root`, an `apiRepo`, a repository on TypeScript 5: its `typescript` and the `tsc` its build script runs are the pack's `typescript5`, every other package the pack's own. */
-export function onTypeScript5(root: string): void {
+/** Makes `root`, an `apiRepo`, a repository whose `typescript`, and the `tsc` its build script runs, are the pack's `alias`: `typescript5`, TypeScript 5.9, or `@typescript/native`, TypeScript 7 without a compiler API. Every other package is the pack's own; without this call an `apiRepo` installs TypeScript 6's API as `typescript` beside TypeScript 7's `tsc`. */
+export function onTypeScript(
+  root: string,
+  alias: "typescript5" | "@typescript/native",
+): void {
   const modules = join(root, "node_modules");
   const pack = join(PACKAGE_ROOT, "node_modules");
   rmSync(modules);
@@ -136,10 +139,10 @@ export function onTypeScript5(root: string): void {
   for (const bin of readdirSync(join(pack, ".bin")))
     if (bin !== "tsc")
       symlinkSync(join(pack, ".bin", bin), join(modules, ".bin", bin));
-  symlinkSync(join(pack, "typescript5"), join(modules, "typescript"), "dir");
+  symlinkSync(join(pack, alias), join(modules, "typescript"), "dir");
   writeFileSync(
     join(modules, ".bin/tsc"),
-    `#!/bin/sh\nexec node ${JSON.stringify(join(pack, "typescript5/bin/tsc"))} "$@"\n`,
+    `#!/bin/sh\nexec node ${JSON.stringify(join(pack, alias, "bin/tsc"))} "$@"\n`,
     { mode: 0o755 },
   );
 }

@@ -7,7 +7,7 @@ import {
   apiRepo,
   bin,
   commit,
-  onTypeScript5,
+  onTypeScript,
   put,
 } from "./helpers/test-repo.ts";
 
@@ -27,6 +27,7 @@ function installTypeScript7(directory: string): void {
 
 test("api-diff analyses a package on TypeScript 7, whose own typescript and the generator's have no compiler API, with the pack's TypeScript 6", (t) => {
   const root = apiRepo(t);
+  onTypeScript(root, "@typescript/native");
   put(root, "src/index.ts", "export const value = 1;\n");
   commit(root);
   put(root, "src/index.ts", "export const value = 1 as const;\n");
@@ -73,7 +74,7 @@ test("api-diff analyses a package whose TypeScript has no compiler API, keeps an
 
 test("api-diff reads the config of a package on TypeScript 5 with TypeScript 5's defaults for the options TypeScript 6 changed", (t) => {
   const root = apiRepo(t);
-  onTypeScript5(root);
+  onTypeScript(root, "typescript5");
   put(
     root,
     "package.json",
