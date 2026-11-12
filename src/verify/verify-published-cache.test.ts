@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import {
   copyFileSync,
   mkdirSync,
@@ -20,7 +20,6 @@ import {
   verify,
   verifyRepo,
 } from "./helpers/verify-repo.ts";
-import { dumpEvidence } from "./helpers/diag.ts";
 import { entries } from "./helpers/folder-reads.ts";
 import {
   archive,
@@ -67,34 +66,6 @@ async function setup(t: TestContext): Promise<Setup> {
 
 function journey(setupResult: Setup) {
   const { root, tmp, env } = setupResult;
-  const probe = spawnSync(
-    "npm",
-    [
-      "view",
-      PACKAGE,
-      "version",
-      "dist.integrity",
-      "--json",
-      "--loglevel",
-      "verbose",
-    ],
-    {
-      shell: true,
-      encoding: "utf8",
-      cwd: tmp,
-      env: {
-        ...process.env,
-        npm_config_registry: setupResult.registry,
-        npm_config_offline: "false",
-        npm_config_fetch_retries: "0",
-        USERPROFILE: tmp,
-        HOME: tmp,
-      },
-    },
-  );
-  console.error(
-    `DIAG probe ${probe.status} ${setupResult.registry}\n${probe.stdout}\n${probe.stderr}`,
-  );
   const run = verify(root, tmp, ["new", "--kind", "interface"], env);
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const folder = run.stdout.trim().split("\n").at(-1) ?? "";
@@ -104,7 +75,6 @@ function journey(setupResult: Setup) {
     ["journey", folder, "smoke", "--kind", "interface"],
     env,
   );
-  dumpEvidence(folder);
   return { folder, result };
 }
 
@@ -147,7 +117,7 @@ test("a second run with the tarball cached downloads nothing, where an implement
   assert.match(check.name, /no npm pack ran/);
   assert.match(
     check.detail,
-    /antelopejs-verify\/published\/@acme\+stale-packument\/1\.7\.0\/\S+\.tgz/,
+    /antelopejs-verify[\\/]published[\\/]@acme\+stale-packument[\\/]1\.7\.0[\\/]\S+\.tgz/,
   );
 });
 
@@ -277,46 +247,54 @@ test("a packed tarball whose integrity is not the published one fails the journe
   assert.match(check.detail, /packed sha512-.+, published sha512-A{86}==/);
 });
 
-test("an interrupt during the pack deletes the staging folder, where an implementation that cleans up only in finally leaves it behind", async (t) => {
-  const state = await setup(t);
-  await fetch(`${state.registry}/hang-tarballs`, { method: "POST" });
-  const created = verify(
-    state.root,
-    state.tmp,
-    ["new", "--kind", "interface"],
-    state.env,
-  );
-  const folder = created.stdout.trim().split("\n").at(-1) ?? "";
-  const child = spawn(
-    process.execPath,
-    [
-      join(PACKAGE_ROOT, "src/bin/verify.ts"),
-      "journey",
-      folder,
-      "smoke",
-      "--kind",
-      "interface",
-    ],
-    {
-      cwd: state.root,
-      env: { ...process.env, CI: "1", TMPDIR: state.tmp, ...state.env },
-    },
-  );
-  const exited = new Promise<number | null>((resolve) =>
-    child.on("exit", (code) => resolve(code)),
-  );
-  const parent = join(state.cached, "..");
-  const staging = () =>
-    entries(parent).filter((name) => name.startsWith(`${FIRST}.pack-`));
-  const deadline = Date.now() + 60_000;
-  while (staging().length === 0) {
-    assert.ok(Date.now() < deadline, "the pack began within 60 s");
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  child.kill("SIGTERM");
-  assert.equal(await exited, 143);
-  assert.deepEqual(entries(parent), []);
-});
+test(
+  "an interrupt during the pack deletes the staging folder, where an implementation that cleans up only in finally leaves it behind",
+  {
+    skip:
+      process.platform === "win32" &&
+      "Windows has no SIGTERM to send: kill() ends the verify process at once, before it can delete the staging folder",
+  },
+  async (t) => {
+    const state = await setup(t);
+    await fetch(`${state.registry}/hang-tarballs`, { method: "POST" });
+    const created = verify(
+      state.root,
+      state.tmp,
+      ["new", "--kind", "interface"],
+      state.env,
+    );
+    const folder = created.stdout.trim().split("\n").at(-1) ?? "";
+    const child = spawn(
+      process.execPath,
+      [
+        join(PACKAGE_ROOT, "src/bin/verify.ts"),
+        "journey",
+        folder,
+        "smoke",
+        "--kind",
+        "interface",
+      ],
+      {
+        cwd: state.root,
+        env: { ...process.env, CI: "1", TMPDIR: state.tmp, ...state.env },
+      },
+    );
+    const exited = new Promise<number | null>((resolve) =>
+      child.on("exit", (code) => resolve(code)),
+    );
+    const parent = join(state.cached, "..");
+    const staging = () =>
+      entries(parent).filter((name) => name.startsWith(`${FIRST}.pack-`));
+    const deadline = Date.now() + 60_000;
+    while (staging().length === 0) {
+      assert.ok(Date.now() < deadline, "the pack began within 60 s");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    child.kill("SIGTERM");
+    assert.equal(await exited, 143);
+    assert.deepEqual(entries(parent), []);
+  },
+);
 
 test("an integrity that lists sha1 before sha512 reuses the cache on the second run, where a comparison of the whole value fails every run", async (t) => {
   const state = await setup(t);

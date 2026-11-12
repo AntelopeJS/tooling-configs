@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { dumpEvidence } from "./helpers/diag.ts";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -253,7 +252,6 @@ function cacheRepo(t: TestContext) {
     existsSync(fake.log) ? read(tmp, "installs.log").split("\n").length - 1 : 0;
   const journey = (run: string, name: string) => {
     const result = verify(root, tmp, ["journey", run, name]);
-    if (name === "move" || name === "rebuild") dumpEvidence(run);
     return { status: result.status, output: result.stdout + result.stderr };
   };
   return { root, tmp, fail, installs, journey };
