@@ -5,7 +5,7 @@ import { runCli } from "../guardrails/cli.ts";
 import { repositoryRoot } from "../guardrails/files.ts";
 import { STRIP_KINDS, writeStrip } from "../guardrails/readme-strip.ts";
 
-const USAGE = `usage: antelopejs-readme-strip --kind <${STRIP_KINDS.join("|")}> --name <repo-name>`;
+const USAGE = `usage: antelopejs-readme-strip --kind <${STRIP_KINDS.join("|")}> --name <label-name>`;
 
 runCli(() => {
   const { values } = parseArgs({

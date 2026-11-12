@@ -20,6 +20,8 @@ type StripKind = (typeof STRIP_KINDS)[number];
 const ACCENT = "#4f8cff";
 const BORDER = "rgba(140,160,220,0.18)";
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** Kinds whose repository names start with the kind, such as `interface-email`; the label names the kind once. */
+const REPEATED_KINDS: ReadonlySet<string> = new Set(["interface", "template"]);
 const TAGLINE = "Hexagonal architecture, beyond your own code.";
 const FONTS = [
   ["GeistX", "geist-extrabold.woff2"],
@@ -49,6 +51,13 @@ function stripLabel(kind: string, name: string): string {
   if (!NAME.test(name))
     throw new Error(
       `invalid strip name "${name}": use lowercase words joined by hyphens, such as file-storage-s3.`,
+    );
+  if (REPEATED_KINDS.has(kind) && name.startsWith(`${kind}-`))
+    throw new Error(
+      `strip name "${name}" repeats the kind: pass --name ${name.slice(kind.length + 1)}, the label reads ${kind.toUpperCase()} · ${name
+        .slice(kind.length + 1)
+        .replaceAll("-", " ")
+        .toUpperCase()}.`,
     );
   return `${kind} · ${name.replaceAll("-", " ")}`.toUpperCase();
 }

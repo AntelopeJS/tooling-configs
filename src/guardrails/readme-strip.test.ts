@@ -75,9 +75,13 @@ const REJECTED = {
     ["--kind", "provider", "--name", 'x"><script>'],
     /invalid strip name/,
   ],
+  "an interface name that repeats its kind": [
+    ["--kind", "interface", "--name", "interface-email"],
+    /strip name "interface-email" repeats the kind: pass --name email, the label reads INTERFACE · EMAIL\./,
+  ],
   "a missing name": [
     ["--kind", "tooling"],
-    /usage: antelopejs-readme-strip --kind <interface\|provider\|template\|tooling> --name <repo-name>/,
+    /usage: antelopejs-readme-strip --kind <interface\|provider\|template\|tooling> --name <label-name>/,
   ],
 } as const;
 

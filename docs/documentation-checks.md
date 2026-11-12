@@ -191,8 +191,11 @@ pnpm exec antelopejs-readme-strip --kind interface --name email
 pnpm exec antelopejs-readme-strip --kind provider --name postgres
 ```
 
-`--kind` is `interface`, `provider`, `template` or `tooling`. `--name` is
-lowercase words joined by hyphens. The label reads `INTERFACE · EMAIL`, with
+`--kind` is `interface`, `provider`, `template` or `tooling`. `--name` is the
+name the label shows, in lowercase words joined by hyphens: the repository name
+without its `interface-` or `template-` prefix (`interface-email` passes
+`email`, `template-blank-typescript` passes `blank-typescript`), which the
+command refuses to repeat. The label reads `INTERFACE · EMAIL`, with
 hyphens shown as spaces (`file-storage-s3` becomes `FILE STORAGE S3`). The
 command prints nothing on success, and fails without writing on any other kind
 or name. Rerun it after a release of this package changes the strip, and
