@@ -52,11 +52,9 @@ exit /b 0
 `,
 };
 
-const SIGNALS = {
-  skip:
-    process.platform === "win32" &&
-    "the app is killed by SIGKILL, SIGINT or SIGABRT from outside, and Windows has no such signals: a killed process just exits with code 1",
-};
+/** Journeys that end a process by a signal from outside: Windows has none, a killed process just exits with code 1. */
+const SIGNAL_JOURNEYS = ["killed", "interrupted", "aborts"];
+const SIGNALS = process.platform !== "win32";
 
 const AJS = String.raw`const http = require("node:http");
 const net = require("node:net");
@@ -248,7 +246,7 @@ function outageRepo(t: TestContext) {
         "double-bind",
         "mention",
         "transient-miss",
-      ],
+      ].filter((id) => SIGNALS || !SIGNAL_JOURNEYS.includes(id)),
     ),
   });
   put(
@@ -301,12 +299,10 @@ test("a journey whose service stopped answering ends NOT VERIFIED, and a wrong a
   assert.equal(statuses["service-up"], "FAIL");
 });
 
-test(
-  "a project killed from outside or holding a taken port is NOT VERIFIED, and a project that exits on its own FAILs",
-  SIGNALS,
-  (t) => {
-    const { root, tmp, env } = outageRepo(t);
-    const { statuses } = journeys(root, tmp, env, "processes");
+test("a project killed from outside or holding a taken port is NOT VERIFIED, and a project that exits on its own FAILs", (t) => {
+  const { root, tmp, env } = outageRepo(t);
+  const { statuses } = journeys(root, tmp, env, "processes");
+  if (SIGNALS) {
     assert.match(
       statuses.killed,
       /^NOT VERIFIED: ajs project dev \(pid \d+\) was killed by SIGKILL, a signal the harness did not send$/,
@@ -315,25 +311,21 @@ test(
       statuses.interrupted,
       /^NOT VERIFIED: ajs project dev \(pid \d+\) was killed by SIGINT, a signal the harness did not send$/,
     );
-    assert.match(
-      statuses["port-taken"],
-      /^NOT VERIFIED: ajs project dev \(pid \d+\) could not bind port \d+, which another process holds: .*EADDRINUSE/,
-    );
-    assert.equal(statuses.stopped, "FAIL");
-    assert.equal(statuses.crashes, "FAIL");
-    assert.equal(statuses["crash-at-start"], "FAIL");
-  },
-);
+  }
+  assert.match(
+    statuses["port-taken"],
+    /^NOT VERIFIED: ajs project dev \(pid \d+\) could not bind port \d+, which another process holds: .*EADDRINUSE/,
+  );
+  assert.equal(statuses.stopped, "FAIL");
+  assert.equal(statuses.crashes, "FAIL");
+  assert.equal(statuses["crash-at-start"], "FAIL");
+});
 
-test(
-  "a product crash by SIGABRT, a product double bind and a logged EADDRINUSE stay FAIL, and one transient readiness miss still counts the catch",
-  SIGNALS,
-  (t) => {
-    const { root, tmp, env } = outageRepo(t);
-    const { statuses } = journeys(root, tmp, env, "processes");
-    assert.equal(statuses.aborts, "FAIL");
-    assert.equal(statuses["double-bind"], "FAIL");
-    assert.equal(statuses.mention, "FAIL");
-    assert.equal(statuses["transient-miss"], "FAIL");
-  },
-);
+test("a product crash by SIGABRT, a product double bind and a logged EADDRINUSE stay FAIL, and one transient readiness miss still counts the catch", (t) => {
+  const { root, tmp, env } = outageRepo(t);
+  const { statuses } = journeys(root, tmp, env, "processes");
+  if (SIGNALS) assert.equal(statuses.aborts, "FAIL");
+  assert.equal(statuses["double-bind"], "FAIL");
+  assert.equal(statuses.mention, "FAIL");
+  assert.equal(statuses["transient-miss"], "FAIL");
+});
