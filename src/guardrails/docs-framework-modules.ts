@@ -32,7 +32,7 @@ const AREAS: readonly FrameworkArea[] = [
       "interface-mongodb",
       "interface-rethinkdb",
     ],
-    providers: ["postgres", "mongodb", "rethinkdb"],
+    providers: ["postgres", "mysql", "mongodb", "rethinkdb"],
   },
   {
     area: "Redis",
