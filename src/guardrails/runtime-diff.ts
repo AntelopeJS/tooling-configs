@@ -202,7 +202,9 @@ function builtEntries(
       const matches = modules.filter((file) => !isTestSource(output, file));
       if (matches.length < modules.length) skipped.push(target);
       return matches.sort().map((file) => {
-        const capture = pattern.exec(file)?.[1] ?? relative(directory, file);
+        const capture = (pattern.exec(file)?.[1] ?? relative(directory, file))
+          .split(sep)
+          .join("/");
         return {
           entry: entry.replaceAll("*", capture),
           file,
