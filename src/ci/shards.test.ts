@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -6,6 +9,7 @@ import {
   meanWeights,
   parseWeights,
   shardFiles,
+  testFiles,
   unweightedFiles,
 } from "./shards.ts";
 
@@ -104,4 +108,16 @@ test("unweightedFiles lists each file the weights leave out, a key the weights o
     "z",
     "constructor",
   ]);
+});
+
+test("testFiles keys nested test files with / on every platform, so a Windows glob's \\ never reaches shardFiles or the weights", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "test-files-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "src/b/c"), { recursive: true });
+  writeFileSync(join(root, "src/b/c/x.test.ts"), "");
+  writeFileSync(join(root, "src/a.test.ts"), "");
+  writeFileSync(join(root, "src/a.ts"), "");
+  const files = testFiles(root);
+  assert.deepEqual(files, ["src/a.test.ts", "src/b/c/x.test.ts"]);
+  assert.deepEqual(shardFiles(files, {}, 1, 1), files);
 });

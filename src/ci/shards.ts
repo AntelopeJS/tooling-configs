@@ -1,3 +1,6 @@
+import { globSync } from "node:fs";
+import { sep } from "node:path";
+
 import { num, object, parseJson } from "../garden/json.ts";
 
 /** Seconds each test file took in CI, keyed by repository-relative path. */
@@ -8,6 +11,13 @@ const FILE_OVERHEAD = 0.2;
 
 /** `node --test` reads each path as a glob, and the shard step splits its list on whitespace. */
 const GLOB_OR_SPACE = /[[\]*?{}\\\s]/u;
+
+/** The test files under `src` of the repository at `cwd`, sorted, with `/` separators on every platform, as the weights key them. */
+export function testFiles(cwd = "."): string[] {
+  return globSync("src/**/*.test.ts", { cwd })
+    .map((file) => file.split(sep).join("/"))
+    .toSorted();
+}
 
 function median(values: number[]): number {
   const sorted = values.toSorted((a, b) => a - b);

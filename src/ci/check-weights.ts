@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { globSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { runCli } from "../guardrails/cli.ts";
-import { parseWeights, unweightedFiles } from "./shards.ts";
+import { parseWeights, testFiles, unweightedFiles } from "./shards.ts";
 
 /** Fails when a test file under `src` has no entry in `test-weights.json`, run from the repository root. */
 runCli(() => {
@@ -11,10 +11,7 @@ runCli(() => {
     new URL("./test-weights.json", import.meta.url),
   );
   const weights = parseWeights(readFileSync(weightsPath, "utf8"), weightsPath);
-  const missing = unweightedFiles(
-    globSync("src/**/*.test.ts").toSorted(),
-    weights,
-  );
+  const missing = unweightedFiles(testFiles(), weights);
   if (!missing.length) return 0;
   throw new Error(
     [
