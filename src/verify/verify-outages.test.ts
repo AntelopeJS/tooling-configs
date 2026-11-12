@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
 import { put } from "../guardrails/helpers/test-repo.ts";
+import { installFake, pathWith } from "./helpers/fake-bin.ts";
 import {
   evidence,
   feature,
@@ -18,7 +19,8 @@ const SKILL = ".agents/skills/verify-module";
 const LOCK =
   "lockfileVersion: '9.0'\n\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\n\nimporters:\n\n  .: {}\n";
 
-const DOCKER = `#!/bin/sh
+const DOCKER = {
+  sh: `#!/bin/sh
 echo "$@" >> "$DOCKER_LOG"
 case "$1" in
   port) echo "6379/tcp -> 127.0.0.1:41234" ;;
@@ -29,7 +31,32 @@ case "$1" in
   inspect) echo true ;;
 esac
 exit 0
-`;
+`,
+  cmd: `@echo off
+echo %* >> "%DOCKER_LOG%"
+if "%1"=="port" echo 6379/tcp -^> 127.0.0.1:41234
+if "%1"=="inspect" echo true
+if "%1"=="exec" (
+  if exist "%DOCKER_DEAD%\\%2" (
+    echo container %2 is not running 1>&2
+    exit /b 1
+  )
+  if exist "%DOCKER_DEAD%\\miss-once" (
+    del "%DOCKER_DEAD%\\miss-once"
+    echo one transient miss 1>&2
+    exit /b 1
+  )
+  echo pong
+)
+exit /b 0
+`,
+};
+
+const SIGNALS = {
+  skip:
+    process.platform === "win32" &&
+    "the app is killed by SIGKILL, SIGINT or SIGABRT from outside, and Windows has no such signals: a killed process just exits with code 1",
+};
 
 const AJS = String.raw`const http = require("node:http");
 const net = require("node:net");
@@ -230,10 +257,9 @@ function outageRepo(t: TestContext) {
     '{"name":"@antelopejs/core","bin":{"ajs":"ajs.cjs"}}\n',
   );
   put(root, "node_modules/@antelopejs/core/ajs.cjs", AJS);
-  put(tmp, "bin/docker", DOCKER);
-  chmodSync(join(tmp, "bin/docker"), 0o755);
+  installFake(join(tmp, "bin"), "docker", DOCKER);
   const env = {
-    PATH: `${join(tmp, "bin")}:${process.env.PATH}`,
+    PATH: pathWith(join(tmp, "bin")),
     DOCKER_LOG: join(tmp, "docker.log"),
     DOCKER_DEAD: dead,
   };
@@ -275,31 +301,39 @@ test("a journey whose service stopped answering ends NOT VERIFIED, and a wrong a
   assert.equal(statuses["service-up"], "FAIL");
 });
 
-test("a project killed from outside or holding a taken port is NOT VERIFIED, and a project that exits on its own FAILs", (t) => {
-  const { root, tmp, env } = outageRepo(t);
-  const { statuses } = journeys(root, tmp, env, "processes");
-  assert.match(
-    statuses.killed,
-    /^NOT VERIFIED: ajs project dev \(pid \d+\) was killed by SIGKILL, a signal the harness did not send$/,
-  );
-  assert.match(
-    statuses.interrupted,
-    /^NOT VERIFIED: ajs project dev \(pid \d+\) was killed by SIGINT, a signal the harness did not send$/,
-  );
-  assert.match(
-    statuses["port-taken"],
-    /^NOT VERIFIED: ajs project dev \(pid \d+\) could not bind port \d+, which another process holds: .*EADDRINUSE/,
-  );
-  assert.equal(statuses.stopped, "FAIL");
-  assert.equal(statuses.crashes, "FAIL");
-  assert.equal(statuses["crash-at-start"], "FAIL");
-});
+test(
+  "a project killed from outside or holding a taken port is NOT VERIFIED, and a project that exits on its own FAILs",
+  SIGNALS,
+  (t) => {
+    const { root, tmp, env } = outageRepo(t);
+    const { statuses } = journeys(root, tmp, env, "processes");
+    assert.match(
+      statuses.killed,
+      /^NOT VERIFIED: ajs project dev \(pid \d+\) was killed by SIGKILL, a signal the harness did not send$/,
+    );
+    assert.match(
+      statuses.interrupted,
+      /^NOT VERIFIED: ajs project dev \(pid \d+\) was killed by SIGINT, a signal the harness did not send$/,
+    );
+    assert.match(
+      statuses["port-taken"],
+      /^NOT VERIFIED: ajs project dev \(pid \d+\) could not bind port \d+, which another process holds: .*EADDRINUSE/,
+    );
+    assert.equal(statuses.stopped, "FAIL");
+    assert.equal(statuses.crashes, "FAIL");
+    assert.equal(statuses["crash-at-start"], "FAIL");
+  },
+);
 
-test("a product crash by SIGABRT, a product double bind and a logged EADDRINUSE stay FAIL, and one transient readiness miss still counts the catch", (t) => {
-  const { root, tmp, env } = outageRepo(t);
-  const { statuses } = journeys(root, tmp, env, "processes");
-  assert.equal(statuses.aborts, "FAIL");
-  assert.equal(statuses["double-bind"], "FAIL");
-  assert.equal(statuses.mention, "FAIL");
-  assert.equal(statuses["transient-miss"], "FAIL");
-});
+test(
+  "a product crash by SIGABRT, a product double bind and a logged EADDRINUSE stay FAIL, and one transient readiness miss still counts the catch",
+  SIGNALS,
+  (t) => {
+    const { root, tmp, env } = outageRepo(t);
+    const { statuses } = journeys(root, tmp, env, "processes");
+    assert.equal(statuses.aborts, "FAIL");
+    assert.equal(statuses["double-bind"], "FAIL");
+    assert.equal(statuses.mention, "FAIL");
+    assert.equal(statuses["transient-miss"], "FAIL");
+  },
+);

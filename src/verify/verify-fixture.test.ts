@@ -72,6 +72,7 @@ test("the fixture project loads every companion module next to the module, where
       '{"name":"@antelopejs/interface-core","version":"1.0.0"}\n',
     ".gitignore": "",
     [`${SKILL}/verify.config.ts`]: `import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export default {
   doors: ${PUBLISH_DOORS},
@@ -84,7 +85,7 @@ export default {
       entryPoint: "node",
       async run(context) {
         const project = context.fixture();
-        const { default: config } = await import(join(project, "antelope.config.ts"));
+        const { default: config } = await import(pathToFileURL(join(project, "antelope.config.ts")).href);
         context.expect(context.tree("project", project).folder, [
           { name: "the companion is a module of the project", pass: JSON.stringify(config.modules["@antelopejs/api"]) === ${JSON.stringify(JSON.stringify(api))}, detail: JSON.stringify(config.modules) },
           { name: "the module keeps its config", pass: config.modules.demo?.config?.folder === "files", detail: JSON.stringify(config.modules.demo) },

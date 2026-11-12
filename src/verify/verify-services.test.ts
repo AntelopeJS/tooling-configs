@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
-import { put, read } from "../guardrails/helpers/test-repo.ts";
+import { read } from "../guardrails/helpers/test-repo.ts";
+import { installFake, pathWith } from "./helpers/fake-bin.ts";
 import {
   feature,
   PUBLISH_DOORS,
@@ -13,7 +14,8 @@ import {
 } from "./helpers/verify-repo.ts";
 import type { VerifyKind } from "./kinds.ts";
 
-const DOCKER = `#!/bin/sh
+const DOCKER = {
+  sh: `#!/bin/sh
 echo "$@" >> "$DOCKER_LOG"
 case "$1" in
   port) echo "6379/tcp -> 127.0.0.1:41234" ;;
@@ -21,7 +23,15 @@ case "$1" in
   inspect) echo true ;;
 esac
 exit 0
-`;
+`,
+  cmd: `@echo off
+echo %* >> "%DOCKER_LOG%"
+if "%1"=="port" echo 6379/tcp -^> 127.0.0.1:41234
+if "%1"=="exec" echo pong
+if "%1"=="inspect" echo true
+exit /b 0
+`,
+};
 
 function serviceRepo(t: TestContext, kind: VerifyKind) {
   const tmp = mkdtempSync(join(tmpdir(), "verify-services-"));
@@ -55,10 +65,9 @@ function serviceRepo(t: TestContext, kind: VerifyKind) {
 `,
     [`${skill}/features/smoke.md`]: feature([], ["seen"]),
   });
-  put(tmp, "bin/docker", DOCKER);
-  chmodSync(join(tmp, "bin/docker"), 0o755);
+  installFake(join(tmp, "bin"), "docker", DOCKER);
   const env = {
-    PATH: `${join(tmp, "bin")}:${process.env.PATH}`,
+    PATH: pathWith(join(tmp, "bin")),
     DOCKER_LOG: join(tmp, "docker.log"),
   };
   return { root, tmp, env };

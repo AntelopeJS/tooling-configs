@@ -366,19 +366,27 @@ test("a corrupt cached result reruns TLC, which replaces it", (t) => {
   assert.match(replay.lines[0] ?? "", REPLAYED);
 });
 
-test("a cache that cannot be written still lets a passing check pass; a cache write that throws fails it", (t) => {
-  const cache = cacheOn();
-  const results = join(cache.XDG_CACHE_HOME, "antelopejs-formal", "results");
-  mkdirSync(results, { recursive: true });
-  chmodSync(results, 0o555);
-  t.after(() => {
-    chmodSync(results, 0o755);
-    rmSync(cache.XDG_CACHE_HOME, { recursive: true, force: true });
-  });
-  const run = check({ findings: MATCHING }, cache);
-  assert.equal(run.status, 0, run.stderr);
-  assert.deepEqual(resultEntries(cache.XDG_CACHE_HOME), []);
-});
+test(
+  "a cache that cannot be written still lets a passing check pass; a cache write that throws fails it",
+  {
+    skip:
+      process.platform === "win32" &&
+      "Windows folder permission bits do not deny writes, so chmod 0o555 cannot make the results folder unwritable",
+  },
+  (t) => {
+    const cache = cacheOn();
+    const results = join(cache.XDG_CACHE_HOME, "antelopejs-formal", "results");
+    mkdirSync(results, { recursive: true });
+    chmodSync(results, 0o555);
+    t.after(() => {
+      chmodSync(results, 0o755);
+      rmSync(cache.XDG_CACHE_HOME, { recursive: true, force: true });
+    });
+    const run = check({ findings: MATCHING }, cache);
+    assert.equal(run.status, 0, run.stderr);
+    assert.deepEqual(resultEntries(cache.XDG_CACHE_HOME), []);
+  },
+);
 
 test("a results path that is a file still lets a passing check pass; a cleanup that throws inside the guard fails it", (t) => {
   const cache = cacheOn();

@@ -1,8 +1,9 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 
 import { matchesPath } from "./glob.ts";
+import { spawnLaunched } from "./launch.ts";
 import {
   behaviourChange,
   inWorktree,
@@ -12,6 +13,7 @@ import {
 import { stopwatch } from "./timing.ts";
 import type { FormalCheck } from "./types.ts";
 import { operatorEnv, type RunState, type Workspace } from "./workspace.ts";
+import { relativeSlashed } from "./slash.ts";
 
 const OUTPUT_LIMIT = 64 * 1024 * 1024;
 
@@ -143,7 +145,7 @@ function rulesOf(check: FormalCheck, run: SpawnSyncReturns<string>): Rules {
 
 function runCommand(command: string[], cwd: string): SpawnSyncReturns<string> {
   const [program, ...args] = command;
-  return spawnSync(program, args, {
+  return spawnLaunched(program, args, {
     cwd,
     env: operatorEnv(),
     encoding: "utf8",
@@ -194,7 +196,7 @@ function namedOnBase(
   check: FormalCheck,
   baseSha: string,
 ): boolean {
-  const config = relative(
+  const config = relativeSlashed(
     workspace.root,
     join(workspace.skill, "verify.config.ts"),
   );
@@ -301,7 +303,7 @@ export function runFormalCheck(
     violated: head.violated,
     passing: head.passing,
     lengths: head.lengths,
-    folder: relative(state.evidence, folder),
+    folder: relativeSlashed(state.evidence, folder),
   };
   if (diff !== null)
     Object.assign(

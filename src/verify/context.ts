@@ -55,6 +55,7 @@ import {
   type RunState,
   type Workspace,
 } from "./workspace.ts";
+import { relativeSlashed } from "./slash.ts";
 
 /** A journey the pack ships for a kind; it may use the harness internals. */
 export interface BuiltinJourney {
@@ -215,10 +216,10 @@ export class VerifyContext implements JourneyContext {
     checks: Check[],
     options: { critical?: boolean } = {},
   ): boolean {
-    const name = relative(this.folder, folder) || "journey";
+    const name = relativeSlashed(this.folder, folder) || "journey";
     this.steps.push({
       name,
-      folder: relative(this.state.evidence, folder),
+      folder: relativeSlashed(this.state.evidence, folder),
       checks,
     });
     appendFileSync(

@@ -1,17 +1,18 @@
-import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { spawnLaunched } from "./launch.ts";
 import { stopwatch } from "./timing.ts";
 import type { ContainerRecord, RunState, Workspace } from "./workspace.ts";
 import { saveRun } from "./workspace.ts";
 
 const READY_TIMEOUT_MS = 90_000;
+const POLL_MS = 500;
 /** The open-file limit of every service container, MongoDB's recommended value: Docker's default soft limit of 1024 runs out when mongod holds dropped tables open until its next checkpoint. */
 const OPEN_FILES = 64_000;
 
 function docker(args: string[]) {
-  const run = spawnSync("docker", args, { encoding: "utf8" });
+  const run = spawnLaunched("docker", args, { encoding: "utf8" });
   return {
     status: run.status,
     stdout: run.stdout ?? "",
@@ -43,7 +44,7 @@ function waitReady(container: string, ready: string[], folder: string): void {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   let last = docker(["exec", container, ...ready]);
   while (last.status !== 0 && Date.now() < deadline) {
-    spawnSync("sleep", ["0.5"]);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, POLL_MS);
     last = docker(["exec", container, ...ready]);
   }
   record(folder, ["exec", container, ...ready], last);

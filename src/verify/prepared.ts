@@ -25,6 +25,7 @@ import { isObject, isString, parseJson } from "../garden/json.ts";
 import type { VerifyContext } from "./context.ts";
 import type { StepRecord } from "./results.ts";
 import { removeTree } from "./workspace.ts";
+import { relativeSlashed } from "./slash.ts";
 
 const KEY = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -301,7 +302,7 @@ function keep(
     );
     writeFileSync(
       join(staging, "from.txt"),
-      `${relative(context.state.evidence, context.folder)}\n`,
+      `${relativeSlashed(context.state.evidence, context.folder)}\n`,
     );
     renameSync(staging, kept);
     return true;
@@ -391,7 +392,7 @@ export async function prepare(
   const kept = join(context.state.dir, "prepared", key);
   if (
     existsSync(kept) &&
-    builder(kept) === relative(context.state.evidence, context.folder)
+    builder(kept) === relativeSlashed(context.state.evidence, context.folder)
   )
     drop(kept);
   const where: Where = {

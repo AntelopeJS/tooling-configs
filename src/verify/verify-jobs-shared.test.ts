@@ -6,6 +6,7 @@ import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import test, { type TestContext } from "node:test";
+import { pathToFileURL } from "node:url";
 
 import { PACKAGE_ROOT, put, read } from "../guardrails/helpers/test-repo.ts";
 import {
@@ -21,7 +22,9 @@ import { loadRun } from "./workspace.ts";
 
 const SKILL = ".agents/skills/verify-module";
 
-const WORKSPACE = join(PACKAGE_ROOT, "src/verify/workspace.ts");
+const WORKSPACE = pathToFileURL(
+  join(PACKAGE_ROOT, "src/verify/workspace.ts"),
+).href;
 
 const TWO_JOBS = availableParallelism() < 4 && "needs 4 cores for --jobs 2";
 

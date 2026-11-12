@@ -1,9 +1,10 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 
 import { matchesPath } from "./glob.ts";
 import { skillFolder } from "./kinds.ts";
 import { git, type Workspace } from "./workspace.ts";
+import { relativeSlashed } from "./slash.ts";
 
 /** The feature that always runs, whatever the diff touches. */
 export const SMOKE_FEATURE = "smoke";
@@ -81,7 +82,7 @@ export function readFeatures(workspace: Workspace): Feature[] {
       const lists = frontmatterLists(body);
       return {
         name: file.replace(/\.md$/, ""),
-        file: relative(workspace.root, join(folder, file)),
+        file: relativeSlashed(workspace.root, join(folder, file)),
         covers: lists.get("covers") ?? [],
         docs: lists.get("docs") ?? [],
         journeys: lists.get("journeys") ?? [],
