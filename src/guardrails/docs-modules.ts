@@ -1,7 +1,9 @@
+import { markers, placeMarkedBlock } from "./marker-block.ts";
 import { tableLines } from "./markdown-table.ts";
 
-export const DMS_MODULES_START = "<!-- antelopejs-dms-modules:start -->";
-export const DMS_MODULES_END = "<!-- antelopejs-dms-modules:end -->";
+const DMS_MODULES = markers("antelopejs-dms-modules");
+export const DMS_MODULES_START = DMS_MODULES.start;
+export const DMS_MODULES_END = DMS_MODULES.end;
 
 const ORGANIZATION = "https://github.com/AntelopeJS";
 
@@ -12,7 +14,7 @@ interface DmsModule {
 }
 
 /** The AntelopeJS DMS modules in display order. Every README holding the markers lists exactly these. */
-const DMS_MODULES: readonly DmsModule[] = [
+const MODULES: readonly DmsModule[] = [
   {
     repo: "dms-builder",
     row: "Edit pages, tables and data sources by clicking, as TypeScript that compiles",
@@ -66,7 +68,7 @@ export function modulesBlock(): string {
     "",
     ...tableLines([
       ["Module", "What it adds"],
-      ...DMS_MODULES.map(({ repo, row }) => [
+      ...MODULES.map(({ repo, row }) => [
         `[\`${repo}\`](${ORGANIZATION}/${repo})`,
         row,
       ]),
@@ -79,14 +81,5 @@ export function modulesBlock(): string {
 
 /** The README with the block between its markers rewritten. A README without markers comes back as it is. */
 export function placeModulesBlock(current: string): string {
-  const start = current.indexOf(DMS_MODULES_START);
-  const end = current.indexOf(DMS_MODULES_END);
-  const starts = current.split(DMS_MODULES_START).length - 1;
-  const ends = current.split(DMS_MODULES_END).length - 1;
-  if (starts === 0 && ends === 0) return current;
-  if (starts !== 1 || ends !== 1 || end < start)
-    throw new Error(
-      "invalid antelopejs-dms-modules markers: a README holds exactly one start marker followed by one end marker. Repair or delete them, then rerun antelopejs-sync.",
-    );
-  return `${current.slice(0, start)}${modulesBlock()}${current.slice(end + DMS_MODULES_END.length).replace(/^\r?\n/, "")}`;
+  return placeMarkedBlock(current, DMS_MODULES, modulesBlock());
 }

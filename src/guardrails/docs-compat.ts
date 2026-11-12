@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { isMap, isScalar, isSeq, parseDocument, type Document } from "yaml";
 
+import { placeFrameworkModulesBlock } from "./docs-framework-modules.ts";
 import { placeModulesBlock } from "./docs-modules.ts";
 import { tableLines } from "./markdown-table.ts";
 import {
@@ -359,6 +360,7 @@ function readLock(
 
 interface PlannedPackage {
   directory: string;
+  name: string | undefined;
   published: boolean;
   node: string | undefined;
   ranges: ReadonlyMap<string, string>;
@@ -370,7 +372,7 @@ function planPackage(
   plan: DocsPlan,
   lock: Lock | undefined,
   standard: boolean,
-  { directory, ranges, published, node }: PlannedPackage,
+  { directory, name, ranges, published, node }: PlannedPackage,
 ): void {
   const readme = relative(directory, "README.md");
   const docs = relative(directory, "docs");
@@ -396,10 +398,13 @@ function planPackage(
     plan.readmes.push({
       path: readme,
       current,
-      content: placeModulesBlock(
-        rows.length > 0
-          ? placeCompatBlock(withRequirements, compatBlock(rows))
-          : (withRequirements ?? ""),
+      content: placeFrameworkModulesBlock(
+        placeModulesBlock(
+          rows.length > 0
+            ? placeCompatBlock(withRequirements, compatBlock(rows))
+            : (withRequirements ?? ""),
+        ),
+        name,
       ),
     });
   } catch (error) {
@@ -421,6 +426,7 @@ export function planDocs(root: string, manager: PackageManager): DocsPlan {
     const manifest = directory ? readManifest(root, directory) : rootManifest;
     return {
       directory,
+      name: manifest.name,
       published: !directory || !manifest.private,
       node: manifest.engines?.node,
       ranges: manifest.private

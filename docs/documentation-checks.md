@@ -157,6 +157,58 @@ markers gets nothing. Text outside the markers stays. `antelopejs-sync --check`
 reports a README whose table differs as drift, and fails on any README that
 does not hold exactly one start marker followed by one end marker.
 
+## Generated framework module table
+
+The framework interfaces and providers close their README with a
+`## Part of AntelopeJS` section. Its table of areas, contracts and providers
+comes from `antelopejs-sync` (full profile) the same way as the DMS module
+table. Put both markers in that section:
+
+```md
+<!-- antelopejs-framework-modules:start -->
+<!-- antelopejs-framework-modules:end -->
+```
+
+Sync writes one row per area (API, Auth, Database, Redis, Email, File storage,
+Payments) from the list in `src/guardrails/docs-framework-modules.ts`. Each cell
+links the repositories under `https://github.com/AntelopeJS/`. The README's own
+repository, taken from the `@antelopejs/<repo>` name in the `package.json`
+beside it, is in bold and unlinked. A package outside the table gets the table
+with nothing in bold. Templates and tooling keep the section's sentence and
+leave the markers out. The markers, drift and error rules are the ones of the
+DMS module table.
+
+## Framework strip banner
+
+A framework README opens with a 1200x150 strip banner at
+`.github/readme/strip.svg`. It uses the layout and embedded Geist fonts of the
+DMS strips, in the framework blue `#4f8cff`, with the hexagon of the framework
+hero and a `Star AntelopeJS` button. Write it from the repository root with the
+repository's kind and name:
+
+```bash
+pnpm exec antelopejs-readme-strip --kind interface --name email
+pnpm exec antelopejs-readme-strip --kind provider --name postgres
+```
+
+`--kind` is `interface`, `provider`, `template` or `tooling`. `--name` is the
+name the label shows, in lowercase words joined by hyphens: the repository name
+without its `interface-` or `template-` prefix (`interface-email` passes
+`email`, `template-blank-typescript` passes `blank-typescript`), which the
+command refuses to repeat. The label reads `INTERFACE · EMAIL`, with
+hyphens shown as spaces (`file-storage-s3` becomes `FILE STORAGE S3`). The
+command prints nothing on success, and fails without writing on any other kind
+or name. Rerun it after a release of this package changes the strip, and
+commit the file. Link the strip to the framework, as the DMS READMEs link
+theirs:
+
+```md
+<a href="https://github.com/AntelopeJS/antelopejs"><img data-illustration src="./.github/readme/strip.svg" width="100%" alt="INTERFACE · EMAIL: part of AntelopeJS, hexagonal architecture beyond your own code. A glowing button reads Star AntelopeJS."></a>
+```
+
+The fonts are Geist, under the SIL Open Font License in
+`assets/readme/OFL.txt`.
+
 ## Declare compatibility explicitly
 
 Put a `docs-compat` comment immediately before a top-level Markdown table with
