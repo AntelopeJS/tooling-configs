@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, rmSync, utimesSync } from "node:fs";
 import type { Server } from "node:net";
 import { join } from "node:path";
@@ -118,14 +118,29 @@ test(
       process.platform === "win32" ? worktree : join(root, "parent");
     denyReading(locked);
     let hidden;
+    let seen = "";
     try {
       hidden = await statusRows(root, env);
+      if (process.platform === "win32") {
+        const listing = spawnSync(
+          process.execPath,
+          [
+            "-e",
+            "console.log(require('node:fs').readdirSync(process.argv[1]).join(','))",
+            worktree,
+          ],
+          { encoding: "utf8" },
+        );
+        const listed = `readdir: ${listing.stdout}${listing.stderr}`;
+        seen = `${listed}\n${spawnSync("whoami", ["/priv"], { encoding: "utf8" }).stdout}`;
+      }
     } finally {
       allowReading(locked);
     }
     assert.deepEqual(
       hidden.map((row) => row.state),
       [process.platform === "win32" ? "unreadable:EPERM" : "unreadable:EACCES"],
+      seen,
     );
     assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), true);
     const [again] = await statusRows(root, env);
