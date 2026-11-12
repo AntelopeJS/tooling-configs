@@ -107,11 +107,27 @@ for (const current of ["", "# workspace settings\n", "allowBuilds:\n"])
   });
 
 for (const pin of ["pnpm@10.2.0+sha512.abc", "pnpm@10.33.0", "npm@11.0.0"])
-  test(`sync writes no pnpm-workspace.yaml for ${pin}, where a sync that writes it anyway makes pnpm 10 install a nested project such as playground into the repository root, or leaves an npm repository a stray file`, (t) => {
+  test(`sync writes no pnpm-workspace.yaml for ${pin}, where a sync that writes it anyway makes pnpm 10 install a nested project such as playground into the repository root, pnpm before 10.5 fail with 'packages field missing or empty', or leaves an npm repository a stray file`, (t) => {
     const root = pinnedRepo(t, pin);
     synced(root);
     assert.equal(existsSync(join(root, "pnpm-workspace.yaml")), false);
   });
+
+test("sync asks a pnpm 10 repository to delete a pnpm-workspace.yaml that holds only the builds sync decided and keeps one with its own settings, where a sync that leaves the first in place keeps its nested installs going to the root and a sync that flags the second drops the repository's overrides", (t) => {
+  const root = pinnedRepo(t, "pnpm@10.6.5");
+  put(
+    root,
+    "pnpm-workspace.yaml",
+    "allowBuilds:\n  lefthook: false\n  mongodb-memory-server: false\n",
+  );
+  const result = bin(root, "sync", ["--check"]);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /Delete pnpm-workspace\.yaml/);
+  const own = "overrides:\n  foo: 1.0.0\nallowBuilds:\n  lefthook: false\n";
+  put(root, "pnpm-workspace.yaml", own);
+  synced(root);
+  assert.equal(read(root, "pnpm-workspace.yaml"), own);
+});
 
 test("sync asks a repository that pins pnpm 11 before 11.27.1 to raise its pin and writes no pnpm-workspace.yaml, where a sync that writes it makes that pnpm install a nested project into the repository root and a sync that skips it leaves the install failing with ERR_PNPM_IGNORED_BUILDS", (t) => {
   const root = pinnedRepo(t, "pnpm@11.27.0");

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { isMap, parseDocument } from "yaml";
+import { isMap, isScalar, parseDocument } from "yaml";
 
 import { admits } from "../garden/semver.ts";
 import { packageManager, usesCaptures, type Manifest } from "./package.ts";
@@ -29,6 +29,28 @@ function creation(manifest: Manifest): "write" | "skip" | "raise" {
  */
 function skippedBuilds(captures: boolean): string[] {
   return captures ? ["lefthook", "mongodb-memory-server"] : ["lefthook"];
+}
+
+/** Whether `current` holds nothing but builds sync turned off, as sync before 0.5.7 wrote it for a pnpm 10 pin. */
+function onlyDecidedBuilds(current: string): boolean {
+  const document = parseDocument(current);
+  const builds = document.get("allowBuilds");
+  if (
+    document.errors.length ||
+    !isMap(document.contents) ||
+    document.contents.items.length !== 1 ||
+    !isMap(builds) ||
+    !builds.items.length
+  )
+    return false;
+  const synced = skippedBuilds(true);
+  return builds.items.every(
+    ({ key, value }) =>
+      isScalar(key) &&
+      synced.includes(String(key.value)) &&
+      isScalar(value) &&
+      value.value === false,
+  );
 }
 
 /**
@@ -71,6 +93,18 @@ export function pnpmWorkspaceArtifacts(
   const file = join(root, PATH);
   const current = existsSync(file) ? readFileSync(file, "utf8") : undefined;
   const names = skippedBuilds(usesCaptures(root));
+  if (
+    current !== undefined &&
+    creation(manifest) === "skip" &&
+    onlyDecidedBuilds(current)
+  )
+    return [
+      {
+        kind: "error",
+        path: PATH,
+        message: `${PATH} holds only the allowBuilds that antelopejs-sync wrote. pnpm 10 does not need it, and it makes a nested \`pnpm install\` install the repository root. Delete ${PATH}, then rerun antelopejs-sync.`,
+      },
+    ];
   if (current === undefined) {
     const action = creation(manifest);
     if (action === "skip") return [];
