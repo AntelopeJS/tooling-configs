@@ -1,7 +1,29 @@
 import assert from "node:assert/strict";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 
-import { apiRepo, bin, commit, put } from "./helpers/test-repo.ts";
+import { apiRepo, bin, commit, put, testRepo } from "./helpers/test-repo.ts";
+
+test("comment-proof reads a nested package in a repository with no root manifest", (t) => {
+  const root = testRepo(t);
+  rmSync(join(root, "package.json"));
+  put(
+    root,
+    "lib/package.json",
+    JSON.stringify({ name: "lib", main: "dist/index.js" }),
+  );
+  put(
+    root,
+    "lib/tsconfig.json",
+    JSON.stringify({ compilerOptions: { outDir: "dist" } }),
+  );
+  put(root, "lib/src/index.ts", "export const value = 1;\n");
+  commit(root);
+  const result = bin(root, "comment-proof", ["HEAD"]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /Comment proof: 1 packages/);
+});
 
 const WORKSPACES = {
   "a pnpm workspace listing other packages": "packages:\n  - frontend-vue\n",

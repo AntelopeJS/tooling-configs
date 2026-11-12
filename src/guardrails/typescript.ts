@@ -54,8 +54,8 @@ function unpublishedReason(
 /** Whether the package at `directory` belongs to the workspace at `root`: always when `root` declares none, else when it is `root` or a listed member. */
 function workspaceMember(root: string): (directory: string) => boolean {
   if (
-    !workspacePatterns(root).length &&
-    !existsSync(join(root, "pnpm-workspace.yaml"))
+    !existsSync(join(root, "pnpm-workspace.yaml")) &&
+    (!existsSync(join(root, "package.json")) || !workspacePatterns(root).length)
   )
     return () => true;
   const members = new Set(workspaceDirectories(root));
