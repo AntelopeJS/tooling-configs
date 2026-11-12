@@ -8,8 +8,24 @@ on:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    name: verify${{ matrix.os == 'windows-latest' && ' on Windows' || '' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
     steps:
+      - name: Use LF line endings, symlinks and Git Bash for package scripts
+        if: runner.os == 'Windows'
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.symlinks true
+          bash_path=$(cygpath -w /usr/bin/bash)
+          echo "npm_config_script_shell=${bash_path}" >> "$GITHUB_ENV"
+          echo "pnpm_config_script_shell=${bash_path}" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -23,12 +39,25 @@ jobs:
       - run: pnpm run --silent ci:weights:check
 
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.shard }})${{ matrix.os == 'windows-latest' && ' on Windows' || '' }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    defaults:
+      run:
+        shell: bash
     steps:
+      - name: Use LF line endings, symlinks and Git Bash for package scripts
+        if: runner.os == 'Windows'
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.symlinks true
+          bash_path=$(cygpath -w /usr/bin/bash)
+          echo "npm_config_script_shell=${bash_path}" >> "$GITHUB_ENV"
+          echo "pnpm_config_script_shell=${bash_path}" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -38,7 +67,7 @@ jobs:
       - run: pnpm install
       - env:
           SHARD: ${{ matrix.shard }}
-          TOTAL: ${{ strategy.job-total }}
+          TOTAL: 8
         run: |
           files=$(pnpm run --silent ci:shard)
           mapfile -t list <<< "$files"
@@ -47,7 +76,7 @@ jobs:
             --test-reporter=./src/ci/file-reporter.ts \
             --test-reporter-destination="$RUNNER_TEMP/durations.json" \
             "${list[@]}"
-      - if: ${{ !cancelled() }}
+      - if: ${{ !cancelled() && runner.os == 'Linux' }}
         uses: actions/upload-artifact@v4
         with:
           name: test-durations-${{ matrix.shard }}
@@ -77,11 +106,24 @@ jobs:
           CHECKS: ${{ needs.checks.result }}
 
   docs:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         node: ["22.18.0", "24"]
+    defaults:
+      run:
+        shell: bash
     steps:
+      - name: Use LF line endings, symlinks and Git Bash for package scripts
+        if: runner.os == 'Windows'
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.symlinks true
+          bash_path=$(cygpath -w /usr/bin/bash)
+          echo "npm_config_script_shell=${bash_path}" >> "$GITHUB_ENV"
+          echo "pnpm_config_script_shell=${bash_path}" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
