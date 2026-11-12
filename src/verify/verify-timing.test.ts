@@ -28,7 +28,7 @@ export default {
       title: "four steps of different lengths",
       entryPoint: "node",
       async run(context) {
-        for (const ms of [100, 600, 0, 350]) {
+        for (const ms of [100, 2400, 0, 800]) {
           const folder = context.step("wait " + ms);
           await sleep(ms);
           context.expect(folder, [{ name: "waited", pass: true, detail: "" }]);
@@ -93,13 +93,13 @@ test("the verdict times every phase and names a journey's three slowest steps, s
   assert.equal(verdict.status, 0, verdict.stderr);
   assert.match(
     verdict.stdout,
-    /\n### Attention\n- Nothing\.\n\n### Timing\n\| Phase \| Time \|\n\|---\|---\|\n\| prune old runs \| \d+\.\d s \|\n\| setup\/01-node \| \d+\.\d s \|\n\| journey smoke\/steps \| \d+\.\d s \(slowest steps: `02-wait-600` \d+\.\d s, `04-wait-350` \d+\.\d s, `01-wait-100` \d+\.\d s\) \|\n\| \*\*Total measured\*\* \(commands only; agent time between commands is not included\) \| \d+\.\d s \|\n$/,
+    /\n### Attention\n- Nothing\.\n\n### Timing\n\| Phase \| Time \|\n\|---\|---\|\n\| prune old runs \| \d+\.\d s \|\n\| setup\/01-node \| \d+\.\d s \|\n\| journey smoke\/steps \| \d+\.\d s \(slowest steps: `02-wait-2400` \d+\.\d s, `04-wait-800` \d+\.\d s, `01-wait-100` \d+\.\d s\) \|\n\| \*\*Total measured\*\* \(commands only; agent time between commands is not included\) \| \d+\.\d s \|\n$/,
   );
   assert.doesNotMatch(verdict.stdout, /03-wait-0/);
   const { timings } = evidence(run, "verdict.json");
   assert.deepEqual(
     timings.journeys[0].slowestSteps.map((step: { step: string }) => step.step),
-    ["02-wait-600", "04-wait-350", "01-wait-100"],
+    ["02-wait-2400", "04-wait-800", "01-wait-100"],
   );
   assert.deepEqual(
     timings.setup.map((entry: { phase: string }) => entry.phase),
