@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
 import { put, read } from "../guardrails/helpers/test-repo.ts";
+import { installFake, pathWith } from "./helpers/fake-bin.ts";
 import {
   CHECKS,
   evidence,
@@ -27,7 +28,7 @@ export default {
       title: "four steps of different lengths",
       entryPoint: "node",
       async run(context) {
-        for (const ms of [100, 600, 0, 350]) {
+        for (const ms of [100, 2400, 0, 800]) {
           const folder = context.step("wait " + ms);
           await sleep(ms);
           context.expect(folder, [{ name: "waited", pass: true, detail: "" }]);
@@ -92,13 +93,13 @@ test("the verdict times every phase and names a journey's three slowest steps, s
   assert.equal(verdict.status, 0, verdict.stderr);
   assert.match(
     verdict.stdout,
-    /\n### Attention\n- Nothing\.\n\n### Timing\n\| Phase \| Time \|\n\|---\|---\|\n\| prune old runs \| \d+\.\d s \|\n\| setup\/01-node \| \d+\.\d s \|\n\| journey smoke\/steps \| \d+\.\d s \(slowest steps: `02-wait-600` \d+\.\d s, `04-wait-350` \d+\.\d s, `01-wait-100` \d+\.\d s\) \|\n\| \*\*Total measured\*\* \(commands only; agent time between commands is not included\) \| \d+\.\d s \|\n$/,
+    /\n### Attention\n- Nothing\.\n\n### Timing\n\| Phase \| Time \|\n\|---\|---\|\n\| prune old runs \| \d+\.\d s \|\n\| setup\/01-node \| \d+\.\d s \|\n\| journey smoke\/steps \| \d+\.\d s \(slowest steps: `02-wait-2400` \d+\.\d s, `04-wait-800` \d+\.\d s, `01-wait-100` \d+\.\d s\) \|\n\| \*\*Total measured\*\* \(commands only; agent time between commands is not included\) \| \d+\.\d s \|\n$/,
   );
   assert.doesNotMatch(verdict.stdout, /03-wait-0/);
   const { timings } = evidence(run, "verdict.json");
   assert.deepEqual(
     timings.journeys[0].slowestSteps.map((step: { step: string }) => step.step),
-    ["02-wait-600", "04-wait-350", "01-wait-100"],
+    ["02-wait-2400", "04-wait-800", "01-wait-100"],
   );
   assert.deepEqual(
     timings.setup.map((entry: { phase: string }) => entry.phase),
@@ -166,14 +167,25 @@ test("a verdict with any unmeasured phase prints no total, and old run.json and 
   assert.equal(timings.totalMs, null);
 });
 
-const SLOW_RESET_DOCKER = `#!/bin/sh
+const SLOW_RESET_DOCKER = {
+  sh: `#!/bin/sh
 case "$1" in
   port) echo "6379/tcp -> 127.0.0.1:41234" ;;
   exec) case "$*" in *FLUSHALL*) sleep 0.6 ;; esac; echo pong ;;
   inspect) echo true ;;
 esac
 exit 0
-`;
+`,
+  cmd: `@echo off
+if "%1"=="port" echo 6379/tcp -^> 127.0.0.1:41234
+if "%1"=="inspect" echo true
+if "%1"=="exec" (
+  echo %* | findstr /c:FLUSHALL >nul && ping -n 2 127.0.0.1 >nul
+  echo pong
+)
+exit /b 0
+`,
+};
 
 test("a service reset is timed inside its own step; a reset run before its step starts reads as free and fails", (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "verify-timing-reset-"));
@@ -198,9 +210,8 @@ test("a service reset is timed inside its own step; a reset run before its step 
 `,
     [`${SKILL}/features/smoke.md`]: feature([], ["seen"]),
   });
-  put(tmp, "bin/docker", SLOW_RESET_DOCKER);
-  chmodSync(join(tmp, "bin/docker"), 0o755);
-  const env = { PATH: `${join(tmp, "bin")}:${process.env.PATH}` };
+  installFake(join(tmp, "bin"), "docker", SLOW_RESET_DOCKER);
+  const env = { PATH: pathWith(join(tmp, "bin")) };
   const run = newRun(root, tmp, env);
   const ran = verify(root, tmp, ["journey", run, "smoke"], env);
   assert.equal(ran.status, 0, ran.stdout + ran.stderr);
@@ -224,7 +235,8 @@ test("a run whose new failed keeps the time of every phase it ran, the failed on
   });
   const created = verify(root, tmp, ["new"]);
   assert.equal(created.status, 1, created.stdout + created.stderr);
-  const run = /see (\S+)\/evidence\/setup\//.exec(created.stderr)?.[1] ?? "";
+  const run =
+    /see (\S+)[\\/]evidence[\\/]setup[\\/]/.exec(created.stderr)?.[1] ?? "";
   const { timings } = JSON.parse(read(run, "run.json"));
   assert.deepEqual(
     timings.map((entry: { phase: string }) => entry.phase),

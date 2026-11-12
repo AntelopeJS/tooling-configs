@@ -11,10 +11,15 @@ import {
 } from "node:fs";
 import { type AddressInfo, createServer, type Server } from "node:net";
 import { constants } from "node:os";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 
 import { parseJson, type JsonValue } from "../garden/json.ts";
 import type { CommandResult, HttpInit, HttpResult } from "./types.ts";
+import { killTree, launch } from "./launch.ts";
+import { relativeSlashed } from "./slash.ts";
+
+/** Whether a command leads a process group of its own. Windows has none, and a detached command starts without a console, so a `.cmd` shim runs its `node` in a new console whose output never reaches the recorded pipes. */
+const LEADS_GROUP = process.platform !== "win32";
 
 /** A command to drive: a program, its arguments and where it runs. */
 export interface CommandSpec {
@@ -93,10 +98,12 @@ export function runRecorded(
   writeCommand(folder, spec);
   listenForInterrupts();
   return new Promise((resolve) => {
-    const child = spawn(spec.program, spec.args, {
+    const started = launch(spec.program, spec.args, spec.env);
+    const child = spawn(started.program, started.args, {
       cwd: spec.cwd,
       env: spec.env,
-      detached: true,
+      detached: LEADS_GROUP,
+      windowsVerbatimArguments: started.verbatim,
       stdio: ["ignore", "pipe", "pipe"],
     });
     foreground.add(child);
@@ -151,10 +158,12 @@ export function startRecorded(
   writeCommand(folder, spec);
   const stdout = openSync(join(folder, "stdout.txt"), "w");
   const stderr = openSync(join(folder, "stderr.txt"), "w");
-  const child = spawn(spec.program, spec.args, {
+  const started = launch(spec.program, spec.args, spec.env);
+  const child = spawn(started.program, started.args, {
     cwd: spec.cwd,
     env: spec.env,
-    detached: true,
+    detached: LEADS_GROUP,
+    windowsVerbatimArguments: started.verbatim,
     stdio: ["ignore", stdout, stderr],
   });
   closeSync(stdout);
@@ -182,6 +191,10 @@ export function startRecorded(
 
 /** Kills the process group a detached command leads, never a lone PID the system may have reused since the command exited. */
 function killOwnGroup(pid: number): void {
+  if (process.platform === "win32") {
+    killTree(pid);
+    return;
+  }
   try {
     process.kill(-pid, "SIGKILL");
   } catch {
@@ -191,6 +204,10 @@ function killOwnGroup(pid: number): void {
 
 /** Kills the process group of `pid`, or `pid` alone, ignoring a process already gone. */
 export function killGroup(pid: number): void {
+  if (process.platform === "win32") {
+    killTree(pid);
+    return;
+  }
   try {
     process.kill(-pid, "SIGKILL");
   } catch {
@@ -353,7 +370,7 @@ function listTree(root: string, folder = root): string[] {
     .sort((left, right) => left.name.localeCompare(right.name))
     .flatMap((entry) => {
       const path = join(folder, entry.name);
-      const name = relative(root, path);
+      const name = relativeSlashed(root, path);
       if (entry.isDirectory()) return [`${name}/`, ...listTree(root, path)];
       return [`${name} ${statSync(path).size}`];
     });

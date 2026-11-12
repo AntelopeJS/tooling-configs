@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TestContext } from "node:test";
+import { pathToFileURL } from "node:url";
 
 import { read } from "../../guardrails/helpers/test-repo.ts";
 import { CHECKS, feature, PUBLISH_DOORS, verifyRepo } from "./verify-repo.ts";
@@ -213,7 +214,7 @@ export function preparedRepo(t: TestContext) {
   const imported = (name: string, source: string) => {
     const file = join(tmp, `${name}.mjs`);
     writeFileSync(file, source);
-    return { NODE_OPTIONS: `--import=${file}` };
+    return { NODE_OPTIONS: `--import=${pathToFileURL(file).href}` };
   };
   const hook = (mode: "vanish" | "replace") => imported(mode, memoHook(mode));
   const store = (mode = 0o644) => {

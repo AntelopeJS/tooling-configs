@@ -5,7 +5,7 @@ import {
   readFileSync,
   statSync,
 } from "node:fs";
-import { join, relative } from "node:path";
+import { basename, extname, join } from "node:path";
 
 import {
   child,
@@ -35,6 +35,7 @@ import {
   type RunState,
   type Workspace,
 } from "./workspace.ts";
+import { relativeSlashed } from "./slash.ts";
 
 /** One line of `doctor`: what was checked, whether it holds and what was seen. */
 export interface DoctorLine {
@@ -83,7 +84,7 @@ function setupCommands(workspace: Workspace): string[][] {
 async function runSetup(workspace: Workspace, state: RunState): Promise<void> {
   const commands = setupCommands(workspace);
   for (const [index, [program, ...args]] of commands.entries()) {
-    const name = `${String(index + 1).padStart(2, "0")}-${program}`;
+    const name = `${String(index + 1).padStart(2, "0")}-${basename(program, extname(program))}`;
     const folder = join(state.evidence, "setup", name);
     const elapsed = stopwatch();
     const result = await runRecorded(folder, {
@@ -134,7 +135,7 @@ async function packInterface(
     );
   const extract = await runRecorded(join(state.evidence, "setup", "extract"), {
     program: "tar",
-    args: ["-xzf", join(folder, tarball), "-C", folder],
+    args: ["-xzf", tarball, "-C", "."],
     cwd: folder,
     env,
   });
@@ -332,7 +333,7 @@ export function doctor(workspace: Workspace, state: RunState): DoctorLine[] {
   const head = git(workspace.root, ["rev-parse", "HEAD"]);
   let core = "";
   try {
-    core = relative(
+    core = relativeSlashed(
       workspace.root,
       installedPackage(workspace.root, "@antelopejs/core"),
     );

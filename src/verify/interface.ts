@@ -29,6 +29,7 @@ import {
   type Surface,
 } from "./surface.ts";
 import { onInterrupt } from "./record.ts";
+import { relativeSlashed } from "./slash.ts";
 import type { App, Check } from "./types.ts";
 import { CACHE_DIR, git } from "./workspace.ts";
 
@@ -384,12 +385,12 @@ async function extractPublished(
   const extracted = join(context.work, "published");
   rmSync(extracted, { recursive: true, force: true });
   mkdirSync(extracted, { recursive: true });
-  const untar = await context.command("extract published", "tar", [
-    "-xzf",
-    tarball,
-    "-C",
-    extracted,
-  ]);
+  const untar = await context.command(
+    "extract published",
+    "tar",
+    ["-xzf", relativeSlashed(extracted, tarball), "-C", "."],
+    { cwd: extracted },
+  );
   context.expect(untar.folder, [exitIs(untar, 0)], { critical: true });
   const root = join(extracted, "package");
   linkDependencies(root, context.repo);

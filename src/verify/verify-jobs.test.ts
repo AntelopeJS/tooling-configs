@@ -24,6 +24,16 @@ const SKILL = ".agents/skills/verify-module";
 /** Two jobs run at once only where half the cores is at least two. */
 const TWO_JOBS = availableParallelism() < 4 && "needs 4 cores for --jobs 2";
 
+/** Windows ends a process that kills itself with exit code 1, never with a signal a parent could name. */
+const KILLED_NOTE =
+  process.platform === "win32"
+    ? ""
+    : "docs: its journey process ended on SIGKILL\n";
+
+const NO_SIGNAL_FORWARDING =
+  process.platform === "win32" &&
+  "Windows has no SIGTERM to forward: kill() ends the process at once with no exit code 143";
+
 function exits(id: string, code: number, wait = 0): string {
   return `${JSON.stringify(id)}: {
       title: "${id} exits ${code}",
@@ -43,7 +53,7 @@ import { join } from "node:path";
 import { equal, exitIs } from ${JSON.stringify(CHECKS)};
 const meet = async (context) => {
   mkdirSync(${JSON.stringify(barrier)}, { recursive: true });
-  writeFileSync(join(${JSON.stringify(barrier)}, context.work.replaceAll("/", "_")), "");
+  writeFileSync(join(${JSON.stringify(barrier)}, context.work.replace(/[\\\\/:]/g, "_")), "");
   for (let waited = 0; waited < 5000; waited += 20) {
     if (readdirSync(${JSON.stringify(barrier)}).length >= 2) return true;
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -212,7 +222,7 @@ test(
     );
     assert.equal(
       result.stderr,
-      "Unknown feature nope: no features/nope.md\ndocs: its journey process ended on SIGKILL\ncrash: a journey left an uncaught error: async boom\n",
+      `Unknown feature nope: no features/nope.md\n${KILLED_NOTE}crash: a journey left an uncaught error: async boom\n`,
     );
     assert.deepEqual(statuses(run, "last"), ["shared PASS -"]);
   },
@@ -291,7 +301,7 @@ test("--jobs refuses a count that is not a whole number above 0, and a single fe
 
 test(
   "an interrupted journey --jobs call prints every feature that ended, in order, past one that never started, and names the unstarted one; a call that stops printing at the first feature not ended loses c",
-  { skip: TWO_JOBS },
+  { skip: TWO_JOBS || NO_SIGNAL_FORWARDING },
   async (t) => {
     const { root, tmp, run } = repo(t, {
       a: ["hold"],

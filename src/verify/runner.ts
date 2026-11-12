@@ -10,16 +10,18 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 
 import { BUILTIN_JOURNEYS } from "./builtins.ts";
 import { VerifyContext, type BuiltinJourney } from "./context.ts";
 import { readFeatures } from "./map.ts";
+import { spawnLaunched } from "./launch.ts";
 import { killGroup, onInterrupt } from "./record.ts";
 import type { JourneyEnd, JourneyResult, JourneyStatus } from "./results.ts";
 import { stopwatch } from "./timing.ts";
 import type { Journey } from "./types.ts";
 import {
+  canonical,
   git,
   removeTree,
   recordProcesses,
@@ -27,6 +29,7 @@ import {
   type Workspace,
   writeWhole,
 } from "./workspace.ts";
+import { relativeSlashed } from "./slash.ts";
 
 /** Every journey id a feature file may name: the kind's built-in journeys and the repo's own. */
 export function knownJourneys(
@@ -54,7 +57,7 @@ function resetServices(context: VerifyContext): void {
     if (!service.reset) continue;
     const container = context.service(name).container;
     const folder = context.step(`reset ${name}`);
-    const run = spawnSync("docker", ["exec", container, ...service.reset], {
+    const run = spawnLaunched("docker", ["exec", container, ...service.reset], {
       encoding: "utf8",
     });
     writeFileSync(
@@ -181,7 +184,7 @@ async function driveJourney(
     status,
     steps: context.steps,
     ...failure,
-    folder: relative(state.evidence, context.folder),
+    folder: relativeSlashed(state.evidence, context.folder),
     stepMs: context.clock.finish(),
     ms: elapsed(),
   };
@@ -228,7 +231,7 @@ function gitPaths(root: string, args: string[]): string[] {
  */
 function treeState(root: string, runDir: string): string | undefined {
   try {
-    const own = relative(root, runDir);
+    const own = relativeSlashed(canonical(root), canonical(runDir));
     const inside =
       own !== "" && !own.startsWith("..") && !isAbsolute(own)
         ? `${own}/`
@@ -310,7 +313,7 @@ function reuse(
   const result: JourneyResult = {
     ...source,
     feature,
-    folder: relative(state.evidence, folder),
+    folder: relativeSlashed(state.evidence, folder),
     reusedFrom: source.folder,
     ms: 0,
     stepMs: [],
