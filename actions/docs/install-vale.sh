@@ -28,7 +28,7 @@ status=$(curl --fail --silent --show-error --location --output "$archive" \
 echo "$sha256  $archive" | sha256sum --check --quiet >&2
 case "$url" in
   *.zip) unzip -q -o "$archive" "$binary" -d "$target" ;;
-  *) tar --force-local --extract --gzip --file "$archive" --directory "$target" "$binary" ;;
+  *) (cd "$target" && tar --extract --gzip --file vale.archive "$binary") ;;
 esac
 rm "$archive"
 printf '%s\n' "$target/$binary"
