@@ -71,7 +71,7 @@ it("retries a 504 and installs Vale from the next 200", async (t) => {
   const { url, seen } = await serve(t, [504, 200], body);
   const run = await install(root, url, sha256);
   assert.deepEqual(seen, [504, 200]);
-  assert.equal(run.code, 0);
+  assert.equal(run.code, 0, run.stderr);
   assert.equal(run.stdout, `${run.target}/${BINARY}\n`);
   assert.equal(runStub(run.stdout.trim()), "stub-vale\n");
 });
