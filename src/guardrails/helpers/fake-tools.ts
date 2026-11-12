@@ -1,5 +1,4 @@
 import {
-  chmodSync,
   existsSync,
   mkdtempSync,
   readFileSync,
@@ -14,6 +13,7 @@ import { pathToFileURL } from "node:url";
 
 import { TSGOLINT } from "../../oxc/helpers/tsgolint.ts";
 import { toolingVersions } from "../package.ts";
+import { writeTool } from "./shell.ts";
 import { PACKAGE_ROOT } from "./test-repo.ts";
 
 const PRESET_SOURCES = {
@@ -27,20 +27,6 @@ const PLUGIN_PRESETS: readonly string[] = ["oxc/anti-slop", "oxc/guardrails"];
 
 function resolved(specifier: string): string {
   return dirname(createRequire(import.meta.url).resolve(specifier));
-}
-
-/** Writes `body` as the Node program `name` in `directory`, run by its name from PATH: a shebang script, or on Windows a `.js` file behind the `.cmd` shim cmd.exe resolves. */
-function writeTool(directory: string, name: string, body: string): void {
-  if (process.platform !== "win32") {
-    writeFileSync(join(directory, name), `#!${process.execPath}\n${body}\n`);
-    chmodSync(join(directory, name), 0o755);
-    return;
-  }
-  writeFileSync(join(directory, `${name}.js`), `${body}\n`);
-  writeFileSync(
-    join(directory, `${name}.cmd`),
-    `@"${process.execPath}" "%~dp0${name}.js" %*\r\n`,
-  );
 }
 
 /**

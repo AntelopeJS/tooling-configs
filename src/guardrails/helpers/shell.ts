@@ -1,6 +1,20 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { chmodSync, existsSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
+
+/** Writes `body` as the Node program `name` in `directory`, run by its name from PATH: a shebang script, or on Windows a `.js` file behind the `.cmd` shim cmd.exe resolves. */
+export function writeTool(directory: string, name: string, body: string): void {
+  if (process.platform !== "win32") {
+    writeFileSync(join(directory, name), `#!${process.execPath}\n${body}\n`);
+    chmodSync(join(directory, name), 0o755);
+    return;
+  }
+  writeFileSync(join(directory, `${name}.js`), `${body}\n`);
+  writeFileSync(
+    join(directory, `${name}.cmd`),
+    `@"${process.execPath}" "%~dp0${name}.js" %*\r\n`,
+  );
+}
 
 /** The first `name` on `PATH`, with `.exe` on Windows, as a shell resolves it. */
 export function onPath(name: string): string {

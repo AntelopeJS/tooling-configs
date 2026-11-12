@@ -1,18 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import {
-  chmodSync,
-  existsSync,
-  mkdtempSync,
-  rmSync,
-  symlinkSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 
 import { publishedPorts } from "./services.ts";
 import { claimPort, closeServer } from "../lease/ports.ts";
+import { onPath, writeTool } from "./helpers/shell.ts";
 import { PACKAGE_ROOT, bin, put, read, testRepo } from "./helpers/test-repo.ts";
 
 const STEPS = [
@@ -38,20 +33,20 @@ function logLines(root: string): string[] {
 function fakeDockerPath(t: TestContext): string {
   const directory = mkdtempSync(join(tmpdir(), "antelope-docker-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
-  put(
+  writeTool(
     directory,
     "docker",
     [
-      "#!/bin/sh",
-      'echo "docker $*" >> "$CALLS_LOG"',
-      'case "$*" in',
-      '  *" ps "*) echo "compose warning" >&2; printf "%s" "${FAKE_PS_OUTPUT:-}";;',
-      '  *" up "*) [ -n "${FAKE_UP_SLEEP:-}" ] && sleep "$FAKE_UP_SLEEP"; exit "${FAKE_UP_EXIT:-0}";;',
-      "esac",
-      "",
+      "const args = process.argv.slice(2);",
+      'require("node:fs").appendFileSync(process.env.CALLS_LOG, `docker ${args.join(" ")}\\n`);',
+      'if (args.includes("ps")) {',
+      '  process.stderr.write("compose warning\\n");',
+      '  process.stdout.write(process.env.FAKE_PS_OUTPUT ?? "");',
+      "}",
+      'if (args.includes("up"))',
+      "  setTimeout(() => process.exit(Number(process.env.FAKE_UP_EXIT ?? 0)), Number(process.env.FAKE_UP_SLEEP ?? 0) * 1000);",
     ].join("\n"),
   );
-  chmodSync(join(directory, "docker"), 0o755);
   return directory;
 }
 
@@ -161,6 +156,10 @@ test("checks without a compose file never call Docker", (t) => {
 });
 
 function pathWithoutDocker(t: TestContext): string {
+  if (process.platform === "win32")
+    return [process.execPath, onPath("git"), onPath("sh")]
+      .map((tool) => dirname(tool))
+      .join(delimiter);
   const directory = mkdtempSync(join(tmpdir(), "antelope-no-docker-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   for (const tool of ["git", "sh", "npm"])
@@ -215,31 +214,41 @@ test("checks keep a stack whose containers existed before the run", (t) => {
   );
 });
 
-test("an interrupt while the services start stops compose at once and removes them", async (t) => {
-  const root = servicesRepo(t, UNREACHABLE_COMPOSE);
-  const begun = Date.now();
-  const result = await runBin(
-    root,
-    [],
-    dockerEnv(t, root, { FAKE_UP_SLEEP: "30" }),
-    (child) => {
-      const timer = setInterval(() => {
-        if (!logLines(root).some((line) => line.endsWith("up -d --wait")))
-          return;
-        clearInterval(timer);
-        child.kill("SIGTERM");
-      }, 50);
-    },
-  );
-  assert.equal(result.status, 143, result.stdout);
-  assert.ok(Date.now() - begun < 15000, "stopped before compose finished");
-  assert.match(result.stdout, /Checks interrupted by SIGTERM\./);
-  assert.ok(!logLines(root).includes("step test"));
-  assert.equal(
-    logLines(root).at(-1),
-    "docker compose -f .github/compose.yml down -v",
-  );
-});
+const POSIX_SIGNALS = {
+  skip:
+    process.platform === "win32" &&
+    "Windows delivers no SIGTERM, so the checks interrupt handler cannot run",
+};
+
+test(
+  "an interrupt while the services start stops compose at once and removes them",
+  POSIX_SIGNALS,
+  async (t) => {
+    const root = servicesRepo(t, UNREACHABLE_COMPOSE);
+    const begun = Date.now();
+    const result = await runBin(
+      root,
+      [],
+      dockerEnv(t, root, { FAKE_UP_SLEEP: "30" }),
+      (child) => {
+        const timer = setInterval(() => {
+          if (!logLines(root).some((line) => line.endsWith("up -d --wait")))
+            return;
+          clearInterval(timer);
+          child.kill("SIGTERM");
+        }, 50);
+      },
+    );
+    assert.equal(result.status, 143, result.stdout);
+    assert.ok(Date.now() - begun < 15000, "stopped before compose finished");
+    assert.match(result.stdout, /Checks interrupted by SIGTERM\./);
+    assert.ok(!logLines(root).includes("step test"));
+    assert.equal(
+      logLines(root).at(-1),
+      "docker compose -f .github/compose.yml down -v",
+    );
+  },
+);
 
 test("checks read package.json before starting the services, so a broken manifest starts nothing", (t) => {
   const root = servicesRepo(t, UNREACHABLE_COMPOSE);
