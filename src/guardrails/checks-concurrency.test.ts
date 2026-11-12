@@ -106,31 +106,44 @@ function lingering(name: string) {
   return `node -e "const fs=require('node:fs');fs.writeFileSync('${name}.started','');setTimeout(()=>fs.writeFileSync('${name}.finished',''),30000)"`;
 }
 
-test("an interrupt stops every running step, not only the first one started", async (t) => {
-  const root = repoWith(t, {
-    lint: lingering("lint"),
-    knip: lingering("knip"),
-  });
-  const begun = Date.now();
-  const status = await new Promise<number | null>((resolve) => {
-    const child = spawn(
-      process.execPath,
-      [join(PACKAGE_ROOT, "src/bin/checks.ts"), "--no-services"],
-      { cwd: root, env: { ...process.env, CI: "1" }, stdio: "ignore" },
+const POSIX_SIGNALS = {
+  skip:
+    process.platform === "win32" &&
+    "Windows delivers no SIGTERM, so the checks interrupt handler cannot run",
+};
+
+test(
+  "an interrupt stops every running step, not only the first one started",
+  POSIX_SIGNALS,
+  async (t) => {
+    const root = repoWith(t, {
+      lint: lingering("lint"),
+      knip: lingering("knip"),
+    });
+    const begun = Date.now();
+    const status = await new Promise<number | null>((resolve) => {
+      const child = spawn(
+        process.execPath,
+        [join(PACKAGE_ROOT, "src/bin/checks.ts"), "--no-services"],
+        { cwd: root, env: { ...process.env, CI: "1" }, stdio: "ignore" },
+      );
+      const timer = setInterval(() => {
+        if (
+          !existsSync(join(root, "lint.started")) ||
+          !existsSync(join(root, "knip.started"))
+        )
+          return;
+        clearInterval(timer);
+        child.kill("SIGTERM");
+      }, 50);
+      child.once("close", resolve);
+    });
+    assert.equal(status, 143);
+    assert.ok(
+      Date.now() - begun < 15000,
+      "every step stopped before its timer",
     );
-    const timer = setInterval(() => {
-      if (
-        !existsSync(join(root, "lint.started")) ||
-        !existsSync(join(root, "knip.started"))
-      )
-        return;
-      clearInterval(timer);
-      child.kill("SIGTERM");
-    }, 50);
-    child.once("close", resolve);
-  });
-  assert.equal(status, 143);
-  assert.ok(Date.now() - begun < 15000, "every step stopped before its timer");
-  assert.equal(existsSync(join(root, "lint.finished")), false);
-  assert.equal(existsSync(join(root, "knip.finished")), false);
-});
+    assert.equal(existsSync(join(root, "lint.finished")), false);
+    assert.equal(existsSync(join(root, "knip.finished")), false);
+  },
+);

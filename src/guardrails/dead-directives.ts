@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join, posix } from "node:path";
 
 import { changedFiles } from "./files.ts";
 import { unusedDirectives, type UnusedDirective } from "./oxlint.ts";
@@ -52,15 +52,18 @@ function written(directive: Directive, rules = directive.rules): string {
 /** Whether an ESLint config sits in the file's directory or above it, so ESLint may run the rules an `eslint-` directive names. */
 function lintedByEslint(root: string, file: string): boolean {
   for (
-    let directory = dirname(join(root, file));
-    directory.startsWith(root);
-    directory = dirname(directory)
+    let directory = posix.dirname(file);
+    ;
+    directory = posix.dirname(directory)
   ) {
-    if (readdirSync(directory).some((name) => ESLINT_CONFIG.test(name)))
+    if (
+      readdirSync(join(root, directory)).some((name) =>
+        ESLINT_CONFIG.test(name),
+      )
+    )
       return true;
-    if (directory === root) break;
+    if (directory === ".") return false;
   }
-  return false;
 }
 
 /** The directive oxlint's report is about: on its line, else the nearest earlier block disable it ends at an `-enable` on that line, naming the dead rule when oxlint names one. */

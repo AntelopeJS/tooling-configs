@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
 import { parseManifest, PREPARE_INSTALL } from "./package.ts";
+import { runScript } from "./helpers/shell.ts";
 import { bin, commit, put, read, testRepo } from "./helpers/test-repo.ts";
 
 const PREVIOUS_PREPARE =
@@ -44,11 +45,7 @@ function stubLefthook(root: string): string {
 }
 
 function runPrepare(prepare: string, cwd: string, stubs: string) {
-  return spawnSync("/bin/sh", ["-c", prepare], {
-    cwd,
-    encoding: "utf8",
-    env: { ...process.env, PATH: `${stubs}:${process.env.PATH}` },
-  });
+  return runScript(prepare, cwd, [stubs]);
 }
 
 test("a package nested in another repository's checkout leaves that repository's hooks alone", (t) => {
@@ -117,14 +114,8 @@ test("GIT_DIR pointing at the outer repository, as inside a git hook, still leav
   const stubs = stubLefthook(outer);
   const nested = join(outer, "cache", "module");
   mkdirSync(nested, { recursive: true });
-  const result = spawnSync("/bin/sh", ["-c", prepare], {
-    cwd: nested,
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      PATH: `${stubs}:${process.env.PATH}`,
-      GIT_DIR: join(outer, ".git"),
-    },
+  const result = runScript(prepare, nested, [stubs], {
+    GIT_DIR: join(outer, ".git"),
   });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(existsSync(join(outer, HOOK_MARKER)), false);
@@ -164,15 +155,9 @@ test("a nested repository installs into its own hooks even with GIT_DIR pointing
   const inner = join(outer, "inner");
   mkdirSync(inner);
   execFileSync("git", ["init", "-q"], { cwd: inner });
-  const result = spawnSync("/bin/sh", ["-c", prepare], {
-    cwd: inner,
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      PATH: `${stubs}:${process.env.PATH}`,
-      GIT_DIR: join(outer, ".git"),
-      GIT_WORK_TREE: outer,
-    },
+  const result = runScript(prepare, inner, [stubs], {
+    GIT_DIR: join(outer, ".git"),
+    GIT_WORK_TREE: outer,
   });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(existsSync(join(outer, HOOK_MARKER)), false);

@@ -275,8 +275,14 @@ test("a rewritten caller passes the pack's own formatter check, whether old-shap
     assert.notEqual(rewritten, text, name);
     put(root, `${name}.yml`, rewritten);
     const check = spawnSync(
-      join(PACKAGE_ROOT, "node_modules/.bin/oxfmt"),
-      ["-c", join(PACKAGE_ROOT, "oxfmt.config.ts"), "--check", `${name}.yml`],
+      process.execPath,
+      [
+        join(PACKAGE_ROOT, "node_modules/oxfmt/bin/oxfmt"),
+        "-c",
+        join(PACKAGE_ROOT, "oxfmt.config.ts"),
+        "--check",
+        `${name}.yml`,
+      ],
       { cwd: root, encoding: "utf8" },
     );
     assert.equal(check.status, 0, `${name}: ${check.stdout}${check.stderr}`);

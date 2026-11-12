@@ -11,7 +11,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { TestContext } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ANTELOPE_STYLE } from "../../oxc/fmt.ts";
 import { CHECKS_SKIP_ENV } from "../checks.ts";
@@ -76,11 +76,14 @@ export function linkOxlint(root: string): void {
 export function usePreset(root: string, typeAware = false): void {
   const source = (path: string) =>
     JSON.stringify(join(PACKAGE_ROOT, "src/oxc", path));
+  const lintModule = JSON.stringify(
+    pathToFileURL(join(PACKAGE_ROOT, "src/oxc/lint.ts")).href,
+  );
   put(
     root,
     "oxlint.config.ts",
     [
-      `import { antelopePreset } from ${source("lint.ts")};`,
+      `import { antelopePreset } from ${lintModule};`,
       "const preset = antelopePreset();",
       "for (const layer of preset.extends)",
       "  if (layer.jsPlugins)",

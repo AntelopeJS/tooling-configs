@@ -11,11 +11,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TestContext } from "node:test";
 
+import { makeExecutable } from "../exec-bit.ts";
+import { shimInvocation } from "../run-command.ts";
 import { PACKAGE_ROOT } from "./test-repo.ts";
 
 /**
- * Copies the pack's working tree into a fresh git repository, runs `pnpm pack` there (its `prepack` builds `dist`), and
- * extracts the tarball. Returns the copy as `source` and the extracted package as `packed`, both linked to the pack's
+ * Copies the pack's working tree into a fresh git repository, with the exec bits its index records, builds `dist` there as its `prepack` does, packs it without
+ * lifecycle scripts, whose POSIX `prepare` `pnpm pack` runs through cmd.exe on Windows, and extracts the tarball. Returns the copy as `source` and the extracted package as `packed`, both linked to the pack's
  * `node_modules`; `t.after` deletes them.
  */
 export function packedPack(t: TestContext) {
@@ -37,13 +39,27 @@ export function packedPack(t: TestContext) {
   const modules = join(PACKAGE_ROOT, "node_modules");
   symlinkSync(modules, join(source, "node_modules"));
   execFileSync("git", ["init", "-q"], { cwd: source });
+  for (const line of execFileSync("git", ["ls-files", "--stage", "-z"], {
+    cwd: PACKAGE_ROOT,
+    encoding: "utf8",
+  }).split("\0"))
+    if (line.startsWith("100755 "))
+      makeExecutable(source, line.slice(line.indexOf("\t") + 1), 0o755);
   const destination = join(scratch, "tarball");
-  execFileSync("pnpm", ["pack", "--pack-destination", destination], {
-    cwd: source,
-    stdio: "ignore",
-  });
+  for (const args of [
+    ["run", "build"],
+    ["pack", "--config.ignore-scripts=true", "--pack-destination", destination],
+  ]) {
+    const pnpm = shimInvocation("pnpm", args);
+    execFileSync(pnpm.command, pnpm.args, {
+      cwd: source,
+      shell: pnpm.shell,
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+  }
   const [tarball = ""] = readdirSync(destination);
-  execFileSync("tar", ["-xzf", join(destination, tarball), "-C", scratch]);
+  execFileSync("tar", ["-xzf", `tarball/${tarball}`], { cwd: scratch });
   const packed = join(scratch, "package");
   symlinkSync(modules, join(packed, "node_modules"));
   return { source, packed };
