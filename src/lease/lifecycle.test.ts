@@ -88,10 +88,10 @@ test("a worktree recreated at the same path gets a fresh lease without the old d
   assert.equal(probed.stdout.trim(), "fresh");
 });
 
-/** Denies everyone reading `path`: mode 000 on POSIX, a deny entry for Everyone in its ACL on Windows, where chmod only sets the read-only flag. */
+/** Denies everyone reading the worktree: mode 000 on its parent on POSIX; on Windows, where everyone may pass through a folder they cannot read and chmod only sets the read-only flag, a deny entry for Everyone on the worktree, inherited by its `.git`. */
 function denyReading(path: string): void {
   if (process.platform === "win32")
-    execFileSync("icacls", [path, "/deny", "*S-1-1-0:(OI)(CI)(RX)"]);
+    execFileSync("icacls", [path, "/deny", "*S-1-1-0:(OI)(CI)(F)"]);
   else chmodSync(path, 0o000);
 }
 
@@ -114,13 +114,14 @@ test(
     const worktree = gitInit(join(root, "parent", "w"));
     const env = externalEnv(join(root, ".home"));
     const printed = await leasedEnv(worktree, env);
-    const parent = join(root, "parent");
-    denyReading(parent);
+    const locked =
+      process.platform === "win32" ? worktree : join(root, "parent");
+    denyReading(locked);
     let hidden;
     try {
       hidden = await statusRows(root, env);
     } finally {
-      allowReading(parent);
+      allowReading(locked);
     }
     assert.deepEqual(
       hidden.map((row) => row.state),
