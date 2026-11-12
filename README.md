@@ -469,6 +469,8 @@ The defaults declare what Knip cannot infer for an AntelopeJS module:
 
 An implementer must never be handed a breaking minor it does not implement. `workspace:`, `file:` and `link:` specs are skipped. Pass paths to check only those manifests.
 
+When the interface sits in the same repository, as in a DMS monorepo, `antelopejs-sync` moves the implementer's range for you: a minor interface release from `0.6.1` to `0.7.0` moves `>=0.6.0 <0.7.0` to `>=0.7.0 <0.8.0`, then sync runs `pnpm install --lockfile-only` so the lockfile follows. The interface is not on npm yet when the release hook runs, so the workspace must link it: set `link-workspace-packages=true` in `.npmrc` or `linkWorkspacePackages: true` in `pnpm-workspace.yaml`. When the relock fails, sync leaves the ranges unmoved and exits 1. An interface `.release-it.json` whose `after:bump` hook runs `pnpm --dir ../.. run sync` and `git add -u ../..` commits both with the release. `antelopejs-sync --check` reports the stale range as drift.
+
 ```jsonc
 // package.json
 {

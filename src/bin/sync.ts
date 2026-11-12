@@ -5,14 +5,45 @@ import { runCli } from "../guardrails/cli.ts";
 import { CI_CONTEXT, CI_PATH } from "../guardrails/ci-workflow.ts";
 import { repositoryRoot } from "../guardrails/files.ts";
 import { ENABLE_BRANCH_CLEANUP, initRepository } from "../guardrails/init.ts";
+import {
+  moveInterfaceRanges,
+  type RangeMoves,
+} from "../guardrails/interface-ranges-sync.ts";
 import { syncRepository } from "../guardrails/sync.ts";
 import {
   isVerifyChoice,
   type VerifyChoice,
 } from "../guardrails/verify-skill.ts";
 
+type SyncResult = ReturnType<typeof syncRepository>;
+
+/** The sync result with the interface range moves that ran before it, or the moves alone when relocking them failed. */
+function withRangeMoves(
+  ranges: RangeMoves,
+  result: SyncResult | undefined,
+): SyncResult {
+  if (!result)
+    return {
+      artifacts: [],
+      paths: [],
+      removed: [],
+      errors: ranges.errors,
+      notes: ranges.notes,
+      verifyNotes: [],
+      advisories: [],
+      dependenciesAdded: false,
+    };
+  return {
+    ...result,
+    paths: result.errors.length
+      ? []
+      : [...new Set([...ranges.paths, ...result.paths])],
+    notes: [...ranges.notes, ...result.notes],
+  };
+}
+
 function printSync(
-  result: ReturnType<typeof syncRepository>,
+  result: SyncResult,
   { check, installed }: { check: boolean; installed: boolean },
 ): number {
   for (const note of result.notes)
@@ -92,12 +123,18 @@ runCli(() => {
       "--init sets up a full-profile repository; it cannot be combined with --check or --profile template.",
     );
   if (values.init) return init(values.verify);
-  return printSync(
-    syncRepository(repositoryRoot(), {
-      check: values.check,
-      profile: values.profile,
-      verify: values.verify,
-    }),
-    { check: Boolean(values.check), installed: false },
-  );
+  const root = repositoryRoot();
+  const check = Boolean(values.check);
+  const ranges = moveInterfaceRanges(root, check);
+  const result = ranges.errors.length
+    ? undefined
+    : syncRepository(root, {
+        check,
+        profile: values.profile,
+        verify: values.verify,
+      });
+  return printSync(withRangeMoves(ranges, result), {
+    check,
+    installed: false,
+  });
 });

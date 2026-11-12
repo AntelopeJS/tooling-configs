@@ -16,6 +16,7 @@ import {
   toolingVersions,
   usesNuxt,
 } from "./package.ts";
+import { runPnpm } from "./run-pnpm.ts";
 import { syncRepository } from "./sync.ts";
 import { PRESET_CONFIGS, presetConfig } from "./templates.ts";
 import type { VerifyChoice } from "./verify-skill.ts";
@@ -108,17 +109,8 @@ function ensureBranchCleanup(root: string): BranchCleanup {
     : { kind: "enabled" };
 }
 
-/** Runs pnpm, the only manager the pack's CI installs with, with `args` quietly; returns its output only when it failed. */
-function run(root: string, args: readonly string[]): string | undefined {
-  const command = ["pnpm", ...args].join(" ");
-  const result = spawnSync("pnpm", args, { cwd: root, encoding: "utf8" });
-  if (result.error) return `${command} failed: ${result.error.message}`;
-  if (result.status === 0) return undefined;
-  return `${command} failed (exit ${result.status}).\n${result.stdout}${result.stderr}`.trimEnd();
-}
-
 function install(root: string): string | undefined {
-  return run(root, ["install"]);
+  return runPnpm(root, ["install"]);
 }
 
 function resolveOxfmt(root: string): string {
@@ -286,7 +278,7 @@ function bootstrap(root: string): Bootstrap {
   const imported =
     foreign.some(({ importable }) => importable) &&
     !existsSync(join(root, "pnpm-lock.yaml"))
-      ? run(root, ["import"])
+      ? runPnpm(root, ["import"])
       : undefined;
   if (imported !== undefined) return { paths, removed: [], failure: imported };
   for (const { file } of foreign) unlinkSync(join(root, file));
