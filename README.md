@@ -1,9 +1,15 @@
-# @antelopejs/tooling-configs
+<a href="https://github.com/AntelopeJS/antelopejs"><img data-illustration src="./.github/readme/strip.svg" width="100%" alt="TOOLING · TOOLING CONFIGS: part of AntelopeJS, hexagonal architecture beyond your own code. A glowing button reads Star AntelopeJS."></a>
 
 <div align="center">
-<a href="https://www.npmjs.com/package/@antelopejs/tooling-configs"><img alt="npm" src="https://img.shields.io/npm/v/@antelopejs/tooling-configs?style=for-the-badge&labelColor=000000&color=000000"></a>
-<a href="./LICENSE"><img alt="License" src="https://img.shields.io/npm/l/@antelopejs/tooling-configs?style=for-the-badge&labelColor=000000&color=000000"></a>
-<a href="https://discord.gg/g4pFt6eXqu"><img src="https://img.shields.io/badge/Discord-18181B?logo=discord&style=for-the-badge&color=000000" alt="Discord"></a>
+
+# @antelopejs/tooling-configs
+
+<a href="https://www.npmjs.com/package/@antelopejs/tooling-configs"><img data-illustration alt="npm" src="https://img.shields.io/npm/v/@antelopejs/tooling-configs?style=for-the-badge&labelColor=000000&color=000000"></a> <a href="./LICENSE"><img data-illustration alt="License" src="https://img.shields.io/npm/l/@antelopejs/tooling-configs?style=for-the-badge&labelColor=000000&color=000000"></a> <a href="https://discord.gg/g4pFt6eXqu"><img data-illustration alt="Discord" src="https://img.shields.io/badge/Discord-18181B?logo=discord&style=for-the-badge&color=000000"></a> <a href="./docs"><img data-illustration alt="Documentation" src="https://img.shields.io/badge/Docs-18181B?style=for-the-badge&color=000000"></a> <a href="https://github.com/AntelopeJS/antelopejs"><img data-illustration alt="Star AntelopeJS" src="https://img.shields.io/github/stars/AntelopeJS/antelopejs?label=Star%20AntelopeJS&style=for-the-badge&labelColor=000000&color=000000&logo=github"></a>
+
+**Shared oxlint, oxfmt and Knip presets for AntelopeJS projects, with a command that installs them and fails CI when they drift.**
+
+[Documentation](./docs) · [All interfaces and providers](https://github.com/AntelopeJS/antelopejs#ecosystem)
+
 </div>
 
 The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the commands that install and enforce them in a repository, and a check for the version ranges of interface dependencies.
@@ -492,6 +498,10 @@ checks that remain the author's responsibility.
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md). `pnpm install`, then `pnpm checks` runs the typecheck, lint, format check, Knip, tests, size and sync checks. Repositories with recorded debt also run the ratchet.
+
+## Part of AntelopeJS
+
+This package belongs to [AntelopeJS](https://github.com/AntelopeJS/antelopejs), the TypeScript framework where modules depend on contracts and the application chooses the provider. The open-source back office [AntelopeJS DMS](https://github.com/AntelopeJS/dms) is built on it.
 
 ## License
 
