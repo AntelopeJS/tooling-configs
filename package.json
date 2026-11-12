@@ -31,12 +31,14 @@
     "antelopejs-garden": "./dist/bin/garden.mjs",
     "antelopejs-lease": "./dist/bin/lease.mjs",
     "antelopejs-ratchet": "./dist/bin/ratchet.mjs",
+    "antelopejs-readme-strip": "./dist/bin/readme-strip.mjs",
     "antelopejs-suppressions": "./dist/bin/suppressions.mjs",
     "antelopejs-sync": "./dist/bin/sync.mjs",
     "antelopejs-triage": "./dist/bin/triage.mjs",
     "antelopejs-verify": "./dist/bin/verify.mjs"
   },
   "files": [
+    "assets",
     "dist"
   ],
   "type": "module",

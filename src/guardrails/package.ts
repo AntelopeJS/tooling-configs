@@ -83,49 +83,55 @@ export function execCommand(manager: PackageManager): string {
   return `${manager} exec`;
 }
 
-export function toolingVersions() {
+/** The directory of the installed `@antelopejs/tooling-configs` package, from source or from `dist`. */
+export function toolingRoot(): string {
   let directory = dirname(fileURLToPath(import.meta.url));
   while (true) {
     const path = join(directory, "package.json");
-    if (existsSync(path)) {
-      const manifest = parseManifest(readFileSync(path, "utf8"));
-      if (manifest.name === "@antelopejs/tooling-configs") {
-        const declared = (
-          field: "dependencies" | "devDependencies",
-          name: string,
-        ): string => {
-          const range = manifest[field]?.[name];
-          if (!range)
-            throw new Error(
-              `tooling-configs must declare ${name} in ${field}.`,
-            );
-          return range;
-        };
-        const dev = (name: string) => declared("devDependencies", name);
-        if (!manifest.version)
-          throw new Error("tooling-configs must declare its version.");
-        return {
-          lefthook: dev("lefthook"),
-          knip: dev("knip"),
-          tsgolint: dev("oxlint-tsgolint"),
-          oxlint: dev("oxlint"),
-          oxfmt: dev("oxfmt"),
-          typescript: declared("dependencies", "typescript"),
-          nodeTypes: dev("@types/node"),
-          capture: CAPTURE_PEERS.map((name): [CapturePeer, string] => [
-            name,
-            dev(name),
-          ]),
-          packageManager: packManifest.packageManager,
-          pack: manifest.version,
-        };
-      }
-    }
+    if (
+      existsSync(path) &&
+      parseManifest(readFileSync(path, "utf8")).name ===
+        "@antelopejs/tooling-configs"
+    )
+      return directory;
     const parent = dirname(directory);
     if (parent === directory)
       throw new Error("Cannot find tooling-configs package.json.");
     directory = parent;
   }
+}
+
+export function toolingVersions() {
+  const manifest = parseManifest(
+    readFileSync(join(toolingRoot(), "package.json"), "utf8"),
+  );
+  const declared = (
+    field: "dependencies" | "devDependencies",
+    name: string,
+  ): string => {
+    const range = manifest[field]?.[name];
+    if (!range)
+      throw new Error(`tooling-configs must declare ${name} in ${field}.`);
+    return range;
+  };
+  const dev = (name: string) => declared("devDependencies", name);
+  if (!manifest.version)
+    throw new Error("tooling-configs must declare its version.");
+  return {
+    lefthook: dev("lefthook"),
+    knip: dev("knip"),
+    tsgolint: dev("oxlint-tsgolint"),
+    oxlint: dev("oxlint"),
+    oxfmt: dev("oxfmt"),
+    typescript: declared("dependencies", "typescript"),
+    nodeTypes: dev("@types/node"),
+    capture: CAPTURE_PEERS.map((name): [CapturePeer, string] => [
+      name,
+      dev(name),
+    ]),
+    packageManager: packManifest.packageManager,
+    pack: manifest.version,
+  };
 }
 
 export function repositoryTools(manifest: Manifest) {
