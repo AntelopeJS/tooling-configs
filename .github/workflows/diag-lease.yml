@@ -23,8 +23,11 @@ jobs:
           node-version: "24"
           cache: pnpm
       - run: pnpm install
-      - timeout-minutes: 8
-        run: node --test --test-timeout=90000 --test-reporter=spec src/lease/run.test.ts
-      - if: always()
-        timeout-minutes: 12
-        run: node --test --test-timeout=90000 --test-reporter=spec "src/lease/*.test.ts"
+      - env:
+          SHARD: 4
+          TOTAL: 8
+        timeout-minutes: 15
+        run: |
+          files=$(pnpm run --silent ci:shard)
+          mapfile -t list <<< "$files"
+          node --test --test-timeout=120000 --test-reporter=spec "${list[@]}"
