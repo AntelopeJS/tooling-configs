@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import {
   appendFileSync,
   cpSync,
@@ -366,31 +366,36 @@ test("a corrupt cached result reruns TLC, which replaces it", (t) => {
   assert.match(replay.lines[0] ?? "", REPLAYED);
 });
 
-/** Makes `path` refuse new files: mode 555 on POSIX, a deny entry for Everyone in its ACL on Windows, where chmod only sets the read-only flag. */
-function denyWriting(path: string): void {
-  if (process.platform === "win32")
-    execFileSync("icacls", [path, "/deny", "*S-1-1-0:(OI)(CI)(WD,AD)"]);
-  else chmodSync(path, 0o555);
-}
-
-function allowWriting(path: string): void {
-  if (process.platform === "win32")
-    execFileSync("icacls", [path, "/remove:d", "*S-1-1-0"]);
-  else chmodSync(path, 0o755);
+/** Makes the result of a check impossible to write into `results`: mode 555 on POSIX, where the folder then refuses new files. Windows folder permission bits deny nothing, so there the one entry a first run wrote becomes a folder, which no later write can replace by a file. */
+function blockResults(
+  cache: Record<string, string>,
+  results: string,
+): string[] {
+  if (process.platform !== "win32") {
+    chmodSync(results, 0o555);
+    return [];
+  }
+  const first = check({ findings: MATCHING }, cache);
+  assert.equal(first.status, 0, first.stderr);
+  const [entry] = resultEntries(cache.XDG_CACHE_HOME);
+  assert.ok(entry);
+  rmSync(entry);
+  mkdirSync(entry);
+  return [entry];
 }
 
 test("a cache that cannot be written still lets a passing check pass; a cache write that throws fails it", (t) => {
   const cache = cacheOn();
   const results = join(cache.XDG_CACHE_HOME, "antelopejs-formal", "results");
   mkdirSync(results, { recursive: true });
-  denyWriting(results);
+  const kept = blockResults(cache, results);
   t.after(() => {
-    allowWriting(results);
+    if (process.platform !== "win32") chmodSync(results, 0o755);
     rmSync(cache.XDG_CACHE_HOME, { recursive: true, force: true });
   });
   const run = check({ findings: MATCHING }, cache);
   assert.equal(run.status, 0, run.stderr);
-  assert.deepEqual(resultEntries(cache.XDG_CACHE_HOME), []);
+  assert.deepEqual(resultEntries(cache.XDG_CACHE_HOME), kept);
 });
 
 test("a results path that is a file still lets a passing check pass; a cleanup that throws inside the guard fails it", (t) => {
