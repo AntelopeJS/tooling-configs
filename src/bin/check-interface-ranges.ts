@@ -6,6 +6,7 @@ import { join, relative } from "node:path";
 import {
   checkInterfaceRanges,
   describeViolation,
+  localVersions,
   type PackageManifest,
 } from "../interface-ranges.ts";
 
@@ -33,14 +34,10 @@ function main(): number {
     /* SAFETY: package.json is written by package managers; checkInterfaceRanges reads only optional dependency maps. */
     manifest: JSON.parse(readFileSync(path, "utf8")) as PackageManifest,
   }));
-  const localVersions = new Map<string, string>();
-  for (const { manifest } of manifests) {
-    if (manifest.name && manifest.version)
-      localVersions.set(manifest.name, manifest.version);
-  }
+  const versions = localVersions(manifests.map(({ manifest }) => manifest));
   let failures = 0;
   for (const { path, manifest } of manifests) {
-    for (const violation of checkInterfaceRanges(manifest, localVersions)) {
+    for (const violation of checkInterfaceRanges(manifest, versions)) {
       console.error(`${path}: ${describeViolation(violation)}`);
       failures += 1;
     }

@@ -103,6 +103,16 @@ function isLocalSpec(spec: string): boolean {
   return LOCAL_SPEC_PREFIXES.some((prefix) => spec.startsWith(prefix));
 }
 
+/** The version of each named package among `manifests`, the packages that sit in the same repository. */
+export function localVersions(
+  manifests: Iterable<PackageManifest>,
+): Map<string, string> {
+  const versions = new Map<string, string>();
+  for (const { name, version } of manifests)
+    if (name && version) versions.set(name, version);
+  return versions;
+}
+
 /**
  * `localVersions` holds the versions of the packages that sit in the same
  * repository. An implemented interface is usually one of them, and its
