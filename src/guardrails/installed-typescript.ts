@@ -40,9 +40,21 @@ function typescript5Resolution(module: ts.ModuleKind): string {
   return "classic";
 }
 
+/** The `target` TypeScript 5 defaults to for a `module`, with its tsconfig spelling: the Node module kinds imply one, every other kind gets ES5. */
+function typescript5Target(module: ts.ModuleKind | undefined) {
+  if (module === ts.ModuleKind.Node16 || module === ts.ModuleKind.Node18)
+    return { kind: ts.ScriptTarget.ES2022, name: "es2022" };
+  if (module === ts.ModuleKind.Node20)
+    return { kind: ts.ScriptTarget.ES2023, name: "es2023" };
+  if (module === ts.ModuleKind.NodeNext)
+    return { kind: ts.ScriptTarget.ESNext, name: "esnext" };
+  return { kind: ts.ScriptTarget.ES5, name: "es5" };
+}
+
 /** The value TypeScript 5 gives each compiler option whose default TypeScript 6 changed, given the options a config sets. */
 function typescript5Defaults(options: ts.CompilerOptions) {
-  const target = options.target ?? ts.ScriptTarget.ES5;
+  const defaultTarget = typescript5Target(options.module);
+  const target = options.target ?? defaultTarget.kind;
   const module =
     options.module ??
     (target >= ts.ScriptTarget.ES2015
@@ -59,7 +71,7 @@ function typescript5Defaults(options: ts.CompilerOptions) {
     strict: false,
     types: ["*"],
     noUncheckedSideEffectImports: false,
-    target: "es5",
+    target: defaultTarget.name,
     module: module === ts.ModuleKind.CommonJS ? "commonjs" : "es2015",
     moduleResolution,
     esModuleInterop,
