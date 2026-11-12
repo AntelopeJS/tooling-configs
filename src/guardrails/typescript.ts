@@ -51,11 +51,14 @@ function unpublishedReason(
   return publishes ? undefined : "no exports, main or types";
 }
 
-/** Whether the package at `directory` belongs to the workspace at `root`: always when `root` declares none, else when it is `root` or a listed member. */
+/** Whether the package at `directory` belongs to the workspace at `root`: always when `root` declares none or lists a pattern with glob syntax beyond `*`, `?` and `**`, else when it is `root` or a listed member. */
 function workspaceMember(root: string): (directory: string) => boolean {
+  const pnpm = existsSync(join(root, "pnpm-workspace.yaml"));
+  if (!pnpm && !existsSync(join(root, "package.json"))) return () => true;
+  const patterns = workspacePatterns(root);
   if (
-    !existsSync(join(root, "pnpm-workspace.yaml")) &&
-    (!existsSync(join(root, "package.json")) || !workspacePatterns(root).length)
+    (!pnpm && !patterns.length) ||
+    patterns.some((pattern) => /[{}[\]()]/u.test(pattern))
   )
     return () => true;
   const members = new Set(workspaceDirectories(root));
