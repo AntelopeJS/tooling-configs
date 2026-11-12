@@ -6,6 +6,8 @@ import {
 import { existsSync, statSync } from "node:fs";
 import { delimiter, extname, isAbsolute, join } from "node:path";
 
+import { windowsArgument } from "../guardrails/run-command.ts";
+
 /** A program and arguments ready for `spawn`; `verbatim` is `windowsVerbatimArguments`. */
 export interface Launch {
   program: string;
@@ -49,12 +51,6 @@ function findProgram(program: string, env: NodeJS.ProcessEnv): string | null {
   return null;
 }
 
-/** An argument as `cmd.exe` hands it to a batch file: quoted when it holds anything but plain characters, with quotes and the backslashes before them escaped. */
-function cmdQuote(value: string): string {
-  if (/^[\w@+=:,./\\-]+$/.test(value)) return value;
-  return `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, "$1$1")}"`;
-}
-
 /**
  * How to start `program` with `args` for `env`. Off Windows it is the call as
  * given. On Windows `pnpm`, `ajs` and every other npm shim is a `.cmd` file
@@ -71,7 +67,7 @@ export function launch(
   const found = findProgram(program, env);
   if (found === null || !SHIM_EXTENSIONS.has(extname(found).toLowerCase()))
     return { program: found ?? program, args, verbatim: false };
-  const line = [found, ...args].map(cmdQuote).join(" ");
+  const line = [found, ...args].map(windowsArgument).join(" ");
   return {
     program: envValue(env, "ComSpec") ?? "cmd.exe",
     args: ["/d", "/s", "/c", `"${line}"`],
