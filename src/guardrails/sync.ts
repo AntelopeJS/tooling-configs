@@ -1,11 +1,9 @@
 import {
-  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
   readlinkSync,
-  statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -37,6 +35,7 @@ import {
 } from "./package.ts";
 import { recordedRelease } from "./adoption.ts";
 import { droppedChecksSteps } from "./checks.ts";
+import { isExecutable, makeExecutable } from "./exec-bit.ts";
 import { pnpmWorkspaceArtifacts } from "./pnpm-workspace.ts";
 import { renovateArtifacts } from "./renovate.ts";
 import { measureBaseline } from "./ratchet.ts";
@@ -244,7 +243,7 @@ export type PlannedArtifact =
 
 function planSync(
   current: ReadonlyMap<string, string>,
-  modes: ReadonlyMap<string, number>,
+  executables: ReadonlySet<string>,
   context: RepoContext,
 ): PlannedArtifact[] {
   const plan: PlannedArtifact[] = [];
@@ -271,7 +270,7 @@ function planSync(
         current.get(artifact.path) !== content ||
         (artifact.mode !== undefined &&
           (artifact.mode & 0o111) !== 0 &&
-          ((modes.get(artifact.path) ?? 0) & 0o111) === 0);
+          !executables.has(artifact.path));
       if (notes.length)
         plan.push({
           kind: "migrated",
@@ -318,7 +317,7 @@ function plannedDocs(docs: DocsPlan | undefined): PlannedArtifact[] {
 
 function repositorySnapshot(root: string) {
   const current = new Map<string, string>();
-  const modes = new Map<string, number>();
+  const executables = new Set<string>();
   for (const file of [
     ...MANAGED_ARTIFACTS.map(({ path }) => path),
     ...PRESET_CONFIGS.flatMap(({ legacy }) => legacy),
@@ -326,10 +325,10 @@ function repositorySnapshot(root: string) {
     const path = join(root, file);
     if (existsSync(path)) {
       current.set(file, readFileSync(path, "utf8"));
-      modes.set(file, statSync(path).mode & 0o777);
+      if (isExecutable(root, file)) executables.add(file);
     }
   }
-  return { current, modes };
+  return { current, executables };
 }
 
 function linksTo(root: string, link: string, target: string): boolean {
@@ -410,7 +409,8 @@ function writeArtifacts(
     if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink())
       unlinkSync(path);
     writeFileSync(path, artifact.content);
-    if (artifact.mode !== undefined) chmodSync(path, artifact.mode);
+    if (artifact.mode !== undefined)
+      makeExecutable(root, artifact.path, artifact.mode);
   }
 }
 
@@ -442,7 +442,7 @@ export function syncRepository(
   } = {},
 ) {
   const profile = options.profile ?? "full";
-  const { current, modes } = repositorySnapshot(root);
+  const { current, executables } = repositorySnapshot(root);
   const manifest = parseManifest(current.get("package.json") ?? "{}");
   const verify = planVerify(root, {
     flag: options.verify,
@@ -466,7 +466,7 @@ export function syncRepository(
     ),
     ...pnpmWorkspaceArtifacts(root, manifest, profile === "full"),
   ];
-  let plan = [...planSync(current, modes, context), ...standalone];
+  let plan = [...planSync(current, executables, context), ...standalone];
   const errors = plan
     .filter((artifact) => artifact.kind === "error")
     .map(({ message }) => message);
@@ -496,7 +496,7 @@ export function syncRepository(
       ...baseline,
       pack: recordedRelease(undefined),
     });
-    plan = [...planSync(current, modes, context), ...standalone];
+    plan = [...planSync(current, executables, context), ...standalone];
   }
   const writes = plan.filter(
     (artifact) => artifact.kind === "write" || artifact.kind === "migrated",

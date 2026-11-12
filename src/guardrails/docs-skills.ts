@@ -1,8 +1,9 @@
-import { existsSync, lstatSync, readFileSync, readlinkSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { TECHNICAL_WRITING_SKILL } from "../docs/technical-writing-skill.ts";
 import { UNSLOP_SKILL } from "../docs/unslop-skill.ts";
+import { linkPointsAt } from "./links.ts";
 import type { VerifyAction } from "./verify-skill.ts";
 
 /** The writing skills `antelopejs-sync` installs in every managed repository, by folder name. */
@@ -56,7 +57,7 @@ export function planDocsSkills(root: string): DocsSkillsPlan {
       errors.push(
         `${link} is not a symlink. Move it away, then rerun antelopejs-sync.`,
       );
-    else if (readlinkSync(join(root, link)) !== target)
+    else if (!linkPointsAt(root, link, target))
       actions.push({ kind: "link", path: link, target });
   }
   return { actions, errors };

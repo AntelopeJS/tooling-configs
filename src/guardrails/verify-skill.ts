@@ -4,7 +4,6 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  readlinkSync,
   rmdirSync,
   symlinkSync,
   unlinkSync,
@@ -22,6 +21,7 @@ import {
 } from "../verify/kinds.ts";
 import { syncedFiles } from "../verify/skills.ts";
 import type { AgentsBlockContext } from "./agents-block.ts";
+import { linkPointsAt } from "./links.ts";
 import type { Manifest } from "./package.ts";
 
 /** What `--verify` accepts: a shared kind, or `custom` for a repository that owns its verification skill. */
@@ -165,7 +165,7 @@ function planLink(
         `${link} is not a symlink. Move it away, then rerun antelopejs-sync.`,
       ],
     };
-  if (readlinkSync(join(root, link)) !== target)
+  if (!linkPointsAt(root, link, target))
     return { actions: [{ kind: "link", path: link, target }], errors: [] };
   return { actions: [], errors: [] };
 }
