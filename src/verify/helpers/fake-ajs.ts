@@ -61,12 +61,12 @@ const file = join(cache, "manifest.json");
 const manifest = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
 const name = remote.replace(/[^a-zA-Z0-9_]/g, "_");
 const module = join(cache, name);
-const git = (...args) => execFileSync("git", args, { cwd: module, encoding: "utf8" }).trim();
+const git = (...args) => execFileSync("git", ["-c", "core.longpaths=true", ...args], { cwd: module, encoding: "utf8" }).trim();
 let install = false;
 if (manifest[name] === undefined || !existsSync(join(module, ".git"))) {
   rmSync(module, { recursive: true, force: true });
   mkdirSync(cache, { recursive: true });
-  execFileSync("git", ["clone", "-q", remote, name], { cwd: cache });
+  execFileSync("git", ["-c", "core.longpaths=true", "clone", "-q", remote, name], { cwd: cache });
   install = true;
 } else {
   git("fetch", "-q");

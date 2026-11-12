@@ -40,12 +40,12 @@ if "%1"=="inspect" echo true
 if "%1"=="exec" (
   if exist "%DOCKER_DEAD%\\%2" (
     echo container %2 is not running 1>&2
-    exit /b 1
+    exit 1
   )
   if exist "%DOCKER_DEAD%\\miss-once" (
     del "%DOCKER_DEAD%\\miss-once"
     echo one transient miss 1>&2
-    exit /b 1
+    exit 1
   )
   echo pong
 )

@@ -235,7 +235,8 @@ test("a run whose new failed keeps the time of every phase it ran, the failed on
   });
   const created = verify(root, tmp, ["new"]);
   assert.equal(created.status, 1, created.stdout + created.stderr);
-  const run = /see (\S+)\/evidence\/setup\//.exec(created.stderr)?.[1] ?? "";
+  const run =
+    /see (\S+)[\\/]evidence[\\/]setup[\\/]/.exec(created.stderr)?.[1] ?? "";
   const { timings } = JSON.parse(read(run, "run.json"));
   assert.deepEqual(
     timings.map((entry: { phase: string }) => entry.phase),

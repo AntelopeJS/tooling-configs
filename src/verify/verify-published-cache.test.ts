@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   copyFileSync,
   mkdirSync,
@@ -67,6 +67,34 @@ async function setup(t: TestContext): Promise<Setup> {
 
 function journey(setupResult: Setup) {
   const { root, tmp, env } = setupResult;
+  const probe = spawnSync(
+    "npm",
+    [
+      "view",
+      PACKAGE,
+      "version",
+      "dist.integrity",
+      "--json",
+      "--loglevel",
+      "verbose",
+    ],
+    {
+      shell: true,
+      encoding: "utf8",
+      cwd: tmp,
+      env: {
+        ...process.env,
+        npm_config_registry: setupResult.registry,
+        npm_config_offline: "false",
+        npm_config_fetch_retries: "0",
+        USERPROFILE: tmp,
+        HOME: tmp,
+      },
+    },
+  );
+  console.error(
+    `DIAG probe ${probe.status} ${setupResult.registry}\n${probe.stdout}\n${probe.stderr}`,
+  );
   const run = verify(root, tmp, ["new", "--kind", "interface"], env);
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const folder = run.stdout.trim().split("\n").at(-1) ?? "";
