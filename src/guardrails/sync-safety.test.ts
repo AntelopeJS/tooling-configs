@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, symlinkSync } from "node:fs";
-import { join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 import test from "node:test";
 
 import { AGENTS_BLOCK_START } from "./agents-block.ts";
@@ -12,6 +11,7 @@ import {
   toolingVersions,
 } from "./package.ts";
 import { syncRepository } from "./sync.ts";
+import { onPath, runScript } from "./helpers/shell.ts";
 import { bin, put, read, testRepo } from "./helpers/test-repo.ts";
 
 const LEGACY =
@@ -42,11 +42,8 @@ test("prepare is a silent POSIX no-op without git metadata, git, or lefthook, an
   const detached = join(root, "detached");
   mkdirSync(detached);
   const invoke = (cwd: string, path: string) =>
-    spawnSync("/bin/sh", ["-c", prepare], {
-      cwd,
-      encoding: "utf8",
-      env: { ...process.env, PATH: path, GIT_CEILING_DIRECTORIES: root },
-    });
+    runScript(prepare, cwd, [], { PATH: path, GIT_CEILING_DIRECTORIES: root });
+  const git = onPath("git");
   const empty = invoke(detached, "/nonexistent");
   assert.equal(empty.status, 0, empty.stderr);
   assert.equal(empty.stdout + empty.stderr, "");
@@ -61,17 +58,14 @@ test("prepare is a silent POSIX no-op without git metadata, git, or lefthook, an
   const noGit = invoke(root, scripts);
   assert.equal(noGit.status, 0, noGit.stderr);
   assert.equal(existsSync(join(root, "installed")), false);
-  const noRepo = invoke(detached, `${scripts}:/usr/bin:/bin`);
+  const noRepo = invoke(detached, [scripts, dirname(git)].join(delimiter));
   assert.equal(noRepo.status, 0, noRepo.stderr);
   assert.equal(existsSync(join(detached, "installed")), false);
   const gitOnly = join(root, "git-only");
   mkdirSync(gitOnly);
-  symlinkSync(
-    execFileSync("which", ["git"], { encoding: "utf8" }).trim(),
-    join(gitOnly, "git"),
-  );
+  symlinkSync(git, join(gitOnly, basename(git)));
   assert.equal(invoke(root, gitOnly).status, 0);
-  const installed = invoke(root, `${scripts}:/usr/bin:/bin`);
+  const installed = invoke(root, [scripts, dirname(git)].join(delimiter));
   assert.equal(installed.status, 0, installed.stderr);
   assert.equal(read(root, "installed"), "install\n");
   put(
