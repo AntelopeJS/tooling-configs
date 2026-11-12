@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.5.5
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.4...v0.5.5)
+
+### 🚀 Enhancements
+
+- **docs:** Generate the framework module table and the framework strip banner ([#315](https://github.com/AntelopeJS/tooling-configs/pull/315))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.5.4
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.3...v0.5.4)
