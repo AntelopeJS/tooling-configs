@@ -30,4 +30,8 @@ jobs:
         run: |
           files=$(pnpm run --silent ci:shard)
           mapfile -t list <<< "$files"
-          node --test --test-timeout=120000 --test-reporter=spec "${list[@]}"
+          for f in "${list[@]}"; do
+            start=$SECONDS
+            timeout 100 node --test --test-reporter=dot "$f" > "$RUNNER_TEMP/out.txt" 2>&1
+            echo "== $f exit=$? seconds=$((SECONDS - start))"
+          done
