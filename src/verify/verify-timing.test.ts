@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
 import { put, read } from "../guardrails/helpers/test-repo.ts";
+import { installFake, pathWith } from "./helpers/fake-bin.ts";
 import {
   CHECKS,
   evidence,
@@ -166,14 +167,25 @@ test("a verdict with any unmeasured phase prints no total, and old run.json and 
   assert.equal(timings.totalMs, null);
 });
 
-const SLOW_RESET_DOCKER = `#!/bin/sh
+const SLOW_RESET_DOCKER = {
+  sh: `#!/bin/sh
 case "$1" in
   port) echo "6379/tcp -> 127.0.0.1:41234" ;;
   exec) case "$*" in *FLUSHALL*) sleep 0.6 ;; esac; echo pong ;;
   inspect) echo true ;;
 esac
 exit 0
-`;
+`,
+  cmd: `@echo off
+if "%1"=="port" echo 6379/tcp -^> 127.0.0.1:41234
+if "%1"=="inspect" echo true
+if "%1"=="exec" (
+  echo %* | findstr /c:FLUSHALL >nul && ping -n 2 127.0.0.1 >nul
+  echo pong
+)
+exit /b 0
+`,
+};
 
 test("a service reset is timed inside its own step; a reset run before its step starts reads as free and fails", (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "verify-timing-reset-"));
@@ -198,9 +210,8 @@ test("a service reset is timed inside its own step; a reset run before its step 
 `,
     [`${SKILL}/features/smoke.md`]: feature([], ["seen"]),
   });
-  put(tmp, "bin/docker", SLOW_RESET_DOCKER);
-  chmodSync(join(tmp, "bin/docker"), 0o755);
-  const env = { PATH: `${join(tmp, "bin")}:${process.env.PATH}` };
+  installFake(join(tmp, "bin"), "docker", SLOW_RESET_DOCKER);
+  const env = { PATH: pathWith(join(tmp, "bin")) };
   const run = newRun(root, tmp, env);
   const ran = verify(root, tmp, ["journey", run, "smoke"], env);
   assert.equal(ran.status, 0, ran.stdout + ran.stderr);

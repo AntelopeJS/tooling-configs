@@ -135,7 +135,7 @@ async function packInterface(
     );
   const extract = await runRecorded(join(state.evidence, "setup", "extract"), {
     program: "tar",
-    args: ["-xzf", join(folder, tarball), "-C", folder],
+    args: ["-xzf", tarball, "-C", "."],
     cwd: folder,
     env,
   });

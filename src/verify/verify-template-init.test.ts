@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
 import { put, read } from "../guardrails/helpers/test-repo.ts";
+import { installNodeFake, pathWith } from "./helpers/fake-bin.ts";
 import {
   feature,
   PUBLISH_DOORS,
@@ -27,9 +28,7 @@ if (args[0] === "project" && args[1] === "dev") {
 }
 `;
 
-const PNPM = `#!/bin/sh
-node -e 'require("node:fs").appendFileSync(process.env.CALLS_LOG, JSON.stringify(["pnpm", ...process.argv.slice(1)]) + "\\n")' "$@"
-exit 0
+const PNPM = `require("node:fs").appendFileSync(process.env.CALLS_LOG, JSON.stringify(["pnpm", ...process.argv.slice(2)]) + "\\n");
 `;
 
 const INIT_FLAGS = ["--pm", "pnpm", "--git-init"];
@@ -54,10 +53,9 @@ function templateRepo(t: TestContext, template: string) {
     [`${skill}/features/checks.md`]: feature([], ["scaffold-checks"]),
     [`${skill}/features/dev.md`]: feature([], ["scaffold-dev"]),
   });
-  put(tmp, "bin/pnpm", PNPM);
-  chmodSync(join(tmp, "bin/pnpm"), 0o755);
+  installNodeFake(join(tmp, "bin"), "pnpm", PNPM);
   const env = {
-    PATH: `${join(tmp, "bin")}:${process.env.PATH}`,
+    PATH: pathWith(join(tmp, "bin")),
     CALLS_LOG: join(tmp, "calls.log"),
   };
   const run =

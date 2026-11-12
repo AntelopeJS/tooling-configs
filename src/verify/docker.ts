@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { pauseSync } from "./busy.ts";
 import { spawnLaunched } from "./launch.ts";
 import { stopwatch } from "./timing.ts";
 import type { ContainerRecord, RunState, Workspace } from "./workspace.ts";
@@ -44,7 +45,7 @@ function waitReady(container: string, ready: string[], folder: string): void {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   let last = docker(["exec", container, ...ready]);
   while (last.status !== 0 && Date.now() < deadline) {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, POLL_MS);
+    pauseSync(POLL_MS);
     last = docker(["exec", container, ...ready]);
   }
   record(folder, ["exec", container, ...ready], last);

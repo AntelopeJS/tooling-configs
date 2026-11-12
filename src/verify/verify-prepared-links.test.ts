@@ -67,5 +67,8 @@ test("an edit of a read-only linked file fails as it does for a file with no oth
   const failed = verify(root, tmp, ["journey", run, "full"]);
   assert.equal(failed.status, 0, failed.stdout);
   assert.equal(builds(), 1);
-  assert.deepEqual(failedEdit(), { failure: "EACCES", entries: [] });
+  assert.deepEqual(failedEdit(), {
+    failure: process.platform === "win32" ? "EPERM" : "EACCES",
+    entries: [],
+  });
 });

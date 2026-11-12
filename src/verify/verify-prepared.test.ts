@@ -18,7 +18,7 @@ test("a later journey command copies what the first journey built, with its buil
   assert.equal(builds(), 1);
   assert.match(
     read(run, "evidence/tree/reader/01-prepared-tree/prepared.txt"),
-    /^tree: \S+\/work\/tree\/reader\/tree is a copy of what smoke\/reader prepared;/,
+    /^tree: \S+[\\/]work[\\/]tree[\\/]reader[\\/]tree is a copy of what smoke\/reader prepared;/,
   );
   assert.equal(
     read(
@@ -70,19 +70,25 @@ test("a build that records no check is not kept, so the next journey builds agai
   );
 });
 
-test("a build whose folder holds a FIFO is not kept, since a copy would drop it", (t) => {
-  const { root, tmp, builds, flag } = preparedRepo(t);
-  const run = newRun(root, tmp);
-  flag("fifo");
-  assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
-  const rebuilt = verify(root, tmp, ["journey", run, "tree", "reader"]);
-  assert.equal(rebuilt.status, 0, rebuilt.stdout);
-  assert.equal(builds(), 2);
-  assert.match(
-    read(run, "evidence/smoke/reader/01-prepared-tree/prepared.txt"),
-    /not kept: pipe is not a file, directory or symlink/,
-  );
-});
+const NO_FIFO = process.platform === "win32" && "Windows has no FIFOs";
+
+test(
+  "a build whose folder holds a FIFO is not kept, since a copy would drop it",
+  { skip: NO_FIFO },
+  (t) => {
+    const { root, tmp, builds, flag } = preparedRepo(t);
+    const run = newRun(root, tmp);
+    flag("fifo");
+    assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
+    const rebuilt = verify(root, tmp, ["journey", run, "tree", "reader"]);
+    assert.equal(rebuilt.status, 0, rebuilt.stdout);
+    assert.equal(builds(), 2);
+    assert.match(
+      read(run, "evidence/smoke/reader/01-prepared-tree/prepared.txt"),
+      /not kept: pipe is not a file, directory or symlink/,
+    );
+  },
+);
 
 test("an absolute symlink the build made into its folder points into each journey's own copy", (t) => {
   const { root, tmp, builds } = preparedRepo(t);
@@ -143,18 +149,22 @@ test("two relative links to the build's folder are kept and copied as they are",
   assert.equal(builds(), 1);
 });
 
-test("a link to an outside folder holding a FIFO is kept and copied as it is", (t) => {
-  const { root, tmp, builds, links } = preparedRepo(t);
-  const outside = join(tmp, "outside");
-  mkdirSync(outside);
-  execFileSync("mkfifo", [join(outside, "pipe")]);
-  links({ out: outside });
-  const run = newRun(root, tmp);
-  assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
-  const copied = verify(root, tmp, ["journey", run, "shape"]);
-  assert.equal(copied.status, 0, copied.stdout);
-  assert.equal(builds(), 1);
-});
+test(
+  "a link to an outside folder holding a FIFO is kept and copied as it is",
+  { skip: NO_FIFO },
+  (t) => {
+    const { root, tmp, builds, links } = preparedRepo(t);
+    const outside = join(tmp, "outside");
+    mkdirSync(outside);
+    execFileSync("mkfifo", [join(outside, "pipe")]);
+    links({ out: outside });
+    const run = newRun(root, tmp);
+    assert.equal(verify(root, tmp, ["journey", run, "smoke"]).status, 0);
+    const copied = verify(root, tmp, ["journey", run, "shape"]);
+    assert.equal(copied.status, 0, copied.stdout);
+    assert.equal(builds(), 1);
+  },
+);
 
 const COPIER = "evidence/tree/reader/01-prepared-tree";
 
