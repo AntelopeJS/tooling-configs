@@ -253,6 +253,10 @@ export async function ensureMongod(
   paths: MongodPaths,
   env: NodeJS.ProcessEnv,
 ): Promise<void> {
+  if (process.platform === "win32")
+    throw new Error(
+      "antelopejs-lease: a lease's own mongod is not supported on Windows, where mongod has no --fork and holds its mongod.lock exclusively; set DMS_MONGO_URL to a server you run",
+    );
   if (mongodPid(paths.dbpath) !== undefined)
     return ready(port, paths, () => true);
   const binary = findMongod(env);
