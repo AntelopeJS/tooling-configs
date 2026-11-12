@@ -35,6 +35,14 @@ function lintRepo(t: Parameters<typeof testRepo>[0]): string {
   return root;
 }
 
+test("a config oxlint cannot load fails the measurement with oxlint's own error, where a measurement that parses stdout as JSON reports only a parse error", (t) => {
+  const root = testRepo(t);
+  linkOxlint(root);
+  put(root, "oxlint.config.ts", 'throw new Error("config marker 7f3a");\n');
+  put(root, "sample.ts", "export const value = 1;\n");
+  assert.throws(() => measureBaseline(root), /config marker 7f3a/);
+});
+
 test("baseline maps real eslint, typescript and JS plugin codes to config ids, not raw codes", (t) => {
   const root = lintRepo(t);
   put(
