@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { isMap, isScalar, isSeq, parseDocument } from "yaml";
+import { isMap, isNode, isScalar, isSeq, parseDocument, type Node } from "yaml";
 
 const CI_NODE_PATTERN =
   /^AntelopeJS\/\.github\/\.github\/workflows\/ci-node\.yml@\S+$/;
@@ -75,4 +75,38 @@ export function ciNodeCallers(text: string): CiCaller[] {
 /** Jobs of a workflow file that call the shared Renovate sync at any ref; empty when the YAML does not parse. */
 export function ciRenovateSyncCallers(text: string): CiCaller[] {
   return callers(text, CI_RENOVATE_SYNC_PATTERN);
+}
+
+const WINDOWS_RUNNER = /^windows-/;
+
+function namesWindows(node: Node): boolean {
+  if (isScalar(node)) return WINDOWS_RUNNER.test(String(node.value));
+  if (isSeq(node))
+    return node.items.some((item) => isNode(item) && namesWindows(item));
+  if (isMap(node))
+    return node.items.some(({ value }) => isNode(value) && namesWindows(value));
+  return false;
+}
+
+/** Whether a workflow file has a job on a Windows runner, named in `runs-on` or in the matrix it reads, or a ci-node.yml caller with `windows: true`; false when the YAML does not parse. */
+export function runsOnWindows(text: string): boolean {
+  const document = parseDocument(text);
+  const jobs = document.errors.length ? undefined : document.get("jobs", true);
+  if (!isMap(jobs)) return false;
+  return jobs.items.some(({ value: job }) => {
+    if (!isMap(job)) return false;
+    const uses = job.get("uses", true);
+    if (isScalar(uses) && CI_NODE_PATTERN.test(String(uses.value)))
+      return job.getIn(["with", "windows"]) === true;
+    const runsOn = job.get("runs-on", true);
+    if (!isNode(runsOn)) return false;
+    const matrix = job.getIn(["strategy", "matrix"], true);
+    return (
+      namesWindows(runsOn) ||
+      (isScalar(runsOn) &&
+        String(runsOn.value).includes("matrix.") &&
+        isNode(matrix) &&
+        namesWindows(matrix))
+    );
+  });
 }

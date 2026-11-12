@@ -20,6 +20,7 @@ import {
 } from "./checks/governance.ts";
 import { captureScenes, webBuild } from "./checks/pipelines.ts";
 import { advisories, packageSize, stuckRenovate } from "./checks/supply.ts";
+import { windowsCi } from "./checks/windows.ts";
 import {
   staleRegistry,
   templateBehindLatest,
@@ -51,6 +52,7 @@ const CHECKS: readonly Check[] = [
   webBuild,
   linkRot,
   captureScenes,
+  windowsCi,
   staleBranches,
 ];
 
