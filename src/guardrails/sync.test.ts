@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, rmSync, statSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
@@ -13,6 +13,7 @@ import {
 import { ANTELOPE_STYLE } from "../oxc/fmt.ts";
 import { formatCeilings, readCeilings } from "./ceilings.ts";
 import { parseManifest, PREPARE_INSTALL, toolingVersions } from "./package.ts";
+import { isExecutable } from "./exec-bit.ts";
 import { MANAGED_ARTIFACTS, syncRepository } from "./sync.ts";
 import {
   bin,
@@ -170,59 +171,62 @@ test("sync skips entry-only rules with unsupported selectors with a printed note
   );
 });
 
-const FILESYSTEM_MODES = {
-  skip:
-    process.platform === "win32" &&
-    "Windows files carry no exec bit for chmod to clear; sync-windows.test.ts covers the mode git's index holds there",
-};
+/** Whether git keeps the exec bit in its index, not the filesystem, as Git for Windows does with `core.fileMode` false. */
+function indexHoldsMode(root: string): boolean {
+  return (
+    spawnSync("git", ["config", "--bool", "core.fileMode"], {
+      cwd: root,
+      encoding: "utf8",
+    }).stdout.trim() === "false"
+  );
+}
 
-test(
-  "sync check reports every drift without writing or measuring counts, including setup permissions",
-  FILESYSTEM_MODES,
-  (t) => {
-    const root = testRepo(t);
-    put(
-      root,
-      "guardrails.ratchet.json",
-      formatCeilings({
-        rules: { "eslint/max-params": 123 },
-        oversizeFiles: {},
-      }),
+/** Clears `file`'s exec bit where git reads it: the filesystem mode, or the index entry where git ignores that mode. */
+function clearExecutable(root: string, file: string): void {
+  chmodSync(join(root, file), 0o644);
+  if (indexHoldsMode(root))
+    execFileSync("git", ["update-index", "--chmod=-x", "--", file], {
+      cwd: root,
+    });
+}
+
+test("sync check reports every drift without writing or measuring counts, including setup permissions", (t) => {
+  const root = testRepo(t);
+  put(
+    root,
+    "guardrails.ratchet.json",
+    formatCeilings({ rules: { "eslint/max-params": 123 }, oversizeFiles: {} }),
+  );
+  put(root, ".agents/skills/verify-runtime/SKILL.md", "Verification skill.\n");
+  const before = read(root, "package.json");
+  const initial = bin(root, "sync", ["--check"]);
+  assert.equal(initial.status, 1);
+  for (const path of MANAGED_ARTIFACTS.filter(
+    ({ path }) =>
+      path !== "guardrails.ratchet.json" && path !== ".github/workflows/ci.yml",
+  ).map(({ path }) => path))
+    assert.ok(
+      initial.stdout.includes(`Drift: ${path}; run antelopejs-sync`),
+      path,
     );
-    put(
-      root,
-      ".agents/skills/verify-runtime/SKILL.md",
-      "Verification skill.\n",
-    );
-    const before = read(root, "package.json");
-    const initial = bin(root, "sync", ["--check"]);
-    assert.equal(initial.status, 1);
-    for (const path of MANAGED_ARTIFACTS.filter(
-      ({ path }) =>
-        path !== "guardrails.ratchet.json" &&
-        path !== ".github/workflows/ci.yml",
-    ).map(({ path }) => path))
-      assert.ok(
-        initial.stdout.includes(`Drift: ${path}; run antelopejs-sync`),
-        path,
-      );
-    assert.equal(read(root, "package.json"), before);
-    assert.equal(existsSync(join(root, ".agents/setup")), false);
-    assert.equal(bin(root, "sync").status, 0);
-    assert.equal(bin(root, "sync", ["--check"]).status, 0);
-    chmodSync(join(root, ".agents/setup"), 0o644);
-    const permission = bin(root, "sync", ["--check"]);
-    assert.equal(permission.status, 1);
-    assert.equal(
-      permission.stdout,
-      "Drift: .agents/setup; run antelopejs-sync\n",
-    );
-    assert.equal(bin(root, "sync").status, 0);
+  assert.equal(read(root, "package.json"), before);
+  assert.equal(existsSync(join(root, ".agents/setup")), false);
+  assert.equal(bin(root, "sync").status, 0);
+  assert.equal(bin(root, "sync", ["--check"]).status, 0);
+  clearExecutable(root, ".agents/setup");
+  const permission = bin(root, "sync", ["--check"]);
+  assert.equal(permission.status, 1);
+  assert.equal(
+    permission.stdout,
+    "Drift: .agents/setup; run antelopejs-sync\n",
+  );
+  assert.equal(bin(root, "sync").status, 0);
+  assert.equal(isExecutable(root, ".agents/setup"), true);
+  if (!indexHoldsMode(root))
     assert.equal(statSync(join(root, ".agents/setup")).mode & 0o777, 0o755);
-    chmodSync(join(root, ".agents/setup"), 0o700);
-    assert.equal(bin(root, "sync", ["--check"]).status, 0);
-  },
-);
+  chmodSync(join(root, ".agents/setup"), 0o700);
+  assert.equal(bin(root, "sync", ["--check"]).status, 0);
+});
 
 test("sync keeps AGENTS prose once when AGENTS.md links to CLAUDE.md", (t) => {
   const root = testRepo(t);
