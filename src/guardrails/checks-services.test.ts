@@ -24,6 +24,12 @@ const STEPS = [
 const UNREACHABLE_COMPOSE =
   'services:\n  mongo:\n    image: mongo:8\n    ports:\n      - "1:27017"\n';
 
+const POSIX_SIGNALS = {
+  skip:
+    process.platform === "win32" &&
+    "Windows delivers no SIGTERM or SIGINT, so the checks interrupt handler cannot run",
+};
+
 function logLines(root: string): string[] {
   return existsSync(join(root, "calls.log"))
     ? read(root, "calls.log").trim().split("\n").filter(Boolean)
@@ -214,12 +220,6 @@ test("checks keep a stack whose containers existed before the run", (t) => {
   );
 });
 
-const POSIX_SIGNALS = {
-  skip:
-    process.platform === "win32" &&
-    "Windows delivers no SIGTERM, so the checks interrupt handler cannot run",
-};
-
 test(
   "an interrupt while the services start stops compose at once and removes them",
   POSIX_SIGNALS,
@@ -258,34 +258,38 @@ test("checks read package.json before starting the services, so a broken manifes
   assert.deepEqual(logLines(root), []);
 });
 
-test("a second interrupt does not cut the teardown short", async (t) => {
-  const root = servicesRepo(
-    t,
-    UNREACHABLE_COMPOSE,
-    "node -e \"require('node:fs').appendFileSync('calls.log', 'step test\\n');process.on('SIGTERM', () => setTimeout(() => process.exit(1), 1000));setInterval(() => {}, 1000)\"",
-  );
-  const result = await runBin(root, [], dockerEnv(t, root), (child) => {
-    const timer = setInterval(() => {
-      if (!logLines(root).includes("step test")) return;
-      clearInterval(timer);
-      child.kill("SIGINT");
-      setTimeout(() => child.kill("SIGINT"), 200);
-    }, 50);
-  });
-  assert.equal(result.status, 130, result.stdout);
-  assert.equal(
-    logLines(root).at(-1),
-    "docker compose -f .github/compose.yml down -v",
-  );
-});
+test(
+  "a second interrupt does not cut the teardown short",
+  POSIX_SIGNALS,
+  async (t) => {
+    const root = servicesRepo(
+      t,
+      UNREACHABLE_COMPOSE,
+      "node -e \"require('node:fs').appendFileSync('calls.log', 'step test\\n');process.on('SIGTERM', () => setTimeout(() => process.exit(1), 1000));setInterval(() => {}, 1000)\"",
+    );
+    const result = await runBin(root, [], dockerEnv(t, root), (child) => {
+      const timer = setInterval(() => {
+        if (!logLines(root).includes("step test")) return;
+        clearInterval(timer);
+        child.kill("SIGINT");
+        setTimeout(() => child.kill("SIGINT"), 200);
+      }, 50);
+    });
+    assert.equal(result.status, 130, result.stdout);
+    assert.equal(
+      logLines(root).at(-1),
+      "docker compose -f .github/compose.yml down -v",
+    );
+  },
+);
 
 test("compose runs under a project named after the repository, not the shared .github default", (t) => {
   const root = servicesRepo(t, UNREACHABLE_COMPOSE);
   const env = dockerEnv(t, root);
-  put(
+  writeTool(
     env.PATH.split(delimiter)[0] ?? "",
     "docker",
-    '#!/bin/sh\necho "project $COMPOSE_PROJECT_NAME" >> "$CALLS_LOG"\n',
+    'require("node:fs").appendFileSync(process.env.CALLS_LOG, `project ${process.env.COMPOSE_PROJECT_NAME}\\n`);',
   );
   const result = bin(root, "checks", [], { ...env, COMPOSE_PROJECT_NAME: "" });
   assert.equal(result.status, 0, result.stdout);
@@ -302,10 +306,10 @@ test("compose runs under a project named after the repository, not the shared .g
 test("a compose file's own project name is kept", (t) => {
   const root = servicesRepo(t, `name: mine\n${UNREACHABLE_COMPOSE}`);
   const env = dockerEnv(t, root);
-  put(
+  writeTool(
     env.PATH.split(delimiter)[0] ?? "",
     "docker",
-    '#!/bin/sh\necho "project ${COMPOSE_PROJECT_NAME:-from-file}" >> "$CALLS_LOG"\n',
+    'require("node:fs").appendFileSync(process.env.CALLS_LOG, `project ${process.env.COMPOSE_PROJECT_NAME || "from-file"}\\n`);',
   );
   const result = bin(root, "checks", [], { ...env, COMPOSE_PROJECT_NAME: "" });
   assert.equal(result.status, 0, result.stdout);
@@ -333,25 +337,29 @@ test("checks leave services alone when every published port already answers", as
   assert.deepEqual(logLines(root), ["step test"]);
 });
 
-test("an interrupted run stops the running step and removes the services", async (t) => {
-  const root = servicesRepo(
-    t,
-    UNREACHABLE_COMPOSE,
-    "node -e \"require('node:fs').appendFileSync('calls.log', 'step test\\n');setTimeout(() => require('node:fs').appendFileSync('calls.log', 'step finished\\n'), 30000)\"",
-  );
-  const result = await runBin(root, [], dockerEnv(t, root), (child) => {
-    const timer = setInterval(() => {
-      if (!logLines(root).includes("step test")) return;
-      clearInterval(timer);
-      child.kill("SIGTERM");
-    }, 50);
-  });
-  assert.equal(result.status, 143, result.stdout);
-  assert.match(result.stdout, /Checks interrupted by SIGTERM\./);
-  const lines = logLines(root);
-  assert.ok(!lines.includes("step finished"));
-  assert.equal(lines.at(-1), "docker compose -f .github/compose.yml down -v");
-});
+test(
+  "an interrupted run stops the running step and removes the services",
+  POSIX_SIGNALS,
+  async (t) => {
+    const root = servicesRepo(
+      t,
+      UNREACHABLE_COMPOSE,
+      "node -e \"require('node:fs').appendFileSync('calls.log', 'step test\\n');setTimeout(() => require('node:fs').appendFileSync('calls.log', 'step finished\\n'), 30000)\"",
+    );
+    const result = await runBin(root, [], dockerEnv(t, root), (child) => {
+      const timer = setInterval(() => {
+        if (!logLines(root).includes("step test")) return;
+        clearInterval(timer);
+        child.kill("SIGTERM");
+      }, 50);
+    });
+    assert.equal(result.status, 143, result.stdout);
+    assert.match(result.stdout, /Checks interrupted by SIGTERM\./);
+    const lines = logLines(root);
+    assert.ok(!lines.includes("step finished"));
+    assert.equal(lines.at(-1), "docker compose -f .github/compose.yml down -v");
+  },
+);
 
 test("publishedPorts reads the short and long port syntax and gives up on what it cannot probe", () => {
   assert.deepEqual(

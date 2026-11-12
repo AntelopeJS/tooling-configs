@@ -1,27 +1,27 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import type { TestContext } from "node:test";
 import test from "node:test";
 
 import { parseManifest } from "./package.ts";
+import { writeTool } from "./helpers/shell.ts";
 import { bin, commit, put, read, testRepo } from "./helpers/test-repo.ts";
 
 const INTERFACE = "@antelopejs/interface-dms-marketing";
 const MODULE_MANIFEST = "packages/dms-marketing/package.json";
 
-/** A pnpm on PATH that records each call's directory and arguments, then succeeds or fails as `exitCode` says. */
+/** A pnpm on PATH that records each call's real directory and arguments, then succeeds or fails as `exitCode` says. */
 function recordingPnpm(t: TestContext, exitCode = 0) {
   const directory = mkdtempSync(join(tmpdir(), "antelope-pnpm-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const log = join(directory, "calls.log");
-  put(
+  writeTool(
     directory,
     "pnpm",
-    `#!${process.execPath}\nrequire("node:fs").appendFileSync(${JSON.stringify(log)}, [process.cwd(), ...process.argv.slice(2)].join(" ") + "\\n");\nprocess.exit(${exitCode});\n`,
+    `const fs = require("node:fs");\nfs.appendFileSync(${JSON.stringify(log)}, [fs.realpathSync.native(process.cwd()), ...process.argv.slice(2)].join(" ") + "\\n");\nprocess.exit(${exitCode});`,
   );
-  chmodSync(join(directory, "pnpm"), 0o755);
   return {
     env: { PATH: `${directory}${delimiter}${process.env.PATH ?? ""}` },
     calls: (): string[] =>
@@ -94,7 +94,9 @@ test("sync moves a module's range to the next minor of the interface released be
     result.stdout,
     /Updated: packages\/dms-marketing\/package\.json/,
   );
-  assert.deepEqual(pnpm.calls(), [`${root} install --lockfile-only`]);
+  assert.deepEqual(pnpm.calls(), [
+    `${realpathSync.native(root)} install --lockfile-only`,
+  ]);
   const check = bin(root, "check-interface-ranges");
   assert.equal(check.status, 0, check.stderr);
 });
@@ -144,7 +146,9 @@ test("sync fails, names the manifest and leaves its range unmoved when the reloc
   const pnpm = recordingPnpm(t);
   const retry = bin(root, "sync", [], pnpm.env);
   assert.equal(retry.status, 0, retry.stderr + retry.stdout);
-  assert.deepEqual(pnpm.calls(), [`${root} install --lockfile-only`]);
+  assert.deepEqual(pnpm.calls(), [
+    `${realpathSync.native(root)} install --lockfile-only`,
+  ]);
 });
 
 test("sync leaves a range it does not own: an implemented interface published from another repository and a sibling that only consumes the local interface, where a sync that drops either filter rewrites them and relocks from npm", (t) => {
