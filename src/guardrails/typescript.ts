@@ -345,30 +345,6 @@ function withheldDeclarations(
 }
 
 /** Emits with the package's compiler and config, or for JavaScript alone with the pack's when the package's has no compiler API; test roots and outputs never enter either proof. `modules` maps each emitted, copied or `withheld` file to its source module; `paths` is the configured `paths` with absolute targets. */
-function traceMissing(
-  compiler: typeof ts,
-  program: ts.Program,
-  options: ts.CompilerOptions,
-): void {
-  if (process.env.ANT2176_TRACE === undefined) return;
-  const missing = program
-    .getSemanticDiagnostics()
-    .find((item) => item.code === 2307);
-  if (missing?.file === undefined) return;
-  const trace: string[] = [];
-  const host = compiler.createCompilerHost(options);
-  host.trace = (line) => trace.push(line);
-  compiler.resolveModuleName(
-    "lib",
-    missing.file.fileName,
-    { ...options, traceResolution: true },
-    host,
-  );
-  process.stderr.write(
-    `ANT2176 ${missing.file.fileName}\n${trace.join("\n")}\n`,
-  );
-}
-
 export function emitPackage(
   directory: string,
   output: string,
@@ -407,7 +383,6 @@ export function emitPackage(
     options,
     projectReferences: parsed.projectReferences,
   });
-  if (declarations) traceMissing(compiler, program, options);
   if (declarations)
     failDiagnostics(compiler, [
       ...program.getConfigFileParsingDiagnostics(),
