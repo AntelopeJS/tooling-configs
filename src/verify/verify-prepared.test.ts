@@ -70,7 +70,9 @@ test("a build that records no check is not kept, so the next journey builds agai
   );
 });
 
-const NO_FIFO = process.platform === "win32" && "Windows has no FIFOs";
+const NO_FIFO =
+  process.platform === "win32" &&
+  "no FIFO special file exists on Windows, so the input cannot be built there; covered on Linux";
 
 test(
   "a build whose folder holds a FIFO is not kept, since a copy would drop it",
