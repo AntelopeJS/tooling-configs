@@ -33,6 +33,7 @@ import {
   leaseTmpDir,
   PARENT_TMPDIR,
 } from "../lease/env.ts";
+import { retryBusy } from "./busy.ts";
 import { skillFolder, type VerifyKind } from "./kinds.ts";
 import type { PhaseTiming } from "./timing.ts";
 import type { VerifyConfig } from "./types.ts";
@@ -191,7 +192,7 @@ export function loadRun(dir: string): RunState {
   const stored: Omit<RunState, "timings" | "all"> & {
     timings?: PhaseTiming[];
     all?: boolean;
-  } = JSON.parse(readFileSync(file, "utf8"));
+  } = JSON.parse(retryBusy(() => readFileSync(file, "utf8")));
   return {
     ...stored,
     processes: [...stored.processes, ...commandRecords(stored.dir)],
@@ -218,7 +219,10 @@ export function ownRun(workspace: Workspace, dir: string): RunState {
     throw new Error(
       `No run at ${dir}: run.json is missing. Create one with \`new\`.`,
     );
-  const stored = object(parseJson(readFileSync(file, "utf8")), file);
+  const stored = object(
+    parseJson(retryBusy(() => readFileSync(file, "utf8"))),
+    file,
+  );
   const recordedDir = str(stored, "dir");
   if (canonical(recordedDir) !== folder)
     throw new Error(
@@ -237,7 +241,7 @@ export function writeWhole(file: string, text: string): void {
   const staging = `${file}.${randomBytes(6).toString("hex")}.tmp`;
   try {
     writeFileSync(staging, text);
-    renameSync(staging, file);
+    retryBusy(() => renameSync(staging, file));
   } finally {
     rmSync(staging, { force: true });
   }
@@ -284,12 +288,13 @@ export function commandRecords(dir: string, command?: number): ProcessRecord[] {
     )
       return [];
     try {
-      return list(parseJson(readFileSync(join(dir, name), "utf8")), name).map(
-        (entry) => {
-          const record = object(entry, name);
-          return { name: str(record, "name"), pid: num(record, "pid") };
-        },
-      );
+      return list(
+        parseJson(retryBusy(() => readFileSync(join(dir, name), "utf8"))),
+        name,
+      ).map((entry) => {
+        const record = object(entry, name);
+        return { name: str(record, "name"), pid: num(record, "pid") };
+      });
     } catch {
       return [];
     }
@@ -363,11 +368,11 @@ export function allocateRun(
 
 const INHERITED_PREFIXES = ["ANTELOPEJS_", "npm_", "PNPM_", "XDG_"];
 
-/** The real path of `path`, resolved through its nearest existing ancestor when the path itself is gone. */
-function canonical(path: string): string {
+/** The real path of `path`, resolved through its nearest existing ancestor when the path itself is gone; on Windows also the long spelling of an 8.3 short name such as `RUNNER~1`. */
+export function canonical(path: string): string {
   const full = resolve(path);
   try {
-    return realpathSync(full);
+    return realpathSync.native(full);
   } catch {
     const parent = dirname(full);
     return parent === full ? full : join(canonical(parent), basename(full));

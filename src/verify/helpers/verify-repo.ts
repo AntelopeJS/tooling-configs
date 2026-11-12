@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { TestContext } from "node:test";
+import { pathToFileURL } from "node:url";
 
 import {
   bin,
@@ -12,8 +13,10 @@ import {
   testRepo,
 } from "../../guardrails/helpers/test-repo.ts";
 
-/** The checks module a test config imports by absolute path, since a scratch repository installs nothing. */
-export const CHECKS = join(PACKAGE_ROOT, "src/verify/checks.ts");
+/** The `file://` URL of the checks module a test config imports, since a scratch repository installs nothing and Node loads no other absolute specifier on Windows. */
+export const CHECKS = pathToFileURL(
+  join(PACKAGE_ROOT, "src/verify/checks.ts"),
+).href;
 
 /** A complete door block with only `publish` applying to `package.json`. */
 export const PUBLISH_DOORS = `{

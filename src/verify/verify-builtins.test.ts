@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
 import { put, read } from "../guardrails/helpers/test-repo.ts";
+import { installNodeFake, pathWith } from "./helpers/fake-bin.ts";
 import {
   evidence,
   feature,
@@ -32,9 +33,17 @@ else if (sub === "init") {
 `;
 
 /** A fake `pnpm`: `install` logs itself; `run checks` passes only when HOME points `ajs` at a manifest, as a real `ajs` in the checks would read it. */
-const PNPM = `#!/bin/sh
-if [ "$1" = install ]; then echo install >> "$SCAFFOLD_LOG"; exit 0; fi
-test -s "$HOME/git.txt"
+const PNPM = String.raw`const { appendFileSync, statSync } = require("node:fs");
+const { join } = require("node:path");
+if (process.argv[2] === "install") {
+  appendFileSync(process.env.SCAFFOLD_LOG, "install\n");
+  process.exit(0);
+}
+try {
+  process.exit(statSync(join(process.env.HOME, "git.txt")).size > 0 ? 0 : 1);
+} catch {
+  process.exit(1);
+}
 `;
 
 /** A repo journey that prepares the key the pack's journeys use, with the same init and install. */
@@ -83,10 +92,9 @@ function runSmoke(
     '{"name":"@antelopejs/core","bin":{"ajs":"ajs.cjs"}}\n',
   );
   put(root, "node_modules/@antelopejs/core/ajs.cjs", AJS);
-  put(tmp, "bin/pnpm", PNPM);
-  chmodSync(join(tmp, "bin/pnpm"), 0o755);
+  installNodeFake(join(tmp, "bin"), "pnpm", PNPM);
   const env = {
-    PATH: `${join(tmp, "bin")}:${process.env.PATH}`,
+    PATH: pathWith(join(tmp, "bin")),
     SCAFFOLD_LOG: join(tmp, "scaffold.log"),
     ...extra,
   };

@@ -13,6 +13,8 @@ const POLL_MS = 250;
 const FAST_POLL_MS = 25;
 /** How long readiness is probed every `FAST_POLL_MS` before falling back to `POLL_MS`. */
 const FAST_POLL_WINDOW_MS = 3000;
+/** How long one probe of the fast window waits for an answer. Windows takes a second or more to refuse a connection to a port nobody listens on yet, so a longer wait would hide an app that started meanwhile for that long. */
+const FAST_PROBE_TIMEOUT_MS = 200;
 const SETTLE_MS = 3000;
 
 async function probe(
@@ -20,6 +22,7 @@ async function probe(
   app: App,
   fixture: boolean,
   folder: string,
+  timeoutMs?: number,
 ): Promise<Check> {
   const probe = context.workspace.config.template?.probe;
   if (!fixture && probe?.log) {
@@ -34,6 +37,7 @@ async function probe(
   const answer = await httpRecorded(
     folder,
     `http://127.0.0.1:${app.port}${path}`,
+    { timeoutMs },
   );
   const status = fixture ? 200 : (probe?.status ?? 200);
   const body = !fixture && probe?.body ? probe.body : /./s;
@@ -60,10 +64,12 @@ export async function waitReady(
     exited = true;
   });
   const fastUntil = Date.now() + FAST_POLL_WINDOW_MS;
-  let check = await probe(context, app, fixture, folder);
+  const patience = () =>
+    Date.now() < fastUntil ? FAST_PROBE_TIMEOUT_MS : undefined;
+  let check = await probe(context, app, fixture, folder, patience());
   while (!check.pass && !exited && Date.now() < deadline) {
     await sleep(Date.now() < fastUntil ? FAST_POLL_MS : POLL_MS);
-    check = await probe(context, app, fixture, folder);
+    check = await probe(context, app, fixture, folder, patience());
   }
   const settle = context.workspace.config.template?.probe.log
     ? (context.workspace.config.template.probe.settleMs ?? SETTLE_MS)

@@ -88,7 +88,7 @@ test("a failed pnpm pack names its evidence folder and carries the message its p
   assert.notEqual(result.status, 0);
   assert.match(
     result.stderr,
-    /pnpm pack failed; see \S+\/evidence\/setup\/pack/,
+    /pnpm pack failed; see \S+[\\/]evidence[\\/]setup[\\/]pack/,
   );
   assert.match(result.stderr, /stdout:[\s\S]*prepack-said-this/);
 });

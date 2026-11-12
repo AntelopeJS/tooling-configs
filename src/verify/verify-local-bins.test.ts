@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import test from "node:test";
 
-import { put } from "../guardrails/helpers/test-repo.ts";
+import { installFake } from "./helpers/fake-bin.ts";
 import {
   CHECKS,
   evidence,
@@ -43,12 +43,18 @@ test("a journey and a setup command find the repository's own bins first by bare
     [`${SKILL}/verify.config.ts`]: CONFIG,
     [`${SKILL}/features/smoke.md`]: feature([], ["local-bin"]),
   });
-  put(root, "node_modules/.bin/verify-local-probe", "#!/bin/sh\nexit 0\n");
-  chmodSync(join(root, "node_modules/.bin/verify-local-probe"), 0o755);
+  installFake(join(root, "node_modules/.bin"), "verify-local-probe", {
+    sh: "#!/bin/sh\nexit 0\n",
+    cmd: "@exit /b 0\n",
+  });
   const shadow = join(tmp, "shadow");
-  put(shadow, "verify-local-probe", "#!/bin/sh\nexit 7\n");
-  chmodSync(join(shadow, "verify-local-probe"), 0o755);
-  const path = `${shadow}:/usr/bin:/bin`;
+  installFake(shadow, "verify-local-probe", {
+    sh: "#!/bin/sh\nexit 7\n",
+    cmd: "@exit /b 7\n",
+  });
+  const system =
+    process.platform === "win32" ? process.env.PATH : "/usr/bin:/bin";
+  const path = `${shadow}${delimiter}${system}`;
   const run = newRun(root, tmp, { PATH: path });
   const journey = verify(root, tmp, ["journey", run, "smoke"], { PATH: path });
   assert.equal(journey.status, 0, journey.stdout + journey.stderr);
@@ -56,12 +62,12 @@ test("a journey and a setup command find the repository's own bins first by bare
 });
 
 test("a PATH that already lists the repository's bins keeps its order, and an unset or empty one stays so; a version that always moves the bins first shadows a package's own bins under pnpm exec, and one that fills an unset PATH drops the system default", () => {
-  const bins = join("/r", "node_modules", ".bin");
-  assert.equal(
-    withLocalBins("/r", `/r/packages/a/node_modules/.bin:${bins}/:/usr/bin`),
-    `/r/packages/a/node_modules/.bin:${bins}/:/usr/bin`,
-  );
-  assert.equal(withLocalBins("/r", "/usr/bin"), `${bins}:/usr/bin`);
-  assert.equal(withLocalBins("/r", undefined), undefined);
-  assert.equal(withLocalBins("/r", ""), "");
+  const root = resolve("/r");
+  const bins = join(root, "node_modules", ".bin");
+  const own = join(root, "packages", "a", "node_modules", ".bin");
+  const listed = [own, `${bins}/`, "/usr/bin"].join(delimiter);
+  assert.equal(withLocalBins(root, listed), listed);
+  assert.equal(withLocalBins(root, "/usr/bin"), `${bins}${delimiter}/usr/bin`);
+  assert.equal(withLocalBins(root, undefined), undefined);
+  assert.equal(withLocalBins(root, ""), "");
 });

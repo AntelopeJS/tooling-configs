@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 
@@ -7,6 +6,7 @@ import {
   type EmitFingerprint,
   type EmitItem,
 } from "./emit.ts";
+import { spawnLaunched } from "./launch.ts";
 import type { FormalCheck } from "./types.ts";
 import { git, operatorEnv, operatorTmpdir } from "./workspace.ts";
 
@@ -54,7 +54,7 @@ function probeFingerprint(
 ): string[] {
   const [program, ...args] = command;
   return inWorktree(repo, sha, (dir) => {
-    const run = spawnSync(program, [...args, dir], {
+    const run = spawnLaunched(program, [...args, dir], {
       cwd: repo,
       env: operatorEnv(),
       encoding: "utf8",
