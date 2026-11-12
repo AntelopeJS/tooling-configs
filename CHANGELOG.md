@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.5.6
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.5...v0.5.6)
+
+### 🩹 Fixes
+
+- **sync:** Move a module's range for the interface released beside it ([#314](https://github.com/AntelopeJS/tooling-configs/pull/314))
+
+### 📖 Documentation
+
+- **readme:** Adopt the AntelopeJS framework README style ([#316](https://github.com/AntelopeJS/tooling-configs/pull/316))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.5.5
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.4...v0.5.5)
