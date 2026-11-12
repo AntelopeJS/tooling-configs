@@ -1,4 +1,4 @@
-import { runsOnWindows } from "../../guardrails/workflow.ts";
+import { runsOnWindows } from "../workflow-windows.ts";
 import { perRepo, type Check } from "../check.ts";
 import { isStackRepo } from "../stack.ts";
 import { finding } from "../types.ts";
