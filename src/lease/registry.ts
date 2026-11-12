@@ -50,9 +50,11 @@ export interface Worktree {
 type StaleReason = "missing" | "recreated";
 
 /**
- * What a stat of a worktree's `.git` entry found. `gone` is only ENOENT or ENOTDIR, a path that no
- * longer exists. Any other error, such as EACCES under a parent with mode 000, is `unreadable`, with
- * its error code: the checkout may still exist, so its lease is kept.
+ * What a listing of a worktree and a stat of its `.git` entry found. The listing comes first because
+ * Windows answers a stat from the parent folder's listing, so a stat alone succeeds on a worktree its
+ * user cannot read. `gone` is only ENOENT or ENOTDIR, a path that no longer exists. Any other error,
+ * such as EACCES under a parent with mode 000 or EPERM where an ACL denies the worktree, is
+ * `unreadable`, with its error code: the checkout may still exist, so its lease is kept.
  */
 type GitProbe =
   | { readonly kind: "present"; readonly identity: GitIdentity }
@@ -130,6 +132,7 @@ export function leaseState(
 
 function probeGit(worktree: string): GitProbe {
   try {
+    readdirSync(worktree);
     const stat = statSync(join(worktree, ".git"), { throwIfNoEntry: false });
     if (stat === undefined) return { kind: "gone" };
     return {
@@ -139,6 +142,7 @@ function probeGit(worktree: string): GitProbe {
   } catch (error) {
     const code =
       error instanceof Error && "code" in error ? String(error.code) : "";
+    if (code === "ENOENT" || code === "ENOTDIR") return { kind: "gone" };
     return { kind: "unreadable", code: code || "unknown" };
   }
 }
