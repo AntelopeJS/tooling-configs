@@ -18,6 +18,9 @@ import type { CommandResult, HttpInit, HttpResult } from "./types.ts";
 import { killTree, launch } from "./launch.ts";
 import { relativeSlashed } from "./slash.ts";
 
+/** Whether a command leads a process group of its own. Windows has none, and a detached command starts without a console, so a `.cmd` shim runs its `node` in a new console whose output never reaches the recorded pipes. */
+const LEADS_GROUP = process.platform !== "win32";
+
 /** A command to drive: a program, its arguments and where it runs. */
 export interface CommandSpec {
   program: string;
@@ -99,7 +102,7 @@ export function runRecorded(
     const child = spawn(started.program, started.args, {
       cwd: spec.cwd,
       env: spec.env,
-      detached: true,
+      detached: LEADS_GROUP,
       windowsVerbatimArguments: started.verbatim,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -159,7 +162,7 @@ export function startRecorded(
   const child = spawn(started.program, started.args, {
     cwd: spec.cwd,
     env: spec.env,
-    detached: true,
+    detached: LEADS_GROUP,
     windowsVerbatimArguments: started.verbatim,
     stdio: ["ignore", stdout, stderr],
   });
