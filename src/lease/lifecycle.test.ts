@@ -1,15 +1,8 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  rmSync,
-  statSync,
-  utimesSync,
-} from "node:fs";
+import { execFileSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, rmSync, utimesSync } from "node:fs";
 import type { Server } from "node:net";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -102,23 +95,6 @@ function denyReading(path: string): void {
   else chmodSync(path, 0o000);
 }
 
-/** What a stat of `path` gives while it is denied, and on Windows its ACL, for the failure message. */
-function probeAccess(path: string): string {
-  let stat: string;
-  try {
-    statSync(path);
-    stat = "stat succeeded";
-  } catch (error) {
-    stat = `stat failed: ${String(error)}`;
-  }
-  if (process.platform !== "win32") return stat;
-  const acls = [path, dirname(path)].map((entry) => {
-    const shown = spawnSync("icacls", [entry], { encoding: "utf8" });
-    return `${shown.stdout}${shown.stderr}`;
-  });
-  return [stat, ...acls].join("\n");
-}
-
 function allowReading(path: string): void {
   if (process.platform === "win32")
     execFileSync("icacls", [path, "/remove:d", "*S-1-1-0"]);
@@ -142,17 +118,14 @@ test(
       process.platform === "win32" ? worktree : join(root, "parent");
     denyReading(locked);
     let hidden;
-    let seen = "";
     try {
       hidden = await statusRows(root, env);
-      seen = probeAccess(join(worktree, ".git"));
     } finally {
       allowReading(locked);
     }
     assert.deepEqual(
       hidden.map((row) => row.state),
       [process.platform === "win32" ? "unreadable:EPERM" : "unreadable:EACCES"],
-      seen,
     );
     assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), true);
     const [again] = await statusRows(root, env);
