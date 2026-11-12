@@ -1,11 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, relative, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { marked } from "marked";
 
 import { foreignProse } from "./language.mjs";
+import { repoPath } from "./paths.mjs";
 
 const MODES = ["tutorial", "how-to", "reference", "explanation"];
 const REQUIRED = ["title", "description", "mode"];
@@ -250,7 +251,7 @@ function runVale(valeBin, root, documents, fail) {
   for (const [file, alerts] of Object.entries(report))
     for (const { Line, Check, Message } of alerts)
       fail(
-        `${relative(root, resolve(root, file))}:${Line}: ${Check} ${Message}`,
+        `${repoPath(root, resolve(root, file))}:${Line}: ${Check} ${Message}`,
       );
 }
 
@@ -263,7 +264,7 @@ function runVale(valeBin, root, documents, fail) {
 export function checkStandard({ root, documents, fail, valeBin }) {
   const outputs = captureOutputs(root);
   for (const doc of documents) {
-    const name = relative(root, doc.path);
+    const name = repoPath(root, doc.path);
     const lines = tokenLines(doc);
     if (!isReadme(doc.path)) {
       checkFrontmatter(doc, name, fail);
