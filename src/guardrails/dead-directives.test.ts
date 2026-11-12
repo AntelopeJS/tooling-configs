@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, symlinkSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 
+import { linkTsgolint } from "../oxc/helpers/tsgolint.ts";
 import { formatCeilings } from "./ceilings.ts";
 import { formatBudget } from "./suppression-budget.ts";
 import {
@@ -79,13 +77,7 @@ const DICTIONARY = (name: string) =>
 
 function linkTypeAware(root: string): void {
   linkOxlint(root);
-  const require = createRequire(import.meta.url);
-  const tsgolint = join(
-    dirname(require.resolve("oxlint-tsgolint/package.json")),
-    "bin/tsgolint.js",
-  );
-  mkdirSync(join(root, "node_modules/.bin"), { recursive: true });
-  symlinkSync(tsgolint, join(root, "node_modules/.bin/tsgolint"));
+  linkTsgolint(root);
 }
 
 /** A consumer on the shared preset, type-aware, with plugin specifiers redirected to the unbuilt source. */

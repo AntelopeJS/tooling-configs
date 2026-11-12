@@ -4,19 +4,12 @@ import { mkdirSync, symlinkSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
-import { fileURLToPath } from "node:url";
 
+import { linkTsgolint, TSGOLINT } from "../oxc/helpers/tsgolint.ts";
 import { formatCeilings, readCeilings } from "./ceilings.ts";
 import { bin, commit, linkOxlint, put, testRepo } from "./helpers/test-repo.ts";
 
-const ENV = {
-  OXLINT_TSGOLINT_PATH: fileURLToPath(
-    new URL(
-      "bin/tsgolint.js",
-      import.meta.resolve("oxlint-tsgolint/package.json"),
-    ),
-  ),
-};
+const ENV = { OXLINT_TSGOLINT_PATH: TSGOLINT };
 
 const UNSAFE_ASSIGNMENT = "typescript/no-unsafe-assignment";
 
@@ -42,12 +35,7 @@ function workspaceRepo(t: TestContext): string {
   const root = testRepo(t);
   linkOxlint(root);
   const require = createRequire(import.meta.url);
-  const tsgolint = join(
-    dirname(require.resolve("oxlint-tsgolint/package.json")),
-    "bin/tsgolint.js",
-  );
-  mkdirSync(join(root, "node_modules/.bin"), { recursive: true });
-  symlinkSync(tsgolint, join(root, "node_modules/.bin/tsgolint"));
+  linkTsgolint(root);
   mkdirSync(join(root, "packages/a/node_modules/@types"), { recursive: true });
   symlinkSync(
     dirname(require.resolve("@types/node/package.json")),

@@ -6,10 +6,10 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { bin, commit, linkOxlint, put, testRepo } from "./helpers/test-repo.ts";
+import { TSGOLINT } from "../oxc/helpers/tsgolint.ts";
 import {
   calls,
   FLOATING,
-  TSGOLINT,
   typedRepo,
   writeCeiling,
 } from "./helpers/typed-ratchet-repo.ts";

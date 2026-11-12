@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { createRequire } from "node:module";
-import { mkdirSync, symlinkSync } from "node:fs";
-import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 
+import { linkTsgolint } from "../oxc/helpers/tsgolint.ts";
 import { formatCeilings } from "./ceilings.ts";
 import { bin, commit, linkOxlint, put, testRepo } from "./helpers/test-repo.ts";
 
@@ -15,14 +13,7 @@ const SOURCE =
 function generatedConfigRepo(t: TestContext): string {
   const root = testRepo(t);
   linkOxlint(root);
-  const require = createRequire(import.meta.url);
-  symlinkSync(
-    join(
-      dirname(require.resolve("oxlint-tsgolint/package.json")),
-      "bin/tsgolint.js",
-    ),
-    join(mkdirBin(root), "tsgolint"),
-  );
+  linkTsgolint(root);
   put(root, ".gitignore", "node_modules\n.generated\n");
   put(
     root,
@@ -58,12 +49,6 @@ function generatedConfigRepo(t: TestContext): string {
   );
   commit(root);
   return root;
-}
-
-function mkdirBin(root: string): string {
-  const directory = join(root, "node_modules/.bin");
-  mkdirSync(directory, { recursive: true });
-  return directory;
 }
 
 test("staged ratchet agrees with the full run when the tsconfig extends a gitignored generated file", (t) => {

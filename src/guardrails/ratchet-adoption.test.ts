@@ -3,8 +3,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
-import { fileURLToPath } from "node:url";
 
+import { TSGOLINT } from "../oxc/helpers/tsgolint.ts";
 import { recordedRelease } from "./adoption.ts";
 import { formatCeilings, readCeilings, type Ceilings } from "./ceilings.ts";
 import {
@@ -15,13 +15,6 @@ import {
   read,
   testRepo,
 } from "./helpers/test-repo.ts";
-
-const TSGOLINT = fileURLToPath(
-  new URL(
-    "bin/tsgolint.js",
-    import.meta.resolve("oxlint-tsgolint/package.json"),
-  ),
-);
 
 const ENV = { OXLINT_TSGOLINT_PATH: TSGOLINT };
 

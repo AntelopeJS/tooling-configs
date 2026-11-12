@@ -5,6 +5,7 @@ import { mkdirSync, symlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 
+import { linkTsgolint } from "../oxc/helpers/tsgolint.ts";
 import { formatCeilings } from "./ceilings.ts";
 import { bin, commit, linkOxlint, put, testRepo } from "./helpers/test-repo.ts";
 
@@ -15,12 +16,7 @@ function workspaceRepo(t: TestContext, linkTypes = true) {
   const root = testRepo(t);
   linkOxlint(root);
   const require = createRequire(import.meta.url);
-  const tsgolint = join(
-    dirname(require.resolve("oxlint-tsgolint/package.json")),
-    "bin/tsgolint.js",
-  );
-  mkdirSync(join(root, "node_modules/.bin"), { recursive: true });
-  symlinkSync(tsgolint, join(root, "node_modules/.bin/tsgolint"));
+  linkTsgolint(root);
   if (linkTypes) {
     mkdirSync(join(root, "packages/a/node_modules/@types"), {
       recursive: true,
