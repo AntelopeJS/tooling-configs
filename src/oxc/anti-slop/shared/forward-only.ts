@@ -2,7 +2,7 @@ import type { ESTree, SourceCode, Variable } from "@oxlint/plugins";
 
 import { variableOf } from "./binding-origin.ts";
 import { declaredFunctionOf } from "./brand-probe.ts";
-import { functionParameterTypeAnnotation } from "./function-parameters.ts";
+import { argumentParameters, functionParameterTypeAnnotation } from "./function-parameters.ts";
 import { answersVerdict, convertsToText, guardsArgument, type Name, unknownParameterReads } from "./guarded-reads.ts";
 import { calleeName, DECODER_NAME, declaresParsedType, type FunctionFacts, promisedType, writesProperties } from "./parse-boundary.ts";
 import type { RuntimeFunction } from "./type-guards.ts";
@@ -62,7 +62,7 @@ function writtenValues(variable: Variable): ESTree.Expression[] {
 
 /** Return whether a function declared in this file declares its parameter at `position` exactly `unknown`. */
 function takesUnknownAt(callee: RuntimeFunction, position: number): boolean {
-	const parameter = callee.params[position];
+	const parameter = argumentParameters(callee)[position];
 	return (
 		parameter !== undefined &&
 		parameter.type !== "RestElement" &&

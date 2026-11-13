@@ -2,6 +2,16 @@ import type { ESTree, SourceCode } from "@oxlint/plugins";
 
 export type FunctionParameter = ESTree.ParamPattern;
 
+/** Return whether a parameter is a TypeScript `this` declaration, which takes no call argument. */
+export function isThisParameter(parameter: FunctionParameter): boolean {
+	return parameter.type === "Identifier" && parameter.name === "this";
+}
+
+/** Return the parameters that receive call arguments, in argument order: a declared `this` takes none. */
+export function argumentParameters(fn: { params: FunctionParameter[] }): FunctionParameter[] {
+	return fn.params.filter((parameter) => !isThisParameter(parameter));
+}
+
 /** Return whether a type is or contains TypeScript's absorbing unknown top type. */
 export function containsUnknownType(type: ESTree.TSType): boolean {
 	if (type.type === "TSUnknownKeyword") return true;

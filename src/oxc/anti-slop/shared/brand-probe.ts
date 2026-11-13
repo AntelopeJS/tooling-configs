@@ -1,6 +1,7 @@
 import type { ESTree, SourceCode, Variable } from "@oxlint/plugins";
 
 import { isGlobalName, variableOf } from "./binding-origin.ts";
+import { argumentParameters } from "./function-parameters.ts";
 import { isRuntimeFunction, type RuntimeFunction } from "./type-guards.ts";
 
 type Name = Extract<ESTree.Node, { type: "Identifier" }>;
@@ -76,7 +77,7 @@ export function declaredFunctionOf(callee: ESTree.Node, sourceCode: SourceCode):
 }
 
 function parameterAt(owner: RuntimeFunction, position: number, sourceCode: SourceCode): Variable | null {
-	const parameter = owner.params[position];
+	const parameter = argumentParameters(owner)[position];
 	if (parameter?.type !== "Identifier") return null;
 	return sourceCode.getDeclaredVariables(owner).find((variable) => variable.name === parameter.name && variable.defs[0]?.type === "Parameter") ?? null;
 }
@@ -84,7 +85,7 @@ function parameterAt(owner: RuntimeFunction, position: number, sourceCode: Sourc
 /** Return whether a function declared in this file is a type guard on the parameter at `position`. */
 export function guardsParameterAt(owner: RuntimeFunction, position: number): boolean {
 	const predicate = owner.returnType?.typeAnnotation;
-	const parameter = owner.params[position];
+	const parameter = argumentParameters(owner)[position];
 	return (
 		predicate?.type === "TSTypePredicate" &&
 		!predicate.asserts &&

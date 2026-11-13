@@ -4,10 +4,12 @@ import type { ESTree, SourceCode } from "@oxlint/plugins";
 import { isBrandProbe } from "../shared/brand-probe.ts";
 import { isCaughtValueCallbackType } from "../shared/caught-callback.ts";
 import {
+  argumentParameters,
   containsUnknownType,
   type FunctionParameter,
   functionParameterBindingName,
   functionParameterTypeAnnotation,
+  isThisParameter,
 } from "../shared/function-parameters.ts";
 import { forwardsOnly } from "../shared/forward-only.ts";
 import { readsOnlyThroughGuards } from "../shared/guarded-reads.ts";
@@ -46,10 +48,6 @@ function hasBoundaryDecorator(parameter: FunctionParameter): boolean {
     const name = decoratorName(decorator);
     return name !== null && BOUNDARY_PARAMETER_DECORATORS.has(name);
   });
-}
-
-function isThisParameter(parameter: FunctionParameter): boolean {
-  return parameter.type === "Identifier" && parameter.name === "this";
 }
 
 /** Return whether a function is passed directly as argument `position` of a `.method(...)` call. */
@@ -172,7 +170,7 @@ export const noUnknownParametersRule = defineRule({
 
     /** Return whether this rule exempts the parameter at `position` of a function the file declares, so a forward to it hands the value to a parser. */
     const acceptsForward = (callee: RuntimeFunction, position: number): boolean => {
-      const parameter = callee.params[position];
+      const parameter = argumentParameters(callee)[position];
       if (parameter === undefined || judging.has(parameter)) return false;
       const known = verdicts.get(parameter);
       if (known !== undefined) return known;
