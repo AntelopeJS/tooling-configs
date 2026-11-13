@@ -44,7 +44,9 @@ interface Layout {
 }
 
 function layout(t: TestContext): Layout {
-  const root = mkdtempSync(join(tmpdir(), "antelope-boundary-"));
+  const root = realpathSync.native(
+    mkdtempSync(join(tmpdir(), "antelope-boundary-")),
+  );
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const backend = join(root, "backend");
   const layer = join(backend, "frontend-vue");
@@ -271,7 +273,7 @@ async function reported(
 
 test("backend boundary names the importer and the backend file with / separators on every OS, Windows included (dms-saas #270)", async (t) => {
   const fixture = layout(t);
-  const root = realpathSync(dirname(fixture.backend)).split(sep).join("/");
+  const root = dirname(fixture.backend).split(sep).join("/");
   put(fixture.layer, "entry.ts", 'export { default } from "../src/x.ts";\n');
   assert.deepEqual(
     await reported(fixture.layer, join(fixture.layer, "entry.ts")),
