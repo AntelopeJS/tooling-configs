@@ -1,6 +1,6 @@
 import { createConfigForNuxt } from "@nuxt/eslint-config/flat";
 
-import { TYPE_AWARE_RULES } from "./type-aware-rules.ts";
+import { TYPE_AWARE_RULES, typeAwareRuleSetting } from "./type-aware-rules.ts";
 
 /** The rule map `overrideRules` accepts, derived so no transitive type is named. */
 type NuxtRules = Parameters<
@@ -94,7 +94,10 @@ export function antelopeNuxtConfig(
         },
       },
       rules: Object.fromEntries(
-        TYPE_AWARE_RULES.map((rule) => [`@typescript-eslint/${rule}`, "error"]),
+        TYPE_AWARE_RULES.map((rule) => [
+          `@typescript-eslint/${rule}`,
+          typeAwareRuleSetting(rule),
+        ]),
       ),
     });
   }

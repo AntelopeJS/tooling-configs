@@ -3,7 +3,7 @@ import { defineConfig } from "oxlint";
 import { findGitRoot, MEASURE_ENV } from "../guardrails/ceilings.ts";
 import { readCarriedCeilings } from "../guardrails/renames.ts";
 import { PRESET_CONFIGS } from "../guardrails/templates.ts";
-import { TYPE_AWARE_RULES } from "../type-aware-rules.ts";
+import { TYPE_AWARE_RULES, typeAwareRuleSetting } from "../type-aware-rules.ts";
 import { TEST_FILE_GLOBS } from "./guardrails/shared.ts";
 import { IGNORE_PATTERNS, SYNCED_AGENT_PATTERNS } from "./shared.ts";
 
@@ -87,7 +87,10 @@ export const ANTI_SLOP_RULES = [
   "require-safety-comment-for-type-assertion",
 ] as const;
 
-/** Correctness must fail CI; underscore bindings and omitted rest siblings are intentional; `@ts-ignore` is banned because `@ts-expect-error` fails once the error is gone. */
+/**
+ * Correctness must fail CI; underscore bindings and omitted rest siblings are intentional; `@ts-ignore` is banned because `@ts-expect-error` fails once the error is gone.
+ * A test builds thenable stand-ins on purpose, so `unicorn/no-thenable` checks production code only.
+ */
 function basePreset(importCycles: boolean) {
   return defineConfig({
     categories: { correctness: "error" },
@@ -118,6 +121,9 @@ function basePreset(importCycles: boolean) {
         },
       ],
     },
+    overrides: [
+      { files: TEST_FILE_GLOBS, rules: { "unicorn/no-thenable": "off" } },
+    ],
   });
 }
 
@@ -255,7 +261,10 @@ function complexityPreset(thresholds: ComplexityThresholds) {
 function typeAwarePreset() {
   return defineConfig({
     rules: Object.fromEntries(
-      TYPE_AWARE_RULES.map((rule) => [`typescript/${rule}`, "error"]),
+      TYPE_AWARE_RULES.map((rule) => [
+        `typescript/${rule}`,
+        typeAwareRuleSetting(rule),
+      ]),
     ),
   });
 }
