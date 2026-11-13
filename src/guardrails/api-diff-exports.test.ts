@@ -143,7 +143,7 @@ test("api-diff compares published subpaths, allowing entry relocation but catchi
   assert.equal(moved.status, 0, moved.stdout + moved.stderr);
 });
 
-test("api-diff prints a declaration changed in several entries once, under the entries it affects", (t) => {
+test("api-diff prints a declaration changed in several entries once, under the entries it affects, and an added entry once per declaration it shares", (t) => {
   const root = apiRepo(t);
   put(
     root,
@@ -182,4 +182,26 @@ test("api-diff prints a declaration changed in several entries once, under the e
     changed.stdout,
     /^@@ [^\n]*\/\/ In _root\/exports\/root\.d\.ts, _root\/exports\/subpath\/extra\.d\.ts\n(?: .*\n)*-.*value: string;\n\+.*value: number;$/mu,
   );
+  put(
+    root,
+    "package.json",
+    JSON.stringify({
+      name: "public-api",
+      type: "module",
+      exports: {
+        ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
+        "./extra": { types: "./dist/extra.d.ts", default: "./dist/extra.js" },
+        "./more": { types: "./dist/more.d.ts", default: "./dist/more.js" },
+        "./other": { types: "./dist/other.d.ts", default: "./dist/other.js" },
+      },
+    }),
+  );
+  put(root, "src/more.ts", 'export type { Value } from "./shared.js";\n');
+  commit(root);
+  const added = bin(root, "api-diff", ["HEAD~1"]);
+  assert.equal(added.status, 1, added.stdout + added.stderr);
+  assert.deepEqual(added.stdout.match(/^[-+](?![-+]).*$/gmu), [
+    "+//   _root/exports/subpath/more.d.ts",
+    "+// In _root/exports/subpath/more.d.ts",
+  ]);
 });
