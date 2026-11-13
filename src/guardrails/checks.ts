@@ -3,6 +3,10 @@ import { join } from "node:path";
 
 import { packageManager, parseManifest } from "./package.ts";
 import { CEILINGS_FILE } from "./ceilings.ts";
+import {
+  checkRepositoryRanges,
+  hasDependencyRanges,
+} from "./dependency-ranges-sync.ts";
 import { checkGitIdentity, isGitCheckout } from "./git-identity.ts";
 import { runCommand } from "./run-command.ts";
 import {
@@ -29,6 +33,7 @@ const CHECK_STEPS = [
   "verify:types",
   "verify:lockfiles",
   "lockfile:singletons",
+  "dependency:ranges",
   "git:identity",
 ];
 
@@ -43,6 +48,7 @@ const OWN_STEPS = new Map<
     "lockfile:singletons",
     (root) => Promise.resolve(checkSingletonPackages(root)),
   ],
+  ["dependency:ranges", (root) => Promise.resolve(checkRepositoryRanges(root))],
   ["git:identity", checkGitIdentity],
 ]);
 
@@ -51,6 +57,8 @@ function hasWork(root: string, step: string): boolean {
   if (step === "verify:types") return verifyLayers(root).length > 0;
   if (step === "verify:lockfiles") return verifyInstallFolders(root).length > 0;
   if (step === "lockfile:singletons") return pnpmLockfiles(root).length > 0;
+  if (step === "dependency:ranges")
+    return isGitCheckout(root) && hasDependencyRanges(root);
   if (step === "git:identity") return isGitCheckout(root);
   return true;
 }
