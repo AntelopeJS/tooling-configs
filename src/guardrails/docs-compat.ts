@@ -21,7 +21,6 @@ const LOCKFILE = "pnpm-lock.yaml";
 const REQUIREMENTS_HEADING = /^##\s+Requirements\s*$/i;
 const SCOPE = "@antelopejs/";
 const UNRESOLVED = "—";
-const WORKSPACE = "workspace";
 const LEGACY_MARKER = /^<!--\s*docs-compat:\s*\.\/package\.json#\w+\s*-->\s*$/;
 const COMPATIBILITY_HEADING = /^##\s+Compatibility\s*$/i;
 const RESOLVED_SECTIONS = [
@@ -302,9 +301,22 @@ function readManifest(root: string, directory: string): Manifest {
   );
 }
 
-/** The version the lockfile resolves for a dependency; a `link:` resolves to `workspace`, so a release that bumps the linked package leaves this README unchanged. */
+/** The version a `link:` path, relative to the linking package's directory, names in the linked package's `package.json`. */
+function linkedVersion(
+  root: string,
+  directory: string,
+  link: string,
+): string | undefined {
+  const path = join(root, directory, link, "package.json");
+  return existsSync(path)
+    ? parseManifest(readFileSync(path, "utf8")).version
+    : undefined;
+}
+
+/** The version the lockfile resolves for a dependency; a `link:` resolves to the linked workspace package's version. */
 function resolvedVersion(
-  { document, importer }: Lock,
+  root: string,
+  { document, importer, directory }: Lock,
   name: string,
 ): string | undefined {
   for (const section of RESOLVED_SECTIONS) {
@@ -312,15 +324,18 @@ function resolvedVersion(
     const version = isMap(entry) ? entry.get("version", true) : entry;
     if (!isScalar(version)) continue;
     const resolved = String(version.value).split("(")[0];
-    return resolved.startsWith("link:") ? WORKSPACE : resolved;
+    return resolved.startsWith("link:")
+      ? linkedVersion(root, directory, resolved.slice("link:".length))
+      : resolved;
   }
   return undefined;
 }
 
-/** A parsed pnpm lockfile and the importer that holds one package's dependencies in it. */
+/** A parsed pnpm lockfile, the importer that holds one package's dependencies in it, and that package's directory relative to the root. */
 interface Lock {
   document: Document;
   importer: string;
+  directory: string;
 }
 
 const UNSHARED_NPMRC =
@@ -355,7 +370,13 @@ function readLock(
   if (!documents.has(path) && existsSync(path))
     documents.set(path, parseDocument(readFileSync(path, "utf8")));
   const document = documents.get(path);
-  return document && { document, importer: shared ? directory || "." : "." };
+  return (
+    document && {
+      document,
+      importer: shared ? directory || "." : ".",
+      directory,
+    }
+  );
 }
 
 interface PlannedPackage {
@@ -388,7 +409,7 @@ function planPackage(
   const rows = [...ranges].map(([name, supported]) => ({
     name,
     supported,
-    tested: lock && resolvedVersion(lock, name),
+    tested: lock && resolvedVersion(root, lock, name),
   }));
   try {
     const withRequirements =
@@ -418,7 +439,7 @@ function planPackage(
  * Plans the docs-compat block of the root and of every workspace package that is not private and declares an
  * `@antelopejs/*` peer, runtime or optional dependency, and the `docs-files` lines covering the root and every workspace
  * package that is not private.
- * Tested with comes from pnpm-lock.yaml, each package's own when `shared-workspace-lockfile=false`, and is `workspace` for a `link:` dependency; other package managers get a dash.
+ * Tested with comes from pnpm-lock.yaml, each package's own when `shared-workspace-lockfile=false`, and is the linked package's version for a `link:` dependency; other package managers get a dash.
  */
 export function planDocs(root: string, manager: PackageManager): DocsPlan {
   const rootManifest = readManifest(root, "");
