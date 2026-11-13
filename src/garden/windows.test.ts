@@ -168,8 +168,12 @@ test("a ci-node.yml caller with no windows input follows the windows default of 
       pre48: await pre48(CALLER),
       post48: await runsOnWindows(CALLER, post48),
       optedOut: await runsOnWindows(optedOut, post48),
+      optedOutExpression: await runsOnWindows(
+        optedOut.replace("windows: false", "windows: ${{ false }}"),
+        post48,
+      ),
     },
-    { pre48: false, post48: true, optedOut: false },
+    { pre48: false, post48: true, optedOut: false, optedOutExpression: false },
   );
   assert.deepEqual(refs, ["v1"]);
   assert.deepEqual(
@@ -178,18 +182,29 @@ test("a ci-node.yml caller with no windows input follows the windows default of 
   );
 });
 
-test("windows-ci counts a caller with no windows input as running on Windows only while ci-node.yml@v1 defaults windows to true", async () => {
+test("windows-ci counts a caller with no windows input as running on Windows only while the ci-node.yml at its own ref defaults windows to true, and reports a caller whose ref has no ci-node.yml", async () => {
   const optedOut = WINDOWS_CALLER.replace("windows: true", "windows: false");
   const reported = async (fallback: boolean) =>
     keys(
       await windowsCi.run(
         new FakeApi()
-          .org([{ name: ".github" }, { name: "mongodb" }, { name: "redis" }])
+          .org([
+            { name: ".github" },
+            { name: "mongodb" },
+            { name: "mqtt" },
+            { name: "redis" },
+          ])
           .file(
             "/repos/AntelopeJS/.github/contents/.github/workflows/ci-node.yml?ref=v1",
             ciNode(fallback),
           )
           .repo("mongodb", { ".github/workflows/ci.yml": CALLER })
+          .repo("mqtt", {
+            ".github/workflows/ci.yml": CALLER.replace(
+              "ci-node.yml@v1",
+              "ci-node.yml@0000000000000000000000000000000000000000",
+            ),
+          })
           .repo("redis", { ".github/workflows/ci.yml": optedOut })
           .context(),
       ),
@@ -197,8 +212,12 @@ test("windows-ci counts a caller with no windows input as running on Windows onl
   assert.deepEqual(
     { pre48: await reported(false), post48: await reported(true) },
     {
-      pre48: ["mongodb|windows-ci|windows", "redis|windows-ci|windows"],
-      post48: ["redis|windows-ci|windows"],
+      pre48: [
+        "mongodb|windows-ci|windows",
+        "mqtt|windows-ci|windows",
+        "redis|windows-ci|windows",
+      ],
+      post48: ["mqtt|windows-ci|windows", "redis|windows-ci|windows"],
     },
   );
 });
