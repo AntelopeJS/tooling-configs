@@ -141,11 +141,12 @@ function isLinkSpec(spec: string): boolean {
   return LINK_SPEC_PREFIXES.some((prefix) => spec.startsWith(prefix));
 }
 
-/** The spec pnpm publishes in place of the `workspace:` spec `spec` on a sibling at version `local`. */
-function publishedSpec(spec: string, local: string): string {
+/** The spec pnpm publishes in place of the `workspace:` spec `spec` on a sibling at `local`, without its prerelease or build suffix. */
+function publishedSpec(spec: string, local: Version): string {
   const range = spec.slice(WORKSPACE_PREFIX.length);
-  if (range === "*") return local;
-  if (range === "^" || range === "~") return `${range}${local}`;
+  const version = formatVersion(local);
+  if (range === "*") return version;
+  if (range === "^" || range === "~") return `${range}${version}`;
   return range;
 }
 
@@ -161,12 +162,13 @@ function checkEntry(
   local: string | undefined,
 ): RangeViolation | undefined {
   const workspace = spec.startsWith(WORKSPACE_PREFIX);
+  const localVersion = local === undefined ? undefined : readFloor(local);
   let published = spec;
   if (workspace) {
-    if (manifest.private === true || local === undefined) return undefined;
-    published = publishedSpec(spec, local);
+    if (manifest.private === true || localVersion === undefined)
+      return undefined;
+    published = publishedSpec(spec, localVersion);
   }
-  const localVersion = local === undefined ? undefined : readFloor(local);
   const bounds = readBounds(published.trim());
   if (isCapped(bounds, localVersion)) return undefined;
   const floor = localVersion ?? bounds?.floor ?? readFloor(published);

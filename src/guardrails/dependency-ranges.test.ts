@@ -95,6 +95,8 @@ describe("checkDependencyRanges", () => {
     assert.deepEqual(check("workspace:~", "1.2.3"), []);
     assert.deepEqual(check("workspace:^", "0.6.1"), []);
     assert.deepEqual(check("workspace:^", "1.2.3", true), []);
+    assert.deepEqual(check("workspace:~", "1.2.3-beta.1"), []);
+    assert.deepEqual(check("workspace:^", "0.4.0-rc.0"), []);
     assert.deepEqual(
       checkDependencyRanges({
         dependencies: { "@antelopejs/interface-demo": "workspace:^" },
