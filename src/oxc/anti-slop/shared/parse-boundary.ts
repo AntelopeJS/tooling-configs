@@ -5,7 +5,7 @@ import { containsUnknownType } from "./function-parameters.ts";
 import type { RuntimeFunction } from "./type-guards.ts";
 
 /** Callee names that read as a decoder: `parse`, `safeParse` and their `Async` forms, `decode`, and `parseX` and `decodeX` in either case. */
-const DECODER_NAME = /^(?:safeParse(?:Async)?|[Pp]arse(?:[A-Z]\w*)?|[Dd]ecode(?:[A-Z]\w*)?)$/;
+export const DECODER_NAME = /^(?:safeParse(?:Async)?|[Pp]arse(?:[A-Z]\w*)?|[Dd]ecode(?:[A-Z]\w*)?)$/;
 
 /** Packages whose exports are schemas or decoders. A subpath such as `zod/v4` counts as its package. */
 const SCHEMA_LIBRARIES: readonly string[] = ["zod", "valibot", "yup", "joi", "superstruct", "io-ts", "@sinclair/typebox", "arktype", "effect", "@effect/schema"];
@@ -23,7 +23,8 @@ const PROPERTY_WRITERS: ReadonlySet<string> = new Set([
 
 const PROMISE_TYPES: ReadonlySet<string> = new Set(["Promise", "PromiseLike"]);
 
-function calleeName(call: ESTree.CallExpression): string | null {
+/** Return the name a call is made by: an identifier callee's name, or a non-computed member callee's property name. */
+export function calleeName(call: ESTree.CallExpression): string | null {
 	const { callee } = call;
 	if (callee.type === "Identifier") return callee.name;
 	return callee.type === "MemberExpression" && !callee.computed && callee.property.type === "Identifier"
@@ -53,6 +54,11 @@ function dottedName(node: ESTree.Node): string | null {
 		: null;
 }
 
+/** Return whether a call is one of `PROPERTY_WRITERS`, such as `Object.assign`, which write properties of the object they are handed first. */
+export function writesProperties(call: ESTree.CallExpression): boolean {
+	return PROPERTY_WRITERS.has(dottedName(call.callee) ?? "");
+}
+
 /** Return the outermost member expression a reference is the object of, or the reference itself. */
 function memberChainTop(identifier: Reference["identifier"]): ESTree.Node {
 	let current: ESTree.Node = identifier;
@@ -74,7 +80,7 @@ function hasPropertyWrites(variable: Variable): boolean {
 			if (holder.type === "UpdateExpression") return true;
 			if (holder.type === "UnaryExpression" && holder.operator === "delete") return true;
 		}
-		return holder.type === "CallExpression" && holder.arguments[0] === top && PROPERTY_WRITERS.has(dottedName(holder.callee) ?? "");
+		return holder.type === "CallExpression" && holder.arguments[0] === top && writesProperties(holder);
 	});
 }
 
@@ -124,14 +130,18 @@ function decoderCallOf(identifier: Reference["identifier"], sourceCode: SourceCo
 		: null;
 }
 
-/** Return whether a declared return type states a value, not `unknown` or `any`, promised or not. */
-function declaresParsedType(annotation: ESTree.TSTypeAnnotation | null | undefined): boolean {
+/** Return the type a declared return type hands back, read through `Promise<T>` and `PromiseLike<T>`. */
+export function promisedType(annotation: ESTree.TSTypeAnnotation | null | undefined): ESTree.TSType | undefined {
 	const type = annotation?.typeAnnotation;
-	if (type === undefined) return false;
-	const promised =
-		type.type === "TSTypeReference" && type.typeName.type === "Identifier" && PROMISE_TYPES.has(type.typeName.name)
-			? type.typeArguments?.params[0]
-			: type;
+	if (type === undefined) return undefined;
+	return type.type === "TSTypeReference" && type.typeName.type === "Identifier" && PROMISE_TYPES.has(type.typeName.name)
+		? type.typeArguments?.params[0]
+		: type;
+}
+
+/** Return whether a declared return type states a value, not `unknown` or `any`, promised or not. */
+export function declaresParsedType(annotation: ESTree.TSTypeAnnotation | null | undefined): boolean {
+	const promised = promisedType(annotation);
 	return promised !== undefined && promised.type !== "TSAnyKeyword" && !containsUnknownType(promised);
 }
 

@@ -55,8 +55,8 @@ function isProbe(reference: Name, sourceCode: SourceCode): boolean {
 	return user.type === "BinaryExpression" && user.operator === "in" && user.right === reference && isOwnSymbol(user.left, sourceCode);
 }
 
-/** Return the type-predicate subject a call position names, for a callee declared in this file. */
-function declaredFunctionOf(callee: ESTree.Node, sourceCode: SourceCode): RuntimeFunction | null {
+/** Return the function a callee names when this file declares it: a function declaration, or a `const` bound to an arrow or function expression. */
+export function declaredFunctionOf(callee: ESTree.Node, sourceCode: SourceCode): RuntimeFunction | null {
 	if (callee.type !== "Identifier") return null;
 	const definition = variableOf(callee, sourceCode)?.defs[0];
 	if (definition?.type === "FunctionName" && isRuntimeFunction(definition.node)) return definition.node;
@@ -82,7 +82,7 @@ function parameterAt(owner: RuntimeFunction, position: number, sourceCode: Sourc
 }
 
 /** Return whether a function declared in this file is a type guard on the parameter at `position`. */
-function guardsParameterAt(owner: RuntimeFunction, position: number): boolean {
+export function guardsParameterAt(owner: RuntimeFunction, position: number): boolean {
 	const predicate = owner.returnType?.typeAnnotation;
 	const parameter = owner.params[position];
 	return (
