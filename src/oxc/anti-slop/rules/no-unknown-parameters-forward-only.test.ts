@@ -106,7 +106,7 @@ tester.run("anti-slop/no-unknown-parameters at a parameter only forwarded", noUn
 			code: 'import { createLogger } from "./log";\nfunction load(config: unknown): void { const logger = createLogger(); logger.info(config); }',
 		},
 		{
-			name: "a chain of twenty forwarders, each forwarding twice: fails one that judges a callee again per forward, 2^20 judgments that take seconds",
+			name: "a chain of twenty same-file forwarders, each exempt only through the next: fails one that refuses a forward to a callee exempt by forwarding",
 			code: FORWARD_CHAIN,
 		},
 	],
