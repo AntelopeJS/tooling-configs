@@ -133,7 +133,15 @@ test(
         );
         const listed = `readdir: ${listing.stdout}${listing.stderr}`;
         seen = `${listed}\n${(() => {
-          const priv = spawnSync("whoami.exe", ["/priv"], { encoding: "utf8" });
+          const priv = spawnSync(
+            join(
+              process.env.SystemRoot ?? "C:\\Windows",
+              "System32",
+              "whoami.exe",
+            ),
+            ["/priv"],
+            { encoding: "utf8" },
+          );
           return `whoami: ${priv.stdout}${priv.stderr}${String(priv.error ?? "")}`;
         })()}`;
       }
