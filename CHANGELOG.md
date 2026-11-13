@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.5.8
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.7...v0.5.8)
+
+### 🤖 CI
+
+- Run the pack's checks on Windows and report stack repos without Windows CI ([#317](https://github.com/AntelopeJS/tooling-configs/pull/317))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.5.7
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.6...v0.5.7)
