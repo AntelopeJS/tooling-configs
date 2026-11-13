@@ -32,6 +32,22 @@ export function hasBrand(value: unknown): boolean {
   return isObj(value) && readBrand(value) !== undefined;
 }`,
 		},
+		{
+			name: "a callback declaring this: void handed only caught values: fails one that reads the unknown position at the index of the this parameter",
+			code: "export function run(onError: (this: void, error: unknown) => void): void { try { work(); } catch (caught) { onError(caught); } }",
+		},
+		{
+			name: "a .catch handler declaring this: void: fails one that takes the this parameter for the rejection reason",
+			code: "export const done = work().catch(function (this: void, error: unknown) { log(error); });",
+		},
+		{
+			name: "a reject type declaring this: void: fails one that counts the this parameter toward its arity",
+			code: "export type Settle = { reject: (this: void, reason: unknown) => void };",
+		},
+		{
+			name: "a promise executor declaring this: void with a reject not named reject: fails one that takes resolve for the reject position",
+			code: "export const ready = new Promise<number>(function (this: void, resolve, fail: (reason: unknown) => void) { go(resolve, fail); });",
+		},
 	],
 	invalid: [
 		{
