@@ -6,7 +6,7 @@ export default {
       "src/oxc/guardrails/rules/fixtures/eslint/require-assertion.config.mjs",
     ],
     ignore: ["src/oxc/anti-slop/**"],
-    ignoreBinaries: ["icacls", "mkfifo", "script"],
+    ignoreBinaries: ["icacls", "mkfifo", "netstat", "script"],
   }),
   workspaces: {
     "actions/docs": {
