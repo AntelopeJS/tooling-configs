@@ -54,6 +54,18 @@ function collectDeclarations(
 
 const HUNK = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/u;
 const CARRIER = "// In ";
+const INDEX = "// Entries";
+const INDEXED = "//   ";
+
+/** Whether `text`, a line of a collated file, is a separator, an index line or a `// In` line rather than declaration text. */
+function isLayout(text: string): boolean {
+  return (
+    text === "" ||
+    text === INDEX ||
+    text.startsWith(INDEXED) ||
+    text.startsWith(CARRIER)
+  );
+}
 
 type Mark = "-" | "+";
 
@@ -87,12 +99,28 @@ function carrierRun(
   };
 }
 
-/** Appends to a hunk header of `diff`, a comparison of the collated `base` and `head` directories under `root`, the entries of the declaration its first changed declaration line belongs to, when the `// In` lines of that declaration lie above the hunk. A change far below those lines still names its entries, and a hunk that changes only `// In` or index lines is left as git printed it. */
+/** Appends `run`'s entries to the header of `hunk` when the run lies above it and no earlier hunk showed or named it, and records the run as named. */
+function labelHunk(
+  lines: string[],
+  hunk: Hunk,
+  mark: Mark,
+  run: ReturnType<typeof carrierRun>,
+  labelled: Set<string>,
+): void {
+  if (run === undefined) return;
+  const key = `${mark}${run.start}`;
+  if (run.start < hunk.start[mark] && !labelled.has(key))
+    lines[hunk.header] += ` ${run.label}`;
+  labelled.add(key);
+}
+
+/** Appends to a hunk header of `diff`, a comparison of the collated `base` and `head` directories under `root`, the entries of the declaration its first changed declaration line belongs to, when the `// In` lines of that declaration lie above the hunk and no earlier hunk named them. A change far below those lines still names its entries, a hunk that changes only separators, `// In` or index lines is left as git printed it, and a declaration changed in many hunks names its entries once. */
 export function labelHunks(diff: string, root: string): string {
   const sides: Record<Mark, string[]> = {
     "-": collatedLines(join(root, "base")),
     "+": collatedLines(join(root, "head")),
   };
+  const labelled = new Set<string>();
   const lines = diff.split("\n");
   let hunk: Hunk | undefined;
   for (const [index, line] of lines.entries()) {
@@ -111,10 +139,8 @@ export function labelHunks(diff: string, root: string): string {
       const mark: Mark = line.startsWith("-") ? "-" : "+";
       const at = hunk.next[mark];
       hunk.next[mark] += 1;
-      if (line.startsWith("//", 1)) continue;
-      const run = carrierRun(sides[mark], at);
-      if (run !== undefined && run.start < hunk.start[mark])
-        lines[hunk.header] += ` ${run.label}`;
+      if (isLayout(line.slice(1))) continue;
+      labelHunk(lines, hunk, mark, carrierRun(sides[mark], at), labelled);
       hunk = undefined;
     }
   }
@@ -141,7 +167,7 @@ export function collateDeclarations(compiler: typeof ts, output: string): void {
   writeFileSync(
     join(output, "declarations.d.ts"),
     [
-      `// Entries\n${entries.map((entry) => `//   ${entry}\n`).join("")}`,
+      `${INDEX}\n${entries.map((entry) => `${INDEXED}${entry}\n`).join("")}`,
       ...blocks,
     ].join("\n"),
   );
