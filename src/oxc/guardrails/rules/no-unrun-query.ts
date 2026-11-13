@@ -17,14 +17,15 @@ const PNPM_ENTRY = "@antelopejs+interface-database@";
 
 const installs = new Map<string, boolean>();
 
-/** Whether `directory` installs interface-database: linked at `node_modules/@antelopejs`, or only in pnpm's store as a transitive dependency. */
+/** Whether `directory` installs interface-database: linked at `node_modules/@antelopejs`, or only in pnpm's store as a transitive dependency. A store it cannot read counts as installing it, so the rule falls back to the type check. */
 function installedIn(directory: string): boolean {
   if (existsSync(join(directory, PACKAGE))) return true;
   const store = join(directory, "node_modules/.pnpm");
-  return (
-    existsSync(store) &&
-    readdirSync(store).some((entry) => entry.startsWith(PNPM_ENTRY))
-  );
+  try {
+    return readdirSync(store).some((entry) => entry.startsWith(PNPM_ENTRY));
+  } catch {
+    return existsSync(store);
+  }
 }
 
 /** Whether a `node_modules` at or above `directory` installs interface-database, so a repository without it never builds a type-checked program for this rule. */
