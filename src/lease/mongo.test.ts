@@ -48,6 +48,14 @@ function parentOf(pid: number): string | undefined {
   return entry === undefined ? undefined : String(entry.ppid);
 }
 
+/** Kills `pid` if it still runs and waits until it has exited, so the files it holds can go. */
+async function kill(pid: number): Promise<void> {
+  if (!alive(pid)) return;
+  process.kill(pid, "SIGKILL");
+  const deadline = Date.now() + 10_000;
+  while (alive(pid) && Date.now() < deadline) await sleep(50);
+}
+
 /** Whether the process table still has an entry for `pid`, a zombie included. Windows keeps none for an exited process. */
 function inTable(pid: number): boolean {
   return process.platform === "win32"
@@ -69,9 +77,7 @@ test(
     const [row] = await statusRows(worktree, env);
     const pid = row?.mongod;
     if (pid === undefined) assert.fail("status shows no mongod for the lease");
-    cleanup(t, () => {
-      if (alive(pid)) process.kill(pid, "SIGKILL");
-    });
+    cleanup(t, () => kill(pid));
     assert.equal(await accepting(port), true);
     await leasedEnv(worktree, env);
     const [again] = await statusRows(worktree, env);
@@ -130,9 +136,7 @@ test(
     );
     const [row] = await statusRows(worktree, env);
     const pid = row?.mongod;
-    cleanup(t, () => {
-      if (pid !== undefined && alive(pid)) process.kill(pid, "SIGKILL");
-    });
+    cleanup(t, () => (pid === undefined ? undefined : kill(pid)));
     assert.deepEqual(
       outcomes.map((outcome) => outcome.code),
       Array.from({ length: 8 }, () => 0),
@@ -167,9 +171,7 @@ test(
     const [row] = await statusRows(worktree, env);
     const pid = row?.mongod;
     if (pid === undefined) assert.fail("status shows no mongod for the lease");
-    cleanup(t, () => {
-      if (alive(pid)) process.kill(pid, "SIGKILL");
-    });
+    cleanup(t, () => kill(pid));
     assert.notEqual(parentOf(pid), String(command.child.pid));
     const outcome = await lease(["down"], worktree, env);
     assert.equal(outcome.code, 0, outcome.stderr);

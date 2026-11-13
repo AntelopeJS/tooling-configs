@@ -79,7 +79,9 @@ export function cleanup(t: TestContext, step: Step): void {
 /** A fresh directory under the system tmp, by real path, removed after the test. */
 export function scratch(t: TestContext): string {
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "lease-test-")));
-  cleanup(t, () => rmSync(dir, { recursive: true, force: true }));
+  cleanup(t, () =>
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10 }),
+  );
   return dir;
 }
 
