@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
 import { read } from "../guardrails/helpers/test-repo.ts";
-import { installFake, pathWith } from "./helpers/fake-bin.ts";
+import { installNodeFake, pathWith } from "./helpers/fake-bin.ts";
 import {
   feature,
   PUBLISH_DOORS,
@@ -14,24 +14,14 @@ import {
 } from "./helpers/verify-repo.ts";
 import type { VerifyKind } from "./kinds.ts";
 
-const DOCKER = {
-  sh: `#!/bin/sh
-echo "$@" >> "$DOCKER_LOG"
-case "$1" in
-  port) echo "6379/tcp -> 127.0.0.1:41234" ;;
-  exec) echo pong ;;
-  inspect) echo true ;;
-esac
-exit 0
-`,
-  cmd: `@echo off
-echo %* >> "%DOCKER_LOG%"
-if "%1"=="port" echo 6379/tcp -^> 127.0.0.1:41234
-if "%1"=="exec" echo pong
-if "%1"=="inspect" echo true
-exit /b 0
-`,
-};
+/** A fake `docker` that logs its arguments one line per call, the same on every platform, and answers `port`, `exec` and `inspect`. */
+const DOCKER = `const fs = require("node:fs");
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.DOCKER_LOG, args.join(" ") + "\\n");
+if (args[0] === "port") process.stdout.write("6379/tcp -> 127.0.0.1:41234\\n");
+if (args[0] === "exec") process.stdout.write("pong\\n");
+if (args[0] === "inspect") process.stdout.write("true\\n");
+`;
 
 const CACHE = `{ image: "redis:7", port: 6379, ready: ["redis-cli", "ping"] }`;
 
@@ -67,7 +57,7 @@ function serviceRepo(t: TestContext, kind: VerifyKind, cache = CACHE) {
 `,
     [`${skill}/features/smoke.md`]: feature([], ["seen"]),
   });
-  installFake(join(tmp, "bin"), "docker", DOCKER);
+  installNodeFake(join(tmp, "bin"), "docker", DOCKER);
   const env = {
     PATH: pathWith(join(tmp, "bin")),
     DOCKER_LOG: join(tmp, "docker.log"),
