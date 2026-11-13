@@ -192,6 +192,7 @@
   "src/oxc/lint-tsconfig-include.test.ts": 4.2,
   "src/oxc/lint-tsconfig-types.test.ts": 3.6,
   "src/oxc/lint-type-guards.test.ts": 0.7,
+  "src/oxc/lint-unrun-query.test.ts": 7.4,
   "src/oxc/lint.test.ts": 10,
   "src/triage/triage.test.ts": 0.1,
   "src/verify/caches-git.test.ts": 0,
