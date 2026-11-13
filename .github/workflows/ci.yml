@@ -41,6 +41,7 @@ jobs:
   test:
     name: test (${{ matrix.shard }})${{ matrix.os == 'windows-latest' && ' on Windows' || '' }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

@@ -9,6 +9,7 @@ import { locateWindows } from "./exec.ts";
 import { accepting, listenerPids, listensOn } from "./ports.ts";
 import { assertSignallable } from "./procs.ts";
 import {
+  quoteWindows,
   windowsProcesses,
   windowsStart,
   windowsTerminate,
@@ -91,8 +92,6 @@ export function findMongod(env: NodeJS.ProcessEnv): string | undefined {
 
 /** The command line of `pid`, empty once the process has exited, a zombie included. */
 function commandLine(pid: number): string {
-  if (process.platform === "win32")
-    return windowsProcesses().find((entry) => entry.pid === pid)?.command ?? "";
   try {
     if (process.platform === "linux")
       return readFileSync(`/proc/${pid}/cmdline`, "utf8").replaceAll("\0", " ");
@@ -110,7 +109,8 @@ function commandLine(pid: number): string {
  * unreadable, so the command line is the only record of which process serves the dbpath.
  */
 function windowsMongod(dbpath: string): WindowsProcess | undefined {
-  return windowsProcesses().find((entry) => entry.command.includes(dbpath));
+  const argument = ` --dbpath ${quoteWindows(dbpath)} `;
+  return windowsProcesses().find((entry) => entry.command.includes(argument));
 }
 
 /**
@@ -315,7 +315,7 @@ export async function ensureMongod(
     "0.25",
   ];
   if (process.platform === "win32") {
-    windowsStart(binary, args);
+    windowsStart(binary, args, paths.dbpath);
     return ready(port, paths, () => true);
   }
   const started = spawn(binary, [...args, "--fork"], {

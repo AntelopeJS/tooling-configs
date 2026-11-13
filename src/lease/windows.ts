@@ -165,8 +165,9 @@ const SCRIPT = [
 
 const HASH = createHash("sha256").update(SOURCE).digest("hex").slice(0, 16);
 const TIMEOUT_MS = 120_000;
+const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 
-function powershell(op: string, arg: string, wait = 0): string[] {
+function powershell(op: string, arg: string, wait = 0, cwd?: string): string[] {
   const root = process.env.SystemRoot ?? "C:\\Windows";
   const output = execFileSync(
     join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
@@ -188,6 +189,8 @@ function powershell(op: string, arg: string, wait = 0): string[] {
         ANTELOPEJS_LEASE_WIN_ARG: arg,
         ANTELOPEJS_LEASE_WIN_WAIT: String(wait),
       },
+      cwd,
+      maxBuffer: MAX_OUTPUT_BYTES,
       stdio: ["ignore", "pipe", "pipe"],
       timeout: TIMEOUT_MS,
       windowsHide: true,
@@ -234,17 +237,26 @@ export function windowsTerminate(
 }
 
 /** `arg` quoted for a Windows command line, read back unchanged by the C runtime's parser. */
-function quote(arg: string): string {
+export function quoteWindows(arg: string): string {
   if (arg !== "" && !/[\s"]/u.test(arg)) return arg;
   const escaped = arg.replace(/(\\*)"/gu, '$1$1\\"').replace(/(\\+)$/u, "$1$1");
   return `"${escaped}"`;
 }
 
 /**
- * Starts `file` with `args` as a process that inherits no handle, has no console, and is no child
- * of this process, with this process's environment less the lease marker. Answers its pid.
+ * Starts `file` with `args` in `cwd` as a process that inherits no handle, has no console, and is
+ * no child of this process, with this process's environment less the lease marker. Answers its pid.
  */
-export function windowsStart(file: string, args: readonly string[]): number {
-  const [pid] = powershell("start", [file, ...args].map(quote).join(" "));
+export function windowsStart(
+  file: string,
+  args: readonly string[],
+  cwd: string,
+): number {
+  const [pid] = powershell(
+    "start",
+    [file, ...args].map(quoteWindows).join(" "),
+    0,
+    cwd,
+  );
   return Number(pid);
 }

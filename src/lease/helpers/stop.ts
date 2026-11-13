@@ -1,10 +1,16 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import type { TestContext } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { accepting } from "../ports.ts";
 import { assertSignallable, identify } from "../procs.ts";
-import { firstLine, LEASE_ARGV, startCaptured, type Started } from "./cli.ts";
+import {
+  cleanup,
+  firstLine,
+  LEASE_ARGV,
+  startCaptured,
+  type Started,
+} from "./cli.ts";
 
 /** Prints its pid, then idles. */
 export const WAITER = "console.log(process.pid); setInterval(() => {}, 1000)";
@@ -39,15 +45,17 @@ export function isLive(pid: number): boolean {
 
 /**
  * Kills `pid`, with its process group when it leads one, after the test, only while it is still
- * the process it was when this was called. On Windows it kills the one process: there are no
- * groups, and a pid cannot be told from a reused one.
+ * the process it was when this was called. On Windows, which has no groups, it kills `pid` with
+ * every process it started, so none keeps the test's pipes open.
  */
 export function reap(t: TestContext, pid: number, group: boolean): void {
   assertSignallable(pid);
   if (process.platform === "win32") {
-    t.after(() => {
+    cleanup(t, () => {
       try {
-        process.kill(pid);
+        execFileSync("taskkill", ["/pid", String(pid), "/t", "/f"], {
+          stdio: "ignore",
+        });
       } catch {
         return;
       }
@@ -55,7 +63,7 @@ export function reap(t: TestContext, pid: number, group: boolean): void {
     return;
   }
   const start = identify(pid)?.start;
-  t.after(() => {
+  cleanup(t, () => {
     if (start === undefined || identify(pid)?.start !== start) return;
     try {
       process.kill(group ? -pid : pid, "SIGKILL");

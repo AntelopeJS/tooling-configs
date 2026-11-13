@@ -6,6 +6,7 @@ import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import {
+  cleanup,
   endRun,
   envFor,
   externalEnv,
@@ -68,7 +69,7 @@ test(
     const [row] = await statusRows(worktree, env);
     const pid = row?.mongod;
     if (pid === undefined) assert.fail("status shows no mongod for the lease");
-    t.after(() => {
+    cleanup(t, () => {
       if (alive(pid)) process.kill(pid, "SIGKILL");
     });
     assert.equal(await accepting(port), true);
@@ -98,7 +99,7 @@ test(
     if (port === undefined) assert.fail("status shows no ports for the lease");
     const foreign = await claimPort(port, "127.0.0.1");
     if (foreign === undefined) assert.fail(`port ${port} is already taken`);
-    t.after(() => closeServer(foreign));
+    cleanup(t, () => closeServer(foreign));
     const outcome = await lease(["run", "--", "true"], worktree, envFor(home));
     assert.equal(outcome.code, 1);
     assert.match(
@@ -129,7 +130,7 @@ test(
     );
     const [row] = await statusRows(worktree, env);
     const pid = row?.mongod;
-    t.after(() => {
+    cleanup(t, () => {
       if (pid !== undefined && alive(pid)) process.kill(pid, "SIGKILL");
     });
     assert.deepEqual(
@@ -161,12 +162,12 @@ test(
       worktree,
       env,
     );
-    t.after(() => endRun(command));
+    cleanup(t, () => endRun(command));
     assert.equal(await firstLine(command), "ready");
     const [row] = await statusRows(worktree, env);
     const pid = row?.mongod;
     if (pid === undefined) assert.fail("status shows no mongod for the lease");
-    t.after(() => {
+    cleanup(t, () => {
       if (alive(pid)) process.kill(pid, "SIGKILL");
     });
     assert.notEqual(parentOf(pid), String(command.child.pid));

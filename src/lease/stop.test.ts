@@ -212,7 +212,10 @@ test(
     reap(t, kid, false);
     const outcome = await lease(["down", "--stop"], worktree, env);
     assert.equal(outcome.code, 0, outcome.stderr);
-    assert.deepEqual(stoppedPids(outcome.stdout), [run, kid]);
+    assert.deepEqual(
+      stoppedPids(outcome.stdout),
+      [run, kid].toSorted((a, b) => a - b),
+    );
     assert.deepEqual([run, kid].filter(isLive), []);
     assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), false);
   },
@@ -246,7 +249,10 @@ test(
     reap(t, kid, false);
     const outcome = await lease(["down", "--stop"], worktree, env);
     assert.equal(outcome.code, 0, outcome.stderr);
-    assert.deepEqual(stoppedPids(outcome.stdout), [run, kid]);
+    assert.deepEqual(
+      stoppedPids(outcome.stdout),
+      [run, kid].toSorted((a, b) => a - b),
+    );
     await started.done;
     assert.deepEqual([run, kid].filter(isLive), []);
     assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), false);
@@ -267,7 +273,10 @@ test(
     writeFileSync(join(dir, "runs", String(run)), "");
     const outcome = await lease(["down", "--stop"], worktree, env);
     assert.equal(outcome.code, 0, outcome.stderr);
-    assert.deepEqual(stoppedPids(outcome.stdout), [run, kid]);
+    assert.deepEqual(
+      stoppedPids(outcome.stdout),
+      [run, kid].toSorted((a, b) => a - b),
+    );
     await started.done;
     assert.deepEqual([run, kid].filter(isLive), []);
     assert.equal(existsSync(dir), false);
