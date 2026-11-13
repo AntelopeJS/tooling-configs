@@ -220,6 +220,7 @@ function guardrailsPreset(typeAware: boolean) {
     ],
     rules: {
       "antelopejs/no-unsafe-object-assign": typeAware ? "error" : "off",
+      "antelopejs/no-unrun-query": typeAware ? "error" : "off",
       "antelopejs/require-tsconfig-include": typeAware ? "error" : "off",
       "antelopejs/require-tsconfig-types": typeAware ? "error" : "off",
     },
