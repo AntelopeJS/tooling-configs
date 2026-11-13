@@ -39,9 +39,15 @@ export const ANTELOPE_NUXT_RULES: NuxtRules = {
   "import/first": "off",
   "import/order": "off",
 
-  /** Single-word pages are intentional; withDefaults supplies prop defaults. */
+  /**
+   * Single-word pages are intentional. The Vue 3 style guide asks no default
+   * of a type-based optional prop, whose absence can carry meaning.
+   */
   "vue/multi-word-component-names": "off",
   "vue/require-default-prop": "off",
+
+  /** A best-effort cleanup swallows its failure in an empty `catch`. */
+  "no-empty": ["error", { allowEmptyCatch: true }],
 
   /** CMS blocks and forms require structural types in the interface layer. */
   "@typescript-eslint/no-explicit-any": "off",
