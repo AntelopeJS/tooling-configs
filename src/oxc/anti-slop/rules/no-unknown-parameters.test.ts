@@ -61,6 +61,10 @@ tester.run("anti-slop/no-unknown-parameters", noUnknownParametersRule, {
 			code: "const answers = new Map<string, { resolve: (value: string) => void; reject: (reason: unknown) => void }>();",
 		},
 		"const done = new Promise<void>((resolve, fail: (reason?: unknown) => void) => { fail(new Error()); });",
+		{
+			name: "dms-mailing src/services/send.ts:162 named error helper outside .catch, exempt because String takes any value",
+			code: "const describeError = (error: unknown): string => String(error);",
+		},
 	],
 	invalid: [
 		{ code: "function parse(value: unknown): void {}", errors: [error] },
@@ -93,8 +97,8 @@ tester.run("anti-slop/no-unknown-parameters", noUnknownParametersRule, {
 			errors: [{ ...error, data: { parameter: "value" } }],
 		},
 		{
-			name: "dms-mailing src/services/send.ts:162 named error helper outside .catch",
-			code: "const describeError = (error: unknown): string => String(error);",
+			name: "a named error helper outside .catch with no return type: its name exempts nothing",
+			code: "const describeError = (error: unknown) => String(error);",
 			errors: [{ ...error, data: { parameter: "error" } }],
 		},
 		{

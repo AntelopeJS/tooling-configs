@@ -9,6 +9,8 @@ import {
   functionParameterBindingName,
   functionParameterTypeAnnotation,
 } from "../shared/function-parameters.ts";
+import { forwardsOnly } from "../shared/forward-only.ts";
+import { readsOnlyThroughGuards } from "../shared/guarded-reads.ts";
 import { decodesParameterIntoResult, type FunctionFacts, IMPLICIT_READERS } from "../shared/parse-boundary.ts";
 import { isRuntimeFunction, type RuntimeFunction } from "../shared/type-guards.ts";
 
@@ -132,7 +134,7 @@ export const noUnknownParametersRule = defineRule({
     type: "problem",
     docs: {
       description:
-        "Disallow explicitly unknown function parameters except `cause`, type-predicate subjects, `this`, request values injected by `@JSONBody`, `@JsonBody` or `@Parameter`, promise rejection reasons, the parameter of a callback type that the function only calls with a caught value, a symbol-keyed brand probe, and a parameter a function only decodes through a schema or decoder into the value it returns; decode unknown input at its I/O boundary instead.",
+        "Disallow explicitly unknown function parameters except `cause`, type-predicate subjects, `this`, request values injected by `@JSONBody`, `@JsonBody` or `@Parameter`, promise rejection reasons, the parameter of a callback type that the function only calls with a caught value, a symbol-keyed brand probe, a parameter a function only decodes through a schema or decoder into the value it returns, a parameter a function only reads through type guards, where they hold, and through `String` or `JSON.stringify`, to classify it into a declared value other than `boolean` or `void`, and a parameter a function only forwards, unread, to member calls, imports or exempt same-file parameters that take `unknown`; decode unknown input at its I/O boundary instead.",
     },
     messages: {
       unknownParameter:
@@ -141,37 +143,77 @@ export const noUnknownParametersRule = defineRule({
   },
   createOnce(context) {
     const open: { returns: ESTree.ReturnStatement[]; readsImplicitly: boolean }[] = [];
-    const checkParameters = (node: ParameterOwner, facts: FunctionFacts = NO_FACTS) => {
+    /** The checks of one file, in the order they were met. They run at its end, so a forward is judged by a function declared after it. */
+    const pending: { node: ParameterOwner; facts: FunctionFacts }[] = [];
+    const walked = new Map<RuntimeFunction, FunctionFacts>();
+    const judging = new Set<RuntimeFunction>();
+
+    const isExempt = (
+      node: ParameterOwner,
+      parameter: FunctionParameter,
+      annotated: ESTree.TSType,
+      facts: FunctionFacts,
+    ): boolean => {
+      const { sourceCode } = context;
+      if (isExemptPosition(node, parameter, sourceCode)) return true;
+      const name = functionParameterBindingName(parameter, sourceCode);
+      if (name === "cause" || isTypePredicateSubject(node, name)) return true;
+      if (!isRuntimeFunction(node)) return false;
+      return (
+        decodesParameterIntoResult(node, name, annotated, facts, sourceCode) ||
+        probesBrand(node, name, annotated, facts, sourceCode) ||
+        readsOnlyThroughGuards(node, name, annotated, facts, sourceCode) ||
+        forwardsOnly(node, name, annotated, facts, { sourceCode, accepts: acceptsForward })
+      );
+    };
+
+    /** Return whether this rule exempts the parameter at `position` of a function the file declares, so a forward to it hands the value to a parser. */
+    const acceptsForward = (callee: RuntimeFunction, position: number): boolean => {
+      const parameter = callee.params[position];
+      const annotation = parameter === undefined ? null : functionParameterTypeAnnotation(parameter);
+      const facts = walked.get(callee);
+      if (parameter === undefined || annotation === null || annotation === undefined || facts === undefined) return false;
+      if (judging.has(callee)) return false;
+      judging.add(callee);
+      const exempt = isExempt(callee, parameter, annotation.typeAnnotation, facts);
+      judging.delete(callee);
+      return exempt;
+    };
+
+    const checkParameters = (node: ParameterOwner, facts: FunctionFacts) => {
       for (const parameter of node.params) {
         const annotation = functionParameterTypeAnnotation(parameter);
         if (annotation === null || annotation === undefined) continue;
         if (!containsUnknownType(annotation.typeAnnotation)) continue;
-        if (isExemptPosition(node, parameter, context.sourceCode)) continue;
-        const name = functionParameterBindingName(parameter, context.sourceCode);
-        if (name === "cause" || isTypePredicateSubject(node, name)) continue;
-        if (
-          isRuntimeFunction(node) &&
-          decodesParameterIntoResult(node, name, annotation.typeAnnotation, facts, context.sourceCode)
-        ) {
-          continue;
-        }
-        if (isRuntimeFunction(node) && probesBrand(node, name, annotation.typeAnnotation, facts, context.sourceCode)) continue;
+        if (isExempt(node, parameter, annotation.typeAnnotation, facts)) continue;
         context.report({
           node: annotation.typeAnnotation,
           messageId: "unknownParameter",
-          data: { parameter: name },
+          data: { parameter: functionParameterBindingName(parameter, context.sourceCode) },
         });
       }
     };
 
+    const checkSignature = (node: ParameterOwner) => {
+      pending.push({ node, facts: NO_FACTS });
+    };
     const enterFunction = () => {
       open.push({ returns: [], readsImplicitly: false });
     };
     const leaveFunction = (node: RuntimeFunction) => {
-      checkParameters(node, open.pop());
+      const facts = open.pop() ?? NO_FACTS;
+      walked.set(node, facts);
+      pending.push({ node, facts });
     };
 
     return {
+      Program() {
+        pending.length = 0;
+        walked.clear();
+      },
+      "Program:exit"() {
+        for (const { node, facts } of pending) checkParameters(node, facts);
+      },
       ArrowFunctionExpression: enterFunction,
       FunctionDeclaration: enterFunction,
       FunctionExpression: enterFunction,
@@ -185,13 +227,13 @@ export const noUnknownParametersRule = defineRule({
         if (!IMPLICIT_READERS.has(node.name)) return;
         for (const frame of open) frame.readsImplicitly = true;
       },
-      TSCallSignatureDeclaration: checkParameters,
-      TSConstructSignatureDeclaration: checkParameters,
-      TSConstructorType: checkParameters,
-      TSDeclareFunction: checkParameters,
-      TSEmptyBodyFunctionExpression: checkParameters,
-      TSFunctionType: checkParameters,
-      TSMethodSignature: checkParameters,
+      TSCallSignatureDeclaration: checkSignature,
+      TSConstructSignatureDeclaration: checkSignature,
+      TSConstructorType: checkSignature,
+      TSDeclareFunction: checkSignature,
+      TSEmptyBodyFunctionExpression: checkSignature,
+      TSFunctionType: checkSignature,
+      TSMethodSignature: checkSignature,
     };
   },
 });
