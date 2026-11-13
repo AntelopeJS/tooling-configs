@@ -26,7 +26,7 @@ const INTERFACE: KindText = {
   - a plain function runs the \`interface.calls\` hook of \`verify.config.ts\` and must return its \`expect\`; one only providers call is listed in \`interface.providerSide\` with why.
   A declared function with none of these fails the journey.
 - \`minor-bump\`: reads the declared functions of the packed head and of the published version (\`npm pack <name>@<latest>\`). An added, changed or removed function needs a release of at least the next minor. The release is the head version when it is already bumped, otherwise what changelogen makes of the change title (\`new --title\`) or the commit subjects since the base.`,
-  layer: `- \`services\`: image, port, readiness command and a \`reset\` command run before every journey, as for a module. \`new\` starts them in Docker on free ports; a journey reads them with \`context.service(name)\` and \`context.native(...)\`.
+  layer: `- \`services\`: image, port, optional \`args\`, readiness command and a \`reset\` command run before every journey, as for a module. \`new\` starts them in Docker on free ports; a journey reads them with \`context.service(name)\` and \`context.native(...)\`.
 - \`interface.provide(api, services)\` runs in the stub provider after the generic stubs attach, for example to hand a client pointed at \`services\` to \`internal.SetClient\`.
 - \`interface.calls["<entry>:<path>"]\` calls a plain exported function from the consumer and states the value it must return.
 - \`interface.providerSide["<entry>:<path>"]\` names a function only providers call, with the reason.`,
@@ -46,7 +46,7 @@ const MODULE: KindText = {
     "`new` runs the setup (`pnpm run build` by default), then starts every `services` entry of `verify.config.ts` in its own Docker container on a free loopback port, named `<prefix>-<repo>-<service>-<run>` (`VERIFY_CONTAINER_PREFIX`, default `verify`), and waits for each readiness command. A provider with sandbox keys in `saas.env` records the missing ones.",
   builtins:
     "- `module-dev`: a fixture project installs the module as `local` with `moduleConfig(services)` as its config, plus the `companions(services)` modules and a consumer module. `ajs project dev` must answer, the consumer must load every implemented interface, Ctrl+C must exit 130 and the port must refuse afterwards.",
-  layer: `- \`services\`: image, port, readiness command and a \`reset\` command run before every journey, so each starts from a clean state.
+  layer: `- \`services\`: image, port, readiness command and a \`reset\` command run before every journey, so each starts from a clean state. Optional \`args\` follow the image in \`docker run\` in place of its default command, such as \`["--performance-schema=ON", "--log-bin"]\` for MariaDB's server.
 - \`moduleConfig(services)\`: the module's configuration, pointing at the run's containers.
 - \`companions(services)\`: other modules the fixture project loads, keyed by name, each a \`source\` and an optional \`config\` as in \`antelope.config.ts\`. Add the provider of every interface the module imports that it does not implement, such as \`@antelopejs/api\` for \`@antelopejs/interface-api\`, or the module never finishes starting.
 - \`saas: { env, sandbox }\`: a SaaS module runs against the provider's sandbox with keys from these environment variables. Without every key, each journey is NOT VERIFIED and so is the verdict, never PASS or PASS+NOTES.
@@ -73,7 +73,7 @@ Both take their project from \`context.prepared("scaffolded", ...)\`, so the run
   layer: `- \`template.name\`: the listing name users pass to \`--template\`.
 - \`template.project\`: list it under \`projectTemplates\`.
 - \`template.module\`: a module template, listed under \`templates\` and created with \`ajs module init\`; it excludes \`template.project\`.
-- \`services\`: image, port, readiness command and \`reset\`, as for a module. \`new\` starts them in Docker on free ports; a journey reads them with \`context.service(name)\` and \`context.native(...)\` and passes their endpoints to the project it starts through the \`env\` of \`context.dev\`.
+- \`services\`: image, port, optional \`args\`, readiness command and \`reset\`, as for a module. \`new\` starts them in Docker on free ports; a journey reads them with \`context.service(name)\` and \`context.native(...)\` and passes their endpoints to the project it starts through the \`env\` of \`context.dev\`.
 - \`context.dev(name, project, { command })\`: a template that is not an \`ajs\` project starts with its own command, such as \`["node", "ace", "serve"]\`, in place of \`ajs project dev\`. The harness records its PID, so \`context.stop\` and \`clean\` stop it, and \`template.probe\` decides when it is ready. Leave \`scaffold-dev\` and \`scaffold-checks\` out of its features: both run \`ajs\`.
 - \`template.probe\`: \`path\`, \`status\` and \`body\` for an HTTP welcome page or endpoint, or \`log\` and \`settleMs\` for a template that serves nothing.`,
   smoke:
