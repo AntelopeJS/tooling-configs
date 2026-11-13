@@ -56,10 +56,25 @@ type StaleReason = "missing" | "recreated";
  * such as EACCES under a parent with mode 000 or EPERM where an ACL denies the worktree, is
  * `unreadable`, with its error code: the checkout may still exist, so its lease is kept.
  */
-type GitProbe =
+export type GitProbe =
   | { readonly kind: "present"; readonly identity: GitIdentity }
   | { readonly kind: "gone" }
   | { readonly kind: "unreadable"; readonly code: string };
+
+/** The two filesystem reads {@link probeGit} makes, so a test can make either refuse. */
+export interface GitProbeFs {
+  readonly readdir: (path: string) => void;
+  readonly stat: (
+    path: string,
+  ) => { ino: number; birthtimeMs: number } | undefined;
+}
+
+const NODE_FS: GitProbeFs = {
+  readdir: (path) => {
+    readdirSync(path);
+  },
+  stat: (path) => statSync(path, { throwIfNoEntry: false }),
+};
 
 /**
  * Where a lease stands. `orphaned` is a stale lease whose api or web port still accepts: its block
@@ -130,10 +145,11 @@ export function leaseState(
   return { kind: facts.serving ? "orphaned" : "stale", reason };
 }
 
-function probeGit(worktree: string): GitProbe {
+/** Lists `worktree`, then stats its `.git`, and reports what the two reads found. */
+export function probeGit(worktree: string, fs: GitProbeFs = NODE_FS): GitProbe {
   try {
-    readdirSync(worktree);
-    const stat = statSync(join(worktree, ".git"), { throwIfNoEntry: false });
+    fs.readdir(worktree);
+    const stat = fs.stat(join(worktree, ".git"));
     if (stat === undefined) return { kind: "gone" };
     return {
       kind: "present",

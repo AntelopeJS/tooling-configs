@@ -3,7 +3,12 @@ import test from "node:test";
 
 import type { ParsedRecord } from "./protocol.ts";
 import { leaseId } from "./protocol.ts";
-import { leaseState, type LeaseFacts } from "./registry.ts";
+import {
+  leaseState,
+  probeGit,
+  type GitProbeFs,
+  type LeaseFacts,
+} from "./registry.ts";
 
 const BIRTH = 1_700_000_000_000.25;
 const record: ParsedRecord = {
@@ -78,4 +83,38 @@ test("leaseState keeps a lease whose .git entry cannot be read as unreadable, ne
       label(record, { git: { kind: "unreadable", code: "EACCES" }, serving }),
       "unreadable:EACCES",
     );
+});
+
+function refusing(code: string): () => never {
+  return () => {
+    throw Object.assign(new Error(code), { code });
+  };
+}
+
+const PRESENT = { ino: 7, birthtimeMs: BIRTH };
+
+test("probeGit reads a worktree it cannot list as unreadable with the code, one that no longer exists as gone, and a listed one by its .git identity; a probe that only stats .git calls a denied Windows worktree present", () => {
+  const probe = (fs: GitProbeFs) => probeGit("/work/dms", fs);
+  assert.deepEqual(
+    ["EPERM", "EACCES", "ENOENT", "ENOTDIR"].map((code) =>
+      probe({ readdir: refusing(code), stat: () => PRESENT }),
+    ),
+    [
+      { kind: "unreadable", code: "EPERM" },
+      { kind: "unreadable", code: "EACCES" },
+      { kind: "gone" },
+      { kind: "gone" },
+    ],
+  );
+  assert.deepEqual(probe({ readdir: () => {}, stat: () => PRESENT }), {
+    kind: "present",
+    identity: { inode: 7, birth: BIRTH },
+  });
+  assert.deepEqual(probe({ readdir: () => {}, stat: () => undefined }), {
+    kind: "gone",
+  });
+  assert.deepEqual(probe({ readdir: () => {}, stat: refusing("EACCES") }), {
+    kind: "unreadable",
+    code: "EACCES",
+  });
 });
