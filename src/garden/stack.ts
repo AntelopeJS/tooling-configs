@@ -10,6 +10,7 @@ const MODULES = new Set([
   "mollie",
   "mongodb",
   "mqtt",
+  "mysql",
   "nodemailer",
   "payment-subscriptions",
   "postgres",

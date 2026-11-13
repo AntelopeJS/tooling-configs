@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { runsOnWindows } from "./workflow-windows.ts";
+import { runsOnWindows, windowsByDefault } from "./workflow-windows.ts";
 import { windowsCi } from "./checks/windows.ts";
 import { CALLER } from "./helpers/builders.ts";
 import { FakeApi } from "./helpers/fake-api.ts";
@@ -12,6 +12,11 @@ const WINDOWS_CALLER = CALLER.replace(
   "      renovate-sync: false",
   "      renovate-sync: false\n      windows: true",
 );
+
+const ciNode = (fallback: boolean) =>
+  `on:\n  workflow_call:\n    inputs:\n      windows:\n        default: ${fallback}\n        type: boolean\njobs: {}\n`;
+
+const pre48 = (text: string) => runsOnWindows(text, async () => false);
 
 function keys(result: CheckResult): string[] {
   assert.equal(result.kind, "findings");
@@ -27,6 +32,7 @@ test("the stack is the framework, its interfaces, modules, file storages and tem
     "interface-core",
     "api",
     "rethinkdb",
+    "mysql",
     "file-storage-s3",
     "template-dms",
     "dms",
@@ -42,7 +48,6 @@ test("the stack is the framework, its interfaces, modules, file storages and tem
     "video-kit",
     "agent-skills",
     "interfaces",
-    "mysql",
     ".github",
   ];
   assert.deepEqual(
@@ -52,31 +57,31 @@ test("the stack is the framework, its interfaces, modules, file storages and tem
   assert.deepEqual(outside.filter(isStackRepo), []);
 });
 
-test("a workflow runs on Windows through a ci-node.yml caller with windows: true, a windows runs-on, or a windows entry in the matrix runs-on reads", () => {
-  assert.equal(runsOnWindows(WINDOWS_CALLER), true);
-  assert.equal(runsOnWindows(CALLER), false);
+test("a workflow runs on Windows through a ci-node.yml caller with windows: true, a windows runs-on, or a windows entry in the matrix runs-on reads", async () => {
+  assert.equal(await pre48(WINDOWS_CALLER), true);
+  assert.equal(await pre48(CALLER), false);
   assert.equal(
-    runsOnWindows(
+    await pre48(
       "on: push\njobs:\n  t:\n    runs-on: windows-latest\n    steps: []\n",
     ),
     true,
   );
   assert.equal(
-    runsOnWindows(
+    await pre48(
       "on: push\njobs:\n  t:\n    runs-on: ${{ matrix.os }}\n    strategy:\n      matrix:\n        os: [ubuntu-latest, windows-latest]\n    steps: []\n",
     ),
     true,
   );
   assert.equal(
-    runsOnWindows(
+    await pre48(
       "on: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    strategy:\n      matrix:\n        target: [windows-latest]\n    steps: []\n",
     ),
     false,
   );
-  assert.equal(runsOnWindows("jobs: ["), false);
+  assert.equal(await pre48("jobs: ["), false);
 });
 
-test("a Windows leg counts only when it runs: an excluded matrix value, another matrix key, a release-only workflow and an if: false job do not; anchors, merge keys, label case and expressions do", () => {
+test("a Windows leg counts only when it runs: an excluded matrix value, another matrix key, a release-only workflow and an if: false job do not; anchors, merge keys, label case and expressions do", async () => {
   const job = (body: string, on = "pull_request") =>
     `on: ${on}\njobs:\n  t:\n${body}    steps: []\n`;
   const matrix = (os: string, extra = "") =>
@@ -85,19 +90,17 @@ test("a Windows leg counts only when it runs: an excluded matrix value, another 
     );
   assert.deepEqual(
     {
-      excluded: runsOnWindows(
+      excluded: await pre48(
         matrix(
           "[ubuntu-latest, windows-latest]",
           "        exclude:\n          - os: windows-latest\n",
         ),
       ),
-      otherKey: runsOnWindows(
+      otherKey: await pre48(
         matrix("[ubuntu-latest]", "        label: [windows-latest]\n"),
       ),
-      releaseOnly: runsOnWindows(
-        job("    runs-on: windows-latest\n", "release"),
-      ),
-      disabled: runsOnWindows(
+      releaseOnly: await pre48(job("    runs-on: windows-latest\n", "release")),
+      disabled: await pre48(
         job("    if: false\n    runs-on: windows-latest\n"),
       ),
     },
@@ -105,20 +108,20 @@ test("a Windows leg counts only when it runs: an excluded matrix value, another 
   );
   assert.deepEqual(
     {
-      alias: runsOnWindows(
+      alias: await pre48(
         `x-os: &os windows-latest\non: push\njobs:\n  t:\n    runs-on: *os\n    steps: []\n`,
       ),
-      merge: runsOnWindows(
+      merge: await pre48(
         `x-base: &base\n  runs-on: windows-latest\non: push\njobs:\n  t:\n    <<: *base\n    steps: []\n`,
       ),
-      capitalised: runsOnWindows(job("    runs-on: Windows-2022\n")),
-      selfHosted: runsOnWindows(
+      capitalised: await pre48(job("    runs-on: Windows-2022\n")),
+      selfHosted: await pre48(
         job("    runs-on: [self-hosted, windows, x64]\n"),
       ),
-      expression: runsOnWindows(
+      expression: await pre48(
         job(`    runs-on: \${{ fromJSON('["windows-latest"]') }}\n`),
       ),
-      callerExpression: runsOnWindows(
+      callerExpression: await pre48(
         WINDOWS_CALLER.replace("windows: true", "windows: ${{ true }}"),
       ),
     },
@@ -151,4 +154,51 @@ test("windows-ci reports each stack repository with no Windows job, and skips re
     "mongodb|windows-ci|windows",
     "template-dms|windows-ci|windows",
   ]);
+});
+
+test("a ci-node.yml caller with no windows input follows the windows default of the ci-node.yml at its ref, and an explicit false wins over a true default", async () => {
+  const refs: string[] = [];
+  const post48 = async (ref: string) => {
+    refs.push(ref);
+    return true;
+  };
+  const optedOut = WINDOWS_CALLER.replace("windows: true", "windows: false");
+  assert.deepEqual(
+    {
+      pre48: await pre48(CALLER),
+      post48: await runsOnWindows(CALLER, post48),
+      optedOut: await runsOnWindows(optedOut, post48),
+    },
+    { pre48: false, post48: true, optedOut: false },
+  );
+  assert.deepEqual(refs, ["v1"]);
+  assert.deepEqual(
+    [windowsByDefault(ciNode(true)), windowsByDefault(ciNode(false))],
+    [true, false],
+  );
+});
+
+test("windows-ci counts a caller with no windows input as running on Windows only while ci-node.yml@v1 defaults windows to true", async () => {
+  const optedOut = WINDOWS_CALLER.replace("windows: true", "windows: false");
+  const reported = async (fallback: boolean) =>
+    keys(
+      await windowsCi.run(
+        new FakeApi()
+          .org([{ name: ".github" }, { name: "mongodb" }, { name: "redis" }])
+          .file(
+            "/repos/AntelopeJS/.github/contents/.github/workflows/ci-node.yml?ref=v1",
+            ciNode(fallback),
+          )
+          .repo("mongodb", { ".github/workflows/ci.yml": CALLER })
+          .repo("redis", { ".github/workflows/ci.yml": optedOut })
+          .context(),
+      ),
+    );
+  assert.deepEqual(
+    { pre48: await reported(false), post48: await reported(true) },
+    {
+      pre48: ["mongodb|windows-ci|windows", "redis|windows-ci|windows"],
+      post48: ["redis|windows-ci|windows"],
+    },
+  );
 });

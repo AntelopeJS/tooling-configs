@@ -8,7 +8,8 @@ import {
   type JsonValue,
 } from "./json.ts";
 
-const CI_NODE = /^AntelopeJS\/\.github\/\.github\/workflows\/ci-node\.yml@\S+$/;
+const CI_NODE =
+  /^AntelopeJS\/\.github\/\.github\/workflows\/ci-node\.yml@(\S+)$/;
 const CI_EVENTS = new Set([
   "pull_request",
   "pull_request_target",
@@ -42,6 +43,13 @@ function texts(value: JsonValue): string[] {
 
 function own(source: JsonObject, key: string): JsonValue {
   return Object.hasOwn(source, key) ? source[key] : null;
+}
+
+function at(value: JsonValue, keys: readonly string[]): JsonValue {
+  return keys.reduce<JsonValue>(
+    (node, key) => (node !== null && isObject(node) ? own(node, key) : null),
+    value,
+  );
 }
 
 function triggers(on: JsonValue): string[] {
@@ -85,34 +93,53 @@ function runnerIsWindows(job: JsonObject): boolean {
     .some((key) => legs(matrix, key).some((value) => WINDOWS.test(value)));
 }
 
-function jobRunsOnWindows(job: JsonObject): boolean {
+async function jobRunsOnWindows(
+  job: JsonObject,
+  windowsDefault: (ref: string) => Promise<boolean>,
+): Promise<boolean> {
   const condition = own(job, "if");
   if (condition === false || (isString(condition) && NEVER.test(condition)))
     return false;
   const uses = own(job, "uses");
-  if (isString(uses) && CI_NODE.test(uses)) {
-    const inputs = own(job, "with");
-    const windows =
-      inputs !== null && isObject(inputs) ? own(inputs, "windows") : null;
-    return windows === true || (isString(windows) && ALWAYS.test(windows));
-  }
-  return runnerIsWindows(job);
+  const ref = isString(uses) ? CI_NODE.exec(uses)?.[1] : undefined;
+  if (ref === undefined) return runnerIsWindows(job);
+  const windows = at(job, ["with", "windows"]);
+  if (windows === null) return windowsDefault(ref);
+  return windows === true || (isString(windows) && ALWAYS.test(windows));
+}
+
+/** Whether a ci-node.yml, given as its text, defaults its `windows` input to true. False when the YAML does not parse. */
+export function windowsByDefault(ciNode: string): boolean {
+  const parsed = workflow(ciNode);
+  return (
+    parsed !== undefined &&
+    at(parsed, ["on", "workflow_call", "inputs", "windows", "default"]) === true
+  );
 }
 
 /**
  * Whether a workflow file runs a job on Windows for pull requests or pushes: a ci-node.yml caller with
- * `windows: true`, or a job whose `runs-on`, or the matrix value it reads, names a Windows runner. A workflow
- * on other events only, a job whose `if` is false, and matrix values `exclude` drops do not count. False when
- * the YAML does not parse.
+ * `windows: true`, or with no `windows` input when `windowsDefault` says the ci-node.yml at the caller's ref
+ * defaults it to true, or a job whose `runs-on`, or the matrix value it reads, names a Windows runner. A
+ * workflow on other events only, a job whose `if` is false, and matrix values `exclude` drops do not count.
+ * False when the YAML does not parse.
  */
-export function runsOnWindows(text: string): boolean {
+export async function runsOnWindows(
+  text: string,
+  windowsDefault: (ref: string) => Promise<boolean>,
+): Promise<boolean> {
   const parsed = workflow(text);
   if (parsed === undefined) return false;
   if (!triggers(own(parsed, "on")).some((event) => CI_EVENTS.has(event)))
     return false;
   const jobs = own(parsed, "jobs");
   if (jobs === null || !isObject(jobs)) return false;
-  return Object.values(jobs).some(
-    (job) => job !== null && isObject(job) && jobRunsOnWindows(job),
-  );
+  for (const job of Object.values(jobs))
+    if (
+      job !== null &&
+      isObject(job) &&
+      (await jobRunsOnWindows(job, windowsDefault))
+    )
+      return true;
+  return false;
 }
