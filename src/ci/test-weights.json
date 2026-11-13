@@ -1,4 +1,5 @@
 {
+  "src/base-to-string.test.ts": 4.1,
   "src/capture/browser.test.ts": 0.6,
   "src/capture/built.test.ts": 0,
   "src/capture/compare.test.ts": 0,
@@ -175,6 +176,7 @@
   "src/oxc/lint-hidden-any.test.ts": 3.2,
   "src/oxc/lint-object-assign.test.ts": 8.8,
   "src/oxc/lint-synced-skills.test.ts": 2.7,
+  "src/oxc/lint-test-thenable.test.ts": 0.6,
   "src/oxc/lint-tsconfig-include.test.ts": 3.8,
   "src/oxc/lint-tsconfig-types.test.ts": 3.2,
   "src/oxc/lint-type-guards.test.ts": 0.7,
