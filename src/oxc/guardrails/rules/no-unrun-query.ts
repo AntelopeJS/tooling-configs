@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { defineRule } from "@oxlint/plugins";
 import ts from "@typescript/typescript6";
@@ -13,15 +13,27 @@ const PACKAGE = "node_modules/@antelopejs/interface-database";
 const INTERFACE_DATABASE = `/${PACKAGE}/`;
 const PROMISE_CALLBACK_METHODS = new Set(["then", "catch", "finally"]);
 
+const PNPM_ENTRY = "@antelopejs+interface-database@";
+
 const installs = new Map<string, boolean>();
 
-/** Whether a `node_modules` at or above `directory` holds interface-database, so a repository without it never builds a type-checked program for this rule. */
+/** Whether `directory` installs interface-database: linked at `node_modules/@antelopejs`, or only in pnpm's store as a transitive dependency. */
+function installedIn(directory: string): boolean {
+  if (existsSync(join(directory, PACKAGE))) return true;
+  const store = join(directory, "node_modules/.pnpm");
+  return (
+    existsSync(store) &&
+    readdirSync(store).some((entry) => entry.startsWith(PNPM_ENTRY))
+  );
+}
+
+/** Whether a `node_modules` at or above `directory` installs interface-database, so a repository without it never builds a type-checked program for this rule. */
 function installsInterfaceDatabase(directory: string): boolean {
   const known = installs.get(directory);
   if (known !== undefined) return known;
   const parent = dirname(directory);
   const found =
-    existsSync(join(directory, PACKAGE)) ||
+    installedIn(directory) ||
     (parent !== directory && installsInterfaceDatabase(parent));
   installs.set(directory, found);
   return found;

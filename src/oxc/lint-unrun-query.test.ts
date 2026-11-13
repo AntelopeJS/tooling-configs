@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdirSync, symlinkSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -20,22 +20,54 @@ const NOVELS = `import type { Table } from "@antelopejs/interface-database";
 export declare const novels: Table<{ title: string }>;
 `;
 
-function reported(source: string): number[] {
+type Project = ReturnType<typeof lintProject>;
+
+function link(project: Project, target: string, path: string): void {
+  mkdirSync(dirname(join(project.root, path)), { recursive: true });
+  symlinkSync(target, join(project.root, path));
+}
+
+/** A direct dependency, linked at `node_modules/@antelopejs/interface-database`. */
+function direct(project: Project): void {
+  project.write("src/novels.ts", NOVELS);
+  link(
+    project,
+    interfaceDatabase,
+    "node_modules/@antelopejs/interface-database",
+  );
+}
+
+/** pnpm's layout when only `@acme/tables` depends on interface-database: the package sits in the store, never at `node_modules/@antelopejs`. */
+function transitive(project: Project): void {
+  const tables = "node_modules/.pnpm/@acme+tables@1.0.0/node_modules";
+  project.write(
+    `${tables}/@acme/tables/package.json`,
+    JSON.stringify({ name: "@acme/tables", types: "index.d.ts" }),
+  );
+  project.write(`${tables}/@acme/tables/index.d.ts`, NOVELS);
+  link(project, interfaceDatabase, `${tables}/@antelopejs/interface-database`);
+  link(
+    project,
+    interfaceDatabase,
+    "node_modules/.pnpm/@antelopejs+interface-database@0.4.0/node_modules/@antelopejs/interface-database",
+  );
+  link(
+    project,
+    join(project.root, tables, "@acme/tables"),
+    "node_modules/@acme/tables",
+  );
+  project.write("src/novels.ts", `export { novels } from "@acme/tables";\n`);
+}
+
+function reported(source: string, install = direct): number[] {
   const project = lintProject(true);
   try {
     project.write(
       "package.json",
       JSON.stringify({ name: "consumer", type: "module" }),
     );
-    project.write("src/novels.ts", NOVELS);
     project.write("src/count.ts", source);
-    mkdirSync(join(project.root, "node_modules/@antelopejs"), {
-      recursive: true,
-    });
-    symlinkSync(
-      interfaceDatabase,
-      join(project.root, "node_modules/@antelopejs/interface-database"),
-    );
+    install(project);
     const { diagnostics } = project.run();
     return diagnostics
       .filter((diagnostic: { code: string }) => diagnostic.code === RULE)
@@ -62,17 +94,18 @@ export const maybe = async (fresh: boolean) => (fresh ? novels.count() : null);
   );
 });
 
-test("a then or catch callback that returns an unrun interface-database query is reported", () => {
+test("a then, catch or finally callback that returns an unrun interface-database query is reported", () => {
   assert.deepEqual(
     reported(`import { novels } from "./novels.ts";
 
 export const counted = Promise.resolve().then(() => novels.count());
 export const recovered = Promise.resolve().catch(() => novels.count());
+export const settled = Promise.resolve().finally(() => novels.count());
 export const total = Promise.resolve().then(function () {
   return novels.count();
 });
 `),
-    [3, 4, 6],
+    [3, 4, 5, 7],
   );
 });
 
@@ -84,6 +117,10 @@ export const count = async () => novels.count().run();
 export const counted = Promise.resolve().then(() => novels.count().run());
 export const countQuery = () => novels.count();
 export const counts = async () => [1].map(() => novels.count());
+export const listed = async () =>
+  [1].map(() => {
+    return novels.count();
+  });
 class Job {
   run(): Promise<void> {
     return Promise.resolve();
@@ -92,5 +129,18 @@ class Job {
 export const job = async () => new Job();
 `),
     [],
+  );
+});
+
+test("an unrun query is reported where interface-database is only a transitive dependency in pnpm's store", () => {
+  assert.deepEqual(
+    reported(
+      `import { novels } from "./novels.ts";
+
+export const count = async () => novels.count();
+`,
+      transitive,
+    ),
+    [3],
   );
 });
