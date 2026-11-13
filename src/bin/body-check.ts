@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
 import { checkBody, findingsBlock } from "../guardrails/body-check.ts";
+import { formatFindings } from "../guardrails/body-findings.ts";
 import { runCli } from "../guardrails/cli.ts";
 import { repositoryRoot, resolveRevision } from "../guardrails/files.ts";
 
@@ -32,8 +33,13 @@ runCli(() => {
   const { base, body, findings, head } = parse(process.argv.slice(2));
   const root = repositoryRoot();
   if (findings) {
-    process.stdout.write(findingsBlock(root));
-    return 0;
+    try {
+      process.stdout.write(findingsBlock(root));
+      return 0;
+    } catch (error) {
+      process.stdout.write(formatFindings([]));
+      throw error;
+    }
   }
   const current = resolveRevision(root, "HEAD");
   if (head !== undefined && head !== current)

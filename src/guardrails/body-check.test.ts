@@ -448,3 +448,28 @@ test("body-check --findings prints a block that passes once each reason is given
   assert.equal(other.status, 1);
   assert.match(other.stderr, /check out the pull request head/);
 });
+
+test("dms-marketing#74c3ccb: body-check --findings prints an empty block and the lint error when oxlint prints an error in place of its report", (t) => {
+  const root = testRepo(t);
+  linkOxlint(root);
+  put(
+    root,
+    ".oxlintrc.json",
+    JSON.stringify({
+      plugins: ["typescript"],
+      options: { typeAware: true },
+      rules: { "typescript/no-unnecessary-type-assertion": "error" },
+    }),
+  );
+  put(root, "tsconfig.json", '{ "include": ["src"] }\n');
+  put(root, "src/value.ts", "export const value = 1 as number;\n");
+  const printed = bin(root, "body-check", ["--findings"], {
+    OXLINT_TSGOLINT_PATH: process.execPath,
+  });
+  assert.match(
+    printed.stdout,
+    /^<!-- antelopejs-findings begin -->\n+<!-- antelopejs-findings end -->\n$/u,
+  );
+  assert.match(printed.stderr, /Error running tsgolint/);
+  assert.equal(printed.status, 1);
+});
