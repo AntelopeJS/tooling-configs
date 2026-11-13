@@ -309,12 +309,13 @@ function isUnknownArray(type: ESTree.TSType): boolean {
 }
 
 /**
- * Return whether a read is recast: wrapped in `as`, `<T>`, `satisfies` or `!`, or held in a `let`, a `var`, or a `const`
- * annotated with a type other than `unknown[]`. TypeScript lets an `object` into a type whose members are all optional
- * without checking one of them, so such an annotation is a cast.
+ * Return whether a read is recast: wrapped in `as`, `<T>`, `satisfies` or `!`, directly or around the `?:`, `&&`, `||`,
+ * `??` or `await` it flows out through, or held in a `let`, a `var`, or a `const` annotated with a type other than
+ * `unknown[]`. TypeScript lets an `object` into a type whose members are all optional without checking one of them, so such
+ * an annotation is a cast.
  */
 function isRecast(read: Name): boolean {
-	if (CASTS.has(read.parent.type)) return true;
+	if (CASTS.has(read.parent.type) || CASTS.has(outflowOf(read).parent?.type ?? "")) return true;
 	const declarator = declaratorHolding(read);
 	if (declarator === null) return false;
 	const declared = declarator.id.typeAnnotation?.typeAnnotation;
@@ -322,9 +323,13 @@ function isRecast(read: Name): boolean {
 	return declaration.type !== "VariableDeclaration" || declaration.kind !== "const" || (declared !== undefined && !isUnknownArray(declared));
 }
 
+/** Union members that leave a verdict a verdict: `boolean | undefined` still answers yes, no or nothing. */
+const NO_ANSWER_TYPES: ReadonlySet<string> = new Set(["TSUndefinedKeyword", "TSNullKeyword", "TSVoidKeyword"]);
+
 /**
  * Return whether a declared return type answers yes or no about the input rather than hand back a value parsed from it:
- * `boolean`, `true` or `false`, a type predicate or `asserts` clause on any parameter, or a union of them.
+ * `boolean`, `true` or `false`, a type predicate or `asserts` clause on any parameter, or a union of them, also with
+ * `undefined`, `null` or `void`.
  */
 export function answersVerdict(type: ESTree.TSType): boolean {
 	switch (type.type) {
@@ -334,7 +339,7 @@ export function answersVerdict(type: ESTree.TSType): boolean {
 		case "TSLiteralType":
 			return type.literal.type === "Literal" && typeof type.literal.value === "boolean";
 		case "TSUnionType":
-			return type.types.every(answersVerdict);
+			return type.types.some(answersVerdict) && type.types.every((member) => answersVerdict(member) || NO_ANSWER_TYPES.has(member.type));
 		case "TSParenthesizedType":
 			return answersVerdict(type.typeAnnotation);
 		default:
@@ -385,7 +390,9 @@ export function readsOnlyThroughGuards(
 ): boolean {
 	const identifiers = handsBackParsedValue(owner) ? unknownParameterReads(owner, name, annotated, facts, sourceCode) : null;
 	if (identifiers === null) return false;
-	const position = owner.params.findIndex((parameter) => functionParameterBindingName(parameter, sourceCode) === name);
+	const position = owner.params
+		.filter((parameter) => parameter.type !== "Identifier" || parameter.name !== "this")
+		.findIndex((parameter) => functionParameterBindingName(parameter, sourceCode) === name);
 	const reads: ParameterReads = { owner, position, references: new Set(identifiers), sourceCode };
 	return (
 		identifiers.some((read) => isTypeTestOperand(read, reads) || isTotalStringConversion(read, reads)) &&

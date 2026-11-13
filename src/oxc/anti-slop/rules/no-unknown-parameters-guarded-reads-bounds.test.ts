@@ -31,6 +31,10 @@ tester.run("anti-slop/no-unknown-parameters at the bounds of a guard-only classi
 			name: "a narrowed read in an object-literal method after an exiting guard: fails one that stops narrowing at every nested function",
 			code: `${GUARDS}function size(value: unknown): number { if (!isString(value)) return 0; const view = { length() { return value.length; } }; return view.length(); }`,
 		},
+		{
+			name: "recursion in a function with a this parameter: fails one that counts the this parameter in the argument position",
+			code: "function label(this: void, value: unknown, deep: boolean): string { if (typeof value === 'string') return value; if (deep) return label(value, false); return JSON.stringify(value); }",
+		},
 	],
 	invalid: [
 		{
@@ -157,6 +161,31 @@ tester.run("anti-slop/no-unknown-parameters at the bounds of a guard-only classi
 			name: "the parameter passed back to the function itself at another position: fails one that accepts recursion at any position",
 			code: `${IS_STRING}type Foo = { a?: string };\nfunction f(x: unknown, y: any): Foo { if (isString(x)) {} return f(y, x); }`,
 			errors: [{ ...error, data: { parameter: "x" } }],
+		},
+		{
+			name: "a cast around ??: fails one that looks for a cast only on the read's own parent",
+			code: "interface Config { name?: string }\nfunction toConfig(value: unknown): Config { if (typeof value !== 'object') return {}; return (value ?? {}) as Config; }",
+			errors: [error],
+		},
+		{
+			name: "a cast around a ?: branch: fails one that skips the branches a value flows out through",
+			code: "interface Config { name?: string }\nfunction toConfig(value: unknown, ok: boolean): Config { if (typeof value !== 'object') return {}; return (ok ? value : {}) as Config; }",
+			errors: [error],
+		},
+		{
+			name: "a non-null assertion around ||: fails one that checks only as for a wrapped cast",
+			code: "function toTags(value: unknown): string[] { if (!Array.isArray(value)) return []; return (value || null)!; }",
+			errors: [error],
+		},
+		{
+			name: "boolean | undefined: fails one that lets a nullable member turn a verdict into a value",
+			code: "function isEnabled(value: unknown): boolean | undefined { return typeof value === 'string' ? true : undefined; }",
+			errors: [error],
+		},
+		{
+			name: "boolean | null: fails one that accepts only undefined beside a verdict",
+			code: "function isEnabled(value: unknown): boolean | null { return typeof value === 'string' ? true : null; }",
+			errors: [error],
 		},
 	],
 });
