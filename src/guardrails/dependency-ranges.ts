@@ -11,8 +11,14 @@
 
 const ANTELOPEJS_SCOPE = "@antelopejs/";
 
-/** A package linked from the workspace is the copy the dependent builds against, not a release it resolves. */
-const LOCAL_SPEC_PREFIXES = ["workspace:", "file:", "link:"];
+/** A linked folder is the copy the dependent builds against, not a release it resolves. */
+const LINK_SPEC_PREFIXES = ["file:", "link:"];
+
+/** pnpm replaces a `workspace:` spec with a range on the sibling's version when it publishes the package. */
+const WORKSPACE_PREFIX = "workspace:";
+
+/** The `workspace:` spec that publishes as a range stopping below the next minor, on 0.x and from 1.0 alike. */
+const CAPPED_WORKSPACE_SPEC = "workspace:~";
 
 const CHECKED_FIELDS = [
   "dependencies",
@@ -34,6 +40,7 @@ interface Bounds {
 export type PackageManifest = {
   name?: string;
   version?: string;
+  private?: boolean;
 } & { [field in Field]?: Record<string, string> };
 
 export interface RangeViolation {
@@ -130,8 +137,49 @@ function isCapped(
   );
 }
 
-function isLocalSpec(spec: string): boolean {
-  return LOCAL_SPEC_PREFIXES.some((prefix) => spec.startsWith(prefix));
+function isLinkSpec(spec: string): boolean {
+  return LINK_SPEC_PREFIXES.some((prefix) => spec.startsWith(prefix));
+}
+
+/** The spec pnpm publishes in place of the `workspace:` spec `spec` on a sibling at version `local`. */
+function publishedSpec(spec: string, local: string): string {
+  const range = spec.slice(WORKSPACE_PREFIX.length);
+  if (range === "*") return local;
+  if (range === "^" || range === "~") return `${range}${local}`;
+  return range;
+}
+
+/**
+ * The violation of one `@antelopejs/*` entry, if any. A `workspace:` spec is
+ * judged as pnpm publishes it, and skipped in a private manifest, which is
+ * never published, or when the sibling's version is not known.
+ */
+function checkEntry(
+  manifest: PackageManifest,
+  field: Field,
+  [name, spec]: [string, string],
+  local: string | undefined,
+): RangeViolation | undefined {
+  const workspace = spec.startsWith(WORKSPACE_PREFIX);
+  let published = spec;
+  if (workspace) {
+    if (manifest.private === true || local === undefined) return undefined;
+    published = publishedSpec(spec, local);
+  }
+  const localVersion = local === undefined ? undefined : readFloor(local);
+  const bounds = readBounds(published.trim());
+  if (isCapped(bounds, localVersion)) return undefined;
+  const floor = localVersion ?? bounds?.floor ?? readFloor(published);
+  const expected = workspace
+    ? CAPPED_WORKSPACE_SPEC
+    : floor && cappedRange(floor);
+  return {
+    field,
+    name,
+    spec,
+    ...(local !== undefined && { local }),
+    ...(expected && { expected }),
+  };
 }
 
 /** Whether `manifest` declares an `@antelopejs/*` package in a field this check reads. */
@@ -143,13 +191,24 @@ export function declaresAntelopePackage(manifest: PackageManifest): boolean {
   );
 }
 
-/** The version of each named package among `manifests`, the packages that sit in the same repository. */
+/**
+ * The version of each named package among `manifests`, the packages that sit
+ * in the same repository. A name tracked at two versions, such as a test
+ * fixture that copies a real package's name, has no one local version and is
+ * left out.
+ */
 export function localVersions(
   manifests: Iterable<PackageManifest>,
 ): Map<string, string> {
   const versions = new Map<string, string>();
-  for (const { name, version } of manifests)
-    if (name && version) versions.set(name, version);
+  const ambiguous = new Set<string>();
+  for (const { name, version } of manifests) {
+    if (!name || !version) continue;
+    const seen = versions.get(name);
+    if (seen !== undefined && seen !== version) ambiguous.add(name);
+    versions.set(name, version);
+  }
+  for (const name of ambiguous) versions.delete(name);
   return versions;
 }
 
@@ -165,20 +224,16 @@ export function checkDependencyRanges(
 ): RangeViolation[] {
   const violations: RangeViolation[] = [];
   for (const field of CHECKED_FIELDS) {
-    for (const [name, spec] of Object.entries(manifest[field] ?? {})) {
-      if (!name.startsWith(ANTELOPEJS_SCOPE) || isLocalSpec(spec)) continue;
-      const local = localVersions.get(name);
-      const localVersion = local === undefined ? undefined : readFloor(local);
-      const bounds = readBounds(spec.trim());
-      if (isCapped(bounds, localVersion)) continue;
-      const floor = localVersion ?? bounds?.floor ?? readFloor(spec);
-      violations.push({
+    for (const entry of Object.entries(manifest[field] ?? {})) {
+      const [name, spec] = entry;
+      if (!name.startsWith(ANTELOPEJS_SCOPE) || isLinkSpec(spec)) continue;
+      const violation = checkEntry(
+        manifest,
         field,
-        name,
-        spec,
-        ...(local !== undefined && { local }),
-        ...(floor && { expected: cappedRange(floor) }),
-      });
+        entry,
+        localVersions.get(name),
+      );
+      if (violation) violations.push(violation);
     }
   }
   return violations;

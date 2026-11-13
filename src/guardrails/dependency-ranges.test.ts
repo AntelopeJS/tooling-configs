@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   checkDependencyRanges,
   describeViolation,
+  localVersions,
   readFloor,
 } from "./dependency-ranges.ts";
 
@@ -74,14 +75,44 @@ describe("checkDependencyRanges", () => {
     assert.deepEqual(check("^0.5.0"), []);
   });
 
-  it("leaves workspace, file and link specs alone, where a check that reads them fails a module built against its sibling's source", () => {
-    for (const spec of [
-      "workspace:*",
-      "workspace:^",
-      "file:../interface",
-      "link:../interface",
-    ])
+  it("leaves file and link specs alone, where a check that reads them fails a module built against a linked folder", () => {
+    for (const spec of ["file:../interface", "link:../interface"])
       assert.equal(expected(spec), undefined, spec);
+  });
+
+  it("judges a workspace spec as pnpm publishes it, where a check that skips every workspace spec lets `workspace:^` on a 1.x sibling publish a caret", () => {
+    const check = (spec: string, version: string, isPrivate = false) =>
+      checkDependencyRanges(
+        {
+          private: isPrivate,
+          dependencies: { "@antelopejs/interface-demo": spec },
+        },
+        new Map([["@antelopejs/interface-demo", version]]),
+      ).map((violation) => violation.expected);
+    assert.deepEqual(check("workspace:^", "1.2.3"), ["workspace:~"]);
+    assert.deepEqual(check("workspace:>=0.3.0", "0.4.0"), ["workspace:~"]);
+    assert.deepEqual(check("workspace:*", "0.4.0"), ["workspace:~"]);
+    assert.deepEqual(check("workspace:~", "1.2.3"), []);
+    assert.deepEqual(check("workspace:^", "0.6.1"), []);
+    assert.deepEqual(check("workspace:^", "1.2.3", true), []);
+    assert.deepEqual(
+      checkDependencyRanges({
+        dependencies: { "@antelopejs/interface-demo": "workspace:^" },
+      }),
+      [],
+    );
+  });
+});
+
+describe("localVersions", () => {
+  it("leaves out a name tracked at two versions, where a map that keeps the last manifest lets a test fixture move every range back to its version", () => {
+    const versions = localVersions([
+      { name: "@antelopejs/interface-x", version: "0.5.0" },
+      { name: "@antelopejs/interface-x", version: "0.1.0" },
+      { name: "@antelopejs/interface-y", version: "1.2.0" },
+      { name: "@antelopejs/interface-y", version: "1.2.0" },
+    ]);
+    assert.deepEqual([...versions], [["@antelopejs/interface-y", "1.2.0"]]);
   });
 });
 
