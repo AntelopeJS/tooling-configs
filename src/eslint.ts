@@ -49,6 +49,13 @@ export const ANTELOPE_NUXT_RULES: NuxtRules = {
   /** A best-effort cleanup swallows its failure in an empty `catch`. */
   "no-empty": ["error", { allowEmptyCatch: true }],
 
+  /**
+   * The formatter writes a void element as `<input />` and a hex literal in
+   * lower case, so these rules agree with it or stay off.
+   */
+  "vue/html-self-closing": ["error", { html: { void: "always" } }],
+  "unicorn/number-literal-case": "off",
+
   /** CMS blocks and forms require structural types in the interface layer. */
   "@typescript-eslint/no-explicit-any": "off",
   "@typescript-eslint/no-empty-object-type": "off",
