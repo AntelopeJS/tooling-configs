@@ -145,8 +145,9 @@ function windowsAncestry(table: readonly WindowsProcess[]): Set<number> {
   return pids;
 }
 
-/** A console host. It inherits the environment of the process whose console it hosts, and ending it ends every process on that console, the stop's own included. */
-const CONSOLE_HOST = /(?:^|\\)conhost\.exe(?:"|\s|$)/iu;
+/** A console host, by its executable. It inherits the environment of the process whose console it hosts, and ending it ends every process on that console, the stop's own included. */
+const CONSOLE_HOST =
+  /^(?:"(?:[^"]*\\)?|(?:[^"\s]*\\)?)(?:conhost|openconsole)\.exe(?:"|\s|$)/iu;
 
 function discoverWindows(marker: string): Target[] {
   const table = windowsProcesses(marker);

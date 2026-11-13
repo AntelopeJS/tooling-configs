@@ -1,7 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { accessSync, constants, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { unmarked } from "./env.ts";
@@ -315,7 +315,7 @@ export async function ensureMongod(
     "0.25",
   ];
   if (process.platform === "win32") {
-    windowsStart(binary, args, paths.dbpath);
+    windowsStart(resolve(binary), args, paths.dbpath);
     return ready(port, paths, () => true);
   }
   const started = spawn(binary, [...args, "--fork"], {

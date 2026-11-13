@@ -45,8 +45,9 @@ export function isLive(pid: number): boolean {
 
 /**
  * Kills `pid`, with its process group when it leads one, after the test, only while it is still
- * the process it was when this was called. On Windows, which has no groups, it kills `pid` with
- * every process it started, so none keeps the test's pipes open.
+ * the process it was when this was called. On Windows, which has no groups and no start time to
+ * check, it kills whatever process holds `pid` then, with every process it started, so none keeps
+ * the test's pipes open.
  */
 export function reap(t: TestContext, pid: number, group: boolean): void {
   assertSignallable(pid);
