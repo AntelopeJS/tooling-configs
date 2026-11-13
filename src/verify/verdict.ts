@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 
 import type { JourneyResult } from "./results.ts";
 import { flaggedDoors } from "./doors.ts";
@@ -18,6 +18,7 @@ import {
   type FeatureResults,
 } from "./timing-report.ts";
 import { git, type RunState, type Workspace } from "./workspace.ts";
+import { relativeSlashed } from "./slash.ts";
 
 /** The overall result a verdict carries; NOT VERIFIED when a journey could not reach the product, never PASS. */
 type VerdictResult = "PASS" | "PASS+NOTES" | "NOT VERIFIED" | "FAIL";
@@ -263,7 +264,7 @@ export function renderVerdict(
       "-1",
       "--format=%H",
       "--",
-      relative(workspace.root, workspace.skill),
+      relativeSlashed(workspace.root, workspace.skill),
     ]) || plan.headSha;
   const reasons: string[] = [];
   if (plan.headSha !== state.headSha)

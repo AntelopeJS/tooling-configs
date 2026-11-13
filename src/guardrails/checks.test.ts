@@ -52,6 +52,7 @@ test("checks suppresses passing output, reports missing scripts, and continues a
   const passing = bin(root, "checks");
   assert.equal(passing.status, 0);
   assert.equal(passing.stdout, "Checks: 10 passed, 0 failed.\n");
+  assert.equal(passing.stderr, "");
 });
 
 test("checks skips ratchet by file absence even if a stale ratchet script fails", (t) => {

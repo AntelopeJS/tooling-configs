@@ -50,14 +50,31 @@ export interface Worktree {
 type StaleReason = "missing" | "recreated";
 
 /**
- * What a stat of a worktree's `.git` entry found. `gone` is only ENOENT or ENOTDIR, a path that no
- * longer exists. Any other error, such as EACCES under a parent with mode 000, is `unreadable`, with
- * its error code: the checkout may still exist, so its lease is kept.
+ * What a listing of a worktree and a stat of its `.git` entry found. The listing comes first because
+ * Windows answers a stat from the parent folder's listing, so a stat alone succeeds on a worktree its
+ * user cannot read. `gone` is only ENOENT or ENOTDIR, a path that no longer exists. Any other error,
+ * such as EACCES under a parent with mode 000 or EPERM where an ACL denies the worktree, is
+ * `unreadable`, with its error code: the checkout may still exist, so its lease is kept.
  */
-type GitProbe =
+export type GitProbe =
   | { readonly kind: "present"; readonly identity: GitIdentity }
   | { readonly kind: "gone" }
   | { readonly kind: "unreadable"; readonly code: string };
+
+/** The two filesystem reads {@link probeGit} makes, so a test can make either refuse. */
+export interface GitProbeFs {
+  readonly readdir: (path: string) => void;
+  readonly stat: (
+    path: string,
+  ) => { ino: number; birthtimeMs: number } | undefined;
+}
+
+const NODE_FS: GitProbeFs = {
+  readdir: (path) => {
+    readdirSync(path);
+  },
+  stat: (path) => statSync(path, { throwIfNoEntry: false }),
+};
 
 /**
  * Where a lease stands. `orphaned` is a stale lease whose api or web port still accepts: its block
@@ -128,9 +145,11 @@ export function leaseState(
   return { kind: facts.serving ? "orphaned" : "stale", reason };
 }
 
-function probeGit(worktree: string): GitProbe {
+/** Lists `worktree`, then stats its `.git`, and reports what the two reads found. */
+export function probeGit(worktree: string, fs: GitProbeFs = NODE_FS): GitProbe {
   try {
-    const stat = statSync(join(worktree, ".git"), { throwIfNoEntry: false });
+    fs.readdir(worktree);
+    const stat = fs.stat(join(worktree, ".git"));
     if (stat === undefined) return { kind: "gone" };
     return {
       kind: "present",
@@ -139,11 +158,16 @@ function probeGit(worktree: string): GitProbe {
   } catch (error) {
     const code =
       error instanceof Error && "code" in error ? String(error.code) : "";
+    if (code === "ENOENT" || code === "ENOTDIR") return { kind: "gone" };
     return { kind: "unreadable", code: code || "unknown" };
   }
 }
 
-/** The worktree containing `cwd`, by the real path of `git rev-parse --show-toplevel`. */
+/**
+ * The worktree containing `cwd`, by the real path of `git rev-parse --show-toplevel`. The native
+ * real path expands a Windows 8.3 short name such as `RUNNER~1`, so the id does not depend on how
+ * the caller spelled the directory.
+ */
 export function locateWorktree(cwd: string): Worktree {
   let top: string;
   try {
@@ -155,7 +179,7 @@ export function locateWorktree(cwd: string): Worktree {
   } catch {
     throw new Error(`antelopejs-lease: ${cwd} is not inside a git worktree`);
   }
-  const path = realpathSync(top);
+  const path = realpathSync.native(top);
   const git = probeGit(path);
   if (git.kind !== "present")
     throw new Error(`antelopejs-lease: ${path} has no .git entry`);

@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
+import { repoPath, slashPath } from "./paths.mjs";
 import { sourcePaths } from "./sources.mjs";
 
 /** Each complete example is an isolated module, even without imports. */
@@ -51,7 +52,7 @@ function loadTypescript(project) {
  * is emitted, and no temporary source files are written into its tree.
  */
 export function checkTypescript({ root, project, documents, fail }) {
-  const display = (path) => relative(root, path);
+  const display = (path) => repoPath(root, path);
   const { ts, unusable } = loadTypescript(project);
   if (!ts) {
     fail(
@@ -80,7 +81,7 @@ export function checkTypescript({ root, project, documents, fail }) {
   for (const doc of documents) {
     let index = 0;
     for (const example of doc.examples) {
-      const name = `${doc.path}.docs-check-${++index}.${example.extension}`;
+      const name = `${slashPath(doc.path)}.docs-check-${++index}.${example.extension}`;
       virtual.set(name, {
         doc,
         example,

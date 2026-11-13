@@ -20,7 +20,7 @@ const SKILL = ".agents/skills/verify-module";
 const LOCK =
   "lockfileVersion: '9.0'\n\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\n\nimporters:\n\n  .: {}\n";
 
-/** A fake `ajs project dev` that answers 503 for its first READY_AFTER ms (400 by default), writing the time of each 503 since it listened to PROBE_LOG, then 200. */
+/** A fake `ajs project dev` that answers 503 for its first READY_AFTER ms (1000 by default), writing the time of each 503 since it listened to PROBE_LOG, then 200. */
 const AJS = String.raw`const http = require("node:http");
 const { appendFileSync } = require("node:fs");
 process.on("SIGINT", () => process.exit(0));
@@ -37,7 +37,7 @@ let readyAt = Infinity;
 let listenedAt = 0;
 server.listen(Number(process.env.PORT), "127.0.0.1", () => {
   listenedAt = Date.now();
-  readyAt = listenedAt + Number(process.env.READY_AFTER ?? 400);
+  readyAt = listenedAt + Number(process.env.READY_AFTER ?? 1000);
 });
 `;
 
@@ -84,9 +84,9 @@ function slowApp(t: TestContext, readyAfter: number): number[] {
   return read(tmp, "probes.log").split("\n").filter(Boolean).map(Number);
 }
 
-test("readiness is probed every few tens of milliseconds while an app starts, so a 400 ms start is seen soon after; a fixed 250 ms poll probes it at most twice", (t) => {
-  const misses = slowApp(t, 400);
-  assert.ok(misses.length >= 4, misses.join(","));
+test("readiness is probed every few tens of milliseconds while an app starts, so a 1 s start is seen soon after; a fixed 250 ms poll probes it at most four times", (t) => {
+  const misses = slowApp(t, 1000);
+  assert.ok(misses.length >= 8, misses.join(","));
 });
 
 test("after its first 3 s readiness falls back to one probe every 250 ms, so a slow app is not probed 40 times a second for two minutes; a fast poll without a window probes the fourth second dozens of times", (t) => {

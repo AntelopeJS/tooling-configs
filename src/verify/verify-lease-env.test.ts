@@ -174,7 +174,7 @@ test("a journey under a lease sees the operator's original TMPDIR, not the lease
 test("a journey under a lease whose caller had no TMPDIR gets none, and its run lands in the platform default (fails when the lease's tmp or a made-up TMPDIR is handed over)", (t) => {
   const { root, tmp } = envRepo(t);
   const lease = scratchDir(t, "verify-lease-dir-");
-  const env = { ...leased(lease, ""), TMP: tmp };
+  const env = { ...leased(lease, ""), TMP: tmp, TEMP: tmp };
   const run = newRun(root, tmp, env);
   assert.equal(run.startsWith(join(tmp, "antelopejs-verify")), true, run);
   const journey = verify(root, tmp, ["journey", run, "smoke"], env);
@@ -204,9 +204,7 @@ test("the lease's tmp is dropped whatever its spelling: a trailing slash or a sy
 const SETUP = `setup: [[process.execPath, "-e", ${JSON.stringify(PRINT_ENV)}]],`;
 
 function setupEnvironment(run: string): Record<string, string | undefined> {
-  return JSON.parse(
-    read(run, join("evidence/setup", `01-${process.execPath}`, "stdout.txt")),
-  );
+  return JSON.parse(read(run, join("evidence/setup", "01-node", "stdout.txt")));
 }
 
 test("setup under a lease does not see the dev-stack variables and gets the operator's TMPDIR (fails when setup inherits process.env whole)", (t) => {

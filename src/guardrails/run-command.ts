@@ -19,11 +19,38 @@ function stopGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   }
 }
 
+const PLAIN_ARGUMENT = /^[\w./:\\@=+~,-]+$/u;
+
+/** `argument` as cmd.exe passes it on whole: as it is when plain, else in double quotes, with a trailing backslash doubled so it does not escape the closing quote. Throws for a `"`, `%`, CR or LF, which cmd.exe would expand or split however it is quoted. */
+export function windowsArgument(argument: string): string {
+  if (PLAIN_ARGUMENT.test(argument)) return argument;
+  if (/["%\r\n]/u.test(argument))
+    throw new Error(
+      `Cannot pass ${JSON.stringify(argument)} through cmd.exe, which would expand or split it.`,
+    );
+  return `"${argument.replace(/\\+$/u, "$&$&")}"`;
+}
+
+/**
+ * How to spawn `command`, a name on `PATH` such as `pnpm`, with `args`. On Windows that is cmd.exe running one
+ * quoted line, so the `.cmd` shim resolves and each argument stays whole without Node's deprecated `shell` option
+ * with an argument array; elsewhere the command itself.
+ */
+export function shimInvocation(command: string, args: readonly string[]) {
+  if (process.platform !== "win32")
+    return { command, args: [...args], shell: false };
+  return {
+    command: [command, ...args].map(windowsArgument).join(" "),
+    args: [],
+    shell: true,
+  };
+}
+
 /**
  * Runs `command` in its own process group and collects stdout and stderr together. When `signal` aborts, the group
  * gets SIGTERM, then SIGKILL after a grace period, so a step's own children stop with it. On Windows the command runs
- * through a shell, so `npm` and `pnpm` resolve to their `.cmd` shims, unless `shell` is `false`: pass that for an
- * executable path and arguments that a shell must not split, such as paths with spaces.
+ * through cmd.exe per {@link shimInvocation}, so `npm` and `pnpm` resolve to their `.cmd` shims, unless `shell` is
+ * `false`: pass that for an executable path.
  */
 export function runCommand(
   command: string,
@@ -35,17 +62,15 @@ export function runCommand(
     shell?: boolean;
   },
 ): Promise<CommandResult> {
-  const {
-    cwd,
-    env = process.env,
-    signal,
-    shell = process.platform === "win32",
-  } = options;
+  const { cwd, env = process.env, signal, shell = true } = options;
+  const invocation = shell
+    ? shimInvocation(command, args)
+    : { command, args, shell };
   return new Promise((resolve) => {
-    const child = spawn(command, args, {
+    const child = spawn(invocation.command, invocation.args, {
       cwd,
       env,
-      shell,
+      shell: invocation.shell,
       detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],
     });

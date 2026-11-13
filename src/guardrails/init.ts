@@ -16,6 +16,7 @@ import {
   toolingVersions,
   usesNuxt,
 } from "./package.ts";
+import { shimInvocation } from "./run-command.ts";
 import { runPnpm } from "./run-pnpm.ts";
 import { syncRepository } from "./sync.ts";
 import { PRESET_CONFIGS, presetConfig } from "./templates.ts";
@@ -83,7 +84,12 @@ function failureText(result: SpawnSyncReturns<string>): string {
 }
 
 function gh(root: string, args: readonly string[]) {
-  return spawnSync("gh", args, { cwd: root, encoding: "utf8" });
+  const invocation = shimInvocation("gh", args);
+  return spawnSync(invocation.command, invocation.args, {
+    cwd: root,
+    encoding: "utf8",
+    shell: invocation.shell,
+  });
 }
 
 /** Turns `delete_branch_on_merge` on through `gh`, reading it first so a repository that has it on is never written. */

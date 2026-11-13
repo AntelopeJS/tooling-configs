@@ -1,4 +1,4 @@
-import { relative } from "node:path";
+import { relative, sep } from "node:path";
 import type { TestEvent } from "node:test/reporters";
 
 type Settled = Extract<TestEvent, { type: "test:pass" | "test:fail" }>;
@@ -18,7 +18,7 @@ export default async function* fileDurations(
   for await (const event of source) {
     if (!isSettled(event) || event.data.nesting !== 0 || !event.data.file)
       continue;
-    const file = relative(process.cwd(), event.data.file);
+    const file = relative(process.cwd(), event.data.file).split(sep).join("/");
     seconds.set(
       file,
       (seconds.get(file) ?? 0) + event.data.details.duration_ms / 1000,

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -13,8 +14,9 @@ runCli(() => {
     options: { staged: { type: "boolean" } },
     allowPositionals: true,
   });
+  const cwd = realpathSync.native(process.cwd());
   const files = positionals.length
-    ? positionals.map((file) => repositoryPath(root, resolve(file)))
+    ? positionals.map((file) => repositoryPath(root, resolve(cwd, file)))
     : undefined;
   const failures = [
     ...checkSize(root, files, values.staged),

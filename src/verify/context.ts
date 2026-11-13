@@ -29,6 +29,7 @@ import {
   startRecorded,
   type BackgroundHandle,
 } from "./record.ts";
+import { killTree } from "./launch.ts";
 import { waitReady } from "./readiness.ts";
 import type {
   App,
@@ -55,6 +56,7 @@ import {
   type RunState,
   type Workspace,
 } from "./workspace.ts";
+import { relativeSlashed } from "./slash.ts";
 
 /** A journey the pack ships for a kind; it may use the harness internals. */
 export interface BuiltinJourney {
@@ -77,8 +79,9 @@ function slug(text: string): string {
     .replace(/^-|-$/g, "");
 }
 
-/** Sends `name` to `pid`, returning whether the signal was delivered. */
+/** Sends `name` to `pid`, returning whether the signal was delivered. Windows has no signals: there the process and everything it started end at once, without running a handler. */
 function signal(pid: number, name: NodeJS.Signals): boolean {
+  if (process.platform === "win32") return killTree(pid);
   try {
     process.kill(pid, name);
     return true;
@@ -215,10 +218,10 @@ export class VerifyContext implements JourneyContext {
     checks: Check[],
     options: { critical?: boolean } = {},
   ): boolean {
-    const name = relative(this.folder, folder) || "journey";
+    const name = relativeSlashed(this.folder, folder) || "journey";
     this.steps.push({
       name,
-      folder: relative(this.state.evidence, folder),
+      folder: relativeSlashed(this.state.evidence, folder),
       checks,
     });
     appendFileSync(
@@ -397,7 +400,13 @@ export class VerifyContext implements JourneyContext {
         `no exit within ${STOP_TIMEOUT_MS} ms of SIGINT; killed the process group\n`,
       );
     }
-    const exit = outcome ?? { exitCode: null, signal: "SIGKILL" };
+    const ended = outcome ?? { exitCode: null, signal: "SIGKILL" };
+    const exit =
+      process.platform === "win32" &&
+      outcome &&
+      running?.sent.includes("SIGINT")
+        ? { exitCode: null, signal: "SIGINT" }
+        : ended;
     writeFileSync(
       join(folder, "exit-code.txt"),
       `${exit.exitCode ?? `signal ${exit.signal}`}\n`,

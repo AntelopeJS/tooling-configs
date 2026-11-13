@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { lstatSync, readlinkSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { lstatSync, readlinkSync, realpathSync, rmSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
 import test from "node:test";
 
 import { bin, linkOxlint, put, read, testRepo } from "./helpers/test-repo.ts";
@@ -37,9 +37,11 @@ for (const profile of PROFILES) {
         read(root, skillPath(name)),
         new RegExp(`^---\\nname: ${name}\\n`),
       );
+      const link = join(root, linkPath(name));
+      assert.equal(isAbsolute(readlinkSync(link)), false);
       assert.equal(
-        readlinkSync(join(root, linkPath(name))),
-        `../../.agents/skills/${name}`,
+        realpathSync(link),
+        realpathSync(join(root, ".agents/skills", name)),
       );
       assert.equal(
         read(root, `${linkPath(name)}/SKILL.md`),

@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { TSGOLINT } from "./tsgolint.ts";
+
 const lintModule = new URL("../lint.ts", import.meta.url).href;
 const antiSlopPlugin = fileURLToPath(
   new URL("../anti-slop/index.ts", import.meta.url),
@@ -13,12 +15,6 @@ const guardrailsPlugin = fileURLToPath(
 );
 const oxlint = fileURLToPath(
   new URL("../bin/oxlint", import.meta.resolve("oxlint")),
-);
-const tsgolint = fileURLToPath(
-  new URL(
-    "bin/tsgolint.js",
-    import.meta.resolve("oxlint-tsgolint/package.json"),
-  ),
 );
 const nodeTypes = fileURLToPath(
   new URL("..", import.meta.resolve("@types/node/package.json")),
@@ -73,7 +69,7 @@ export default { extends: [preset]${typeAware ? ", options: { typeAware: true }"
     ) {
       const env = { ...process.env, ...extraEnv };
       delete env.ANTELOPEJS_RATCHET_MEASURE;
-      env.OXLINT_TSGOLINT_PATH = tsgolint;
+      env.OXLINT_TSGOLINT_PATH = TSGOLINT;
       if (measure !== false)
         env.ANTELOPEJS_RATCHET_MEASURE = measure === true ? "1" : measure;
       const result = spawnSync(process.execPath, [oxlint, "-f", "json"], {
@@ -82,7 +78,10 @@ export default { extends: [preset]${typeAware ? ", options: { typeAware: true }"
         encoding: "utf8",
       });
       if (result.error !== undefined) throw result.error;
-      if (result.stdout.length === 0) throw new Error(result.stderr);
+      if (!result.stdout.startsWith("{"))
+        throw new Error(
+          `oxlint returned no JSON report (exit ${result.status}): ${result.stdout}${result.stderr}`,
+        );
       return { status: result.status, ...JSON.parse(result.stdout) };
     },
   };

@@ -2,18 +2,11 @@ import { symlinkSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import type { TestContext } from "node:test";
-import { fileURLToPath } from "node:url";
 
 import { formatCeilings } from "../ceilings.ts";
 import { commit, linkOxlint, put, testRepo } from "./test-repo.ts";
 
 export const FLOATING = "typescript/no-floating-promises";
-export const TSGOLINT = fileURLToPath(
-  new URL(
-    "bin/tsgolint.js",
-    import.meta.resolve("oxlint-tsgolint/package.json"),
-  ),
-);
 
 export function writeCeiling(root: string, rule: string, count: number): void {
   put(

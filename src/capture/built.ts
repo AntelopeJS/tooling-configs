@@ -1,8 +1,9 @@
 import { existsSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 
 import { isObject, isString, type JsonValue } from "../garden/json.ts";
 import { publishedPackages } from "./demo.ts";
+import { relativeSlashed } from "../verify/slash.ts";
 
 const ENTRY_FIELDS = ["main", "module", "types", "typings", "bin", "exports"];
 
@@ -24,7 +25,7 @@ export function missingBuildOutput(root: string): string[] {
     );
     return [...new Set(declared.map((target) => join(folder, target)))]
       .filter((path) => !existsSync(path))
-      .map((path) => `${name}: ${relative(root, path)} is missing`);
+      .map((path) => `${name}: ${relativeSlashed(root, path)} is missing`);
   });
 }
 

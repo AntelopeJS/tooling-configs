@@ -1,6 +1,8 @@
 import type { ChildProcess } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 
+import { killTree } from "../verify/launch.ts";
+
 const POLL_MS = 50;
 
 /** How long {@link stopProcessGroup} waits at each stage. */
@@ -11,9 +13,10 @@ export interface StopOptions {
   killWaitMs: number;
 }
 
+/** Whether the group `pid` leads has a process left; Windows has no groups, so it asks about the leader alone, whose end `taskkill /t` brings with its whole tree. */
 function groupAlive(pid: number): boolean {
   try {
-    process.kill(-pid, 0);
+    process.kill(process.platform === "win32" ? pid : -pid, 0);
     return true;
   } catch {
     return false;
@@ -49,6 +52,13 @@ export async function stopProcessGroup(
 ): Promise<void> {
   const { pid } = started;
   if (pid === undefined) return;
+  if (process.platform === "win32") {
+    killTree(pid);
+    if (await goneWithin(pid, options.killWaitMs)) return;
+    throw new Error(
+      `process ${pid} was still running ${options.killWaitMs / 1000}s after taskkill`,
+    );
+  }
   signalGroup(started, pid, "SIGINT");
   if (await goneWithin(pid, options.graceMs)) return;
   signalGroup(started, pid, "SIGKILL");

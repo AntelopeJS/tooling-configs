@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, posix } from "node:path";
 
 import ts from "typescript";
 
@@ -177,7 +177,10 @@ export function backendBoundaryArtifacts(root: string): PlannedArtifact[] {
     .split("\0")
     .filter((path) => path && dirname(dirname(path)) !== ".")
     .map((path): PlannedArtifact => {
-      const manifest = join(dirname(dirname(dirname(path))), "package.json");
+      const manifest = posix.join(
+        posix.dirname(posix.dirname(posix.dirname(path))),
+        "package.json",
+      );
       const name = existsSync(join(root, manifest))
         ? parseManifest(readFileSync(join(root, manifest), "utf8")).name
         : undefined;

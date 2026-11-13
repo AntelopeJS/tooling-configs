@@ -23,6 +23,7 @@ import {
   type PackageManager,
 } from "./package.ts";
 import { compareRevisions, workspaceManifests } from "./revisions.ts";
+import { shimInvocation } from "./run-command.ts";
 import { testEntryNotice } from "./test-entries.ts";
 import {
   isTestSource,
@@ -201,7 +202,9 @@ function builtEntries(
       const matches = modules.filter((file) => !isTestSource(output, file));
       if (matches.length < modules.length) skipped.push(target);
       return matches.sort().map((file) => {
-        const capture = pattern.exec(file)?.[1] ?? relative(directory, file);
+        const capture = (pattern.exec(file)?.[1] ?? relative(directory, file))
+          .split(sep)
+          .join("/");
         return {
           entry: entry.replaceAll("*", capture),
           file,
@@ -277,11 +280,12 @@ function runBuild(directory: string, manager: PackageManager): Manifest {
   const manifest = parseManifest(
     readFileSync(join(directory, "package.json"), "utf8"),
   );
+  const build = shimInvocation(manager, ["run", "build"]);
   if (manifest.scripts?.build)
-    execFileSync(manager, ["run", "build"], {
+    execFileSync(build.command, build.args, {
       cwd: directory,
       encoding: "utf8",
-      shell: process.platform === "win32",
+      shell: build.shell,
       env: { ...process.env, pnpm_config_verify_deps_before_run: "false" },
       timeout: 120_000,
       stdio: ["ignore", "pipe", "pipe"],
@@ -315,7 +319,7 @@ function installedPackage(
     const link = join(worktree, at, "node_modules", name);
     if (existsSync(link)) {
       const real =
-        relative(realpathSync(worktree), realpathSync(link))
+        relative(realpathSync.native(worktree), realpathSync.native(link))
           .split(sep)
           .join("/") || ".";
       return manifests.has(real) ? real : undefined;

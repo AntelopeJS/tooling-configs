@@ -14,16 +14,11 @@ import { test } from "node:test";
 
 import { PRESET_CONFIGS } from "../guardrails/templates.ts";
 import { applyVerifyActions, planVerify } from "../guardrails/verify-skill.ts";
+import { TSGOLINT } from "./helpers/tsgolint.ts";
 
 const source = fileURLToPath(new URL("..", import.meta.url));
 const oxlintPackage = dirname(
   fileURLToPath(import.meta.resolve("oxlint/package.json")),
-);
-const tsgolint = fileURLToPath(
-  new URL(
-    "bin/tsgolint.js",
-    import.meta.resolve("oxlint-tsgolint/package.json"),
-  ),
 );
 const nodeTypes = fileURLToPath(
   new URL("..", import.meta.resolve("@types/node/package.json")),
@@ -146,13 +141,16 @@ function lint(root: string): string[] {
       cwd: root,
       env: {
         ...process.env,
-        OXLINT_TSGOLINT_PATH: tsgolint,
+        OXLINT_TSGOLINT_PATH: TSGOLINT,
       },
       encoding: "utf8",
       maxBuffer: 1 << 28,
     },
   );
-  if (result.stdout.length === 0) throw new Error(result.stderr);
+  if (!result.stdout.startsWith("{"))
+    throw new Error(
+      `oxlint returned no JSON report (exit ${result.status}): ${result.stdout}${result.stderr}`,
+    );
   const { diagnostics } = JSON.parse(result.stdout);
   return diagnostics
     .map(

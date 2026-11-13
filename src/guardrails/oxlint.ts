@@ -63,11 +63,12 @@ function foundNoFiles(stdout: string): boolean {
   return stdout.startsWith(NO_FILES) && stdout.includes("{");
 }
 
-function parseReport(text: string): OxlintDiagnostic[] {
+/** The `-f json` report in oxlint's stdout, or undefined when oxlint printed an error in its place. */
+function parseReport(text: string): OxlintDiagnostic[] | undefined {
+  const json = foundNoFiles(text) ? text.slice(text.indexOf("{")) : text;
+  if (!json.startsWith("{")) return undefined;
   /* SAFETY: this is oxlint's own -f json report; lintDiagnostics rejects any diagnostic without a plugin(rule) code. */
-  const report = JSON.parse(
-    foundNoFiles(text) ? text.slice(text.indexOf("{")) : text,
-  ) as OxlintReport | null;
+  const report = JSON.parse(json) as OxlintReport | null;
   if (!Array.isArray(report?.diagnostics))
     throw new Error("oxlint did not return a JSON diagnostics array.");
   return report.diagnostics;
@@ -122,6 +123,10 @@ function runOxlint(
         `oxlint failed (${result.status ?? result.signal}): ${result.stderr || result.stdout}`,
       );
     const diagnostics = parseReport(result.stdout);
+    if (diagnostics === undefined)
+      throw new Error(
+        `oxlint failed (exit ${result.status}): ${result.stdout}${result.stderr}`.trimEnd(),
+      );
     if (
       result.status !== 0 &&
       diagnostics.length === 0 &&

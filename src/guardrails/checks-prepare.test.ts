@@ -96,40 +96,50 @@ test("a failing checks:prepare reports its output and runs no step", (t) => {
   assert.equal(existsSync(join(root, "typecheck.ran")), false);
 });
 
-test("an interrupt during checks:prepare stops it, starts no step and reports the interrupt", async (t) => {
-  const root = workspace(t, {
-    "checks:prepare":
-      "node -e \"require('node:fs').writeFileSync('prepare.started','');setTimeout(()=>{},30000)\"",
-    typecheck:
-      "node -e \"require('node:fs').writeFileSync('typecheck.ran','')\"",
-  });
-  const { status, stdout } = await new Promise<{
-    status: number | null;
-    stdout: string;
-  }>((resolve) => {
-    const child = spawn(
-      process.execPath,
-      [join(PACKAGE_ROOT, "src/bin/checks.ts"), "--no-services"],
-      { cwd: root, env: { ...process.env, CI: "1" } },
+const POSIX_SIGNALS = {
+  skip:
+    process.platform === "win32" &&
+    "Windows delivers no SIGTERM, so the checks interrupt handler cannot run",
+};
+
+test(
+  "an interrupt during checks:prepare stops it, starts no step and reports the interrupt",
+  POSIX_SIGNALS,
+  async (t) => {
+    const root = workspace(t, {
+      "checks:prepare":
+        "node -e \"require('node:fs').writeFileSync('prepare.started','');setTimeout(()=>{},30000)\"",
+      typecheck:
+        "node -e \"require('node:fs').writeFileSync('typecheck.ran','')\"",
+    });
+    const { status, stdout } = await new Promise<{
+      status: number | null;
+      stdout: string;
+    }>((resolve) => {
+      const child = spawn(
+        process.execPath,
+        [join(PACKAGE_ROOT, "src/bin/checks.ts"), "--no-services"],
+        { cwd: root, env: { ...process.env, CI: "1" } },
+      );
+      let out = "";
+      child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
+      const deadline = Date.now() + 10000;
+      const timer = setInterval(() => {
+        if (!existsSync(join(root, "prepare.started")) && Date.now() < deadline)
+          return;
+        clearInterval(timer);
+        child.kill("SIGTERM");
+      }, 50);
+      child.once("close", (code) => resolve({ status: code, stdout: out }));
+    });
+    assert.equal(status, 143);
+    assert.match(
+      stdout,
+      /^\[checks:prepare\]\n[\s\S]*Terminated by SIGTERM\nChecks interrupted by SIGTERM\.\n$/,
     );
-    let out = "";
-    child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
-    const deadline = Date.now() + 10000;
-    const timer = setInterval(() => {
-      if (!existsSync(join(root, "prepare.started")) && Date.now() < deadline)
-        return;
-      clearInterval(timer);
-      child.kill("SIGTERM");
-    }, 50);
-    child.once("close", (code) => resolve({ status: code, stdout: out }));
-  });
-  assert.equal(status, 143);
-  assert.match(
-    stdout,
-    /^\[checks:prepare\]\n[\s\S]*Terminated by SIGTERM\nChecks interrupted by SIGTERM\.\n$/,
-  );
-  assert.equal(existsSync(join(root, "typecheck.ran")), false);
-});
+    assert.equal(existsSync(join(root, "typecheck.ran")), false);
+  },
+);
 
 test("checks:prepare does not run when every step is skipped", (t) => {
   const root = workspace(t, { "checks:prepare": BUILD_INTERFACE });

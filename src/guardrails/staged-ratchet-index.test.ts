@@ -6,7 +6,8 @@ import test, { type TestContext } from "node:test";
 import { formatCeilings } from "./ceilings.ts";
 import { git, stage } from "./helpers/staged-ratchet-repo.ts";
 import { bin, commit, linkOxlint, put, testRepo } from "./helpers/test-repo.ts";
-import { calls, TSGOLINT, typedRepo } from "./helpers/typed-ratchet-repo.ts";
+import { TSGOLINT } from "../oxc/helpers/tsgolint.ts";
+import { calls, typedRepo } from "./helpers/typed-ratchet-repo.ts";
 
 const LEGACY = "export const keep = 0;\nexport const first: any = 1;\n";
 const ADDED = `${LEGACY}export const second: any = 2;\nexport const third: any = 3;\n`;

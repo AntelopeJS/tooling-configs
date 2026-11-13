@@ -55,7 +55,7 @@ export interface Row {
 
 /** A fresh directory under the system tmp, by real path, removed after the test. */
 export function scratch(t: TestContext): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "lease-test-")));
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "lease-test-")));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -122,6 +122,25 @@ export function lease(
   env: NodeJS.ProcessEnv,
 ): Promise<Outcome> {
   return startLease(args, cwd, env).done;
+}
+
+/**
+ * Ends a bin invocation and the command it runs. On Windows `run` is the parent of its command, so
+ * ending `run` alone would leave the command holding the output pipes; the whole tree goes.
+ */
+export function endRun(started: Started): void {
+  const pid = started.child.pid;
+  if (process.platform !== "win32" || pid === undefined) {
+    started.child.kill("SIGTERM");
+    return;
+  }
+  try {
+    execFileSync("taskkill", ["/pid", String(pid), "/t", "/f"], {
+      stdio: "ignore",
+    });
+  } catch {
+    return;
+  }
 }
 
 /** Waits until `started` has printed a line, and answers that line. Throws after 10 s. */

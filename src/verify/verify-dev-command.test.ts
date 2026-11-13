@@ -70,11 +70,19 @@ function runJourney(t: TestContext, program: string) {
   return { tmp, journey: verify(root, tmp, args) };
 }
 
-test("context.dev starts a given command in place of ajs project dev, records its PID and stops it", (t) => {
-  const { tmp, journey } = runJourney(t, process.execPath);
-  assert.equal(journey.status, 0, journey.stdout + journey.stderr);
-  assert.match(read(tmp, "server.pid"), /^\d+$/);
-});
+test(
+  "context.dev starts a given command in place of ajs project dev, records its PID and stops it",
+  {
+    skip:
+      process.platform === "win32" &&
+      "context.stop sends SIGINT, which Windows delivers as TerminateProcess without running the server's SIGINT handler, so the exit code is 1 and cannot be 0",
+  },
+  (t) => {
+    const { tmp, journey } = runJourney(t, process.execPath);
+    assert.equal(journey.status, 0, journey.stdout + journey.stderr);
+    assert.match(read(tmp, "server.pid"), /^\d+$/);
+  },
+);
 
 test("a command that cannot start fails its journey; an unhandled spawn error that crashes the harness fails", (t) => {
   const { journey } = runJourney(t, "no-such-program-ant-1584");

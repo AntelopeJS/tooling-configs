@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import test from "node:test";
 
+import { onPath } from "./helpers/shell.ts";
 import { put } from "./helpers/test-repo.ts";
 import { SETUP_SCRIPT } from "./templates.ts";
 
@@ -23,6 +24,22 @@ const GLOBAL_PNPM = `#!/usr/bin/env bash
 echo "global pnpm $*"
 `;
 
+const WINDOWS = process.platform === "win32";
+
+/** Where the script finds `tr`, `mkdir` and `env`: on Windows, Git Bash's own `usr/bin`, which also holds its `bash.exe`. */
+const SYSTEM_BIN = WINDOWS ? [dirname(onPath("tr"))] : ["/usr/bin", "/bin"];
+
+/** Runs `.agents/setup` in `repo` with only `env`, by path where its shebang runs, else with Git Bash, keeping the variables Windows programs need to start. */
+function runSetup(repo: string, env: NodeJS.ProcessEnv) {
+  return WINDOWS
+    ? spawnSync(join(dirname(onPath("tr")), "bash.exe"), [".agents/setup"], {
+        cwd: repo,
+        encoding: "utf8",
+        env: { ...process.env, ...env },
+      })
+    : spawnSync(join(repo, ".agents/setup"), { encoding: "utf8", env });
+}
+
 test("setup installs through corepack shims in the home bin directory when the Node bin directory is read-only", (t) => {
   const root = mkdtempSync(join(tmpdir(), "antelope-setup-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -39,12 +56,9 @@ test("setup installs through corepack shims in the home bin directory when the N
   chmodSync(join(stubs, "pnpm"), 0o755);
   put(home, ".keep", "");
 
-  const result = spawnSync(join(repo, ".agents/setup"), {
-    encoding: "utf8",
-    env: {
-      HOME: home,
-      PATH: [stubs, dirname(process.execPath), "/usr/bin", "/bin"].join(":"),
-    },
+  const result = runSetup(repo, {
+    HOME: home,
+    PATH: [stubs, dirname(process.execPath), ...SYSTEM_BIN].join(delimiter),
   });
 
   assert.equal(result.status, 0, result.stderr);

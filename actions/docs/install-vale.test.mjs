@@ -10,15 +10,25 @@ import { it } from "node:test";
 import { promisify } from "node:util";
 
 const SCRIPT = fileURLToPath(new URL("install-vale.sh", import.meta.url));
+const WINDOWS = process.platform === "win32";
+const BINARY = WINDOWS ? "vale.exe" : "vale";
+
+function runStub(path) {
+  return WINDOWS
+    ? execFileSync("bash", [path], { encoding: "utf8" })
+    : execFileSync(path, { encoding: "utf8" });
+}
 
 function archive(t) {
   const root = mkdtempSync(join(tmpdir(), "install-vale-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  writeFileSync(join(root, "vale"), "#!/bin/sh\necho stub-vale\n");
-  chmodSync(join(root, "vale"), 0o755);
-  const body = execFileSync("tar", ["--create", "--gzip", "vale"], {
-    cwd: root,
-  });
+  writeFileSync(join(root, BINARY), "#!/bin/sh\necho stub-vale\n");
+  chmodSync(join(root, BINARY), 0o755);
+  const body = execFileSync(
+    "tar",
+    ["--create", "--gzip", "--file", "-", BINARY],
+    { cwd: root },
+  );
   return {
     root,
     body,
@@ -42,7 +52,7 @@ async function serve(t, statuses, body) {
 async function install(root, url, sha256) {
   const target = join(root, "bin");
   try {
-    const { stdout } = await promisify(execFile)(SCRIPT, [target], {
+    const { stdout } = await promisify(execFile)("bash", [SCRIPT, target], {
       env: {
         ...process.env,
         VALE_DOWNLOAD_URL: url,
@@ -61,12 +71,9 @@ it("retries a 504 and installs Vale from the next 200", async (t) => {
   const { url, seen } = await serve(t, [504, 200], body);
   const run = await install(root, url, sha256);
   assert.deepEqual(seen, [504, 200]);
-  assert.equal(run.code, 0);
-  assert.equal(run.stdout, `${join(run.target, "vale")}\n`);
-  assert.equal(
-    execFileSync(run.stdout.trim(), { encoding: "utf8" }),
-    "stub-vale\n",
-  );
+  assert.equal(run.code, 0, run.stderr);
+  assert.equal(run.stdout, `${run.target}/${BINARY}\n`);
+  assert.equal(runStub(run.stdout.trim()), "stub-vale\n");
 });
 
 it("exits non-zero and names the HTTP status when every attempt fails", async (t) => {

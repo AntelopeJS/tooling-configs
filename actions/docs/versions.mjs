@@ -5,6 +5,8 @@ import { decodeHTML } from "entities";
 import { marked } from "marked";
 import semver from "semver";
 
+import { repoPath } from "./paths.mjs";
+
 const SCOPE = "@antelopejs/";
 const START = "<!-- antelopejs-docs-compat:start -->";
 const END = "<!-- antelopejs-docs-compat:end -->";
@@ -289,7 +291,7 @@ function proseClaims(prose) {
  * generated blocks.
  */
 export function checkVersionClaims(doc, { root, fail }) {
-  const file = relative(root, doc.path);
+  const file = repoPath(root, doc.path);
   const context = {
     file,
     manifestPath: join(dirname(doc.path), "package.json"),
@@ -402,7 +404,7 @@ export function checkOwnVersions(documents, { root, fail }) {
       const line =
         doc.firstLine + from + lineAt(region, object.start + spec.index);
       fail(
-        `${relative(root, doc.path)}:${line}: version "${spec[3]}" of ${match[3]} does not select its package.json version ${version}; use a range such as "^${version}"`,
+        `${repoPath(root, doc.path)}:${line}: version "${spec[3]}" of ${match[3]} does not select its package.json version ${version}; use a range such as "^${version}"`,
       );
     }
   }
