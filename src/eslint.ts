@@ -46,6 +46,12 @@ export const ANTELOPE_NUXT_RULES: NuxtRules = {
   "vue/multi-word-component-names": "off",
   "vue/require-default-prop": "off",
 
+  /**
+   * TypeScript reports unreachable code only under
+   * `allowUnreachableCode: false`, which no layer sets.
+   */
+  "no-unreachable": "error",
+
   /** A best-effort cleanup swallows its failure in an empty `catch`. */
   "no-empty": ["error", { allowEmptyCatch: true }],
 
@@ -73,6 +79,12 @@ export const ANTELOPE_NUXT_RULES: NuxtRules = {
     },
   ],
 };
+
+/**
+ * The script files that also get the `nuxt/vue/rules` rules, so a composable
+ * keeps `vue/no-ref-as-operand` and the other script checks.
+ */
+const SCRIPT_FILES = ["**/*.?([cm])[jt]s?(x)"];
 
 /**
  * ESLint config for an AntelopeJS Nuxt layer.
@@ -115,8 +127,8 @@ export function antelopeNuxtConfig(
     });
   }
   return composer.onResolved((configs) =>
-    configs.map((config) => {
-      if (config.rules === undefined) return config;
+    configs.flatMap((config) => {
+      if (config.rules === undefined) return [config];
       const rules = { ...config.rules };
       for (const [name, original] of Object.entries(rules)) {
         const rule = overrides[name] === undefined ? original : overrides[name];
@@ -126,7 +138,18 @@ export function antelopeNuxtConfig(
           rules[name] = ["error", ...rule.slice(1)];
         } else rules[name] = rule;
       }
-      return { ...config, rules };
+      const resolved = { ...config, rules };
+      if (config.name !== "nuxt/vue/rules") return [resolved];
+      return [
+        resolved,
+        {
+          name: "antelopejs/vue-script",
+          files: SCRIPT_FILES,
+          rules: Object.fromEntries(
+            Object.entries(rules).filter(([name]) => name.startsWith("vue/")),
+          ),
+        },
+      ];
     }),
   );
 }
