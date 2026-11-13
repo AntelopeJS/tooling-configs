@@ -36,13 +36,15 @@ const OFFLINE = {
   COREPACK_NPM_REGISTRY: "http://127.0.0.1:9/",
 };
 
-function checksRepo(t: TestContext): string {
+/** A repository whose checks pass, with the pack's `node_modules` as its own unless `installed` is false. */
+function checksRepo(t: TestContext, installed = true): string {
   const root = testRepo(t);
-  symlinkSync(
-    join(PACKAGE_ROOT, "node_modules"),
-    join(root, "node_modules"),
-    "dir",
-  );
+  if (installed)
+    symlinkSync(
+      join(PACKAGE_ROOT, "node_modules"),
+      join(root, "node_modules"),
+      "dir",
+    );
   put(
     root,
     "package.json",
@@ -78,8 +80,8 @@ function checksRepo(t: TestContext): string {
   return root;
 }
 
-function layerRepo(t: TestContext, source: string): string {
-  const root = checksRepo(t);
+function layerRepo(t: TestContext, source: string, installed = true): string {
+  const root = checksRepo(t, installed);
   for (const { path, content } of syncedFiles("interface"))
     if (path.endsWith("tsconfig.json")) put(root, path, content);
   put(root, `${LAYER}/verify.config.ts`, source);
@@ -103,6 +105,18 @@ test("a layer type error fails under verify:types with the compiler error, caugh
     /\[verify:types\]\n[^\n]*verify\.config\.ts\(1,14\): error TS2322/,
   );
   assert.match(result.stdout, /Checks: 9 passed, 1 failed\.\n$/);
+});
+
+test("a repository without root TypeScript fails under verify:types and names the fix, caught by an implementation that resolves TypeScript through the NODE_PATH a bin shim sets to the pack's own dependencies", (t) => {
+  const root = layerRepo(t, CLEAN_SOURCE, false);
+  const result = run(root, {
+    NODE_PATH: join(PACKAGE_ROOT, "node_modules"),
+  });
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(
+    result.stdout,
+    /\[verify:types\]\nTypeScript is not installed in the repository root: add typescript to its devDependencies/,
+  );
 });
 
 test("a clean layer passes and writes nothing, caught by an implementation that keeps the root's incremental build or writes its config in the layer", (t) => {
