@@ -190,10 +190,33 @@ function lsofListenerPids(port: number): number[] {
   }
 }
 
+const NETSTAT_LISTENER =
+  /^\s*TCP\s+\S+:(\d+)\s+(?:0\.0\.0\.0|\[::\]):0\s+.*?(\d+)\s*$/u;
+
+/** The pids `netstat` shows listening on `port`, read by the foreign address, which the state's localized name is not. */
+function netstatListenerPids(port: number): number[] {
+  try {
+    return execFileSync("netstat", ["-ano"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
+    })
+      .split(/\r?\n/u)
+      .flatMap((line) => {
+        const [, local, pid] = NETSTAT_LISTENER.exec(line) ?? [];
+        return Number(local) === port && pid !== undefined ? [Number(pid)] : [];
+      })
+      .filter((pid, at, all) => all.indexOf(pid) === at);
+  } catch {
+    return [];
+  }
+}
+
 /** The pids listening on `port` that this user may inspect; empty when none can be read. */
 export function listenerPids(port: number): number[] {
   if (process.platform === "linux") return linuxListenerPids(port);
   if (process.platform === "darwin") return lsofListenerPids(port);
+  if (process.platform === "win32") return netstatListenerPids(port);
   return [];
 }
 
@@ -206,5 +229,7 @@ export async function listensOn(pid: number, port: number): Promise<boolean> {
     return holdsSocket(String(pid), listenSockets(port));
   if (process.platform === "darwin")
     return lsofListenerPids(port).includes(pid);
+  if (process.platform === "win32")
+    return netstatListenerPids(port).includes(pid);
   return accepting(port);
 }

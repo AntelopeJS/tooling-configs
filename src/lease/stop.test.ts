@@ -27,13 +27,28 @@ import {
 
 const IDLE = "setInterval(() => {}, 1000)";
 
+const STOP_SUPPORTED =
+  process.platform === "linux" || process.platform === "win32";
+
 const STOP_UNSUPPORTED =
-  process.platform === "win32" &&
-  "down --stop finds a lease's processes through /proc and signals them one by one, which Windows has neither of: it refuses there";
+  !STOP_SUPPORTED &&
+  "down --stop reads each process's environment, which only Linux and Windows let it: it refuses elsewhere";
+
+/** Runs the command in its arguments as a child and blocks its own event loop for a minute, so it never collects the child's exit. */
+const UNREAPING_PARENT = `require("node:child_process").spawn(process.argv[1], process.argv.slice(2), { stdio: "inherit" });
+Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60000);`;
+
+/** Runs the command in its arguments as a child that leads no process group, waits for it, then exits. */
+const WAITING_PARENT = `require("node:child_process").spawnSync(process.argv[1], process.argv.slice(2), { stdio: "inherit" });`;
+
+/** Starts an idler that outlives this process, prints its pid, and exits. */
+const LEAVE_CHILD = `const kid = require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(IDLE)}], { detached: true, stdio: "ignore" });
+kid.unref();
+console.log(kid.pid);`;
 
 test(
-  "down --stop refuses with one line naming /proc and Linux before it touches a lease, and still does nothing without one (fails when it runs on a platform that cannot read a process's environment, which stops nothing and deletes the lease's data under running servers, or when it refuses where there is nothing to stop)",
-  { skip: process.platform === "linux" && "Linux supports down --stop" },
+  "down --stop refuses with one line naming Linux and Windows before it touches a lease, and still does nothing without one (fails when it runs on a platform that cannot read a process's environment, which stops nothing and deletes the lease's data under running servers, or when it refuses where there is nothing to stop)",
+  { skip: STOP_SUPPORTED && "this platform supports down --stop" },
   async (t) => {
     const root = scratch(t);
     const worktree = gitInit(join(root, "w"));
@@ -45,7 +60,7 @@ test(
     assert.deepEqual([refused.code, refused.stdout], [1, ""]);
     assert.match(
       refused.stderr,
-      /^antelopejs-lease: down --stop reads \/proc and runs on Linux only; .*\n$/u,
+      /^antelopejs-lease: down --stop reads the environment of each process and runs on Linux and Windows only; .*\n$/u,
     );
     assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), true);
   },
@@ -146,17 +161,15 @@ test(
     const worktree = gitInit(join(root, "w"));
     const env = externalEnv(join(root, ".home"));
     const printed = await leasedEnv(worktree, env);
-    const script = `"$0" -e '${IDLE}' >/dev/null 2>&1 & echo $!`;
     const started = startCaptured(
       LEASE_ARGV[0] ?? "",
       [
         ...LEASE_ARGV.slice(1),
         "run",
         "--",
-        "sh",
-        "-c",
-        script,
         process.execPath,
+        "-e",
+        LEAVE_CHILD,
       ],
       { cwd: worktree, env, detached: true },
     );
@@ -180,10 +193,10 @@ test(
     const env = externalEnv(join(root, ".home"));
     const printed = await leasedEnv(worktree, env);
     const started = startCaptured(
-      "sh",
+      process.execPath,
       [
-        "-c",
-        'setsid "$0" "$@" & exec sleep 60',
+        "-e",
+        UNREAPING_PARENT,
         ...LEASE_ARGV,
         "run",
         "--",
@@ -195,7 +208,7 @@ test(
     );
     reap(t, started.child.pid ?? 0, true);
     const [run = 0, kid = 0] = pidsOf(await firstLine(started));
-    reap(t, run, true);
+    reap(t, run, false);
     reap(t, kid, false);
     const outcome = await lease(["down", "--stop"], worktree, env);
     assert.equal(outcome.code, 0, outcome.stderr);
@@ -214,8 +227,17 @@ test(
     const env = externalEnv(join(root, ".home"));
     const printed = await leasedEnv(worktree, env);
     const started = startCaptured(
-      "sh",
-      ["-c", '"$0" "$1" run -- "$0" -e "$2"; :', ...LEASE_ARGV, TREE],
+      process.execPath,
+      [
+        "-e",
+        WAITING_PARENT,
+        ...LEASE_ARGV,
+        "run",
+        "--",
+        process.execPath,
+        "-e",
+        TREE,
+      ],
       { cwd: worktree, env, detached: true },
     );
     reap(t, started.child.pid ?? 0, true);

@@ -5,15 +5,22 @@ import { delimiter, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { unmarked } from "./env.ts";
+import { locateWindows } from "./exec.ts";
 import { accepting, listenerPids, listensOn } from "./ports.ts";
 import { assertSignallable } from "./procs.ts";
+import {
+  windowsProcesses,
+  windowsStart,
+  windowsTerminate,
+  type WindowsProcess,
+} from "./windows.ts";
 
 const READY_TIMEOUT_MS = 30_000;
 const KILL_WAIT_MS = 2_000;
 const POLL_MS = 50;
 const STAT_START = 19;
 const DEAD_STATES = new Set(["Z", "X"]);
-const CACHED_BINARY = /^mongod-.+-(\d+)\.(\d+)\.(\d+)$/u;
+const CACHED_BINARY = /^mongod-.+-(\d+)\.(\d+)\.(\d+)(?:\.exe)?$/u;
 
 /** Where a lease's mongod keeps its data and its log. */
 export interface MongodPaths {
@@ -55,6 +62,18 @@ function newestCached(directory: string): string | undefined {
     .find(executable);
 }
 
+function onPath(env: NodeJS.ProcessEnv): string | undefined {
+  if (process.platform === "win32") {
+    const found = locateWindows("mongod", env);
+    return found.kind === "start" && !found.script ? found.file : undefined;
+  }
+  return (env.PATH ?? "")
+    .split(delimiter)
+    .filter(Boolean)
+    .map((directory) => join(directory, "mongod"))
+    .find(executable);
+}
+
 /**
  * The mongod a lease runs: `MONGOMS_SYSTEM_BINARY`, else `mongod` on `PATH`, else the newest
  * mongodb-memory-server download in `MONGOMS_DOWNLOAD_DIR` or `~/.cache/mongodb-binaries`.
@@ -62,13 +81,8 @@ function newestCached(directory: string): string | undefined {
 export function findMongod(env: NodeJS.ProcessEnv): string | undefined {
   const system = env.MONGOMS_SYSTEM_BINARY;
   if (system && executable(system)) return system;
-  const onPath = (env.PATH ?? "")
-    .split(delimiter)
-    .filter(Boolean)
-    .map((directory) => join(directory, "mongod"))
-    .find(executable);
   return (
-    onPath ??
+    onPath(env) ??
     newestCached(
       env.MONGOMS_DOWNLOAD_DIR || join(homedir(), ".cache", "mongodb-binaries"),
     )
@@ -77,6 +91,8 @@ export function findMongod(env: NodeJS.ProcessEnv): string | undefined {
 
 /** The command line of `pid`, empty once the process has exited, a zombie included. */
 function commandLine(pid: number): string {
+  if (process.platform === "win32")
+    return windowsProcesses().find((entry) => entry.pid === pid)?.command ?? "";
   try {
     if (process.platform === "linux")
       return readFileSync(`/proc/${pid}/cmdline`, "utf8").replaceAll("\0", " ");
@@ -90,10 +106,20 @@ function commandLine(pid: number): string {
 }
 
 /**
- * The pid of the mongod serving `dbpath`, read from the `mongod.lock` mongod writes there. A pid is
- * trusted only while its command line names `dbpath`, so a reused pid never counts.
+ * The Windows process whose command line names `dbpath`. mongod holds its `mongod.lock` there
+ * unreadable, so the command line is the only record of which process serves the dbpath.
+ */
+function windowsMongod(dbpath: string): WindowsProcess | undefined {
+  return windowsProcesses().find((entry) => entry.command.includes(dbpath));
+}
+
+/**
+ * The pid of the mongod serving `dbpath`, read from the `mongod.lock` mongod writes there, or on
+ * Windows found by its command line. A pid is trusted only while its command line names `dbpath`,
+ * so a reused pid never counts.
  */
 export function mongodPid(dbpath: string): number | undefined {
+  if (process.platform === "win32") return windowsMongod(dbpath)?.pid;
   let text: string;
   try {
     text = readFileSync(join(dbpath, "mongod.lock"), "utf8").trim();
@@ -164,6 +190,16 @@ function signal(pid: number, name: NodeJS.Signals): void {
   }
 }
 
+/** Terminates the mongod serving `dbpath` on Windows, which has no SIGTERM for a process without a console. */
+function stopWindowsMongod(dbpath: string): void {
+  const found = windowsMongod(dbpath);
+  if (found === undefined) return;
+  if (windowsTerminate([found], KILL_WAIT_MS).length > 0)
+    throw new Error(
+      `antelopejs-lease: mongod ${found.pid} was still running ${KILL_WAIT_MS / 1000} s after it was terminated`,
+    );
+}
+
 /**
  * Stops the mongod serving `dbpath`, if any: SIGTERM and `graceMs` to shut down, then SIGKILL.
  * With `graceMs` 0 it kills at once. Throws when the process outlives the kill.
@@ -172,6 +208,7 @@ export async function stopMongod(
   dbpath: string,
   graceMs: number,
 ): Promise<void> {
+  if (process.platform === "win32") return stopWindowsMongod(dbpath);
   const pid = mongodPid(dbpath);
   if (pid === undefined) return;
   const runs = runningCheck(pid, dbpath);
@@ -195,6 +232,8 @@ async function holder(port: number): Promise<string> {
 
 /** The command lines of the processes this user may read. */
 function commandLines(): string[] {
+  if (process.platform === "win32")
+    return windowsProcesses().map((entry) => entry.command);
   if (process.platform === "linux")
     return readdirSync("/proc")
       .filter((name) => /^\d+$/u.test(name))
@@ -242,21 +281,19 @@ async function ready(
 
 /**
  * Makes sure the lease's own mongod serves `paths.dbpath` on `port`, starting one when none does.
- * With `--fork`, mongod daemonizes itself, and the process this call starts exits once the server
- * accepts connections. The server is never a child of this process, nor of the command `run`
- * becomes, which would keep it as a zombie after `down`. Two callers at once are safe: mongod locks its dbpath, so the second exits and both wait
- * for the first. mongod gets no `ANTELOPEJS_LEASE`, even when the caller runs under another
- * worktree's lease, so only `down` of its own lease stops it.
+ * The server is never a child of this process, nor of the command `run` becomes, which would keep
+ * it as a zombie after `down`. On Linux and macOS mongod daemonizes itself with `--fork`, and the
+ * process this call starts exits once the server accepts connections. Windows has no `--fork`, so
+ * mongod starts there detached, with no console and no handle of this process. Two callers at once
+ * are safe: mongod locks its dbpath, so the second exits and both wait for the first. mongod gets
+ * no `ANTELOPEJS_LEASE`, even when the caller runs under another worktree's lease, so only `down`
+ * of its own lease stops it.
  */
 export async function ensureMongod(
   port: number,
   paths: MongodPaths,
   env: NodeJS.ProcessEnv,
 ): Promise<void> {
-  if (process.platform === "win32")
-    throw new Error(
-      "antelopejs-lease: a lease's own mongod is not supported on Windows, where mongod has no --fork and holds its mongod.lock exclusively; set DMS_MONGO_URL to a server you run",
-    );
   if (mongodPid(paths.dbpath) !== undefined)
     return ready(port, paths, () => true);
   const binary = findMongod(env);
@@ -264,24 +301,28 @@ export async function ensureMongod(
     throw new Error(
       "antelopejs-lease: no mongod on PATH or in ~/.cache/mongodb-binaries; install MongoDB, or set DMS_MONGO_URL to a server you run",
     );
-  const started = spawn(
-    binary,
-    [
-      "--dbpath",
-      paths.dbpath,
-      "--port",
-      String(port),
-      "--bind_ip",
-      "127.0.0.1",
-      "--logpath",
-      paths.log,
-      "--logappend",
-      "--wiredTigerCacheSizeGB",
-      "0.25",
-      "--fork",
-    ],
-    { detached: true, stdio: "ignore", env: unmarked(process.env) },
-  );
+  const args = [
+    "--dbpath",
+    paths.dbpath,
+    "--port",
+    String(port),
+    "--bind_ip",
+    "127.0.0.1",
+    "--logpath",
+    paths.log,
+    "--logappend",
+    "--wiredTigerCacheSizeGB",
+    "0.25",
+  ];
+  if (process.platform === "win32") {
+    windowsStart(binary, args);
+    return ready(port, paths, () => true);
+  }
+  const started = spawn(binary, [...args, "--fork"], {
+    detached: true,
+    stdio: "ignore",
+    env: unmarked(process.env),
+  });
   let exited = false;
   started.once("exit", () => (exited = true));
   started.once("error", () => (exited = true));
