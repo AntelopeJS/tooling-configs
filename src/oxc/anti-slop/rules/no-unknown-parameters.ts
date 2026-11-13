@@ -134,7 +134,7 @@ export const noUnknownParametersRule = defineRule({
     type: "problem",
     docs: {
       description:
-        "Disallow explicitly unknown function parameters except `cause`, type-predicate subjects, `this`, request values injected by `@JSONBody`, `@JsonBody` or `@Parameter`, promise rejection reasons, the parameter of a callback type that the function only calls with a caught value, a symbol-keyed brand probe, a parameter a function only decodes through a schema or decoder into the value it returns, a parameter a function only reads through type guards, where they hold, and through `String` or `JSON.stringify`, to classify it into a declared value other than `boolean` or `void`, and a parameter a function only forwards, unread, to member calls, imports or exempt same-file parameters that take `unknown`; decode unknown input at its I/O boundary instead.",
+        "Disallow explicitly unknown function parameters except `cause`, type-predicate subjects, `this`, request values injected by `@JSONBody`, `@JsonBody` or `@Parameter`, promise rejection reasons, the parameter of a callback type that the function only calls with a caught value, a symbol-keyed brand probe, a parameter a function only decodes through a schema or decoder into the value it returns, a parameter a function only reads through type guards, where they hold and short of handing on as is a value only a loose guard narrowed, and through `String` or `JSON.stringify`, to classify it into a declared value other than a yes-or-no verdict or `void`, and a parameter a function only forwards, unread, to member calls not rooted at another parameter, imports or exempt same-file parameters that take `unknown`; decode unknown input at its I/O boundary instead.",
     },
     messages: {
       unknownParameter:
@@ -146,7 +146,10 @@ export const noUnknownParametersRule = defineRule({
     /** The checks of one file, in the order they were met. They run at its end, so a forward is judged by a function declared after it. */
     const pending: { node: ParameterOwner; facts: FunctionFacts }[] = [];
     const walked = new Map<RuntimeFunction, FunctionFacts>();
-    const judging = new Set<RuntimeFunction>();
+    /** The parameters a forward is being judged into. A forward back to one of them is not exempt. */
+    const judging = new Set<FunctionParameter>();
+    /** The verdicts on parameters a forward landed on, so a chain of forwarders judges each parameter once. */
+    const verdicts = new Map<FunctionParameter, boolean>();
 
     const isExempt = (
       node: ParameterOwner,
@@ -170,13 +173,16 @@ export const noUnknownParametersRule = defineRule({
     /** Return whether this rule exempts the parameter at `position` of a function the file declares, so a forward to it hands the value to a parser. */
     const acceptsForward = (callee: RuntimeFunction, position: number): boolean => {
       const parameter = callee.params[position];
-      const annotation = parameter === undefined ? null : functionParameterTypeAnnotation(parameter);
+      if (parameter === undefined || judging.has(parameter)) return false;
+      const known = verdicts.get(parameter);
+      if (known !== undefined) return known;
+      const annotation = functionParameterTypeAnnotation(parameter);
       const facts = walked.get(callee);
-      if (parameter === undefined || annotation === null || annotation === undefined || facts === undefined) return false;
-      if (judging.has(callee)) return false;
-      judging.add(callee);
+      if (annotation === null || annotation === undefined || facts === undefined) return false;
+      judging.add(parameter);
       const exempt = isExempt(callee, parameter, annotation.typeAnnotation, facts);
-      judging.delete(callee);
+      judging.delete(parameter);
+      verdicts.set(parameter, exempt);
       return exempt;
     };
 
@@ -210,6 +216,7 @@ export const noUnknownParametersRule = defineRule({
       Program() {
         pending.length = 0;
         walked.clear();
+        verdicts.clear();
       },
       "Program:exit"() {
         for (const { node, facts } of pending) checkParameters(node, facts);

@@ -54,6 +54,11 @@ function dottedName(node: ESTree.Node): string | null {
 		: null;
 }
 
+/** Return whether a call is one of `PROPERTY_WRITERS`, such as `Object.assign`, which write properties of the object they are handed first. */
+export function writesProperties(call: ESTree.CallExpression): boolean {
+	return PROPERTY_WRITERS.has(dottedName(call.callee) ?? "");
+}
+
 /** Return the outermost member expression a reference is the object of, or the reference itself. */
 function memberChainTop(identifier: Reference["identifier"]): ESTree.Node {
 	let current: ESTree.Node = identifier;
@@ -75,7 +80,7 @@ function hasPropertyWrites(variable: Variable): boolean {
 			if (holder.type === "UpdateExpression") return true;
 			if (holder.type === "UnaryExpression" && holder.operator === "delete") return true;
 		}
-		return holder.type === "CallExpression" && holder.arguments[0] === top && PROPERTY_WRITERS.has(dottedName(holder.callee) ?? "");
+		return holder.type === "CallExpression" && holder.arguments[0] === top && writesProperties(holder);
 	});
 }
 

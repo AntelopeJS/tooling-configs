@@ -151,6 +151,7 @@
   "src/oxc/anti-slop/rules/no-unknown-parameters-brand-probe.test.ts": 0.3,
   "src/oxc/anti-slop/rules/no-unknown-parameters-caught-callback.test.ts": 0.2,
   "src/oxc/anti-slop/rules/no-unknown-parameters-forward-only.test.ts": 0.3,
+  "src/oxc/anti-slop/rules/no-unknown-parameters-guarded-reads-bounds.test.ts": 0.2,
   "src/oxc/anti-slop/rules/no-unknown-parameters-guarded-reads.test.ts": 0.2,
   "src/oxc/anti-slop/rules/no-unknown-parameters-parse-boundary-callees.test.ts": 0.2,
   "src/oxc/anti-slop/rules/no-unknown-parameters-parse-boundary.test.ts": 0.3,

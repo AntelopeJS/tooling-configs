@@ -61,6 +61,12 @@ const MODULE_CALLBACKS = `export interface ModuleCallbacks {
   construct?(config: unknown): Promise<void> | void;
 }`;
 
+/** Twenty forwarders, each handing the value twice to the one below, over a `String` conversion. */
+const FORWARD_CHAIN = [
+	"function forward0(value: unknown): string { return String(value); }",
+	...Array.from({ length: 20 }, (_, level) => `function forward${level + 1}(value: unknown): void { forward${level}(value); forward${level}(value); }`),
+].join("\n");
+
 tester.run("anti-slop/no-unknown-parameters at a parameter only forwarded", noUnknownParametersRule, {
 	valid: [
 		{
@@ -94,6 +100,14 @@ tester.run("anti-slop/no-unknown-parameters at a parameter only forwarded", noUn
 		{
 			name: "two forwards of the same parameter: fails one that accepts only a single read",
 			code: "class Host { start(config: unknown): void { this.log.write(config); this.runner.start(config); } }",
+		},
+		{
+			name: "a member call on a local made by an imported factory: fails one that refuses every callee read from a local",
+			code: 'import { createLogger } from "./log";\nfunction load(config: unknown): void { const logger = createLogger(); logger.info(config); }',
+		},
+		{
+			name: "a chain of twenty forwarders, each forwarding twice: fails one that judges a callee again per forward, 2^20 judgments that take seconds",
+			code: FORWARD_CHAIN,
 		},
 	],
 	invalid: [
@@ -164,6 +178,36 @@ tester.run("anti-slop/no-unknown-parameters at a parameter only forwarded", noUn
 			name: "a forward to a callback another parameter hands in: fails one that trusts a member of a parameter",
 			code: "function computeConfigVars(provider: ConfigVarsProvider, config: unknown): ConfigVars { return provider.configVars(config) ?? {}; }",
 			errors: [error],
+		},
+		{
+			name: "a callee destructured from another parameter: fails one that resolves only a callee read directly from a parameter",
+			code: "interface RunOptions { logger: Logger }\nfunction load(options: RunOptions, config: unknown): void { const { logger } = options; logger.info(config); }",
+			errors: [{ ...error, data: { parameter: "config" } }],
+		},
+		{
+			name: "a callee from a const alias of another parameter: fails one that follows destructuring but not a plain alias",
+			code: "type Foo = { a?: string };\nfunction f(h: any, x: unknown): Foo { const k = h; return k.run(x); }",
+			errors: [{ ...error, data: { parameter: "x" } }],
+		},
+		{
+			name: "a callee two aliases away from another parameter, the last assigned later: fails one that follows one initializer only",
+			code: "function f(h: Handlers, x: unknown): void { const inner = h.inner; let k; k = inner; k.run(x); }",
+			errors: [{ ...error, data: { parameter: "x" } }],
+		},
+		{
+			name: "a callee from another parameter's member with a ?? fallback: fails one that roots only plain member chains",
+			code: "function load(options: RunOptions, config: unknown): void { const logger = options.logger ?? console; logger.info(config); }",
+			errors: [{ ...error, data: { parameter: "config" } }],
+		},
+		{
+			name: "Object.assign of the value into a field: fails one that treats a property writer as a forward",
+			code: "class Settings { private values = { theme: 'light' }; load(config: unknown): void { Object.assign(this.values, config); } }",
+			errors: [error],
+		},
+		{
+			name: "a forwarder whose return type is a predicate on another parameter: fails one that refuses only boolean among verdicts",
+			code: 'class Host { check(config: unknown, name: string): name is "a" { this.runner.start(config); return name === "a"; } }',
+			errors: [{ ...error, data: { parameter: "config" } }],
 		},
 		{
 			name: "a value kept by a collection's set: fails one that treats a store as a forward",
