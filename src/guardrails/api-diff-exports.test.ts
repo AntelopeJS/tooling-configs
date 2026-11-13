@@ -42,8 +42,10 @@ test("api-diff expands slash-spanning exports, all conditions, main and typesVer
   commit(root);
   const removed = bin(root, "api-diff", ["HEAD~1"]);
   assert.equal(removed.status, 1);
-  assert.match(removed.stdout, /deleted file mode/);
-  assert.match(removed.stdout, /exports\/subpath\/nested%2Fentry\.d\.ts/);
+  assert.match(
+    removed.stdout,
+    /^-\/\/ {3}_root\/exports\/subpath\/nested%2Fentry\.d\.ts$/mu,
+  );
 });
 
 test("api-diff leaves compiled test files out of wildcard exports in both halves", (t) => {
@@ -139,4 +141,35 @@ test("api-diff compares published subpaths, allowing entry relocation but catchi
   commit(root);
   const moved = bin(root, "api-diff", ["base"]);
   assert.equal(moved.status, 0, moved.stdout + moved.stderr);
+});
+
+test("api-diff prints a declaration changed in several entries once, under the entries it affects", (t) => {
+  const root = apiRepo(t);
+  put(
+    root,
+    "package.json",
+    JSON.stringify({
+      name: "public-api",
+      type: "module",
+      exports: {
+        ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
+        "./extra": { types: "./dist/extra.d.ts", default: "./dist/extra.js" },
+        "./other": { types: "./dist/other.d.ts", default: "./dist/other.js" },
+      },
+    }),
+  );
+  put(root, "src/shared.ts", "export interface Value { value: string }\n");
+  put(root, "src/index.ts", 'export type { Value } from "./shared.js";\n');
+  put(root, "src/extra.ts", 'export type { Value } from "./shared.js";\n');
+  put(root, "src/other.ts", "export interface Other { other: string }\n");
+  commit(root);
+  put(root, "src/shared.ts", "export interface Value { value: number }\n");
+  commit(root);
+  const changed = bin(root, "api-diff", ["HEAD~1"]);
+  assert.equal(changed.status, 1, changed.stdout + changed.stderr);
+  assert.equal(changed.stdout.match(/^\+.*value: number/gmu)?.length, 1);
+  assert.match(
+    changed.stdout,
+    /^ \/\/ In _root\/exports\/root\.d\.ts, _root\/exports\/subpath\/extra\.d\.ts\n(?:.*\n){0,2}\+.*value: number/mu,
+  );
 });

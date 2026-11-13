@@ -155,6 +155,8 @@ interface CompareOptions {
   policy?: AddedPolicy;
   /** Each worktree resolves its workspace packages to its own revision, for a comparison that builds them there. */
   ownWorkspace?: boolean;
+  /** Rewrites one side's output directory after allowed additions are removed and before the sides are compared. */
+  collate?: (output: string) => void;
 }
 
 /** Compares isolated committed revisions and removes both worktrees even when compilation fails; a policy lets matching `@internal` additions through. */
@@ -163,7 +165,7 @@ export function compareRevisions(
   baseRef: string,
   label: string,
   emit: (worktree: string, output: string, scratch: string) => RevisionOutput,
-  { policy, ownWorkspace = false }: CompareOptions = {},
+  { policy, ownWorkspace = false, collate }: CompareOptions = {},
 ) {
   const temporary = mkdtempSync(join(tmpdir(), "antelope-proof-"));
   const worktrees: string[] = [];
@@ -202,6 +204,8 @@ export function compareRevisions(
             results[1].published ?? [],
             (path) => rmSync(join(temporary, "head", path), { force: true }),
           );
+    if (collate !== undefined)
+      for (const side of ["base", "head"]) collate(join(temporary, side));
     const diff = spawnSync(
       "git",
       [

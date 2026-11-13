@@ -22,6 +22,7 @@ import ts from "@typescript/typescript6";
 
 import { autoImportDiff } from "./auto-imports.ts";
 import { bundleDeclarations } from "./declaration-bundle.ts";
+import { collateDeclarations } from "./declaration-groups.ts";
 import { normalizeBundle } from "./declaration-order.ts";
 import { stampProof } from "./proof-stamp.ts";
 import {
@@ -414,7 +415,7 @@ function declarationDiff(
         published,
       };
     },
-    { policy },
+    { policy, collate: (output) => collateDeclarations(ts, output) },
   );
   return {
     different: result.different || errors.size > 0,
