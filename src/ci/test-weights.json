@@ -16,6 +16,7 @@
   "src/ci/shards.test.ts": 0,
   "src/docs/vale-style.test.ts": 0,
   "src/eslint-false-positives.test.ts": 3.7,
+  "src/eslint-formatter.test.ts": 3.7,
   "src/eslint.test.ts": 2.7,
   "src/formal/tlc.test.ts": 75.8,
   "src/garden/apps.test.ts": 0,
