@@ -10,7 +10,6 @@ export function scratchFiles(files: Readonly<Record<string, string>>) {
   }
   return {
     root,
-    names: Object.keys(files),
     read: (name: string) => readFileSync(join(root, name), "utf8"),
     remove: () => rmSync(root, { recursive: true, force: true }),
   };
