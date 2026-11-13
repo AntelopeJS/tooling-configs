@@ -98,47 +98,51 @@ function describeActor(actor: JsonObject): string {
   return `${optStr(actor, "actor_type") ?? "unknown"} ${optNum(actor, "actor_id") ?? "none"} (${optStr(actor, "bypass_mode") ?? "unknown"})`;
 }
 
-function rulesetPath(repo: GardenRepo, rule: JsonObject): string {
+/** A ruleset that contributes a rule to a default branch, read through the repository endpoint, which serves organization rulesets without the `admin:org` scope. */
+interface RulesetRef {
+  readonly key: string;
+  readonly path: string;
+  readonly label: string;
+}
+
+function rulesetRef(repo: GardenRepo, rule: JsonObject): RulesetRef {
   const id = num(rule, "ruleset_id");
-  return optStr(rule, "ruleset_source_type") === "Organization"
-    ? `/orgs/${ORG}/rulesets/${id}`
-    : `/repos/${ORG}/${repo.name}/rulesets/${id}`;
+  const organization = optStr(rule, "ruleset_source_type") === "Organization";
+  return {
+    key: organization ? `${ORG}:${id}` : `${ORG}/${repo.name}:${id}`,
+    path: `/repos/${ORG}/${repo.name}/rulesets/${id}`,
+    label: `${organization ? "organization" : "repository"} ruleset ${id}`,
+  };
 }
 
-function rulesetLabel(path: string, name: string): string {
-  const scope = path.startsWith("/orgs/") ? "organization" : "repository";
-  return `${name} (${scope} ruleset ${path.slice(path.lastIndexOf("/") + 1)})`;
-}
-
-type RulesetReader = (path: string) => Promise<JsonObject>;
+type RulesetReader = (ref: RulesetRef) => Promise<JsonObject>;
 
 function rulesetReader(context: GardenContext): RulesetReader {
   const cache = new Memo<JsonObject>();
-  return (path) =>
-    cache.get(path, async () =>
-      object(await context.api.json(path), "ruleset"),
+  return (ref) =>
+    cache.get(ref.key, async () =>
+      object(await context.api.json(ref.path), "ruleset"),
     );
 }
 
 async function bypassOffenders(
   read: RulesetReader,
-  paths: readonly string[],
+  refs: readonly RulesetRef[],
 ): Promise<string[]> {
   const offenders: string[] = [];
-  for (const path of paths) {
-    const set = await read(path);
+  for (const ref of refs) {
+    const set = await read(ref);
+    const name = `${str(set, "name")} (${ref.label})`;
     const listed = set["bypass_actors"];
     if (listed === undefined)
       throw new Error(
-        `${rulesetLabel(path, str(set, "name"))} returned no bypass list; the Gardener token must belong to an administrator.`,
+        `${name} returned no bypass list; the Gardener token must belong to an administrator.`,
       );
     const actors = list(listed, "bypass_actors")
       .map((actor) => object(actor, "bypass_actors"))
       .filter((actor) => !mayBypass(actor));
     if (actors.length)
-      offenders.push(
-        `${rulesetLabel(path, str(set, "name"))}: ${actors.map(describeActor).join(", ")}`,
-      );
+      offenders.push(`${name}: ${actors.map(describeActor).join(", ")}`);
   }
   return offenders;
 }
@@ -181,7 +185,9 @@ async function scanBranch(
     ),
   );
   const offenders = await bypassOffenders(read, [
-    ...new Set(rules.map((rule) => rulesetPath(repo, rule))),
+    ...new Map(
+      rules.map((rule) => rulesetRef(repo, rule)).map((ref) => [ref.key, ref]),
+    ).values(),
   ]);
   return offenders.length
     ? [
