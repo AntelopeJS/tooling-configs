@@ -8,8 +8,8 @@ import { noPresenceOnlyTypeGuardRule } from "./rules/no-presence-only-type-guard
 import { noReadThenInsertRule } from "./rules/no-read-then-insert.ts";
 import { noSelfImportInTestsRule } from "./rules/no-self-import-in-tests.ts";
 import { noTypeofFunctionOnlyTestRule } from "./rules/no-typeof-function-only-test.ts";
-import { noUnsafeObjectAssignRule } from "./rules/no-unsafe-object-assign.ts";
 import { noUnrunQueryRule } from "./rules/no-unrun-query.ts";
+import { noUnsafeObjectAssignRule } from "./rules/no-unsafe-object-assign.ts";
 import { requireAssertionRule } from "./rules/require-assertion.ts";
 import { requireTsconfigIncludeRule } from "./rules/require-tsconfig-include.ts";
 import { requireTsconfigTypesRule } from "./rules/require-tsconfig-types.ts";
@@ -28,8 +28,8 @@ const guardrailsPlugin = eslintCompatPlugin({
     "no-constant-value-assertion": noConstantValueAssertionRule,
     "no-self-import-in-tests": noSelfImportInTestsRule,
     "no-typeof-function-only-test": noTypeofFunctionOnlyTestRule,
-    "no-unsafe-object-assign": noUnsafeObjectAssignRule,
     "no-unrun-query": noUnrunQueryRule,
+    "no-unsafe-object-assign": noUnsafeObjectAssignRule,
     "require-assertion": requireAssertionRule,
     "require-tsconfig-include": requireTsconfigIncludeRule,
     "require-tsconfig-types": requireTsconfigTypesRule,

@@ -48,7 +48,7 @@ function reported(source: string): number[] {
   }
 }
 
-test("an async arrow that returns an unrun interface-database query is reported", () => {
+test("an async function or arrow that returns an unrun interface-database query, alone or in a union, is reported", () => {
   assert.deepEqual(
     reported(`import { novels } from "./novels.ts";
 
@@ -56,28 +56,40 @@ export const count = async () => novels.count();
 export async function total() {
   return novels.count();
 }
+export const maybe = async (fresh: boolean) => (fresh ? novels.count() : null);
 `),
-    [3, 5],
+    [3, 5, 7],
   );
 });
 
-test("a .then callback that returns an unrun interface-database query is reported", () => {
+test("a then or catch callback that returns an unrun interface-database query is reported", () => {
   assert.deepEqual(
     reported(`import { novels } from "./novels.ts";
 
 export const counted = Promise.resolve().then(() => novels.count());
+export const recovered = Promise.resolve().catch(() => novels.count());
+export const total = Promise.resolve().then(function () {
+  return novels.count();
+});
 `),
-    [3],
+    [3, 4, 6],
   );
 });
 
-test("a query run before it is returned, or returned by a plain builder, is not reported", () => {
+test("a run query, a query a sync function returns, and another object with run() are not reported", () => {
   assert.deepEqual(
     reported(`import { novels } from "./novels.ts";
 
 export const count = async () => novels.count().run();
 export const counted = Promise.resolve().then(() => novels.count().run());
 export const countQuery = () => novels.count();
+export const counts = async () => [1].map(() => novels.count());
+class Job {
+  run(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+export const job = async () => new Job();
 `),
     [],
   );

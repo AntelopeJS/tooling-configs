@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { defineRule } from "@oxlint/plugins";
 import ts from "@typescript/typescript6";
 
@@ -7,8 +9,23 @@ import { nodeAt, typedFile } from "../type-checker.ts";
 
 type FunctionNode = ESTree.Function | ESTree.ArrowFunctionExpression;
 
-const INTERFACE_DATABASE = "/node_modules/@antelopejs/interface-database/";
+const PACKAGE = "node_modules/@antelopejs/interface-database";
+const INTERFACE_DATABASE = `/${PACKAGE}/`;
 const PROMISE_CALLBACK_METHODS = new Set(["then", "catch", "finally"]);
+
+const installs = new Map<string, boolean>();
+
+/** Whether a `node_modules` at or above `directory` holds interface-database, so a repository without it never builds a type-checked program for this rule. */
+function installsInterfaceDatabase(directory: string): boolean {
+  const known = installs.get(directory);
+  if (known !== undefined) return known;
+  const parent = dirname(directory);
+  const found =
+    existsSync(join(directory, PACKAGE)) ||
+    (parent !== directory && installsInterfaceDatabase(parent));
+  installs.set(directory, found);
+  return found;
+}
 
 function enclosingFunction(node: ESTree.Node): FunctionNode | null {
   for (let current = node.parent; current !== null; current = current.parent)
@@ -63,6 +80,8 @@ export const noUnrunQueryRule = defineRule({
       value: ESTree.Node,
       returned: (sourceFile: ts.SourceFile) => ts.Node | undefined,
     ): void {
+      if (!installsInterfaceDatabase(dirname(resolve(context.filename))))
+        return;
       const typed = typedFile(context.filename, context.sourceCode.text);
       const expression = typed && returned(typed.sourceFile);
       if (
