@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.5.7
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.6...v0.5.7)
+
+### 🚀 Enhancements
+
+- **docs:** List mysql among the Database providers ([#324](https://github.com/AntelopeJS/tooling-configs/pull/324))
+- **verify:** Pass a service's args to its container after the image ([#325](https://github.com/AntelopeJS/tooling-configs/pull/325))
+
+### 🩹 Fixes
+
+- **api-diff:** Skip packages outside the repository's workspace ([#322](https://github.com/AntelopeJS/tooling-configs/pull/322))
+- **sync:** Keep nested pnpm installs in their own project ([#323](https://github.com/AntelopeJS/tooling-configs/pull/323))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.5.6
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.5...v0.5.6)
