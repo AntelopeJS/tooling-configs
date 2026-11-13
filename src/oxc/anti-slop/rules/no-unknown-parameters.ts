@@ -11,7 +11,7 @@ import {
   functionParameterTypeAnnotation,
   isThisParameter,
 } from "../shared/function-parameters.ts";
-import { forwardsOnly } from "../shared/forward-only.ts";
+import { forwardsOnly, isForward } from "../shared/forward-only.ts";
 import { readsOnlyThroughGuards } from "../shared/guarded-reads.ts";
 import { decodesParameterIntoResult, type FunctionFacts, IMPLICIT_READERS } from "../shared/parse-boundary.ts";
 import { isRuntimeFunction, type RuntimeFunction } from "../shared/type-guards.ts";
@@ -132,7 +132,7 @@ export const noUnknownParametersRule = defineRule({
     type: "problem",
     docs: {
       description:
-        "Disallow explicitly unknown function parameters except `cause`, type-predicate subjects, `this`, request values injected by `@JSONBody`, `@JsonBody` or `@Parameter`, promise rejection reasons, the parameter of a callback type that the function only calls with a caught value, a symbol-keyed brand probe, a parameter a function only decodes through a schema or decoder into the value it returns, a parameter a function only reads through type guards, where they hold and short of handing on as is a value only a loose guard narrowed, and through `String` or `JSON.stringify`, to classify it into a declared value other than a yes-or-no verdict or `void`, and a parameter a function only forwards, unread, to member calls not rooted at another parameter, imports or exempt same-file parameters that take `unknown`; decode unknown input at its I/O boundary instead.",
+        "Disallow explicitly unknown function parameters except `cause`, type-predicate subjects, `this`, request values injected by `@JSONBody`, `@JsonBody` or `@Parameter`, promise rejection reasons, the parameter of a callback type that the function only calls with a caught value, a symbol-keyed brand probe, a parameter a function only decodes through a schema or decoder into the value it returns, a parameter a function only reads through type guards, where they hold and short of handing on as is a value only a loose guard narrowed, and through `String` or `JSON.stringify`, to classify it into a declared value other than a yes-or-no verdict or `void`, also beside forwards once one of them is a type test, and a parameter a function only forwards, unread, to member calls not rooted at another parameter, imports, callees a variable holds from another call's result, or exempt same-file parameters that take `unknown`; decode unknown input at its I/O boundary instead.",
     },
     messages: {
       unknownParameter:
@@ -160,11 +160,12 @@ export const noUnknownParametersRule = defineRule({
       const name = functionParameterBindingName(parameter, sourceCode);
       if (name === "cause" || isTypePredicateSubject(node, name)) return true;
       if (!isRuntimeFunction(node)) return false;
+      const targets = { sourceCode, accepts: acceptsForward };
       return (
         decodesParameterIntoResult(node, name, annotated, facts, sourceCode) ||
         probesBrand(node, name, annotated, facts, sourceCode) ||
-        readsOnlyThroughGuards(node, name, annotated, facts, sourceCode) ||
-        forwardsOnly(node, name, annotated, facts, { sourceCode, accepts: acceptsForward })
+        readsOnlyThroughGuards(node, name, annotated, facts, { sourceCode, forwards: (read) => isForward(read, targets) }) ||
+        forwardsOnly(node, name, annotated, facts, targets)
       );
     };
 
