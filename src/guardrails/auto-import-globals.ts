@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { dirname, join, parse } from "node:path";
-import type ts from "typescript";
+import type ts from "@typescript/typescript6";
 
 type Compiler = typeof ts;
 

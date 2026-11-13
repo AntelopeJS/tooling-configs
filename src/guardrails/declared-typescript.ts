@@ -46,7 +46,7 @@ export function declaresTypeScript(directory: string): boolean {
 }
 
 /** The directory of the package relative to the repository that contains it, `.` for the repository root; the same for every revision of the repository. */
-export function repositoryDirectory(directory: string): string {
+function repositoryDirectory(directory: string): string {
   for (let current = directory; ; current = dirname(current)) {
     if (existsSync(join(current, ".git")) || dirname(current) === current)
       return relative(current, directory).split("\\").join("/") || ".";

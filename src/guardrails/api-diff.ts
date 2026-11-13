@@ -18,6 +18,8 @@ import {
   type AddedPolicy,
   type PublishedEntry,
 } from "./added-entries.ts";
+import ts from "@typescript/typescript6";
+
 import { autoImportDiff } from "./auto-imports.ts";
 import { bundleDeclarations } from "./declaration-bundle.ts";
 import { normalizeBundle } from "./declaration-order.ts";
@@ -284,11 +286,9 @@ function bundlePackage(
   paths: PackagePaths,
   manifest: ProofManifest,
   policy?: AddedPolicy,
-  notices?: Set<string>,
 ): BundledPackage {
   const { directory, output, scratch } = paths;
   const emitted = emitPackage(directory, scratch, true);
-  if (emitted.notice !== undefined) notices?.add(emitted.notice);
   const { entries, skipped } = publishedDeclarationEntries(
     paths,
     manifest,
@@ -306,6 +306,7 @@ function bundlePackage(
     JSON.stringify({
       extends: join(directory, "tsconfig.json"),
       compilerOptions: {
+        ...emitted.defaults,
         composite: false,
         incremental: false,
         noEmit: false,
@@ -317,7 +318,6 @@ function bundlePackage(
     }),
   );
   const bundles = bundleDeclarations(
-    emitted.compilerRoot,
     scratch,
     entries.map(({ file }) => ({
       filePath: generatorEntry(join(scratch, file)),
@@ -329,14 +329,14 @@ function bundlePackage(
   for (const [index, { entry }] of entries.entries()) {
     const path = join(output, entry);
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, normalizeBundle(emitted.compiler, bundles[index]));
+    writeFileSync(path, normalizeBundle(ts, bundles[index]));
   }
   if (policy !== undefined)
     for (const { file, subpath } of entries) {
       if (!allowedByGlob(policy, subpath)) continue;
       const emittedFile = join(scratch, file);
       const module = emitted.modules.get(resolve(emittedFile)) ?? emittedFile;
-      recordVerdict(policy, emitted.compiler, {
+      recordVerdict(policy, ts, {
         directory: paths.name,
         subpath,
         module,
@@ -360,7 +360,6 @@ function declarationDiff(
   policy: AddedPolicy | undefined,
 ) {
   const errors = new Set<string>();
-  const notices = new Set<string>();
   const failedPackages = new Set<string>();
   const unpublished = new Map<string, string>();
   const skippedTests = new Set<string>();
@@ -387,7 +386,6 @@ function declarationDiff(
             },
             manifest,
             policy,
-            notices,
           );
           entries += bundled.count;
           for (const target of bundled.skipped)
@@ -432,7 +430,6 @@ function declarationDiff(
         .map(([directory, reason]) => `API: skipped ${directory}, ${reason}.\n`)
         .join("") +
       [...skippedTests].sort().join("") +
-      [...notices].sort().join("") +
       [...errors].join(""),
   };
 }

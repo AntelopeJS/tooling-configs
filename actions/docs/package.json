@@ -6,6 +6,7 @@
     "test": "node --test check.test.mjs prose.test.mjs typescript.test.mjs install-vale.test.mjs vale.test.mjs language.test.mjs standard.test.mjs"
   },
   "dependencies": {
+    "@typescript/typescript6": "6.0.2",
     "entities": "8.1.0",
     "github-slugger": "2.0.0",
     "marked": "18.1.1",

@@ -44,7 +44,6 @@ function uncommittedBase(worktree: string, directory: string) {
 
 /** Proves comment-free JavaScript emit matches, including private packages and excluding tests. A workspace base tsconfig is left out. A package whose tsconfig extends a repository file the commit lacks cannot compile from it, so it is skipped and reported; a missing base outside the repository still fails. */
 export function commentProof(root: string, baseRef: string) {
-  const notices = new Set<string>();
   const skipped = new Map<string, string>();
   const result = compareRevisions(
     root,
@@ -68,7 +67,6 @@ export function commentProof(root: string, baseRef: string) {
           emittedRoot,
           false,
         );
-        if (emitted.notice !== undefined) notices.add(emitted.notice);
         for (const file of emitted.files) {
           const path = join(output, key, relative(emittedRoot, file));
           mkdirSync(dirname(path), { recursive: true });
@@ -92,10 +90,7 @@ export function commentProof(root: string, baseRef: string) {
       root,
       `antelopejs-comment-proof ${baseRef}`,
       baseRef,
-      result.output +
-        skips +
-        [...notices].sort().join("") +
-        revisionCounts(root, baseRef),
+      result.output + skips + revisionCounts(root, baseRef),
     ),
   };
 }

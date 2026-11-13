@@ -78,3 +78,19 @@ test("typecheckLayers reports a TypeScript package without bin.tsc as not instal
   const output = await typecheckLayers(repository(t, TYPESCRIPT_7_WITHOUT_BIN));
   assert.match(output, new RegExp(NOT_INSTALLED));
 });
+
+test("typecheckLayers runs TypeScript 7's compiler from @typescript/native when typescript is the TypeScript 6 API, whose only bin is tsc6", async (t) => {
+  const root = repository(t);
+  put(
+    root,
+    "node_modules/typescript/package.json",
+    JSON.stringify({
+      name: "@typescript/typescript6",
+      version: "6.0.2",
+      bin: { tsc6: "./bin/tsc6" },
+    }),
+  );
+  put(root, "node_modules/@typescript/native/package.json", TYPESCRIPT_7);
+  put(root, "node_modules/@typescript/native/bin/tsc", FAKE_TSC);
+  assert.equal(await typecheckLayers(root), "fake tsc ran\n");
+});

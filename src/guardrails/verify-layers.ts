@@ -66,21 +66,29 @@ function isLayerCode(layer: string, file: string): boolean {
   );
 }
 
-/**
- * The repository's own `tsc` entry, run with Node so no shell parses its path. It is found through the `bin.tsc` field of
- * `typescript/package.json`, a subpath every TypeScript version exports, because TypeScript 7 declares an `exports` map that
- * leaves `typescript/bin/tsc` out.
- */
-function compilerOf(root: string): string | undefined {
+/** The packages whose `tsc` a repository runs, in order: `typescript`, else `@typescript/native` when `typescript` is the TypeScript 6 API (`@typescript/typescript6`, whose only bin is `tsc6`) installed beside TypeScript 7 for tools that need that API. */
+const COMPILER_PACKAGES = ["typescript", "@typescript/native"];
+
+/** The `bin.tsc` entry of the package `name` that `root` resolves, found through its `package.json`, a subpath every TypeScript version exports, because TypeScript 7 declares an `exports` map that leaves `typescript/bin/tsc` out. */
+function binTsc(root: string, name: string): string | undefined {
   try {
     const manifestPath = createRequire(join(root, "package.json")).resolve(
-      "typescript/package.json",
+      `${name}/package.json`,
     );
     const tsc = parseManifest(readFileSync(manifestPath, "utf8")).bin?.tsc;
     return tsc === undefined ? undefined : join(dirname(manifestPath), tsc);
   } catch {
     return undefined;
   }
+}
+
+/** The repository's own `tsc` entry, run with Node so no shell parses its path. */
+function compilerOf(root: string): string | undefined {
+  for (const name of COMPILER_PACKAGES) {
+    const tsc = binTsc(root, name);
+    if (tsc !== undefined) return tsc;
+  }
+  return undefined;
 }
 
 async function typecheckLayer(
@@ -92,7 +100,7 @@ async function typecheckLayer(
   const configPath = join(root, layer, TSCONFIG);
   if (!existsSync(configPath))
     return `${layer}: has a verify.config.ts and no tsconfig.json. Add a tsconfig.json that includes its TypeScript files; antelopejs-sync writes one for the shared kinds.\n`;
-  const ts = (await import("typescript")).default;
+  const ts = (await import("@typescript/typescript6")).default;
   const parsed = ts.getParsedCommandLineOfConfigFile(configPath, undefined, {
     ...ts.sys,
     onUnRecoverableConfigFileDiagnostic: () => undefined,

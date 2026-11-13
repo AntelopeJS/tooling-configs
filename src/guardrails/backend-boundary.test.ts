@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
-import ts from "typescript";
+import ts from "@typescript/typescript6";
 import { build, type Plugin } from "vite";
 
 import { backendBoundarySource } from "./backend-boundary.ts";

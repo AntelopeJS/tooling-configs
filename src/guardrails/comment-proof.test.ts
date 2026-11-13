@@ -86,7 +86,7 @@ test("comment-proof strips comments, ignores type errors and test deletions, inc
   assert.match(missing.stdout, /spare\.js/);
 });
 
-test("comment-proof emits a package whose TypeScript has no compiler API with the pack's TypeScript and says so", (t) => {
+test("comment-proof emits a package whose TypeScript has no compiler API with the pack's TypeScript", (t) => {
   const root = testRepo(t);
   put(
     root,
@@ -122,13 +122,6 @@ test("comment-proof emits a package whose TypeScript has no compiler API with th
   const result = bin(root, "comment-proof", ["HEAD~1"]);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /1 packages, 1 entries unchanged/);
-  assert.equal(
-    result.stdout.match(
-      /^\.: TypeScript 7\.0\.2 has no programmatic compiler API; emitting JavaScript with the pack's TypeScript \d/gm,
-    )?.length,
-    1,
-    result.stdout,
-  );
 });
 
 test("comment-proof compiles workspace packages under a private root tsconfig that lists no files", (t) => {

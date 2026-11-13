@@ -1,12 +1,17 @@
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import ts from "typescript";
+import ts from "@typescript/typescript6";
+
+import {
+  asInstalledCompilerReads,
+  installedTypeScriptMajor,
+} from "../../guardrails/installed-typescript.ts";
 
 interface Project {
   files: ReadonlySet<string>;
   options: ts.CompilerOptions;
   references: readonly string[];
-  /** The `@types` packages tsc loads because the config lists no `compilerOptions.types`; empty when it lists them. */
+  /** The `@types` packages the repository's own tsc loads because the config lists no `compilerOptions.types`: all of them on TypeScript 5, none on 6 and later; empty when it lists them. */
   automaticTypes: readonly string[];
 }
 
@@ -29,23 +34,32 @@ function configAbove(directory: string): string | undefined {
   }
 }
 
-/** The files `config` lists, its compiler options and the configs it references, parsed once per lint run. */
+/** The files `config` lists, its compiler options as the TypeScript its directory installs reads them, and the configs it references, parsed once per lint run. */
 export function project(config: string): Project | undefined {
   if (projects.has(config)) return projects.get(config);
   const parsed = ts.getParsedCommandLineOfConfigFile(config, undefined, HOST);
-  const result = parsed && {
+  const result = parsed && read(parsed, dirname(config));
+  projects.set(config, result);
+  return result;
+}
+
+/** A parsed config as the project of the TypeScript `directory` installs. */
+function read(parsed: ts.ParsedCommandLine, directory: string): Project {
+  const options = asInstalledCompilerReads(
+    parsed.options,
+    installedTypeScriptMajor(directory),
+  );
+  return {
     files: new Set(parsed.fileNames),
-    options: parsed.options,
+    options,
     references: (parsed.projectReferences ?? []).map((reference) =>
       ts.resolveProjectReferencePath(reference),
     ),
     automaticTypes:
       parsed.options.types === undefined
-        ? ts.getAutomaticTypeDirectiveNames(parsed.options, ts.sys)
+        ? ts.getAutomaticTypeDirectiveNames(options, ts.sys)
         : [],
   };
-  projects.set(config, result);
-  return result;
 }
 
 /** The first config the nearest one or its references reach that lists `file`, skipping configs already visited. */

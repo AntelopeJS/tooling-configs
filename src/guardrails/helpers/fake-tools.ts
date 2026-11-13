@@ -32,7 +32,7 @@ function resolved(specifier: string): string {
 /**
  * A fake `pnpm install` that logs the dependency names package.json declares
  * and links into `node_modules` only those: oxlint, oxlint-tsgolint, oxfmt,
- * typescript and @types/node from this checkout, and a stub of the pack that
+ * typescript (the checkout's TypeScript 7, `@typescript/native`) and @types/node from this checkout, and a stub of the pack that
  * serves its presets from source. An install under another manager's pin exits
  * 1 as pnpm's `package-manager-strict` does. An install without `packageManager`, and the
  * install numbered `failingInstall`, exit 1 as pnpm 11 does for ignored builds;
@@ -43,7 +43,7 @@ function pnpmScript(log: string, failingInstall: number): string {
     oxlint: resolved("oxlint/package.json"),
     "oxlint-tsgolint": resolved("oxlint-tsgolint/package.json"),
     oxfmt: resolved("oxfmt/package.json"),
-    typescript: resolved("typescript/package.json"),
+    typescript: resolved("@typescript/native/package.json"),
     "@types/node": resolved("@types/node/package.json"),
   };
   const presets = Object.fromEntries(

@@ -18,5 +18,19 @@ export default defineConfig({
     { name: "anti-slop", specifier: "./src/oxc/anti-slop/index.ts" },
     { name: "antelopejs", specifier: "./src/oxc/guardrails/index.ts" },
   ],
-  rules: antiSlopRules(),
+  rules: {
+    ...antiSlopRules(),
+    "no-restricted-imports": [
+      "error",
+      {
+        paths: [
+          {
+            name: "typescript",
+            message:
+              "A repository's typescript may be 7, which has no compiler API: import the pack's own @typescript/typescript6.",
+          },
+        ],
+      },
+    ],
+  },
 });

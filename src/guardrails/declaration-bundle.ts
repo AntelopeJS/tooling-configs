@@ -54,10 +54,12 @@ for (const job of jobs) {
 }
 `;
 
-/** Places a copy of `dts-bundle-generator` beside a `typescript` link to the package at `compilerRoot`, the compiler the target repository builds with. The generator requires `typescript` by name, so this makes it drive that compiler instead of the one it was installed with. Returns a path to require the copy from. */
-function installGenerator(compilerRoot: string, scratch: string): string {
-  const source = dirname(
-    createRequire(import.meta.url).resolve("dts-bundle-generator/package.json"),
+/** Places a copy of `dts-bundle-generator` beside a `typescript` link to the pack's `@typescript/typescript6`. The generator requires `typescript` by name, and the one it was installed with may be TypeScript 7, which has no compiler API, so this makes it drive the pack's TypeScript 6. Returns a path to require the copy from. */
+function installGenerator(scratch: string): string {
+  const require = createRequire(import.meta.url);
+  const source = dirname(require.resolve("dts-bundle-generator/package.json"));
+  const compilerRoot = dirname(
+    require.resolve("@typescript/typescript6/package.json"),
   );
   const modules = join(scratch, "generator", "node_modules");
   mkdirSync(modules, { recursive: true });
@@ -136,15 +138,14 @@ function generateInWorkers(
   return bundles;
 }
 
-/** Bundles every entry's declarations with the compiler at `compilerRoot`. Large packages are split across worker processes by entry; each bundle depends only on its own entry, so the output is the same as one sequential call. */
+/** Bundles every entry's declarations with the pack's TypeScript 6. Large packages are split across worker processes by entry; each bundle depends only on its own entry, so the output is the same as one sequential call. */
 export function bundleDeclarations(
-  compilerRoot: string,
   scratch: string,
   entries: Entries,
   options: Options,
   workers = workerCount(entries.length),
 ): string[] {
-  const loader = installGenerator(compilerRoot, scratch);
+  const loader = installGenerator(scratch);
   if (workers > 1)
     return generateInWorkers(
       loader,

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { minimatch } from "minimatch";
-import ts from "typescript";
+import ts from "@typescript/typescript6";
 
 import { workspaceDirectories } from "./docs-compat.ts";
 import { parseManifest } from "./package.ts";

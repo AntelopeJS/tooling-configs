@@ -39,10 +39,15 @@ interface Tsconfig {
   include: string[];
 }
 
-function packageWith(tsconfig: Tsconfig) {
+/** A package whose own `typescript` is `version`, 5.9.3 unless given, as the major its `tsc` reads the config with. */
+function packageWith(tsconfig: Tsconfig, version = "5.9.3") {
   const project = lintProject(true);
   project.write("tsconfig.json", JSON.stringify(tsconfig));
   project.write("src/index.ts", NODE_CALLS);
+  project.write(
+    "node_modules/typescript/package.json",
+    JSON.stringify({ name: "typescript", version }),
+  );
   return project;
 }
 
@@ -61,6 +66,20 @@ test("a tsconfig without compilerOptions.types, where tsc loads @types/node and 
     ({ code }) => code === "antelopejs(require-tsconfig-types)",
   );
   assert.match(report?.message ?? "", /"types": \[[^\]]*"node"/u);
+});
+
+test("a tsconfig without compilerOptions.types in a package on TypeScript 7, whose tsc loads no @types either, is not reported", (t) => {
+  const project = packageWith(
+    {
+      compilerOptions: { ...OPTIONS, typeRoots: [typeRoot] },
+      include: ["src"],
+    },
+    "7.0.2",
+  );
+  t.after(project.remove);
+  assert.deepEqual(findings(project.run(true).diagnostics), [
+    "src/index.ts:2 typescript(no-unsafe-return)",
+  ]);
 });
 
 test("compilerOptions.types inherited through extends clears the report and types the Node calls", (t) => {
