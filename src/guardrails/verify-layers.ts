@@ -69,12 +69,22 @@ function isLayerCode(layer: string, file: string): boolean {
 const COMPILER_PACKAGES = ["typescript", "@typescript/native"];
 
 /**
- * The `bin.tsc` entry of the package `name` installed in `root`'s own `node_modules`, read from its `package.json`. Node's
- * resolution is not used: it falls back to `NODE_PATH`, where a package manager's bin shim lists the pack's own
+ * The `package.json` of the package `name` in the nearest `node_modules` from `root` up, where a workspace may hoist it.
+ * Node's resolution is not used: it falls back to `NODE_PATH`, where a package manager's bin shim lists the pack's own
  * dependencies, so a repository without TypeScript would be checked with the pack's.
  */
+function manifestOf(root: string, name: string): string | undefined {
+  for (let folder = resolve(root); ; folder = dirname(folder)) {
+    const manifestPath = join(folder, "node_modules", name, "package.json");
+    if (existsSync(manifestPath)) return manifestPath;
+    if (dirname(folder) === folder) return undefined;
+  }
+}
+
+/** The `bin.tsc` entry of the package `name` that `root` installs, read from its `package.json`, a file every TypeScript version ships, because TypeScript 7 declares an `exports` map that leaves `typescript/bin/tsc` out. */
 function binTsc(root: string, name: string): string | undefined {
-  const manifestPath = join(root, "node_modules", name, "package.json");
+  const manifestPath = manifestOf(root, name);
+  if (manifestPath === undefined) return undefined;
   try {
     const tsc = parseManifest(readFileSync(manifestPath, "utf8")).bin?.tsc;
     return tsc === undefined ? undefined : join(dirname(manifestPath), tsc);
