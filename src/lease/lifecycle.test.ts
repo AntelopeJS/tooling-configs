@@ -95,69 +95,50 @@ function denyReading(path: string): void {
   else chmodSync(path, 0o000);
 }
 
+/** Whether a separate Node process can still list `path`, which the permission check, not this test's own reads, decides. */
+function canList(path: string): boolean {
+  return (
+    spawnSync(process.execPath, [
+      "-e",
+      "require('node:fs').readdirSync(process.argv[1])",
+      path,
+    ]).status === 0
+  );
+}
+
 function allowReading(path: string): void {
   if (process.platform === "win32")
     execFileSync("icacls", [path, "/remove:d", "*S-1-1-0"]);
   else chmodSync(path, 0o755);
 }
 
-test(
-  "status keeps the lease of a worktree it cannot read and lists it as unreadable until it can (fails when a permission error reads as a deleted worktree and the sweep deletes a live checkout's lease)",
-  {
-    skip:
-      process.platform !== "win32" &&
-      process.getuid?.() === 0 &&
-      "root reads a directory whatever its mode",
-  },
-  async (t) => {
-    const root = scratch(t);
-    const worktree = gitInit(join(root, "parent", "w"));
-    const env = externalEnv(join(root, ".home"));
-    const printed = await leasedEnv(worktree, env);
-    const locked =
-      process.platform === "win32" ? worktree : join(root, "parent");
-    denyReading(locked);
-    let hidden;
-    let seen = "";
-    try {
-      hidden = await statusRows(root, env);
-      if (process.platform === "win32") {
-        const listing = spawnSync(
-          process.execPath,
-          [
-            "-e",
-            "console.log(require('node:fs').readdirSync(process.argv[1]).join(','))",
-            worktree,
-          ],
-          { encoding: "utf8" },
-        );
-        const listed = `readdir: ${listing.stdout}${listing.stderr}`;
-        seen = `${listed}\n${(() => {
-          const priv = spawnSync(
-            join(
-              process.env.SystemRoot ?? "C:\\Windows",
-              "System32",
-              "whoami.exe",
-            ),
-            ["/priv"],
-            { encoding: "utf8" },
-          );
-          return `whoami: ${priv.stdout}${priv.stderr}${String(priv.error ?? "")}`;
-        })()}`;
-      }
-    } finally {
-      allowReading(locked);
+test("status keeps the lease of a worktree it cannot read and lists it as unreadable until it can (fails when a permission error reads as a deleted worktree and the sweep deletes a live checkout's lease)", async (t) => {
+  const root = scratch(t);
+  const worktree = gitInit(join(root, "parent", "w"));
+  const env = externalEnv(join(root, ".home"));
+  const printed = await leasedEnv(worktree, env);
+  const locked = process.platform === "win32" ? worktree : join(root, "parent");
+  denyReading(locked);
+  let hidden;
+  try {
+    if (canList(worktree)) {
+      t.skip(
+        "this process reads past any permission, as root on POSIX or with SeBackupPrivilege on an elevated Windows runner, so no folder can be made unreadable to it",
+      );
+      return;
     }
-    assert.deepEqual(
-      hidden.map((row) => row.state),
-      [process.platform === "win32" ? "unreadable:EPERM" : "unreadable:EACCES"],
-      seen,
-    );
-    assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), true);
-    const [again] = await statusRows(root, env);
-    assert.equal(again?.state, "live");
-  },
-);
+    hidden = await statusRows(root, env);
+  } finally {
+    allowReading(locked);
+  }
+  assert.deepEqual(
+    hidden.map((row) => row.state),
+    [process.platform === "win32" ? "unreadable:EPERM" : "unreadable:EACCES"],
+  );
+  assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), true);
+  const [again] = await statusRows(root, env);
+  assert.equal(again?.state, "live");
+});
 
 test("a deleted worktree whose api port still listens stays reserved as orphaned, naming the listener, until the port closes (fails when the sweep frees a block whose servers still run)", async (t) => {
   const root = scratch(t);
