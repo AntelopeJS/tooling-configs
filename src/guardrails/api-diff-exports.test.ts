@@ -158,18 +158,28 @@ test("api-diff prints a declaration changed in several entries once, under the e
       },
     }),
   );
-  put(root, "src/shared.ts", "export interface Value { value: string }\n");
+  const members =
+    "a1: string; a2: string; a3: string; a4: string; a5: string; a6: string;";
+  put(
+    root,
+    "src/shared.ts",
+    `export interface Value { ${members} value: string }\n`,
+  );
   put(root, "src/index.ts", 'export type { Value } from "./shared.js";\n');
   put(root, "src/extra.ts", 'export type { Value } from "./shared.js";\n');
   put(root, "src/other.ts", "export interface Other { other: string }\n");
   commit(root);
-  put(root, "src/shared.ts", "export interface Value { value: number }\n");
+  put(
+    root,
+    "src/shared.ts",
+    `export interface Value { ${members} value: number }\n`,
+  );
   commit(root);
   const changed = bin(root, "api-diff", ["HEAD~1"]);
   assert.equal(changed.status, 1, changed.stdout + changed.stderr);
   assert.equal(changed.stdout.match(/^\+.*value: number/gmu)?.length, 1);
   assert.match(
     changed.stdout,
-    /^ \/\/ In _root\/exports\/root\.d\.ts, _root\/exports\/subpath\/extra\.d\.ts\n(?:.*\n){0,2}\+.*value: number/mu,
+    /^@@ [^\n]*\/\/ In _root\/exports\/root\.d\.ts, _root\/exports\/subpath\/extra\.d\.ts\n(?: .*\n)*-.*value: string;\n\+.*value: number;$/mu,
   );
 });

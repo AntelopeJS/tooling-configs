@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -49,6 +50,35 @@ function collectDeclarations(
     }
   }
   return declarations;
+}
+
+const HUNK = /^(@@ -(\d+)(?:,\d+)? \+(\d+)(?:,(\d+))? @@.*)$/u;
+
+function collatedLines(output: string): string[] {
+  const file = join(output, "declarations.d.ts");
+  return existsSync(file) ? readFileSync(file, "utf8").split("\n") : [];
+}
+
+/** Appends to each hunk header of `diff`, a comparison of the collated `base` and `head` directories under `root`, the `// In` line of the declaration the hunk starts in, so a change far below that line still names its entries. */
+export function labelHunks(diff: string, root: string): string {
+  const base = collatedLines(join(root, "base"));
+  const head = collatedLines(join(root, "head"));
+  return diff
+    .split("\n")
+    .map((line) => {
+      const match = HUNK.exec(line);
+      if (!match) return line;
+      const [, hunk, baseStart, headStart, headCount] = match;
+      const [lines, start] =
+        headCount === "0" || !head.length
+          ? [base, Number(baseStart)]
+          : [head, Number(headStart)];
+      const carriers = lines
+        .slice(0, start)
+        .findLast((text) => text.startsWith("// In "));
+      return carriers === undefined ? line : `${hunk} ${carriers}`;
+    })
+    .join("\n");
 }
 
 /** Replaces the bundled entries under `output` with one `declarations.d.ts`: an index of the entries, then each declaration text once, under the entries that carry it, so a change shared by many entries is printed once. Statements of one name are kept together in written order, so a reordered overload still differs. */

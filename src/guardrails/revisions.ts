@@ -157,6 +157,8 @@ interface CompareOptions {
   ownWorkspace?: boolean;
   /** Rewrites one side's output directory after allowed additions are removed and before the sides are compared. */
   collate?: (output: string) => void;
+  /** Rewrites the printed differences, given the directory that holds the `base` and `head` outputs. */
+  annotate?: (diff: string, root: string) => string;
 }
 
 /** Compares isolated committed revisions and removes both worktrees even when compilation fails; a policy lets matching `@internal` additions through. */
@@ -165,7 +167,7 @@ export function compareRevisions(
   baseRef: string,
   label: string,
   emit: (worktree: string, output: string, scratch: string) => RevisionOutput,
-  { policy, ownWorkspace = false, collate }: CompareOptions = {},
+  { policy, ownWorkspace = false, collate, annotate }: CompareOptions = {},
 ) {
   const temporary = mkdtempSync(join(tmpdir(), "antelope-proof-"));
   const worktrees: string[] = [];
@@ -233,7 +235,7 @@ export function compareRevisions(
       different: diff.status === 1,
       output:
         diff.status === 1
-          ? `${label}: differences against ${baseRef} (committed HEAD).\n${diff.stdout}`
+          ? `${label}: differences against ${baseRef} (committed HEAD).\n${annotate === undefined ? diff.stdout : annotate(diff.stdout, temporary)}`
           : `${label}: ${packages} packages, ${results[1].entries - allowedAdditions} entries unchanged against ${baseRef} (committed HEAD).\n`,
     };
   } finally {
