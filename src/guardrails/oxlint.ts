@@ -77,7 +77,16 @@ function parseReport(text: string): OxlintDiagnostic[] | undefined {
 }
 
 function toDiagnostic(item: OxlintDiagnostic, root: string): Diagnostic {
-  const rule = ruleId(item.code ?? "");
+  if (item.code === undefined || item.code === "") {
+    const where =
+      item.filename === undefined
+        ? ""
+        : `${repositoryPath(root, item.filename)}: `;
+    throw new Error(
+      `${where}${item.message}. Fix this parser or configuration error before measuring.`,
+    );
+  }
+  const rule = ruleId(item.code);
   if (item.filename === undefined)
     throw new Error(`oxlint reported ${rule} with no file: ${item.message}`);
   const file = repositoryPath(root, item.filename);
