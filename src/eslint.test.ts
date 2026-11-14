@@ -113,3 +113,40 @@ test("typeAware runs the type-aware rules on .vue script blocks with types from 
 test("without typeAware no rule needs type information", async () => {
   assert.deepEqual(await lintVueProject(false), []);
 });
+
+async function lintComposable(
+  config: ReturnType<typeof antelopeNuxtConfig>,
+): Promise<string[]> {
+  const eslint = new ESLint({
+    cwd: process.cwd(),
+    overrideConfigFile: true,
+    overrideConfig: await config,
+  });
+  const [result] = await eslint.lintText(
+    'import { ref } from "vue";\n\nconst open = ref(false);\n\nexport function useOpen(): number {\n  let count = 0;\n  count = 1;\n  if (open) return count;\n  return 1;\n  useOpen();\n}\n',
+    { filePath: join(process.cwd(), "composables/useOpen.ts") },
+  );
+  assert(result);
+  return result.messages.map(
+    (message) => `${message.line} ${message.ruleId ?? message.message}`,
+  );
+}
+
+test("a .ts composable gets no-unreachable and the Vue script rules and keeps the core rules the Vue block turns off", async () => {
+  assert.deepEqual(await lintComposable(antelopeNuxtConfig()), [
+    "6 no-useless-assignment",
+    "8 vue/no-ref-as-operand",
+    "10 no-unreachable",
+  ]);
+});
+
+test("a layer's appended rules still win over the Vue script rules in .ts files", async () => {
+  assert.deepEqual(
+    await lintComposable(
+      antelopeNuxtConfig().append({
+        rules: { "vue/no-ref-as-operand": "off" },
+      }),
+    ),
+    ["6 no-useless-assignment", "10 no-unreachable"],
+  );
+});
