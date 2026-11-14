@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.7.1
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.7.0...v0.7.1)
+
+### 🚀 Enhancements
+
+- **lint:** Report any assigned, passed or returned in a Vue script under oxlint ([#361](https://github.com/AntelopeJS/tooling-configs/pull/361))
+
+### 🩹 Fixes
+
+- **lint:** Report an unrun query a mapped, intersected or indexed project type holds ([#357](https://github.com/AntelopeJS/tooling-configs/pull/357))
+- **guardrails:** Name the file and oxlint's message when a measured file does not parse ([#358](https://github.com/AntelopeJS/tooling-configs/pull/358))
+- **lint:** Report an unrun query resolved by an overloaded, this-typed, cast or method executor ([#356](https://github.com/AntelopeJS/tooling-configs/pull/356))
+- **guardrails:** Check every @antelopejs package a README example names against the range rule ([#359](https://github.com/AntelopeJS/tooling-configs/pull/359))
+- **lint:** Follow a literal-keyed element access to a new Promise executor in no-unrun-query ([#360](https://github.com/AntelopeJS/tooling-configs/pull/360))
+- **lint:** Report an unsafe Object.assign in a Vue script under oxlint ([#363](https://github.com/AntelopeJS/tooling-configs/pull/363))
+- **lint:** Report any in Vue object properties, defaults, spreads, destructuring and typed arrays ([#364](https://github.com/AntelopeJS/tooling-configs/pull/364))
+- **guardrails:** Pack published:types tarballs without lifecycle scripts so a POSIX prepare passes on Windows ([#365](https://github.com/AntelopeJS/tooling-configs/pull/365))
+- **lint:** Locate a Vue script by its own block in no-unsafe-any-in-vue ([#366](https://github.com/AntelopeJS/tooling-configs/pull/366))
+- **lint:** Match tsgolint on destructuring assignments, any slots and labelled tuples in no-unsafe-any-in-vue ([#367](https://github.com/AntelopeJS/tooling-configs/pull/367))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.7.0
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.6.0...v0.7.0)
