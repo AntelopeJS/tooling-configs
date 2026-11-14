@@ -27,6 +27,8 @@ show(String(parse(raw)));
 </script>
 `;
 
+const UNSAFE = /\(no-unsafe-(?:assignment|argument|return|any-in-vue)\)$/;
+
 function findings(files: Record<string, string>): string[] {
   const project = lintProject(true);
   try {
@@ -36,7 +38,7 @@ function findings(files: Record<string, string>): string[] {
       .run()
       .diagnostics.filter(
         (diagnostic: { code: string; filename: string }) =>
-          diagnostic.code.includes("no-unsafe-") &&
+          UNSAFE.test(diagnostic.code) &&
           Object.hasOwn(files, diagnostic.filename),
       )
       .map(
@@ -153,6 +155,56 @@ function keep(value: unknown = JSON.parse(raw)): unknown { return value; }
 const { a, b } = pair;
 const view: readonly string[] = rows;
 void [box, keep, target, a, b, view];
+</script>
+`,
+    }),
+    [],
+  );
+});
+
+test("a shorthand property, a destructuring default and an any[] passed or returned as a typed array are reported (fails if shorthand values, binding-element defaults, or arrays outside declarations are not checked)", () => {
+  assert.deepEqual(
+    findings({
+      "tsconfig.json": tsconfig,
+      "app/Rows.vue": `<script setup lang="ts">
+declare const parsed: any;
+declare const rows: any[];
+declare const pair: { a?: string };
+declare function take(list: string[]): void;
+const box: { parsed: string } = { parsed };
+const { a = parsed } = pair;
+take(rows);
+function list(): string[] { return rows; }
+void [box, a, list];
+</script>
+`,
+    }),
+    [
+      "app/Rows.vue:6 antelopejs(no-unsafe-any-in-vue)",
+      "app/Rows.vue:7 antelopejs(no-unsafe-any-in-vue)",
+      "app/Rows.vue:8 antelopejs(no-unsafe-any-in-vue)",
+      "app/Rows.vue:9 antelopejs(no-unsafe-any-in-vue)",
+    ],
+  );
+});
+
+test("a binding an index signature or a Set types any, a spread into an any callee and a tuple into a tuple of another shape are left alone (fails if a binding is judged by its own type rather than its source's declared slot, the callee is not checked, or tuples are compared by element type alone)", () => {
+  assert.deepEqual(
+    findings({
+      "tsconfig.json": tsconfig,
+      "app/Loose.vue": `<script setup lang="ts">
+declare const rows: any[];
+interface Payload { id: string; [key: string]: any }
+declare const record: Payload;
+declare const set: Set<any>;
+declare const call: any;
+declare const pairOf: [any, string];
+const { anything } = record;
+const [member] = set;
+call(...rows);
+const frozen: readonly [string, string] = pairOf;
+const longer: [string, string, number?] = pairOf;
+void [anything, member, frozen, longer];
 </script>
 `,
     }),

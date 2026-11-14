@@ -40,8 +40,8 @@ function elementType(
 /**
  * Whether a `sender` value lets `any` into a `receiver` slot: `any` into a
  * slot that is undeclared or typed neither `any` nor `unknown`, or an array
- * of `any`, as in `any[]`, into the same kind of array, or a tuple holding
- * `any` into a tuple, of another element type.
+ * or tuple holding `any`, as in `any[]`, into an array or tuple of the same
+ * shape, one each is assignable to, with another element type.
  */
 function leaks(
   checker: ts.TypeChecker,
@@ -52,8 +52,8 @@ function leaks(
     return receiver === undefined || !takesAnything(receiver);
   if (
     receiver === undefined ||
-    sender.getSymbol() !== receiver.getSymbol() ||
-    checker.isTupleType(sender) !== checker.isTupleType(receiver)
+    checker.isTupleType(sender) !== checker.isTupleType(receiver) ||
+    !checker.isTypeAssignableTo(receiver, sender)
   )
     return false;
   const from = elementType(checker, sender);
@@ -165,7 +165,12 @@ function spreadFindings(
   checker: ts.TypeChecker,
   spread: ts.SpreadElement,
 ): Finding[] {
-  return !isDestructuringTarget(spread.parent) &&
+  const { parent } = spread;
+  const anyCallee =
+    (ts.isCallExpression(parent) || ts.isNewExpression(parent)) &&
+    isAny(checker, parent.expression);
+  return !anyCallee &&
+    !isDestructuringTarget(parent) &&
     isAnyOrAnyArray(checker, checker.getTypeAtLocation(spread.expression))
     ? [
         {
@@ -191,30 +196,76 @@ function propertyFindings(
     : [];
 }
 
-function bindings(pattern: ts.BindingPattern): ts.BindingElement[] {
-  return pattern.elements.flatMap((element) => {
-    if (ts.isOmittedExpression(element)) return [];
-    return ts.isIdentifier(element.name) ? [element] : bindings(element.name);
-  });
+/** A binding that takes an `any` its source declares, but for one whose default is itself reported, and the bindings nested under it. */
+function elementFindings(
+  checker: ts.TypeChecker,
+  element: ts.BindingElement,
+  source: ts.Type,
+): Finding[] {
+  if (isAnyType(checker, source))
+    return element.initializer !== undefined &&
+      isAny(checker, element.initializer)
+      ? []
+      : [{ kind: "assignment", node: element }];
+  return ts.isIdentifier(element.name)
+    ? []
+    : destructuredFindings(checker, element.name, source);
 }
 
-/** The bindings an untyped destructuring declaration types `any`, or a rest it types `any[]`, but for a default that is itself reported. */
+/** The property or tuple slot named `key` that `source` declares, not one an index signature stands for. */
+function declaredSlot(
+  checker: ts.TypeChecker,
+  source: ts.Type,
+  key: string,
+  at: ts.Node,
+): ts.Type | undefined {
+  const slot = checker.getPropertyOfType(source, key);
+  return slot === undefined
+    ? undefined
+    : checker.getTypeOfSymbolAtLocation(slot, at);
+}
+
+function propertyKey(element: ts.BindingElement): string | undefined {
+  const key = element.propertyName ?? element.name;
+  return ts.isIdentifier(key) ||
+    ts.isStringLiteral(key) ||
+    ts.isNumericLiteral(key)
+    ? key.text
+    : undefined;
+}
+
+/**
+ * The bindings of an untyped destructuring declaration that take `any` from
+ * what `source` declares: a property or tuple slot typed `any`, or any element
+ * of an `any[]`. An index signature, another iterable and a rest from an
+ * object or a tuple are left alone, as `typescript/no-unsafe-assignment`
+ * leaves them.
+ */
 function destructuredFindings(
   checker: ts.TypeChecker,
   pattern: ts.BindingPattern,
+  source: ts.Type,
 ): Finding[] {
-  return bindings(pattern).flatMap((element) => {
-    const type = checker.getTypeAtLocation(element.name);
-    const untyped =
+  if (ts.isObjectBindingPattern(pattern))
+    return pattern.elements.flatMap((element) => {
+      const key = propertyKey(element);
+      const slot =
+        element.dotDotDotToken === undefined && key !== undefined
+          ? declaredSlot(checker, source, key, element)
+          : undefined;
+      return slot === undefined ? [] : elementFindings(checker, element, slot);
+    });
+  const anyArray = isAnyOrAnyArray(checker, source);
+  if (!anyArray && !checker.isTupleType(source)) return [];
+  return pattern.elements.flatMap((element, index) => {
+    if (ts.isOmittedExpression(element)) return [];
+    if (anyArray)
+      return elementFindings(checker, element, checker.getAnyType());
+    const slot =
       element.dotDotDotToken === undefined
-        ? isAnyType(checker, type)
-        : isAnyOrAnyArray(checker, type);
-    return untyped &&
-      !(
-        element.initializer !== undefined && isAny(checker, element.initializer)
-      )
-      ? [{ kind: "assignment", node: element }]
-      : [];
+        ? declaredSlot(checker, source, String(index), element)
+        : undefined;
+    return slot === undefined ? [] : elementFindings(checker, element, slot);
   });
 }
 
@@ -234,7 +285,11 @@ function declarationFindings(
   )
     return [{ kind: "assignment", node }];
   return node.type === undefined && !ts.isIdentifier(node.name)
-    ? destructuredFindings(checker, node.name)
+    ? destructuredFindings(
+        checker,
+        node.name,
+        checker.getTypeAtLocation(initializer),
+      )
     : [];
 }
 
