@@ -5,6 +5,7 @@ import {
   gtr,
   minVersion,
   prerelease,
+  Range,
   satisfies,
   valid,
   validRange,
@@ -168,11 +169,12 @@ function stableFloor(range: string): string | undefined {
 
 /** Whether one release admitted by `a` is also admitted by `b`, counting releases only, as an install resolves them. */
 function sharesRelease(a: string, b: string): boolean {
-  const floorA = stableFloor(a);
-  const floorB = stableFloor(b);
-  return (
-    (floorA !== undefined && satisfies(floorA, b)) ||
-    (floorB !== undefined && satisfies(floorB, a))
+  return new Range(a).set.some((left) =>
+    new Range(b).set.some((right) => {
+      const both = [...left, ...right].join(" ");
+      const floor = stableFloor(both);
+      return floor !== undefined && satisfies(floor, both);
+    }),
   );
 }
 
