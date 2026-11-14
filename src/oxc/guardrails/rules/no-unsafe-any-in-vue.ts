@@ -28,20 +28,33 @@ function takesAnything(type: ts.Type | undefined): boolean {
   return type === undefined || (type.flags & UNTYPED) !== 0;
 }
 
-function elementType(
+function isObjectType(type: ts.Type): type is ts.ObjectType {
+  return (type.flags & ts.TypeFlags.Object) !== 0;
+}
+
+function isReference(type: ts.ObjectType): type is ts.TypeReference {
+  return (type.objectFlags & ts.ObjectFlags.Reference) !== 0;
+}
+
+/** The array or tuple reference `type` is, for comparing by its generic target as tsgolint does. */
+function arrayReference(
   checker: ts.TypeChecker,
   type: ts.Type,
-): ts.Type | undefined {
-  return checker.isArrayType(type) || checker.isTupleType(type)
-    ? checker.getIndexTypeOfType(type, ts.IndexKind.Number)
+): ts.TypeReference | undefined {
+  return (checker.isArrayType(type) || checker.isTupleType(type)) &&
+    isObjectType(type) &&
+    isReference(type)
+    ? type
     : undefined;
 }
 
 /**
- * Whether a `sender` value lets `any` into a `receiver` slot: `any` into a
- * slot that is undeclared or typed neither `any` nor `unknown`, or an array
- * or tuple holding `any`, as in `any[]`, into an array or tuple of the same
- * shape, one each is assignable to, with another element type.
+ * Whether a `sender` value lets `any` into a `receiver` slot as an argument,
+ * a return or a type argument: `any` into a slot that is undeclared or typed
+ * neither `any` nor `unknown`, or an array or tuple holding `any`, as in
+ * `any[]`, into one of the same generic target, such as `string[]`, with
+ * another type in that position. `readonly` and labelled tuples have targets
+ * of their own.
  */
 function leaks(
   checker: ts.TypeChecker,
@@ -51,20 +64,28 @@ function leaks(
 ): boolean {
   if (isAnyType(checker, sender))
     return receiver === undefined || !takesAnything(receiver);
-  if (
-    receiver === undefined ||
-    depth === MAX_DEPTH ||
-    checker.isTupleType(sender) !== checker.isTupleType(receiver) ||
-    !checker.isTypeAssignableTo(receiver, sender)
-  )
+  if (receiver === undefined || depth === MAX_DEPTH) return false;
+  const from = arrayReference(checker, sender);
+  const to = arrayReference(checker, receiver);
+  if (from === undefined || to === undefined || from.target !== to.target)
     return false;
-  const from = elementType(checker, sender);
-  const to = elementType(checker, receiver);
-  return (
-    from !== undefined &&
-    to !== undefined &&
-    leaks(checker, from, to, depth + 1)
-  );
+  const slots = checker.getTypeArguments(to);
+  return checker
+    .getTypeArguments(from)
+    .some((argument, index) =>
+      leaks(checker, argument, slots[index], depth + 1),
+    );
+}
+
+/** Whether `sender` lets `any` into an assigned `receiver`: `any` into anything but `unknown`, a slot declared `any` included, or what {@link leaks} finds. */
+function assignmentLeaks(
+  checker: ts.TypeChecker,
+  sender: ts.Type,
+  receiver: ts.Type | undefined,
+): boolean {
+  return isAnyType(checker, sender)
+    ? receiver === undefined || (receiver.flags & ts.TypeFlags.Unknown) === 0
+    : leaks(checker, sender, receiver);
 }
 
 /** Whether `value`, flowing into the slot its context declares, lets `any` in. */
@@ -72,7 +93,7 @@ function leaksIntoContext(
   checker: ts.TypeChecker,
   value: ts.Expression,
 ): boolean {
-  return leaks(
+  return assignmentLeaks(
     checker,
     checker.getTypeAtLocation(value),
     checker.getContextualType(value),
@@ -159,7 +180,7 @@ function returned(checker: ts.TypeChecker, value: ts.Expression): Finding[] {
 /** Whether `type` is `any` or an array of `any`, as a spread or rest holds it. */
 function isAnyOrAnyArray(checker: ts.TypeChecker, type: ts.Type): boolean {
   const element = checker.isArrayType(type)
-    ? elementType(checker, type)
+    ? checker.getIndexTypeOfType(type, ts.IndexKind.Number)
     : undefined;
   return (
     isAnyType(checker, type) ||
@@ -193,29 +214,155 @@ function propertyFindings(
   checker: ts.TypeChecker,
   property: ts.PropertyAssignment | ts.ShorthandPropertyAssignment,
 ): Finding[] {
+  if (isDestructuringTarget(property.parent)) {
+    const fallback = ts.isShorthandPropertyAssignment(property)
+      ? property.objectAssignmentInitializer
+      : undefined;
+    return fallback !== undefined &&
+      assignmentLeaks(
+        checker,
+        checker.getTypeAtLocation(fallback),
+        checker.getTypeAtLocation(property.name),
+      )
+      ? [{ kind: "assignment", node: property }]
+      : [];
+  }
   const value = ts.isPropertyAssignment(property)
     ? property.initializer
     : property.name;
-  return !isDestructuringTarget(property.parent) &&
-    leaksIntoContext(checker, value)
+  return leaksIntoContext(checker, value)
     ? [{ kind: "assignment", node: property }]
     : [];
 }
 
-/** A binding that takes an `any` its source declares, but for one whose default is itself reported, and the bindings nested under it. */
+/** A destructuring pattern, as a declaration binds it or an assignment such as `({ a } = value)` writes it. */
+type Pattern =
+  | ts.BindingPattern
+  | ts.ObjectLiteralExpression
+  | ts.ArrayLiteralExpression;
+
+/** One element of a {@link Pattern}. */
+interface PatternElement {
+  /** The source property or tuple index it reads, `undefined` for a rest or a computed name. */
+  key: string | undefined;
+  /** The name or target it writes, a nested pattern when it destructures further. */
+  target: ts.Node;
+  initializer: ts.Expression | undefined;
+  /** Where a finding on it is reported. */
+  node: ts.Node;
+}
+
+function isPattern(node: ts.Node): node is Pattern {
+  return (
+    ts.isObjectBindingPattern(node) ||
+    ts.isArrayBindingPattern(node) ||
+    ts.isObjectLiteralExpression(node) ||
+    ts.isArrayLiteralExpression(node)
+  );
+}
+
+/** The key a property name spells, a computed literal such as `['a']` included. */
+function literalKey(
+  name: ts.PropertyName | ts.BindingName,
+): string | undefined {
+  if (ts.isIdentifier(name)) return name.text;
+  const key = ts.isComputedPropertyName(name) ? name.expression : name;
+  return ts.isStringLiteral(key) ||
+    ts.isNumericLiteral(key) ||
+    ts.isNoSubstitutionTemplateLiteral(key)
+    ? key.text
+    : undefined;
+}
+
+/** The target and default of an assignment pattern element, as in `a = fallback`. */
+function withDefault(
+  element: ts.Expression,
+): Pick<PatternElement, "target" | "initializer"> {
+  return ts.isBinaryExpression(element) &&
+    element.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    ? { target: element.left, initializer: element.right }
+    : { target: element, initializer: undefined };
+}
+
+function objectElements(
+  pattern: ts.ObjectBindingPattern | ts.ObjectLiteralExpression,
+): PatternElement[] {
+  if (ts.isObjectBindingPattern(pattern))
+    return pattern.elements.map((element) => ({
+      key:
+        element.dotDotDotToken === undefined
+          ? literalKey(element.propertyName ?? element.name)
+          : undefined,
+      target: element.name,
+      initializer: element.initializer,
+      node: element,
+    }));
+  return pattern.properties.map((property) => {
+    if (ts.isPropertyAssignment(property))
+      return {
+        key: literalKey(property.name),
+        ...withDefault(property.initializer),
+        node: property,
+      };
+    if (ts.isShorthandPropertyAssignment(property))
+      return {
+        key: property.name.text,
+        target: property.name,
+        initializer: property.objectAssignmentInitializer,
+        node: property,
+      };
+    return {
+      key: undefined,
+      target: property,
+      initializer: undefined,
+      node: property,
+    };
+  });
+}
+
+function arrayElements(
+  pattern: ts.ArrayBindingPattern | ts.ArrayLiteralExpression,
+): PatternElement[] {
+  const elements: readonly (ts.ArrayBindingElement | ts.Expression)[] =
+    pattern.elements;
+  return elements.flatMap((element, index): PatternElement[] => {
+    if (ts.isOmittedExpression(element)) return [];
+    if (ts.isBindingElement(element))
+      return [
+        {
+          key: element.dotDotDotToken === undefined ? String(index) : undefined,
+          target: element.name,
+          initializer: element.initializer,
+          node: element,
+        },
+      ];
+    if (ts.isSpreadElement(element))
+      return [
+        {
+          key: undefined,
+          target: element.expression,
+          initializer: undefined,
+          node: element,
+        },
+      ];
+    return [{ key: String(index), ...withDefault(element), node: element }];
+  });
+}
+
+/** An element that takes an `any` its source declares, but for one whose default is itself reported, and the elements nested under it. */
 function elementFindings(
   checker: ts.TypeChecker,
-  element: ts.BindingElement,
+  element: PatternElement,
   source: ts.Type,
 ): Finding[] {
   if (isAnyType(checker, source))
     return element.initializer !== undefined &&
       isAny(checker, element.initializer)
       ? []
-      : [{ kind: "assignment", node: element }];
-  return ts.isIdentifier(element.name)
-    ? []
-    : destructuredFindings(checker, element.name, source);
+      : [{ kind: "assignment", node: element.node }];
+  return isPattern(element.target)
+    ? destructuredFindings(checker, element.target, source)
+    : [];
 }
 
 /** The property or tuple slot named `key` that `source` declares, not one an index signature stands for. */
@@ -231,48 +378,45 @@ function declaredSlot(
     : checker.getTypeOfSymbolAtLocation(slot, at);
 }
 
-function propertyKey(element: ts.BindingElement): string | undefined {
-  const key = element.propertyName ?? element.name;
-  return ts.isIdentifier(key) ||
-    ts.isStringLiteral(key) ||
-    ts.isNumericLiteral(key)
-    ? key.text
-    : undefined;
+function slotFindings(
+  checker: ts.TypeChecker,
+  element: PatternElement,
+  source: ts.Type,
+): Finding[] {
+  const slot =
+    element.key === undefined
+      ? undefined
+      : declaredSlot(checker, source, element.key, element.node);
+  return slot === undefined ? [] : elementFindings(checker, element, slot);
 }
 
 /**
- * The bindings of an untyped destructuring declaration that take `any` from
- * what `source` declares: a property or tuple slot typed `any`, or any element
- * of an `any[]`. An index signature, another iterable and a rest from an
- * object or a tuple are left alone, as `typescript/no-unsafe-assignment`
- * leaves them.
+ * The elements of an untyped destructuring declaration or of a destructuring
+ * assignment that take `any` from what `source` declares: a property or
+ * tuple slot typed `any`, whatever the target's own type, or the whole
+ * pattern once when it reads an `any[]`. An index signature, another iterable
+ * and a rest from an object or a tuple are left alone, as
+ * `typescript/no-unsafe-assignment` leaves them.
  */
 function destructuredFindings(
   checker: ts.TypeChecker,
-  pattern: ts.BindingPattern,
+  pattern: Pattern,
   source: ts.Type,
 ): Finding[] {
-  if (ts.isObjectBindingPattern(pattern))
-    return pattern.elements.flatMap((element) => {
-      const key = propertyKey(element);
-      const slot =
-        element.dotDotDotToken === undefined && key !== undefined
-          ? declaredSlot(checker, source, key, element)
-          : undefined;
-      return slot === undefined ? [] : elementFindings(checker, element, slot);
-    });
-  const anyArray = isAnyOrAnyArray(checker, source);
-  if (!anyArray && !checker.isTupleType(source)) return [];
-  return pattern.elements.flatMap((element, index) => {
-    if (ts.isOmittedExpression(element)) return [];
-    if (anyArray)
-      return elementFindings(checker, element, checker.getAnyType());
-    const slot =
-      element.dotDotDotToken === undefined
-        ? declaredSlot(checker, source, String(index), element)
-        : undefined;
-    return slot === undefined ? [] : elementFindings(checker, element, slot);
-  });
+  if (
+    ts.isObjectBindingPattern(pattern) ||
+    ts.isObjectLiteralExpression(pattern)
+  )
+    return objectElements(pattern).flatMap((element) =>
+      slotFindings(checker, element, source),
+    );
+  if (isAnyOrAnyArray(checker, source))
+    return [{ kind: "assignment", node: pattern }];
+  return checker.isTupleType(source)
+    ? arrayElements(pattern).flatMap((element) =>
+        slotFindings(checker, element, source),
+      )
+    : [];
 }
 
 function declarationFindings(
@@ -281,7 +425,7 @@ function declarationFindings(
   initializer: ts.Expression,
 ): Finding[] {
   if (
-    leaks(
+    assignmentLeaks(
       checker,
       checker.getTypeAtLocation(initializer),
       node.type === undefined
@@ -305,14 +449,15 @@ function assignmentFindings(checker: ts.TypeChecker, node: ts.Node): Finding[] {
   if (
     ts.isBinaryExpression(node) &&
     node.operatorToken.kind === ts.SyntaxKind.EqualsToken
-  )
-    return leaks(
-      checker,
-      checker.getTypeAtLocation(node.right),
-      checker.getTypeAtLocation(node.left),
-    )
-      ? [{ kind: "assignment", node }]
+  ) {
+    const source = checker.getTypeAtLocation(node.right);
+    if (assignmentLeaks(checker, source, checker.getTypeAtLocation(node.left)))
+      return [{ kind: "assignment", node }];
+    return ts.isObjectLiteralExpression(node.left) ||
+      ts.isArrayLiteralExpression(node.left)
+      ? destructuredFindings(checker, node.left, source)
       : [];
+  }
   if (
     (ts.isParameter(node) || ts.isBindingElement(node)) &&
     node.initializer !== undefined
@@ -351,8 +496,9 @@ function findings({ checker, sourceFile }: TypedFile): Finding[] {
  * `no-unsafe-return` for the script blocks of a `.vue` file, which
  * oxlint-tsgolint cannot read: an `any` or `any[]` reaching a declared type
  * through a declaration, an assignment, an object literal property, a
- * default value, an argument, a spread, a destructured binding or a return.
- * A destructuring assignment such as `({ a } = value)` is not checked.
+ * default value, an argument, a spread, a destructured binding, a
+ * destructuring assignment such as `({ a } = value)` or a return. An `any`
+ * assigned to a slot declared `any` is reported too, as tsgolint reports it.
  * TypeScript files stay with tsgolint, and a
  * component with `generic` type parameters is skipped, as only Vue's compiler
  * brings them into scope.
