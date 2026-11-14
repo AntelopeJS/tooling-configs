@@ -146,7 +146,7 @@ import { join } from "node:path";
 import { equal } from ${JSON.stringify(CHECKS)};
 const install = async (context, project, name = "@acme/api", mode = "") => {
   await context.command("install " + name, process.execPath, [${JSON.stringify(fake.packages)}, project, name, mode]);
-  return join(project, ".antelope/cache", name);
+  return join(project, ".antelope/cache", name + "@1.0.0");
 };
 const installGit = async (context, project, command) => {
   await context.command("install git", process.execPath, [${JSON.stringify(fake.git)}, project, ${JSON.stringify(fake.remote)}, command]);
@@ -191,7 +191,7 @@ export default {
         const module = await install(context, project);
         writeFileSync(join(module, "value.txt"), "BROKEN\\n");
         await install(context, project, "@acme/extra");
-        context.expect(context.step("extend"), [whole(join(project, ".antelope/cache/@acme/extra"))]);
+        context.expect(context.step("extend"), [whole(join(project, ".antelope/cache/@acme/extra@1.0.0"))]);
       },
     },
     locker: {
@@ -360,7 +360,7 @@ test("a module ajs deleted and installed again at the same version is not kept, 
       run,
       "evidence/reinstall/reinstaller/05-module-cache-not-kept/note.txt",
     ),
-    /@acme\/api was created again after ajs installed @acme\/api@1\.0\.0/,
+    /@acme\/api@1\.0\.0 was created again after ajs installed it/,
   );
 });
 

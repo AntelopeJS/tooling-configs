@@ -28,11 +28,11 @@ for (const name of modules) execFileSync(process.execPath, [${JSON.stringify(fak
 
 /** Journeys that install two modules in one command, through `ajs` or through a shell that also edits the first. */
 function config(fake: FakeAjs): string {
-  const script = `"$0" "$1" "$2" @acme/api && echo BROKEN > "$2/.antelope/cache/@acme/api/value.txt" && "$0" "$1" "$2" @acme/extra`;
+  const script = `"$0" "$1" "$2" @acme/api && echo BROKEN > "$2/.antelope/cache/@acme/api@1.0.0/value.txt" && "$0" "$1" "$2" @acme/extra`;
   return `import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { equal } from ${JSON.stringify(CHECKS)};
-const values = (project) => ["@acme/api", "@acme/extra"].map((name) => readFileSync(join(project, ".antelope/cache", name, "value.txt"), "utf8"));
+const values = (project) => ["@acme/api", "@acme/extra"].map((name) => readFileSync(join(project, ".antelope/cache", name + "@1.0.0", "value.txt"), "utf8"));
 export default {
   doors: ${PUBLISH_DOORS},
   setup: [["node", "-e", "0"]],

@@ -84,7 +84,7 @@ const install = async (context, project, name) => {
   const installed = await context.command("install " + name, process.execPath, [${JSON.stringify(packages)}, project, name]);
   context.expect(installed.folder, [
     exitIs(installed, 0),
-    equal("the module is installed", readFileSync(join(project, ".antelope/cache", name, "value.txt"), "utf8"), "installed\\n"),
+    equal("the module is installed", readFileSync(join(project, ".antelope/cache", name + "@1.0.0", "value.txt"), "utf8"), "installed\\n"),
   ]);
 };
 const scaffolded = (context) =>

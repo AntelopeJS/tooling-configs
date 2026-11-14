@@ -60,15 +60,10 @@ function bornAt(path: string): bigint {
   }
 }
 
-/** Whether `project` held the lock record of `name@version` when a command that started at `start` began; `ajs` writes a record only after an install that used none. */
-function pinned(
-  project: string,
-  name: string,
-  version: string,
-  start: bigint,
-): boolean {
+/** Whether `project` held the lock record of the registry module cached as `entry` (`<name>@<version>`, the name `ajs` gives both) when a command that started at `start` began; `ajs` writes a record only after an install that used none. */
+function pinned(project: string, entry: string, start: bigint): boolean {
   try {
-    const record = join(project, LOCK_FOLDER, `${name}@${version}`);
+    const record = join(project, LOCK_FOLDER, entry);
     return lstatSync(record, { bigint: true }).mtimeNs <= start;
   } catch {
     return false;
@@ -93,7 +88,7 @@ function reinstalled(
   if (known.version !== version)
     return `${name} changed from ${known.version} to ${version} after ajs installed it`;
   if (born !== known.born)
-    return `${name} was created again after ajs installed ${name}@${version}`;
+    return `${name} was created again after ajs installed it`;
   return undefined;
 }
 
@@ -116,9 +111,9 @@ function departure(
   modules: [string, string][],
 ): string | undefined {
   const listed = new Set(modules.map(([name]) => name));
-  for (const [name, known] of state.installed)
+  for (const name of state.installed.keys())
     if (!listed.has(name))
-      return `${name} left ${MANIFEST} after ajs installed ${name}@${known.version}`;
+      return `${name} left ${MANIFEST} after ajs installed it`;
   return undefined;
 }
 
@@ -135,7 +130,7 @@ function recordGit(
   return true;
 }
 
-/** The manifest `ajs` writes each time it finishes installing a module: its modification time and each module's version, sorted by module. */
+/** The manifest `ajs` writes each time it finishes installing a module: its modification time and each module's version, sorted by the module's cache folder, `<name>@<version>` for a registry module and the remote's file name for a git module. */
 function manifestOf(
   cache: string,
 ): { mtime: bigint; modules: [string, string][] } | undefined {
@@ -169,7 +164,7 @@ function changeIn(
 ): string | undefined {
   const modules = [...installed].map(([name, module]) => ({
     folder: join(name),
-    label: `${name}@${module.version}`,
+    label: name,
     bound: module.bound,
   }));
   try {
@@ -333,13 +328,13 @@ export class ProjectCaches {
         const known = state.installed.get(name);
         if (recordGit(state, name, version, added)) continue;
         if (known === undefined) {
-          added.push(`${name}@${version}`);
+          added.push(name);
           if (state.git.has(name))
             state.refused ??= `${name} changed from a git module to ${version} after ajs installed it`;
           state.installed.set(name, { version, born, bound: manifest.mtime });
           if (manifest.mtime > latest) latest = manifest.mtime;
-          if (pinned(project, name, version, start))
-            state.refused ??= `ajs installed ${name}@${version} from the project's lock record`;
+          if (pinned(project, name, start))
+            state.refused ??= `ajs installed ${name} from the project's lock record`;
         } else {
           state.refused ??= reinstalled(name, known, version, born);
         }
