@@ -176,26 +176,39 @@ function sharesRelease(a: string, b: string): boolean {
   );
 }
 
+/** A stable DMS release that implements an interface, and the range it declares on that interface. */
+interface Implementation {
+  release: ImplementingRelease;
+  range: string;
+}
+
+/** The implementation of `name` in each of `releases` that is not a prerelease and declares a range semver reads. */
+function implementations(
+  name: string,
+  releases: readonly ImplementingRelease[],
+): Implementation[] {
+  return releases.flatMap((release) => {
+    const range = release.implements.get(name);
+    return range === undefined ||
+      prerelease(release.version) !== null ||
+      validRange(range) === null
+      ? []
+      : [{ release, range }];
+  });
+}
+
 function outsideImplemented(
   spec: string,
-  name: string,
-  release: ImplementingRelease,
+  { release, range }: Implementation,
 ): StaleFinding | undefined {
-  const implemented = release.implements.get(name);
-  if (
-    implemented === undefined ||
-    prerelease(release.version) !== null ||
-    validRange(implemented) === null ||
-    sharesRelease(spec, implemented)
-  )
-    return undefined;
-  const floor = stableFloor(implemented);
+  if (sharesRelease(spec, range)) return undefined;
+  const floor = stableFloor(range);
   const expected =
     floor === undefined ? undefined : cappedReplacement(spec, floor);
   return expected === undefined
     ? undefined
     : {
-        reason: `which excludes "${implemented}", the range ${release.name} ${release.version}, its newest release, implements it on`,
+        reason: `which excludes "${range}", the range ${release.name} ${release.version}, its newest release, implements it on`,
         expected,
       };
 }
@@ -211,10 +224,12 @@ async function dmsReleases(
 }
 
 /**
- * One line per range among `ranges` whose every admitted release sits below the `latest` dist-tag of its package, and
- * one per newest release of a DMS package outside `local` whose range on that interface the range does not intersect,
- * skipping a line that gives the fix an earlier one gave. A package whose release cannot be read, or whose `latest` is a
- * prerelease no capped range admits, is skipped, so a registry outage leaves only the cap rule deciding the step.
+ * One line per range among `ranges` that shares no release with the range the newest release of a DMS package outside
+ * `local` implements its interface on, since a project loads the interface version that release is built against. An
+ * interface no such release implements is held instead to the `latest` dist-tag of its package: one line when every
+ * release the range admits sits below it. A line that gives the fix an earlier one gave is skipped. A package whose
+ * release cannot be read, or whose `latest` is a prerelease, is skipped, so a registry outage leaves only the cap rule
+ * deciding the step.
  */
 async function staleRanges(
   ranges: readonly PublishedRange[],
@@ -230,10 +245,14 @@ async function staleRanges(
   ]);
   return ranges.flatMap(({ path, field, name, spec }) => {
     if (validRange(spec) === null) return [];
-    const findings = [
-      belowNewest(spec, newest.get(name)),
-      ...releases.map((release) => outsideImplemented(spec, name, release)),
-    ].filter((finding) => finding !== undefined);
+    const implemented = implementations(name, releases);
+    const findings = (
+      implemented.length
+        ? implemented.map((implementation) =>
+            outsideImplemented(spec, implementation),
+          )
+        : [belowNewest(spec, newest.get(name))]
+    ).filter((finding) => finding !== undefined);
     return findings
       .filter(
         ({ expected }, index) =>
@@ -249,8 +268,8 @@ async function staleRanges(
 
 /**
  * Each `@antelopejs/*` range in a tracked manifest that does not stop below the next minor, and each capped
- * `@antelopejs/interface-*` range on a package outside this repository that stops below its newest published release,
- * one line each; empty when every range passes.
+ * `@antelopejs/interface-*` range on a package outside this repository that the newest DMS release implementing it, or
+ * else its newest published release, does not admit, one line each; empty when every range passes.
  */
 export async function checkRepositoryRanges(root: string): Promise<string> {
   const manifests = tracked(root);

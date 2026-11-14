@@ -272,7 +272,7 @@ test("a DMS module the repository holds is not read from the registry, where a s
   assert.equal(result.status, 0, result.stdout);
 });
 
-test("a range behind both the newest interface release and the newest DMS release prints one line when both give the same fix, where a step that reports each rule apart repeats the line", async (t) => {
+test("a range behind both the newest interface release and the newest DMS release prints one line, where a step that reports each rule apart repeats the fix", async (t) => {
   const root = repoWithRange(t, ">=0.6.0 <0.7.0", "dependencies", AUTOMATION);
   const result = await checks(
     root,
@@ -310,4 +310,62 @@ test("a range on the minor before a provider's prerelease floor fails, where a s
   );
   assert.equal(result.status, 1, result.stdout);
   assert.match(result.stdout, /use ">=0\.10\.0 <0\.11\.0"/);
+});
+
+test("a range on the minor the newest DMS release implements passes while the interface has a newer minor, where a step that also demands the interface's newest release leaves no range that passes until the module catches up", async (t) => {
+  const root = repoWithRange(t, ">=0.7.0 <0.8.0", "dependencies", AUTOMATION);
+  const result = await checks(
+    root,
+    await stubRegistry(
+      t,
+      { [AUTOMATION]: "0.8.0" },
+      {
+        "@antelopejs/dms-automation": implementing(
+          AUTOMATION,
+          "0.11.1",
+          ">=0.7.0 <0.8.0",
+        ),
+      },
+    ),
+  );
+  assert.equal(result.status, 0, result.stdout);
+});
+
+test("a DMS release whose range on the interface semver cannot read leaves the interface's newest release deciding, where a step that hands that range to semver crashes checks before any summary", async (t) => {
+  const root = repoWithRange(t, ">=0.6.0 <0.7.0", "dependencies", AUTOMATION);
+  const result = await checks(
+    root,
+    await stubRegistry(
+      t,
+      { [AUTOMATION]: "0.7.0" },
+      {
+        "@antelopejs/dms-automation": implementing(
+          AUTOMATION,
+          "0.11.1",
+          ">=0.7.0 <y",
+        ),
+      },
+    ),
+  );
+  assert.match(result.stdout, /Checks: 9 passed, 1 failed\./);
+  assert.match(result.stdout, /its newest published version/);
+});
+
+test("a prerelease newest DMS release does not decide the range, where a step that reads it as a release fails a module on the interface's newest minor", async (t) => {
+  const root = repoWithRange(t, ">=0.8.0 <0.9.0", "dependencies", AUTOMATION);
+  const result = await checks(
+    root,
+    await stubRegistry(
+      t,
+      { [AUTOMATION]: "0.8.0" },
+      {
+        "@antelopejs/dms-automation": implementing(
+          AUTOMATION,
+          "0.12.0-beta.1",
+          ">=0.7.0 <0.8.0",
+        ),
+      },
+    ),
+  );
+  assert.equal(result.status, 0, result.stdout);
 });
