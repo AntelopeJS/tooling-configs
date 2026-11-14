@@ -20,8 +20,8 @@ function storeWithKeptCache(t: TestContext) {
   const tmp = mkdtempSync(join(tmpdir(), "verify-caches-seed-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   const store = join(tmp, "store");
-  put(store, "kept/manifest.json", '{"@acme/api":"1.0.0"}\n');
-  put(store, "kept/@acme/api/value.txt", "installed\n");
+  put(store, "kept/manifest.json", '{"@acme/api@1.0.0":"1.0.0"}\n');
+  put(store, "kept/@acme/api@1.0.0/value.txt", "installed\n");
   return { tmp, store };
 }
 
@@ -39,7 +39,7 @@ test("a project with the default cache folder gets the largest kept cache, where
   put(project, "antelope.json", '{"modules":{}}\n');
   new ProjectCaches(store).seed(project);
   assert.equal(
-    existsSync(join(project, ".antelope/cache/@acme/api/value.txt")),
+    existsSync(join(project, ".antelope/cache/@acme/api@1.0.0/value.txt")),
     true,
   );
 });
@@ -49,13 +49,13 @@ test("a seed ignores a staging copy another journey is still publishing to the s
   put(
     store,
     ".staging-0a1b2c/manifest.json",
-    '{"@acme/api":"1.0.0","@acme/extra":"1.0.0"}\n',
+    '{"@acme/api@1.0.0":"1.0.0","@acme/extra@1.0.0":"1.0.0"}\n',
   );
   const project = join(tmp, "default");
   put(project, "package.json", "{}\n");
   new ProjectCaches(store).seed(project);
   assert.equal(
-    existsSync(join(project, ".antelope/cache/@acme/api/value.txt")),
+    existsSync(join(project, ".antelope/cache/@acme/api@1.0.0/value.txt")),
     true,
   );
 });
@@ -65,17 +65,21 @@ test("a seeded project's .bin shims put its own module folders on NODE_PATH, whe
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   const caches = new ProjectCaches(join(tmp, "store"));
   const shim = (project: string) =>
-    `export NODE_PATH="${join(project, ".antelope/cache/@acme/api/node_modules/.pnpm/node_modules")}"\n`;
+    `export NODE_PATH="${join(project, ".antelope/cache/@acme/api@1.0.0/node_modules/.pnpm/node_modules")}"\n`;
   const first = join(tmp, "first");
   caches.seed(first);
-  put(first, ".antelope/cache/@acme/api/node_modules/.bin/tool", shim(first));
-  put(first, ".antelope/cache/manifest.json", '{"@acme/api":"1.0.0"}\n');
+  put(
+    first,
+    ".antelope/cache/@acme/api@1.0.0/node_modules/.bin/tool",
+    shim(first),
+  );
+  put(first, ".antelope/cache/manifest.json", '{"@acme/api@1.0.0":"1.0.0"}\n');
   assert.deepEqual(caches.keep(), []);
   const second = join(tmp, "second$&");
   put(second, "package.json", "{}\n");
   caches.seed(second);
   assert.equal(
-    read(second, ".antelope/cache/@acme/api/node_modules/.bin/tool"),
+    read(second, ".antelope/cache/@acme/api@1.0.0/node_modules/.bin/tool"),
     shim(second),
   );
 });
@@ -84,19 +88,23 @@ test("a copy of a clean prepared cache has .bin shims naming its own module fold
   const tmp = realpathSync(mkdtempSync(join(tmpdir(), "verify-caches-copy-")));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   const shim = (project: string) =>
-    `export NODE_PATH="${join(project, ".antelope/cache/@acme/api/node_modules/.pnpm/node_modules")}"\n`;
+    `export NODE_PATH="${join(project, ".antelope/cache/@acme/api@1.0.0/node_modules/.pnpm/node_modules")}"\n`;
   const built = join(tmp, "built");
   const building = new ProjectCaches(join(tmp, "store"));
   building.seed(built);
-  put(built, ".antelope/cache/@acme/api/node_modules/.bin/tool", shim(built));
-  put(built, ".antelope/cache/manifest.json", '{"@acme/api":"1.0.0"}\n');
+  put(
+    built,
+    ".antelope/cache/@acme/api@1.0.0/node_modules/.bin/tool",
+    shim(built),
+  );
+  put(built, ".antelope/cache/manifest.json", '{"@acme/api@1.0.0":"1.0.0"}\n');
   const from = building.clean(built);
   assert.notEqual(from, null);
   const copy = join(tmp, "copy");
   cpSync(built, copy, { recursive: true, preserveTimestamps: true });
   new ProjectCaches(join(tmp, "store")).seed(copy, from);
   assert.equal(
-    read(copy, ".antelope/cache/@acme/api/node_modules/.bin/tool"),
+    read(copy, ".antelope/cache/@acme/api@1.0.0/node_modules/.bin/tool"),
     shim(copy),
   );
 });
@@ -105,19 +113,23 @@ test("a copy of a clean prepared cache reached through a symlink has .bin shims 
   const tmp = realpathSync(mkdtempSync(join(tmpdir(), "verify-caches-link-")));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   const shim = (project: string) =>
-    `export NODE_PATH="${join(project, ".antelope/cache/@acme/api/node_modules/.pnpm/node_modules")}"\n`;
+    `export NODE_PATH="${join(project, ".antelope/cache/@acme/api@1.0.0/node_modules/.pnpm/node_modules")}"\n`;
   mkdirSync(join(tmp, "real"));
   symlinkSync(join(tmp, "real"), join(tmp, "link"));
   const built = join(tmp, "link/built");
   const building = new ProjectCaches(join(tmp, "store"));
   building.seed(built);
-  put(built, ".antelope/cache/@acme/api/node_modules/.bin/tool", shim(built));
-  put(built, ".antelope/cache/manifest.json", '{"@acme/api":"1.0.0"}\n');
+  put(
+    built,
+    ".antelope/cache/@acme/api@1.0.0/node_modules/.bin/tool",
+    shim(built),
+  );
+  put(built, ".antelope/cache/manifest.json", '{"@acme/api@1.0.0":"1.0.0"}\n');
   const copy = join(tmp, "copy");
   cpSync(built, copy, { recursive: true, preserveTimestamps: true });
   new ProjectCaches(join(tmp, "store")).seed(copy, building.clean(built));
   assert.equal(
-    read(copy, ".antelope/cache/@acme/api/node_modules/.bin/tool"),
+    read(copy, ".antelope/cache/@acme/api@1.0.0/node_modules/.bin/tool"),
     shim(copy),
   );
 });
@@ -128,13 +140,13 @@ test("retargeting a copy's .bin shim that shares its inode with a file outside t
   );
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   const shim = (project: string) =>
-    `export NODE_PATH="${join(project, ".antelope/cache/@acme/api/node_modules/.pnpm/node_modules")}"\n`;
-  const tool = ".antelope/cache/@acme/api/node_modules/.bin/tool";
+    `export NODE_PATH="${join(project, ".antelope/cache/@acme/api@1.0.0/node_modules/.pnpm/node_modules")}"\n`;
+  const tool = ".antelope/cache/@acme/api@1.0.0/node_modules/.bin/tool";
   const built = join(tmp, "built");
   const building = new ProjectCaches(join(tmp, "store"));
   building.seed(built);
   put(built, tool, shim(built));
-  put(built, ".antelope/cache/manifest.json", '{"@acme/api":"1.0.0"}\n');
+  put(built, ".antelope/cache/manifest.json", '{"@acme/api@1.0.0":"1.0.0"}\n');
   const copy = join(tmp, "copy");
   cpSync(built, copy, { recursive: true, preserveTimestamps: true });
   rmSync(join(copy, tool));
