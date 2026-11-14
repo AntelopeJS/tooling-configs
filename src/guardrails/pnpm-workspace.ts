@@ -84,13 +84,9 @@ function decideBuilds(document: Document, names: string[]): boolean {
   return true;
 }
 
-/** Adds `FRESH_RELEASES` to `minimumReleaseAgeExclude` unless the list holds it. Returns whether it changed `document`. */
+/** Adds `FRESH_RELEASES` to an existing `minimumReleaseAgeExclude` list unless it holds it. Returns whether it changed `document`. */
 function excludeFreshReleases(document: Document): boolean {
   const excluded = document.get(EXCLUDE);
-  if (excluded == null) {
-    document.set(EXCLUDE, document.createNode([FRESH_RELEASES]));
-    return true;
-  }
   if (!isSeq(excluded)) throw new Error(`${PATH}: ${EXCLUDE} must be a list.`);
   if (
     excluded.items.some(
@@ -101,6 +97,11 @@ function excludeFreshReleases(document: Document): boolean {
   excluded.flow = false;
   excluded.add(FRESH_RELEASES);
   return true;
+}
+
+/** `text` followed by a `minimumReleaseAgeExclude` block, so a file sync adds only that block to keeps every other byte, flow-map padding included. */
+function withExcludeBlock(text: string): string {
+  return `${text}${text === "" || text.endsWith("\n") ? "" : "\n"}${EXCLUDE}:\n  - "${FRESH_RELEASES}"\n`;
 }
 
 /**
@@ -117,15 +118,21 @@ function withSyncedSettings(names: string[], current = ""): string {
   if (document.toJS() == null) {
     const kept = current.trimStart();
     const lines = names.map((name) => `  ${name}: false\n`).join("");
-    return `${kept}${kept === "" || kept.endsWith("\n") ? "" : "\n"}allowBuilds:\n${lines}${EXCLUDE}:\n  - "${FRESH_RELEASES}"\n`;
+    return withExcludeBlock(
+      `${kept}${kept === "" || kept.endsWith("\n") ? "" : "\n"}allowBuilds:\n${lines}`,
+    );
   }
   if (!isMap(document.contents))
     throw new Error(`${PATH} must contain a YAML mapping.`);
+  const absent = document.get(EXCLUDE) == null;
   const decided = decideBuilds(document, names);
-  const excluded = excludeFreshReleases(document);
-  if (!decided && !excluded) return current;
+  const excluded = !absent && excludeFreshReleases(document);
   document.contents.flow = false;
-  return document.toString({ lineWidth: 0, flowCollectionPadding: false });
+  const text =
+    decided || excluded
+      ? document.toString({ lineWidth: 0, flowCollectionPadding: false })
+      : current;
+  return absent ? withExcludeBlock(text) : text;
 }
 
 /** The `pnpm-workspace.yaml` a full-profile pnpm repository needs so pnpm 11 and later install the builds sync declares without `ERR_PNPM_IGNORED_BUILDS`, and lock one copy of an interface released less than a day ago. */

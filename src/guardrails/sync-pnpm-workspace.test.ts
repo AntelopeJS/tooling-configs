@@ -168,3 +168,50 @@ for (const current of [undefined, "allowBuilds:\n  lefthook: false\n"])
       current !== undefined,
     );
   });
+
+test("sync appends the release-age exclusion to a file that already decides its builds and keeps every other byte, where a sync that reserializes the file strips the padding oxfmt keeps in a flow map and fails format:check", (t) => {
+  const root = pinnedRepo(t, "pnpm@11.27.1");
+  const own = "overrides: { foo: 1.0.0 }\nallowBuilds:\n  lefthook: false\n";
+  put(root, "pnpm-workspace.yaml", own);
+  synced(root);
+  assert.equal(
+    read(root, "pnpm-workspace.yaml"),
+    `${own}${FRESH_INTERFACES_YAML}`,
+  );
+});
+
+test("sync adds the interface pattern beside another @antelopejs entry in minimumReleaseAgeExclude, where a sync that counts any @antelopejs entry as the pattern leaves a fresh install locking two copies of an interface", (t) => {
+  const root = pinnedRepo(t, "pnpm@11.27.1");
+  put(
+    root,
+    "pnpm-workspace.yaml",
+    'allowBuilds:\n  lefthook: false\nminimumReleaseAgeExclude: ["@antelopejs/other"]\n',
+  );
+  synced(root);
+  assert.deepEqual(parse(read(root, "pnpm-workspace.yaml")), {
+    allowBuilds: { lefthook: false },
+    minimumReleaseAgeExclude: ["@antelopejs/other", "@antelopejs/interface-*"],
+  });
+});
+
+test("sync keeps a pnpm 10 repository's pnpm-workspace.yaml whose minimumReleaseAgeExclude lists its own packages, where a sync that counts any list as its own asks to delete the file and drops those entries", (t) => {
+  const root = pinnedRepo(t, "pnpm@10.6.5");
+  const own = `allowBuilds:\n  lefthook: false\nminimumReleaseAgeExclude:\n  - left-pad\n  - "@antelopejs/interface-*"\n`;
+  put(root, "pnpm-workspace.yaml", own);
+  synced(root);
+  assert.equal(read(root, "pnpm-workspace.yaml"), own);
+});
+
+test("sync fails on a minimumReleaseAgeExclude that is not a list and leaves the file as it is, where a sync that skips it leaves pnpm 11 locking two copies of an interface released less than a day ago", (t) => {
+  const root = pinnedRepo(t, "pnpm@11.27.1");
+  const own =
+    "allowBuilds:\n  lefthook: false\nminimumReleaseAgeExclude: foo\n";
+  put(root, "pnpm-workspace.yaml", own);
+  const result = bin(root, "sync");
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(
+    result.stdout + result.stderr,
+    /minimumReleaseAgeExclude must be a list/,
+  );
+  assert.equal(read(root, "pnpm-workspace.yaml"), own);
+});
