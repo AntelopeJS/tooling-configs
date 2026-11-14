@@ -224,3 +224,38 @@ test("a class field, static, private or accessor, initialized with an any or an 
     vue: expected,
   });
 });
+
+const tupleSpreads = `declare const parsedAny: any;
+declare const tup: [any, string];
+declare const both: [any, any];
+declare const setTup: [Set<any>];
+declare const rest: [string, ...any[]];
+declare function take(a: string, b: string): void;
+declare function one(s: Set<string>): void;
+declare function loose(...a: unknown[]): void;
+declare function some(a: string, ...more: string[]): void;
+declare function pair(...args: [string, number]): void;
+declare function after(a: string, b: string, c: string): void;
+take(...[parsedAny, ""] as const);
+take(...tup);
+take(...both);
+one(...setTup);
+loose(...tup);
+some(...rest);
+some("a", ...tup);
+pair(...both);
+after(...rest, parsedAny);
+after(...tup, parsedAny);
+declare const call: any;
+call(...tup);
+new Set<string>(...[[parsedAny]] as const);
+void 0;
+`;
+
+test("each element of a tuple spread into a call is reported against the parameter it fills, once per unsafe element, a rest element sends later arguments to the rest parameter, and an argument after a spread fills the parameter past it, on the lines tsgolint reports (fails if tuple spreads are not checked, a spread is reported once whatever its elements, or arguments are matched with parameters by position without the spread's length)", () => {
+  const expected = [12, 13, 14, 14, 15, 17, 18, 19, 19, 20, 21, 21];
+  assert.deepEqual(parityLines("TupleSpreads", tupleSpreads), {
+    ts: expected,
+    vue: expected,
+  });
+});
