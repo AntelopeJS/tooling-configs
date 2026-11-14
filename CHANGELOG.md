@@ -1,5 +1,48 @@
 # Changelog
 
+## v0.7.2
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.7.1...v0.7.2)
+
+### 🚀 Enhancements
+
+- **guardrails:** Fail dependency:ranges on an interface range that excludes its newest release ([#374](https://github.com/AntelopeJS/tooling-configs/pull/374))
+- **guardrails:** Fail dependency:ranges on an interface range that excludes the version the newest DMS release implements ([#381](https://github.com/AntelopeJS/tooling-configs/pull/381))
+
+### 🩹 Fixes
+
+- **verify:** Pack interfaces without lifecycle scripts so a POSIX prepare passes on Windows ([#368](https://github.com/AntelopeJS/tooling-configs/pull/368))
+- **lint:** Report an any default into an unknown declaration slot in no-unsafe-any-in-vue ([#369](https://github.com/AntelopeJS/tooling-configs/pull/369))
+- **lint:** Leave an aliased any array assigned or passed alone in no-unsafe-any-in-vue ([#370](https://github.com/AntelopeJS/tooling-configs/pull/370))
+- **lint:** Report an any returned from an unannotated callback in no-unsafe-any-in-vue ([#371](https://github.com/AntelopeJS/tooling-configs/pull/371))
+- **verify:** Follow the <name>@<version> cache entries ajs writes since core 1.23.1 ([#377](https://github.com/AntelopeJS/tooling-configs/pull/377))
+- **sync:** Exclude AntelopeJS interfaces from pnpm's release age so a fresh install locks one copy ([#376](https://github.com/AntelopeJS/tooling-configs/pull/376))
+- **sync:** Write the release-age exclusion in nested install folders and template repositories ([#378](https://github.com/AntelopeJS/tooling-configs/pull/378))
+- **sync:** Write the release-age exclusion in pnpm-installed folders of an npm repository ([#383](https://github.com/AntelopeJS/tooling-configs/pull/383))
+- **sync:** Count an unpinned root that holds another package manager's lockfile as not pnpm's ([#384](https://github.com/AntelopeJS/tooling-configs/pull/384))
+- **lint:** Match tsgolint on destructuring defaults, generics and returns in no-unsafe-any-in-vue ([#379](https://github.com/AntelopeJS/tooling-configs/pull/379))
+- **api-diff:** Compare a bundler's dist declarations through their source modules ([#387](https://github.com/AntelopeJS/tooling-configs/pull/387))
+- **lint:** Check class fields, JSX attributes and tuple spreads in no-unsafe-any-in-vue ([#386](https://github.com/AntelopeJS/tooling-configs/pull/386))
+- **lint:** Check tagged template substitutions as arguments in no-unsafe-any-in-vue ([#388](https://github.com/AntelopeJS/tooling-configs/pull/388))
+- **api-diff:** Match a bundler's dist declaration through its source module when rootDir is set without outDir ([#389](https://github.com/AntelopeJS/tooling-configs/pull/389))
+- **lint:** Skip String() on an unknown narrowed to {} in no-base-to-string ([#373](https://github.com/AntelopeJS/tooling-configs/pull/373))
+
+### 📖 Documentation
+
+- **guardrails:** List dms-assistant in the DMS modules table ([#330](https://github.com/AntelopeJS/tooling-configs/pull/330))
+- **oxlint:** Say a bare run lints node_modules without the shared ignores or a .gitignore ([#375](https://github.com/AntelopeJS/tooling-configs/pull/375))
+- **lint:** List the union-order ties no-unsafe-any-in-vue cannot break as tsgo does ([#385](https://github.com/AntelopeJS/tooling-configs/pull/385))
+
+### ✅ Tests
+
+- **lease:** Tell a stopped process from one that reused its pid ([#372](https://github.com/AntelopeJS/tooling-configs/pull/372))
+- **verify:** Cover each cache keeper refusal from a layout core 1.23.1 can reach ([#380](https://github.com/AntelopeJS/tooling-configs/pull/380))
+- **lease:** Tell a stopped mongod from a process that reused its pid ([#382](https://github.com/AntelopeJS/tooling-configs/pull/382))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.7.1
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.7.0...v0.7.1)
