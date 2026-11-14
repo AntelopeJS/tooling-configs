@@ -137,6 +137,20 @@ function isCapped(
   );
 }
 
+/**
+ * The range to use in place of `spec` on the minor of `newest`, or `undefined` when `spec` already stops below the
+ * next minor of its floor and admits `newest`.
+ */
+export function cappedReplacement(
+  spec: string,
+  newest: string,
+): string | undefined {
+  const version = readFloor(newest);
+  if (version === undefined || isCapped(readBounds(spec.trim()), version))
+    return undefined;
+  return cappedRange(version);
+}
+
 function isLinkSpec(spec: string): boolean {
   return LINK_SPEC_PREFIXES.some((prefix) => spec.startsWith(prefix));
 }

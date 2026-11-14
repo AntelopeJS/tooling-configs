@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
@@ -98,6 +98,15 @@ export function usePreset(root: string, typeAware = false): void {
   );
 }
 
+function binEnv(env: Record<string, string | undefined>) {
+  const {
+    GITHUB_BASE_REF: _base,
+    [CHECKS_SKIP_ENV]: _skip,
+    ...inherited
+  } = process.env;
+  return { ...inherited, CI: "1", ...env };
+}
+
 /** Runs a bin from source as CI would, without the caller's pull request base or checks skip, plus `env`, where an `undefined` value unsets the inherited variable. */
 export function bin(
   root: string,
@@ -105,16 +114,33 @@ export function bin(
   args: string[] = [],
   env: Record<string, string | undefined> = {},
 ) {
-  const {
-    GITHUB_BASE_REF: _base,
-    [CHECKS_SKIP_ENV]: _skip,
-    ...inherited
-  } = process.env;
   return spawnSync(
     process.execPath,
     [join(PACKAGE_ROOT, "src/bin", `${name}.ts`), ...args],
-    { cwd: root, encoding: "utf8", env: { ...inherited, CI: "1", ...env } },
+    { cwd: root, encoding: "utf8", env: binEnv(env) },
   );
+}
+
+/** Runs a bin as {@link bin} does without blocking the event loop, so a server the test runs can answer it. */
+export function binAsync(
+  root: string,
+  name: string,
+  args: string[] = [],
+  env: Record<string, string | undefined> = {},
+): Promise<{ status: number | null; stdout: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [join(PACKAGE_ROOT, "src/bin", `${name}.ts`), ...args],
+      { cwd: root, env: binEnv(env) },
+    );
+    let stdout = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (status) => resolve({ status, stdout }));
+  });
 }
 
 export function read(root: string, path: string): string {
