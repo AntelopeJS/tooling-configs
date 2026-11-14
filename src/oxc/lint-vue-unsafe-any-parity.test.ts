@@ -45,11 +45,13 @@ const al: Set<string> = aliased;
 const ro: ReadonlySet<string> = anySet;
 const u: Set<unknown> = anySet;
 const parens: Map<string, number> = (new Map());
-void [s, m, ret, b, fresh, freshArgs, nested, p, al, ro, u, parens];
+declare const deep: Set<Set<Set<Set<Set<Set<any>>>>>>;
+const deepTyped: Set<Set<Set<Set<Set<Set<string>>>>>> = deep;
+void [s, m, ret, b, fresh, freshArgs, nested, p, al, ro, u, parens, deepTyped];
 `;
 
-test("an any inside a generic reference other than an array or tuple, as in Set<any>, Map<string, any> or Box<any>, assigned, passed or returned into the same generic with another type there is reported, and new Map(), an alias, another target and an unknown slot are not, on the lines tsgolint reports (fails if only array and tuple references are compared, new Map() is not let into a Map, or a parenthesized new Map() is let in too)", () => {
-  const expected = [9, 10, 11, 12, 13, 15, 16, 17, 21];
+test("an any inside a generic reference other than an array or tuple, as in Set<any>, Map<string, any> or Box<any>, assigned, passed or returned into the same generic with another type there is reported, and new Map(), an alias, another target and an unknown slot are not, on the lines tsgolint reports (fails if only array and tuple references are compared, new Map() is not let into a Map, a parenthesized new Map() is let in too, or the comparison stops at a fixed depth)", () => {
+  const expected = [9, 10, 11, 12, 13, 15, 16, 17, 21, 23];
   assert.deepEqual(parityLines("Generics", generics), {
     ts: expected,
     vue: expected,
