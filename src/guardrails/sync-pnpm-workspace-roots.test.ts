@@ -74,6 +74,27 @@ test("sync writes no pnpm-workspace.yaml in a nested folder of a pnpm 10 reposit
   assert.equal(existsSync(join(root, PLAYGROUND_WORKSPACE)), false);
 });
 
+test("sync keeps the builds it declares in the root pnpm-workspace.yaml of a repository with a root pnpm-lock.yaml and a nested one, where a sync that also plans the root as a nested folder overwrites them with the interface pattern alone", (t) => {
+  const root = pinnedRepo(t, "pnpm@11.27.1");
+  put(root, "pnpm-lock.yaml", "lockfileVersion: '9.0'\n");
+  withPlayground(root);
+  synced(root);
+  const workspace: unknown = parse(read(root, "pnpm-workspace.yaml"));
+  assert.deepEqual(workspace, {
+    allowBuilds: { lefthook: false },
+    ...FRESH_INTERFACES,
+  });
+});
+
+test("sync keeps a nested pnpm-workspace.yaml that holds only the interface pattern in a pnpm 10 repository, where a sync that asks the root to delete such a file asks it of every install folder", (t) => {
+  const root = pinnedRepo(t, "pnpm@10.6.5");
+  withPlayground(root);
+  const content = 'minimumReleaseAgeExclude:\n  - "@antelopejs/interface-*"\n';
+  put(root, PLAYGROUND_WORKSPACE, content);
+  synced(root);
+  assert.equal(read(root, PLAYGROUND_WORKSPACE), content);
+});
+
 test("sync writes no pnpm-workspace.yaml beside a pnpm-lock.yaml that .gitignore leaves out, where a sync that walks ignored folders writes into node_modules", (t) => {
   const root = pinnedRepo(t, "pnpm@11.27.1");
   put(root, "node_modules/dep/pnpm-lock.yaml", "lockfileVersion: '9.0'\n");
