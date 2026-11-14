@@ -314,10 +314,14 @@ function toTuple(): [string, string] { return pair; }
 function toSame(): AA { return aa; }
 function toUnknown(): unknown[] { return aa; }
 function toNested(): string[][] { return nested; }
-void [a, b, c, d, e, f, g, list, toAlias, toReadonly, toTuple, toSame, toUnknown, toNested];
+const [h]: string[] = aa;
+const [i, j]: [string, string] = pair;
+function first([k]: string[] = ga): string { return k; }
+const { plain: [m] }: { plain: string[] } = box;
+void [a, b, c, d, e, f, g, h, i, j, m, list, toAlias, toReadonly, toTuple, toSame, toUnknown, toNested, first];
 `;
 
-test("an aliased any array or tuple, as in type AA = any[] or G<any>, assigned or passed is left alone, and an any[] returned into anything but unknown[] is reported, on the same lines tsgolint reports in a .ts file (fails if a deferred reference such as an alias is compared by its generic target, or a returned any[] is compared by target rather than by its declared return)", () => {
+test("an aliased any array or tuple, as in type AA = any[] or G<any>, assigned or passed is left alone, and one destructured through an annotated pattern or an any[] returned into anything but unknown[] is reported, on the same lines tsgolint reports in a .ts file (fails if a deferred reference such as an alias is compared by its generic target, an annotated pattern or a parameter default pattern is not destructured, or a returned any[] is compared by target rather than by its declared return)", () => {
   const found = findings({
     "tsconfig.json": tsconfig,
     "src/aliased.ts": `${aliased}export {};\n`,
@@ -327,7 +331,7 @@ test("an aliased any array or tuple, as in type AA = any[] or G<any>, assigned o
     found.flatMap((entry) =>
       entry.startsWith(`${file}:`) ? [Number(entry.split(/[: ]/)[1])] : [],
     );
-  const expected = [13, 19, 21, 22];
+  const expected = [13, 19, 21, 22, 27, 28, 29, 30];
   assert.deepEqual(
     lines("src/aliased.ts").toSorted((a, b) => a - b),
     expected,

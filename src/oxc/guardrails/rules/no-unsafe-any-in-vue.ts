@@ -459,28 +459,28 @@ function destructuredFindings(
     : [];
 }
 
+/** The elements a pattern `name`, annotated or not, takes `any` into from `initializer`. */
+function bindingFindings(
+  checker: ts.TypeChecker,
+  name: ts.BindingName,
+  initializer: ts.Expression,
+): Finding[] {
+  const source = checker.getTypeAtLocation(initializer);
+  return ts.isIdentifier(name)
+    ? []
+    : destructuredFindings(checker, name, source);
+}
+
 function declarationFindings(
   checker: ts.TypeChecker,
   node: ts.VariableDeclaration,
   initializer: ts.Expression,
 ): Finding[] {
-  if (
-    assignmentLeaks(
-      checker,
-      checker.getTypeAtLocation(initializer),
-      node.type === undefined
-        ? undefined
-        : checker.getTypeAtLocation(node.name),
-    )
-  )
-    return [{ kind: "assignment", node }];
-  return node.type === undefined && !ts.isIdentifier(node.name)
-    ? destructuredFindings(
-        checker,
-        node.name,
-        checker.getTypeAtLocation(initializer),
-      )
-    : [];
+  const source = checker.getTypeAtLocation(initializer);
+  const declared = node.type && checker.getTypeAtLocation(node.name);
+  return assignmentLeaks(checker, source, declared)
+    ? [{ kind: "assignment", node }]
+    : bindingFindings(checker, node.name, initializer);
 }
 
 function assignmentFindings(checker: ts.TypeChecker, node: ts.Node): Finding[] {
@@ -501,7 +501,7 @@ function assignmentFindings(checker: ts.TypeChecker, node: ts.Node): Finding[] {
   if (ts.isParameter(node) && node.initializer !== undefined)
     return leaksIntoContext(checker, node.initializer)
       ? [{ kind: "assignment", node }]
-      : [];
+      : bindingFindings(checker, node.name, node.initializer);
   if (ts.isBindingElement(node) && node.initializer !== undefined)
     return assignmentLeaks(
       checker,
