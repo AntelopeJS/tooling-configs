@@ -266,14 +266,15 @@ function declaresWorkspaces(path: string): boolean {
   }
 }
 
-/** Whether a `pnpm-workspace.yaml` lists `packages`, or cannot be read and so might; one without them holds its own folder only. */
+/** Whether a `pnpm-workspace.yaml` lists `packages`, or cannot be read and so might; an empty one, or one without them, holds its own folder only. */
 function declaresPackages(path: string): boolean {
-  try {
-    return existsSync(path) && readMapping(path).has("packages");
-  } catch (error) {
-    if (error instanceof Unreadable) return true;
-    throw error;
-  }
+  if (!existsSync(path)) return false;
+  const document = parseDocument(readFileSync(path, "utf8"));
+  if (document.errors.length > 0) return true;
+  const { contents } = document;
+  if (contents === null || (isScalar(contents) && contents.value === null))
+    return false;
+  return !isMap(contents) || contents.has("packages");
 }
 
 /**

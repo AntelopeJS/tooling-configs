@@ -59,6 +59,15 @@ test("sync lists the interface pattern in the pnpm-workspace.yaml of a playgroun
   assert.equal(check.status, 0, check.stdout + check.stderr);
 });
 
+test("sync lists the interface pattern in a playground's pnpm-workspace.yaml in one run under an empty root pnpm-workspace.yaml, where a sync that reads an empty file as a workspace that may list the playground needs a second run", (t) => {
+  const root = pinnedRepo(t, "pnpm@11.27.1");
+  put(root, "pnpm-workspace.yaml", "");
+  put(root, "playground/package.json", '{ "private": true }\n');
+  synced(root);
+  const check = bin(root, "sync", ["--check"]);
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+});
+
 test("sync writes no pnpm-workspace.yaml in a playground the root workspace lists, where a sync that writes one makes it a workspace of its own that loses the root's workspace packages", (t) => {
   const root = pinnedRepo(t, "pnpm@11.27.1");
   put(root, "pnpm-workspace.yaml", "packages:\n  - playground\n");
