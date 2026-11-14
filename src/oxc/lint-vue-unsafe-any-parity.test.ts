@@ -148,3 +148,28 @@ test("a getter returning any is reported whatever it declares, a method is judge
     vue: expected,
   });
 });
+
+const unionOrder = `declare const frozen: readonly [any];
+type Strings = () => [string];
+type Unknowns = () => [unknown];
+const early: Unknowns = () => [1];
+declare function later(handler: Strings | Unknowns): void;
+later(() => frozen as [any]);
+type Alpha = () => [unknown];
+type Beta = () => [string];
+declare function byName(handler: Beta | Alpha): void;
+byName(() => frozen as [any]);
+declare function namedFirst(handler: (() => [unknown]) | Beta): void;
+namedFirst(() => frozen as [any]);
+declare function inline(handler: (() => [unknown]) | (() => [string])): void;
+inline(() => frozen as [any]);
+void early;
+`;
+
+test("a tuple returned into a union context is compared with the member tsgo orders first, named types by name before unnamed ones and unnamed ones by position, whatever an earlier line creates first, on the lines tsgolint reports (fails if the members are read in the TypeScript 6 checker's type creation order)", () => {
+  const expected = [6, 12];
+  assert.deepEqual(parityLines("UnionOrder", unionOrder), {
+    ts: expected,
+    vue: expected,
+  });
+});
