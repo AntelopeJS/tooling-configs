@@ -5,8 +5,9 @@ import { join } from "node:path";
 import { put } from "../../guardrails/helpers/test-repo.ts";
 
 /**
- * A command that installs a fake registry module into a project's
- * `.antelope/cache` the way `ajs` does: it reuses a module the manifest holds
+ * A command that installs a fake registry module at version `1.0.0` into a
+ * project's `.antelope/cache` the way `ajs` does, in the folder and under the
+ * manifest key `<name>@1.0.0`: it reuses a module the manifest holds
  * unless the project's lock record differs from the module's lockfile, and
  * otherwise writes the module's files, the record's lockfile or a freshly
  * resolved one, then its version in `manifest.json`, then a lock record when
@@ -21,11 +22,12 @@ const [project, name, mode] = process.argv.slice(2);
 const cache = join(project, ".antelope/cache");
 const file = join(cache, "manifest.json");
 const manifest = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
-const module = join(cache, name);
+const entry = name + "@1.0.0";
+const module = join(cache, entry);
 const lockfile = join(module, "pnpm-lock.yaml");
-const record = join(project, "antelope-lock", name + "@1.0.0", "pnpm-lock.yaml");
+const record = join(project, "antelope-lock", entry, "pnpm-lock.yaml");
 const pinned = existsSync(record) ? readFileSync(record, "utf8") : undefined;
-const reusable = manifest[name] !== undefined && (pinned === undefined || (existsSync(lockfile) && readFileSync(lockfile, "utf8") === pinned));
+const reusable = manifest[entry] !== undefined && (pinned === undefined || (existsSync(lockfile) && readFileSync(lockfile, "utf8") === pinned));
 if (mode === "fresh" || mode === "fake" || !reusable) {
   if (mode !== "fake") appendFileSync(${JSON.stringify(log)}, name + "\\n");
   rmSync(module, { recursive: true, force: true });
@@ -34,7 +36,7 @@ if (mode === "fresh" || mode === "fake" || !reusable) {
   writeFileSync(join(module, "value.txt"), mode === "fake" ? "FAKE\\n" : "installed\\n");
   writeFileSync(lockfile, pinned ?? "fresh\\n");
   symlinkSync("../value.txt", join(module, "node_modules/link"));
-  manifest[name] = "1.0.0";
+  manifest[entry] = "1.0.0";
   writeFileSync(file, JSON.stringify(manifest));
 }
 if (pinned === undefined) {

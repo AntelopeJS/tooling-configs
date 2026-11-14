@@ -50,25 +50,25 @@ test("a git module ajs then overwrites in place with a registry version keeps th
 test("a folder the harness cannot read inside a git module leaves the registry modules kept, where a check that walks the left-out git folder refuses the whole cache", (t) => {
   const { cache, caches, command, later } = project(t);
   command({
-    "@acme/api/value.txt": "installed\n",
+    "@acme/api@1.0.0/value.txt": "installed\n",
     "gitmod/dist/private/secret.txt": "built\n",
-    "manifest.json": '{"@acme/api":"1.0.0","gitmod":"git:main:abc"}',
+    "manifest.json": '{"@acme/api@1.0.0":"1.0.0","gitmod":"git:main:abc"}',
   });
   const locked = join(cache, "gitmod/dist/private");
   chmodSync(locked, 0);
   const skipped = caches.keep();
   chmodSync(locked, 0o755);
   assert.deepEqual(skipped, []);
-  assert.deepEqual(later("@acme/api/value.txt", "gitmod"), [true, false]);
+  assert.deepEqual(later("@acme/api@1.0.0/value.txt", "gitmod"), [true, false]);
 });
 
 test("a git module and a registry module that appear in one command that is not ajs keep the cache out, where a check that counts only registry modules keeps a module the git install command may have changed", (t) => {
   const { caches, command, later } = project(t);
   command(
     {
-      "@acme/api/value.txt": "installed\n",
+      "@acme/api@1.0.0/value.txt": "installed\n",
       "gitmod/dist/built.txt": "A\n",
-      "manifest.json": '{"@acme/api":"1.0.0","gitmod":"git:main:abc"}',
+      "manifest.json": '{"@acme/api@1.0.0":"1.0.0","gitmod":"git:main:abc"}',
     },
     false,
   );
@@ -76,5 +76,5 @@ test("a git module and a registry module that appear in one command that is not 
     caches.keep().join("\n"),
     /@acme\/api@1\.0\.0 and gitmod@git:main:abc appeared in one command that is not ajs/,
   );
-  assert.deepEqual(later("@acme/api/value.txt"), [false]);
+  assert.deepEqual(later("@acme/api@1.0.0/value.txt"), [false]);
 });
