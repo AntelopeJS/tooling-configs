@@ -341,3 +341,58 @@ test("an aliased any array or tuple, as in type AA = any[] or G<any>, assigned o
     expected,
   );
 });
+
+const callbacks = `declare const parsedAny: any;
+declare const rows: any[];
+declare function on(handler: () => unknown): void;
+declare function later(handler: () => Promise<unknown>): void;
+rows.map((v) => v);
+const f: () => any = () => parsedAny;
+rows.map((v) => {
+  return v;
+});
+const g = (): any => parsedAny;
+on(() => parsedAny);
+later(async () => parsedAny);
+const h = function () {
+  return parsedAny;
+};
+rows.map(() => rows);
+declare function list(handler: () => unknown[]): void;
+list(() => rows);
+function copy() { return rows; }
+declare const pair: [any, string];
+declare function both(handler: () => [string, string]): void;
+both(() => pair);
+declare const frozen: readonly [any];
+const once: () => readonly [string] = () => frozen;
+declare function either(handler: (() => any) | (() => unknown)): void;
+either(() => parsedAny);
+declare function overloaded(handler: { (): any; (x: number): unknown }): void;
+overloaded(() => parsedAny);
+declare function firstOverload(handler: { (): [string]; (x: number): [unknown] }): void;
+firstOverload(() => frozen as [any]);
+declare function firstMember(handler: (() => [string]) | (() => [unknown])): void;
+firstMember(() => frozen as [any]);
+declare function merged(handler: (() => any) & (() => unknown)): void;
+merged(() => parsedAny);
+const tagged: (() => unknown) & { tag?: string } = () => parsedAny;
+void [f, g, h, copy, once, tagged];
+`;
+
+test("an unannotated callback returning any or any[] is reported unless a signature of its context returns unknown or unknown[], and one whose own annotation returns any is not, on the same lines tsgolint reports in a .ts file (fails if a contextual any or any[] return counts as declared, a tuple holding any is not compared with its contextual tuple, an unannotated async callback's contextual Promise is awaited, only the first or merged contextual signature is read for an any, a tuple is compared with a signature other than the first, or an intersection of callables lends its signatures)", () => {
+  const found = findings({
+    "tsconfig.json": tsconfig,
+    "src/callbacks.ts": `${callbacks}export {};\n`,
+    "app/Callbacks.vue": `<script setup lang="ts">${callbacks}</script>\n`,
+  });
+  const lines = (file: string) =>
+    found
+      .flatMap((entry) =>
+        entry.startsWith(`${file}:`) ? [Number(entry.split(/[: ]/)[1])] : [],
+      )
+      .toSorted((a, b) => a - b);
+  const expected = [5, 6, 8, 12, 14, 16, 19, 22, 24, 30, 32, 34];
+  assert.deepEqual(lines("src/callbacks.ts"), expected);
+  assert.deepEqual(lines("app/Callbacks.vue"), expected);
+});
