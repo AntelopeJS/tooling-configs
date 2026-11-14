@@ -104,3 +104,58 @@ void load; void label;
     ["app/Page.vue:8 antelopejs(no-unsafe-any-in-vue)"],
   );
 });
+
+test("an any in an object literal property, a default value, a spread, a destructured binding or an any[] into a typed array is reported (fails if the rule checks only declarations, arguments and returns)", () => {
+  assert.deepEqual(
+    findings({
+      "tsconfig.json": tsconfig,
+      "app/User.vue": `<script setup lang="ts">
+interface User { name: string }
+declare const raw: string;
+declare const rows: any[];
+declare const pair: { a: any; b: string };
+declare function names(...list: string[]): void;
+const user: User = { name: JSON.parse(raw) };
+function greet(name: string = JSON.parse(raw)): string { return name; }
+names(...rows);
+const { a, b } = pair;
+const typed: string[] = rows;
+const [...rest] = rows;
+const copy = [...rows];
+void [user, greet, a, b, typed, rest, copy];
+</script>
+`,
+    }),
+    [
+      "app/User.vue:10 antelopejs(no-unsafe-any-in-vue)",
+      "app/User.vue:11 antelopejs(no-unsafe-any-in-vue)",
+      "app/User.vue:12 antelopejs(no-unsafe-any-in-vue)",
+      "app/User.vue:13 antelopejs(no-unsafe-any-in-vue)",
+      "app/User.vue:7 antelopejs(no-unsafe-any-in-vue)",
+      "app/User.vue:8 antelopejs(no-unsafe-any-in-vue)",
+      "app/User.vue:9 antelopejs(no-unsafe-any-in-vue)",
+    ],
+  );
+});
+
+test("unknown properties and defaults, destructuring assignment targets, typed bindings and an any[] into a readonly array are left alone (fails if the names in ({ a } = value) are read as values, an unknown slot counts as typed, or Array and ReadonlyArray are compared)", () => {
+  assert.deepEqual(
+    findings({
+      "tsconfig.json": tsconfig,
+      "app/Form.vue": `<script setup lang="ts">
+declare const raw: string;
+declare const rows: any[];
+declare const pair: { a: string; b: number };
+let target: any;
+const box: { value: unknown } = { value: JSON.parse(raw) };
+function keep(value: unknown = JSON.parse(raw)): unknown { return value; }
+({ target } = { target: "a" });
+const { a, b } = pair;
+const view: readonly string[] = rows;
+void [box, keep, target, a, b, view];
+</script>
+`,
+    }),
+    [],
+  );
+});
