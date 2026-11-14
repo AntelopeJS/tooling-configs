@@ -2,14 +2,8 @@ import { defineRule } from "@oxlint/plugins";
 import ts from "@typescript/typescript6";
 
 import { typedFile, type TypedFile } from "../type-checker.ts";
-import {
-  arrayElement,
-  isAnyOrAnyArray,
-  isAnyType,
-  isUnknown,
-  leaks,
-  returnLeaks,
-} from "../any-leaks.ts";
+import { isAnyOrAnyArray, isAnyType, isUnknown, leaks } from "../any-leaks.ts";
+import { returnLeaks } from "../any-returns.ts";
 import { lintedSource } from "../vue-script.ts";
 
 /** Which `typescript/no-unsafe-*` rule a finding stands in for. */
@@ -69,61 +63,6 @@ function isDestructuringTarget(literal: ts.Node): boolean {
   );
 }
 
-/** The call signatures of `type` as tsgolint lists them: each union member's in turn, and an intersection's only when one member alone is callable. */
-function callSignatures(type: ts.Type): readonly ts.Signature[] {
-  if (type.isUnion()) return type.types.flatMap(callSignatures);
-  if (!type.isIntersection()) return type.getCallSignatures();
-  const callable = type.types
-    .map(callSignatures)
-    .filter((signatures) => signatures.length > 0);
-  return callable.length === 1 ? (callable[0] ?? []) : [];
-}
-
-/** The return type `owner`'s annotation declares, awaited when `owner` is async. */
-function annotatedReturn(
-  checker: ts.TypeChecker,
-  owner: ts.SignatureDeclaration,
-  annotation: ts.TypeNode,
-): ts.Type | undefined {
-  const declared = checker.getTypeFromTypeNode(annotation);
-  const isAsync =
-    ts.canHaveModifiers(owner) &&
-    ts
-      .getModifiers(owner)
-      ?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword);
-  return isAsync ? checker.getAwaitedType(declared) : declared;
-}
-
-/**
- * Whether `owner`, a function with no return annotation, leaks `sender` into
- * the returns its context declares, one per call signature, as in
- * `() => unknown` for a callback parameter: an `any` none of them declares
- * `unknown`, or an `any[]` none declares `unknown[]`, as
- * `typescript/no-unsafe-return` judges such a function by its own inferred
- * `any` return, not by a contextual `any`, or another array or tuple holding
- * `any` that {@link leaks} finds against the first of them.
- */
-function unannotatedLeaks(
-  checker: ts.TypeChecker,
-  sender: ts.Type,
-  owner: ts.SignatureDeclaration,
-): boolean {
-  const contextual = ts.isExpression(owner)
-    ? checker.getContextualType(owner)
-    : undefined;
-  const receivers = contextual
-    ? callSignatures(checker.getNonNullableType(contextual)).map((signature) =>
-        signature.getReturnType(),
-      )
-    : [];
-  if (isAnyType(checker, sender)) return !receivers.some(isUnknown);
-  if (isAnyOrAnyArray(checker, sender))
-    return !receivers.some((receiver) =>
-      isUnknown(arrayElement(checker, receiver)),
-    );
-  return leaks(checker, sender, receivers[0]);
-}
-
 function argumentFindings(
   checker: ts.TypeChecker,
   call: ts.CallExpression | ts.NewExpression,
@@ -139,22 +78,7 @@ function argumentFindings(
 }
 
 function returned(checker: ts.TypeChecker, value: ts.Expression): Finding[] {
-  let owner = value.parent;
-  while (!ts.isFunctionLike(owner)) {
-    if (ts.isSourceFile(owner)) return [];
-    owner = owner.parent;
-  }
-  const sender = checker.getTypeAtLocation(value);
-  const unsafe =
-    owner.type === undefined
-      ? unannotatedLeaks(checker, sender, owner)
-      : returnLeaks(
-          checker,
-          sender,
-          annotatedReturn(checker, owner, owner.type),
-          value,
-        );
-  return unsafe ? [{ kind: "return", node: value }] : [];
+  return returnLeaks(checker, value) ? [{ kind: "return", node: value }] : [];
 }
 
 function spreadFindings(

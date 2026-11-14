@@ -23,7 +23,8 @@ export function arrayElement(
     : undefined;
 }
 
-function takesAnything(type: ts.Type | undefined): boolean {
+/** Whether `type` is undeclared, `any` or `unknown`, an error type included. */
+export function takesAnything(type: ts.Type | undefined): boolean {
   return type === undefined || (type.flags & UNTYPED) !== 0;
 }
 
@@ -89,33 +90,6 @@ export function leaks(
     .some((argument, index) =>
       leaks(checker, argument, slots[index], undefined, depth + 1),
     );
-}
-
-/**
- * Whether returning `sender` from a function declared to return `receiver`
- * lets `any` out: an array of `any`, aliased or not, into any other type but
- * `any`, `unknown` and `unknown[]`, as `typescript/no-unsafe-return` reports
- * it, or what {@link leaks} finds.
- */
-export function returnLeaks(
-  checker: ts.TypeChecker,
-  sender: ts.Type,
-  receiver: ts.Type | undefined,
-  node: ts.Node,
-): boolean {
-  const element = arrayElement(checker, sender);
-  if (
-    receiver === undefined ||
-    element === undefined ||
-    !isAnyType(checker, element)
-  )
-    return leaks(checker, sender, receiver, node);
-  const slot = arrayElement(checker, receiver);
-  return (
-    sender !== receiver &&
-    !takesAnything(receiver) &&
-    (slot === undefined || (slot.flags & ts.TypeFlags.Unknown) === 0)
-  );
 }
 
 /** Whether `type` is `any` or an array of `any`, as a spread or rest holds it. */
