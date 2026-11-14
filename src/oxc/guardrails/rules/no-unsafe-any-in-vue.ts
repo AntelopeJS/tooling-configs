@@ -3,6 +3,7 @@ import ts from "@typescript/typescript6";
 
 import { typedFile, type TypedFile } from "../type-checker.ts";
 import { isAnyOrAnyArray, isAnyType, isUnknown, leaks } from "../any-leaks.ts";
+import { unsafeArguments } from "../any-arguments.ts";
 import { returnLeaks } from "../any-returns.ts";
 import { lintedSource } from "../vue-script.ts";
 
@@ -12,10 +13,6 @@ type Unsafe = "assignment" | "argument" | "return";
 interface Finding {
   kind: Unsafe;
   node: ts.Node;
-}
-
-function isAny(checker: ts.TypeChecker, node: ts.Node): boolean {
-  return isAnyType(checker, checker.getTypeAtLocation(node));
 }
 
 /** Whether `value` lets `any` into an assigned `receiver`: `any` into anything but `unknown`, a slot declared `any` included, or what {@link leaks} finds. */
@@ -63,43 +60,19 @@ function isDestructuringTarget(literal: ts.Node): boolean {
   );
 }
 
-function argumentFindings(
-  checker: ts.TypeChecker,
-  call: ts.CallExpression | ts.NewExpression,
-): Finding[] {
-  return (call.arguments ?? []).flatMap((argument) => {
-    const parameter = checker.getContextualType(argument);
-    return ts.isSpreadElement(argument) ||
-      parameter === undefined ||
-      !leaks(checker, checker.getTypeAtLocation(argument), parameter, argument)
-      ? []
-      : [{ kind: "argument", node: argument }];
-  });
-}
-
 function returned(checker: ts.TypeChecker, value: ts.Expression): Finding[] {
   return returnLeaks(checker, value) ? [{ kind: "return", node: value }] : [];
 }
 
+/** An `any` or `any[]` spread into an array literal that is not a destructuring target. A spread into a call is an argument, which {@link unsafeArguments} judges. */
 function spreadFindings(
   checker: ts.TypeChecker,
   spread: ts.SpreadElement,
 ): Finding[] {
-  const { parent } = spread;
-  const anyCallee =
-    (ts.isCallExpression(parent) || ts.isNewExpression(parent)) &&
-    isAny(checker, parent.expression);
-  return !anyCallee &&
-    !isDestructuringTarget(parent) &&
+  return ts.isArrayLiteralExpression(spread.parent) &&
+    !isDestructuringTarget(spread.parent) &&
     isAnyOrAnyArray(checker, checker.getTypeAtLocation(spread.expression))
-    ? [
-        {
-          kind: ts.isArrayLiteralExpression(spread.parent)
-            ? "assignment"
-            : "argument",
-          node: spread,
-        },
-      ]
+    ? [{ kind: "assignment", node: spread }]
     : [];
 }
 
@@ -380,7 +353,10 @@ function assignmentFindings(checker: ts.TypeChecker, node: ts.Node): Finding[] {
 function nodeFindings(checker: ts.TypeChecker, node: ts.Node): Finding[] {
   if (ts.isSpreadElement(node)) return spreadFindings(checker, node);
   if (ts.isCallExpression(node) || ts.isNewExpression(node))
-    return argumentFindings(checker, node);
+    return unsafeArguments(checker, node).map((argument) => ({
+      kind: "argument",
+      node: argument,
+    }));
   if (ts.isReturnStatement(node) && node.expression !== undefined)
     return returned(checker, node.expression);
   if (ts.isArrowFunction(node) && !ts.isBlock(node.body))
