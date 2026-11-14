@@ -109,6 +109,98 @@ export const total = Promise.resolve().then(function () {
   );
 });
 
+test("an async function that returns an unrun query behind Promise.resolve is reported", () => {
+  assert.deepEqual(
+    reported(`import { novels } from "./novels.ts";
+
+export const count = async () => Promise.resolve(novels.count());
+`),
+    [3],
+  );
+});
+
+test("an async function that returns unrun queries in an array or a tuple is reported, not the sync callback that builds them", () => {
+  assert.deepEqual(
+    reported(`import { novels } from "./novels.ts";
+
+export const counts = async () => [novels.count()];
+export async function pair() {
+  return [novels.count(), 1] as const;
+}
+export const mapped = async () =>
+  [1].map(() => {
+    return novels.count();
+  });
+`),
+    [3, 5, 8],
+  );
+});
+
+test("an async function that returns an unrun query in an object literal, or nested in object literals and arrays, is reported", () => {
+  assert.deepEqual(
+    reported(`import { novels } from "./novels.ts";
+
+export const totals = async () => ({ total: novels.count() });
+export const page = async () => ({ page: { items: [novels.count()] } });
+`),
+    [3, 4],
+  );
+});
+
+test("a named function handed to then that returns an unrun query is reported once", () => {
+  assert.deepEqual(
+    reported(`import { novels } from "./novels.ts";
+
+function countNovels() {
+  return novels.count();
+}
+async function countLater() {
+  return novels.count();
+}
+export const counted = Promise.resolve().then(countNovels);
+export const later = Promise.resolve().then(countLater);
+`),
+    [7, 9],
+  );
+});
+
+test("resolve called with an unrun query in a new Promise executor is reported", () => {
+  assert.deepEqual(
+    reported(`import { novels } from "./novels.ts";
+
+export const counted = new Promise((resolve) => {
+  resolve(novels.count());
+});
+`),
+    [4],
+  );
+});
+
+test("run queries in each wrapper, reject or another callee in an executor and a sync function's wrapped query are not reported", () => {
+  assert.deepEqual(
+    reported(`import { novels } from "./novels.ts";
+
+export const count = async () => Promise.resolve(novels.count().run());
+export const counts = async () => [novels.count().run()];
+export const totals = async () => ({ total: await novels.count().run() });
+export const wrapped = () => ({ total: novels.count() });
+function countNovels() {
+  return novels.count().run();
+}
+export const counted = Promise.resolve().then(countNovels);
+function keep(query: unknown) {
+  return query;
+}
+export const kept = new Promise((resolve, reject) => {
+  keep(novels.count());
+  reject(novels.count());
+  resolve(novels.count().run());
+});
+`),
+    [],
+  );
+});
+
 test("a run query, a query a sync function returns, and another object with run() are not reported", () => {
   assert.deepEqual(
     reported(`import { novels } from "./novels.ts";
@@ -116,11 +208,6 @@ test("a run query, a query a sync function returns, and another object with run(
 export const count = async () => novels.count().run();
 export const counted = Promise.resolve().then(() => novels.count().run());
 export const countQuery = () => novels.count();
-export const counts = async () => [1].map(() => novels.count());
-export const listed = async () =>
-  [1].map(() => {
-    return novels.count();
-  });
 class Job {
   run(): Promise<void> {
     return Promise.resolve();
