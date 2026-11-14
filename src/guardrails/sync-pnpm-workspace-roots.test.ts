@@ -50,6 +50,23 @@ test("sync lists the interface pattern in the pnpm-workspace.yaml of a nested fo
   assert.equal(check.status, 0, check.stdout + check.stderr);
 });
 
+test("sync lists the interface pattern in the pnpm-workspace.yaml of a playground that has no lockfile yet, then reports no drift, where a sync that keys on lockfiles alone lets its first pnpm 11 install lock two copies of an interface released less than a day ago", (t) => {
+  const root = pinnedRepo(t, "pnpm@11.27.1");
+  put(root, "playground/package.json", '{ "private": true }\n');
+  synced(root);
+  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), FRESH_INTERFACES);
+  const check = bin(root, "sync", ["--check"]);
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+});
+
+test("sync writes no pnpm-workspace.yaml in a playground the root workspace lists, where a sync that writes one makes it a workspace of its own that loses the root's workspace packages", (t) => {
+  const root = pinnedRepo(t, "pnpm@11.27.1");
+  put(root, "pnpm-workspace.yaml", "packages:\n  - playground\n");
+  put(root, "playground/package.json", '{ "private": true }\n');
+  synced(root);
+  assert.equal(existsSync(join(root, PLAYGROUND_WORKSPACE)), false);
+});
+
 test("sync adds the interface pattern to the pnpm-workspace.yaml pnpm 11 wrote in a nested folder and keeps its entries, where a sync that replaces the file drops the packages pnpm excluded for that install", (t) => {
   const root = pinnedRepo(t, "pnpm@11.27.1");
   withPlayground(root);
