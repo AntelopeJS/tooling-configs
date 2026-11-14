@@ -305,6 +305,36 @@ function declarationFindings(
     : bindingFindings(checker, node.name, initializer);
 }
 
+/** A JSX attribute whose value lets `any` into the prop it fills. */
+function attributeFindings(
+  checker: ts.TypeChecker,
+  attribute: ts.JsxAttribute,
+): Finding[] {
+  const value =
+    attribute.initializer !== undefined &&
+    ts.isJsxExpression(attribute.initializer)
+      ? attribute.initializer.expression
+      : undefined;
+  return value !== undefined && leaksIntoContext(checker, value)
+    ? [{ kind: "assignment", node: value }]
+    : [];
+}
+
+/** A class field whose initializer lets `any` in: against its annotation, or whatever its type when it has none. */
+function fieldFindings(
+  checker: ts.TypeChecker,
+  field: ts.PropertyDeclaration,
+): Finding[] {
+  return field.initializer !== undefined &&
+    assignmentLeaks(
+      checker,
+      field.initializer,
+      field.type && checker.getTypeAtLocation(field.name),
+    )
+    ? [{ kind: "assignment", node: field }]
+    : [];
+}
+
 function assignmentFindings(checker: ts.TypeChecker, node: ts.Node): Finding[] {
   if (ts.isVariableDeclaration(node) && node.initializer !== undefined)
     return declarationFindings(checker, node, node.initializer);
@@ -337,14 +367,8 @@ function assignmentFindings(checker: ts.TypeChecker, node: ts.Node): Finding[] {
     )
       ? [{ kind: "assignment", node }]
       : bindingFindings(checker, node.name, node.initializer);
-  if (ts.isPropertyDeclaration(node) && node.initializer !== undefined)
-    return assignmentLeaks(
-      checker,
-      node.initializer,
-      node.type && checker.getTypeAtLocation(node.name),
-    )
-      ? [{ kind: "assignment", node }]
-      : [];
+  if (ts.isJsxAttribute(node)) return attributeFindings(checker, node);
+  if (ts.isPropertyDeclaration(node)) return fieldFindings(checker, node);
   if (ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node))
     return propertyFindings(checker, node);
   return [];
@@ -379,9 +403,10 @@ function findings({ checker, sourceFile }: TypedFile): Finding[] {
  * `no-unsafe-return` for the script blocks of a `.vue` file, which
  * oxlint-tsgolint cannot read: an `any`, or a generic such as `any[]` or
  * `Set<any>` holding one, reaching a declared type
- * through a declaration, an assignment, an object literal property, a
- * default value, an argument, a spread, a destructured binding, a
- * destructuring assignment such as `({ a } = value)` or a return. An `any`
+ * through a declaration, an assignment, an object literal property, a class
+ * field, a JSX attribute in a `lang="tsx"` script, a default value, an
+ * argument, a spread, a tuple spread into parameters, a destructured binding,
+ * a destructuring assignment such as `({ a } = value)` or a return. An `any`
  * assigned to a slot declared `any` is reported too, as tsgolint reports it.
  * TypeScript files stay with tsgolint, and a
  * component with `generic` type parameters is skipped, as only Vue's compiler

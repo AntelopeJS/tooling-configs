@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import ts from "@typescript/typescript6";
 
 import { programConfig, project } from "./tsconfig-program.ts";
-import { scriptView } from "./vue-script.ts";
+import { isTsx, scriptView } from "./vue-script.ts";
 
 /** A linted file as the TypeScript program of its tsconfig types it. */
 export interface TypedFile {
@@ -24,20 +24,39 @@ function isVue(path: string): boolean {
   return path.endsWith(".vue");
 }
 
-/** A file as the program reads it: a component as its script view, undefined when it has none, and any other file as written. */
-function viewOf(path: string, text: string): string | undefined {
-  return isVue(path) ? scriptView(text) : text;
+/** A file as the program reads it, and the kind to parse it as, `undefined` for the one its extension gives. */
+interface View {
+  text: string;
+  kind: ts.ScriptKind | undefined;
 }
 
-function readView(host: ts.CompilerHost, name: string): string | undefined {
+/** A file as the program reads it: a component as its script view, TSX when its script is, undefined when it has none, and any other file as written. */
+function viewOf(path: string, text: string): View | undefined {
+  if (!isVue(path)) return { text, kind: undefined };
+  const view = scriptView(text);
+  return view === undefined
+    ? undefined
+    : { text: view, kind: isTsx(text) ? ts.ScriptKind.TSX : ts.ScriptKind.TS };
+}
+
+function readView(host: ts.CompilerHost, name: string): View | undefined {
   const text = host.readFile(name);
   return text === undefined ? undefined : viewOf(name, text);
+}
+
+/** Whether `sourceFile` is `view` parsed as its kind, JSX read as JSX. */
+function parses(sourceFile: ts.SourceFile | undefined, view: View): boolean {
+  return (
+    sourceFile?.text === view.text &&
+    (sourceFile.languageVariant === ts.LanguageVariant.JSX) ===
+      (view.kind === ts.ScriptKind.TSX)
+  );
 }
 
 function build(
   config: string,
   path: string,
-  view: string,
+  view: View,
 ): ts.Program | undefined {
   const parsed = project(config);
   if (parsed === undefined) return undefined;
@@ -53,9 +72,9 @@ function build(
       : documents.acquireDocument(
           name,
           options,
-          ts.ScriptSnapshot.fromString(content),
-          content,
-          undefined,
+          ts.ScriptSnapshot.fromString(content.text),
+          content.text,
+          content.kind,
           language,
         );
   };
@@ -82,10 +101,9 @@ export function typedFile(file: string, text: string): TypedFile | undefined {
   const view = viewOf(path, text);
   if (view === undefined) return undefined;
   const cached = programs.get(config);
-  const program =
-    cached?.getSourceFile(path)?.text === view
-      ? cached
-      : build(config, path, view);
+  const program = parses(cached?.getSourceFile(path), view)
+    ? cached
+    : build(config, path, view);
   const sourceFile = program?.getSourceFile(path);
   return program && sourceFile
     ? {

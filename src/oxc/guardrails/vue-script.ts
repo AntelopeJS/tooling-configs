@@ -5,6 +5,8 @@ const BLOCK =
 
 const GENERIC = /\sgeneric\s*=/iu;
 
+const TSX = /\slang\s*=\s*["']?tsx["'\s>]/iu;
+
 const MODULE = "\nexport {};\n";
 
 function blank(text: string): string {
@@ -33,6 +35,13 @@ export function scriptView(sfc: string): string | undefined {
     end = start + content.length;
   }
   return end === 0 ? undefined : `${view}${blank(sfc.slice(end))}${MODULE}`;
+}
+
+/** Whether a script block of the component declares `lang="tsx"`, which Vue then requires of each of its script blocks, so its script view holds JSX. */
+export function isTsx(sfc: string): boolean {
+  return Array.from(sfc.matchAll(BLOCK)).some(
+    ({ 1: open }) => open !== undefined && TSX.test(open),
+  );
 }
 
 /** A linted file as the type checker reads it, and the offset of the linted text in it. */
