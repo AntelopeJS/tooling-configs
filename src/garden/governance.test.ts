@@ -71,10 +71,8 @@ function repoWorld(rules: JsonValue[], sets: JsonObject[] = []): FakeApi {
   const api = new FakeApi()
     .org([{ name: "mongodb" }])
     .route("/repos/AntelopeJS/mongodb/rules/branches/main", rules);
-  for (const set of sets) {
-    api.route(`/orgs/AntelopeJS/rulesets/${String(set.id)}`, set);
+  for (const set of sets)
     api.route(`/repos/AntelopeJS/mongodb/rulesets/${String(set.id)}`, set);
-  }
   return api;
 }
 
@@ -152,16 +150,16 @@ test("a ruleset read without its bypass list fails the repository instead of pas
   );
 });
 
-test("an organization ruleset is read once however many repositories it covers", async () => {
+test("an organization ruleset is read once through a repository it covers, never through the admin:org endpoint", async () => {
   const api = new FakeApi().org([{ name: "mongodb" }, { name: "redis" }]);
-  for (const name of ["mongodb", "redis"])
+  for (const name of ["mongodb", "redis"]) {
     api.route(`/repos/AntelopeJS/${name}/rules/branches/main`, PROTECTED);
-  for (const set of ORG_SETS)
-    api.route(`/orgs/AntelopeJS/rulesets/${String(set.id)}`, set);
-  await branchGovernance.run(api.context());
+    for (const set of ORG_SETS)
+      api.route(`/repos/AntelopeJS/${name}/rulesets/${String(set.id)}`, set);
+  }
+  assert.deepEqual(subjects(await branchGovernance.run(api.context())), []);
   assert.equal(
-    api.requests.filter((path) => path === "/orgs/AntelopeJS/rulesets/1")
-      .length,
+    api.requests.filter((path) => path.endsWith("/rulesets/1")).length,
     1,
   );
 });
