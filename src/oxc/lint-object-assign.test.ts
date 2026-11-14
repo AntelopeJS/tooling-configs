@@ -313,3 +313,17 @@ Object.assign(item, { count: 1 });
     ["app/Counter.vue:13", "app/Counter.vue:6"],
   );
 });
+
+test("a one-line script setup whose text also appears in an earlier block is typed at its own offset (fails if the offset is the first occurrence of the script text anywhere in the component)", () => {
+  assert.deepEqual(
+    findings({
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true, module: "esnext", types: [] },
+        include: ["app/**/*.vue"],
+      }),
+      "app/Echo.vue":
+        '<script lang="ts">\nexport const item = { count: 0 };\nexport const raw: number = 1;\nexport function f(item: { count: number }, raw: unknown) { Object.assign(item, { count: raw }) }\n</script>\n<script setup lang="ts">Object.assign(item, { count: raw })</script>\n',
+    }),
+    ["app/Echo.vue:4"],
+  );
+});

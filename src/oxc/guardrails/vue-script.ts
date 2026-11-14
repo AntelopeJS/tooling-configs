@@ -44,21 +44,30 @@ export interface LintedSource {
 /**
  * The text to type for a linted file. A component whose linted text holds no
  * script block, as oxlint passes a component's script alone, is read whole
- * from disk, and `offset` is where that script starts in it. Undefined for a
- * component whose script cannot be found in it, or that declares `generic`
- * type parameters.
+ * from disk, and `offset` is where that script starts inside the block whose
+ * contents it is, which oxlint passes trimmed. Undefined for a component with no such block, or that
+ * declares `generic` type parameters.
  */
 export function lintedSource(
   filename: string,
   text: string,
 ): LintedSource | undefined {
   if (!filename.endsWith(".vue")) return { text, offset: 0 };
-  const component =
-    scriptView(text) === undefined ? readFileSync(filename, "utf8") : text;
-  const offset = component.indexOf(text);
-  return offset === -1 || declaresTypeParameters(component)
+  if (scriptView(text) !== undefined)
+    return declaresTypeParameters(text) ? undefined : { text, offset: 0 };
+  const component = readFileSync(filename, "utf8");
+  const block = Array.from(component.matchAll(BLOCK)).find(
+    ({ 1: open, 2: content }) =>
+      open !== undefined && content?.trim() === text.trim(),
+  );
+  return block?.[1] === undefined ||
+    block[2] === undefined ||
+    declaresTypeParameters(component)
     ? undefined
-    : { text: component, offset };
+    : {
+        text: component,
+        offset: block.index + block[1].length + block[2].indexOf(text),
+      };
 }
 
 /** Whether a script block of the component declares type parameters with `generic`, which only Vue's compiler brings into scope, so the view types them as error types. */
