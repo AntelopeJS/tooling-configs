@@ -222,24 +222,45 @@ function declaredFunctions(
     : [declaration];
 }
 
-/** The declarations of member `access` on the value its receiver variable is initialised with, past any type annotation that names only a signature. */
+/** A member access whose member the source names: `o.exec`, or `o["exec"]` keyed by a string literal. */
+interface NamedMember {
+  readonly receiver: ts.Expression;
+  readonly key: ts.Node;
+  readonly name: string;
+}
+
+/** `value` as a member access the source names, or `undefined` for any other expression. */
+function namedMember(value: ts.Expression): NamedMember | undefined {
+  if (ts.isPropertyAccessExpression(value))
+    return { receiver: value.expression, key: value, name: value.name.text };
+  return ts.isElementAccessExpression(value) &&
+    ts.isStringLiteralLike(value.argumentExpression)
+    ? {
+        receiver: value.expression,
+        key: value.argumentExpression,
+        name: value.argumentExpression.text,
+      }
+    : undefined;
+}
+
+/** The declarations of `member` on the value its receiver variable is initialised with, past any type annotation that names only a signature. */
 function initialisedMember(
   checker: ts.TypeChecker,
-  access: ts.PropertyAccessExpression,
+  member: NamedMember,
 ): readonly ts.Declaration[] {
-  const receiver = ts.isIdentifier(access.expression)
-    ? checker.getSymbolAtLocation(access.expression)?.valueDeclaration
+  const receiver = ts.isIdentifier(member.receiver)
+    ? checker.getSymbolAtLocation(member.receiver)?.valueDeclaration
     : undefined;
   return receiver !== undefined &&
     ts.isVariableDeclaration(receiver) &&
     receiver.initializer !== undefined
     ? (checker
         .getTypeAtLocation(unwrapped(receiver.initializer))
-        .getProperty(access.name.text)?.declarations ?? [])
+        .getProperty(member.name)?.declarations ?? [])
     : [];
 }
 
-/** The functions a `new Promise` argument names: the function written there, or each declaration, overloads included, or initialiser of the variable, property or method its identifier or member access resolves to. */
+/** The functions a `new Promise` argument names: the function written there, or each declaration, overloads included, or initialiser of the variable, property or method its identifier, member access or literal-keyed element access resolves to. */
 function namedFunctions(
   checker: ts.TypeChecker,
   argument: ts.Expression,
@@ -247,13 +268,11 @@ function namedFunctions(
   const value = unwrapped(argument);
   if (ts.isFunctionExpression(value) || ts.isArrowFunction(value))
     return [value];
-  if (!ts.isIdentifier(value) && !ts.isPropertyAccessExpression(value))
-    return [];
+  const member = namedMember(value);
+  if (!ts.isIdentifier(value) && member === undefined) return [];
   return [
-    ...(checker.getSymbolAtLocation(value)?.declarations ?? []),
-    ...(ts.isPropertyAccessExpression(value)
-      ? initialisedMember(checker, value)
-      : []),
+    ...(checker.getSymbolAtLocation(member?.key ?? value)?.declarations ?? []),
+    ...(member === undefined ? [] : initialisedMember(checker, member)),
   ].flatMap((declaration) => declaredFunctions(checker, declaration));
 }
 

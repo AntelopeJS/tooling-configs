@@ -327,6 +327,31 @@ export const d = new Promise(instance.exec);
   );
 });
 
+test("resolve called with an unrun query in an executor named by a literal-keyed element access is reported", () => {
+  assert.deepEqual(
+    reported(`import { novels } from "./novels.ts";
+
+type Resolve = (value: unknown) => void;
+interface Exec {
+  exec(resolve: Resolve): void;
+}
+const holder = {
+  exec(resolve: Resolve) {
+    resolve(novels.count());
+  },
+};
+const annotated: Exec = {
+  exec(resolve) {
+    resolve(novels.count());
+  },
+};
+export const a = new Promise(holder["exec"]);
+export const b = new Promise(annotated[\`exec\`]);
+`),
+    [9, 14],
+  );
+});
+
 test("an interface-typed handle or a class instance holding a table, and a function never handed to new Promise, are not reported", () => {
   assert.deepEqual(
     reported(`import type { Table } from "@antelopejs/interface-database";
