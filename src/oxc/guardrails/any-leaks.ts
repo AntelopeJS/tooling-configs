@@ -1,7 +1,6 @@
 import ts from "@typescript/typescript6";
 
 const UNTYPED = ts.TypeFlags.Any | ts.TypeFlags.Unknown;
-const MAX_DEPTH = 4;
 
 /** Whether `type` is `any` itself, not an error type from an import the program cannot resolve, such as another component. */
 export function isAnyType(checker: ts.TypeChecker, type: ts.Type): boolean {
@@ -67,29 +66,33 @@ function isEmptyMap(node: ts.Node | undefined): boolean {
  * in `any[]` or `Set<any>`, into one of the same generic target, such as
  * `string[]` or `Set<string>`, with another type in that position. `readonly`
  * and labelled tuples have targets of their own, and `node`, the expression
- * that sends the value, lets `new Map()` in.
+ * that sends the value, lets `new Map()` in. A pair of types is compared once,
+ * however deep, as tsgolint compares it.
  */
 export function leaks(
   checker: ts.TypeChecker,
   sender: ts.Type,
   receiver: ts.Type | undefined,
   node?: ts.Node,
-  depth = 0,
 ): boolean {
-  if (isAnyType(checker, sender))
-    return receiver === undefined || !takesAnything(receiver);
-  if (receiver === undefined || depth === MAX_DEPTH || isEmptyMap(node))
-    return false;
-  const from = reference(sender);
-  const to = reference(receiver);
-  if (from === undefined || to === undefined || from.target !== to.target)
-    return false;
-  const slots = checker.getTypeArguments(to);
-  return checker
-    .getTypeArguments(from)
-    .some((argument, index) =>
-      leaks(checker, argument, slots[index], undefined, depth + 1),
-    );
+  if (isEmptyMap(node)) return false;
+  const compared = new Map<ts.Type, Set<ts.Type>>();
+  function compare(from: ts.Type, to: ts.Type | undefined): boolean {
+    if (isAnyType(checker, from)) return to === undefined || !takesAnything(to);
+    if (to === undefined) return false;
+    const seen = compared.get(from) ?? new Set<ts.Type>();
+    if (seen.has(to)) return false;
+    compared.set(from, seen.add(to));
+    const sent = reference(from);
+    const slot = reference(to);
+    if (sent === undefined || slot === undefined || sent.target !== slot.target)
+      return false;
+    const slots = checker.getTypeArguments(slot);
+    return checker
+      .getTypeArguments(sent)
+      .some((argument, index) => compare(argument, slots[index]));
+  }
+  return compare(sender, receiver);
 }
 
 /** Whether `type` is `any` or an array of `any`, as a spread or rest holds it. */
