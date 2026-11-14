@@ -215,23 +215,28 @@ function outsideImplemented(
       };
 }
 
-/** The newest release of each DMS package outside this repository that could be read. */
+/** The newest release of each DMS package outside this repository that could be read, and whether every published one could. */
 async function dmsReleases(
   local: ReadonlySet<string>,
-): Promise<ImplementingRelease[]> {
-  const releases = await Promise.all(
+): Promise<{ releases: ImplementingRelease[]; complete: boolean }> {
+  const reads = await Promise.all(
     DMS_PACKAGES.filter((name) => !local.has(name)).map(implementingRelease),
   );
-  return releases.filter((release) => release !== undefined);
+  return {
+    releases: reads.filter(
+      (read) => read !== undefined && read !== "unpublished",
+    ),
+    complete: !reads.includes(undefined),
+  };
 }
 
 /**
  * One line per range among `ranges` that shares no release with the range the newest release of a DMS package outside
  * `local` implements its interface on, since a project loads the interface version that release is built against. An
  * interface no such release implements is held instead to the `latest` dist-tag of its package: one line when every
- * release the range admits sits below it. A line that gives the fix an earlier one gave is skipped. A package whose
- * release cannot be read, or whose `latest` is a prerelease, is skipped, so a registry outage leaves only the cap rule
- * deciding the step.
+ * release the range admits sits below it, and only when every published DMS release could be read, since an unread one
+ * may implement it. A line that gives the fix an earlier one gave is skipped. A package whose release cannot be read,
+ * or whose `latest` is a prerelease, is skipped, so a registry outage leaves only the cap rule deciding the step.
  */
 async function staleRanges(
   ranges: readonly PublishedRange[],
@@ -239,7 +244,7 @@ async function staleRanges(
 ): Promise<string[]> {
   if (!ranges.length) return [];
   const names = [...new Set(ranges.map(({ name }) => name))];
-  const [newest, releases] = await Promise.all([
+  const [newest, { releases, complete }] = await Promise.all([
     Promise.all(
       names.map(async (name) => [name, await publishedVersion(name)] as const),
     ).then((entries) => new Map(entries)),
@@ -253,7 +258,9 @@ async function staleRanges(
         ? implemented.map((implementation) =>
             outsideImplemented(spec, implementation),
           )
-        : [belowNewest(spec, newest.get(name))]
+        : complete
+          ? [belowNewest(spec, newest.get(name))]
+          : []
     ).filter((finding) => finding !== undefined);
     return findings
       .filter(

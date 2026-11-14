@@ -15,12 +15,14 @@ interface StubRelease {
 
 /**
  * Serves each package `latest` names its `latest` dist-tag, each package `releases` names that manifest as its
- * `latest` release, and a 404 for any other; returns the registry URL, ending in `/`.
+ * `latest` release, a 503 for the `latest` release of each package `failing` names, and a 404 for any other; returns
+ * the registry URL, ending in `/`.
  */
 export async function stubRegistry(
   t: TestContext,
   latest: Readonly<Record<string, string>>,
   releases: Readonly<Record<string, StubRelease>> = {},
+  failing: readonly string[] = [],
 ): Promise<string> {
   const document = (
     path: string,
@@ -34,7 +36,12 @@ export async function stubRegistry(
       : undefined;
   };
   const server = createServer((request, response) => {
-    const body = document(decodeURIComponent(request.url?.slice(1) ?? ""));
+    const path = decodeURIComponent(request.url?.slice(1) ?? "");
+    if (failing.some((name) => path === `${name}${RELEASE_SUFFIX}`)) {
+      response.writeHead(503).end();
+      return;
+    }
+    const body = document(path);
     if (body === undefined) {
       response.writeHead(404).end();
       return;

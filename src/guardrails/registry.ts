@@ -31,18 +31,23 @@ export function registry(): string {
   return configured.endsWith("/") ? configured : `${configured}/`;
 }
 
-/** The document at `path` under the {@link registry}, or `undefined` when it cannot be read within {@link REGISTRY_ATTEMPTS} reads of {@link REGISTRY_TIMEOUT_MS} each. */
+/** What {@link readRegistry} returns when the registry answers that nothing is published at a path. */
+const UNPUBLISHED = "unpublished";
+
+/** The document at `path` under the {@link registry}, {@link UNPUBLISHED} when the registry answers 404, or `undefined` when it cannot be read within {@link REGISTRY_ATTEMPTS} reads of {@link REGISTRY_TIMEOUT_MS} each. */
 async function readRegistry(
   path: string,
   accept: string,
-): Promise<JsonValue | undefined> {
+): Promise<{ document: JsonValue } | typeof UNPUBLISHED | undefined> {
   for (let attempt = 0; attempt < REGISTRY_ATTEMPTS; attempt++) {
     try {
       const response = await fetch(new URL(path, registry()), {
         headers: { accept },
         signal: AbortSignal.timeout(REGISTRY_TIMEOUT_MS),
       });
-      return response.ok ? parseJson(await response.text()) : undefined;
+      if (response.status === 404) return UNPUBLISHED;
+      if (!response.ok) return undefined;
+      return { document: parseJson(await response.text()) };
     } catch {
       continue;
     }
@@ -60,7 +65,9 @@ export async function publishedVersion(
     encodedName(name),
     "application/vnd.npm.install-v1+json",
   );
-  return packument === undefined ? undefined : tagVersion(packument, "latest");
+  return packument === undefined || packument === UNPUBLISHED
+    ? undefined
+    : tagVersion(packument.document, "latest");
 }
 
 /** The newest release of an AntelopeJS module and the range it declares on each interface it implements. */
@@ -96,14 +103,16 @@ function implementedNames(release: JsonObject): string[] {
   return Array.isArray(names) ? names.filter(isString) : [];
 }
 
-/** The release the `latest` dist-tag of `name` points at, or `undefined` when it cannot be read. */
+/** The release the `latest` dist-tag of `name` points at, `"unpublished"` when the registry has none, or `undefined` when it cannot be read. */
 export async function implementingRelease(
   name: string,
-): Promise<ImplementingRelease | undefined> {
-  const release = await readRegistry(
+): Promise<ImplementingRelease | typeof UNPUBLISHED | undefined> {
+  const read = await readRegistry(
     `${encodedName(name)}/latest`,
     "application/json",
   );
+  if (read === UNPUBLISHED) return UNPUBLISHED;
+  const release = read?.document;
   if (release === undefined || !isObject(release)) return undefined;
   const version = optStr(release, "version");
   if (version === undefined) return undefined;

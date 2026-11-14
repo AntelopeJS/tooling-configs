@@ -354,6 +354,17 @@ test("a range on the minor the newest DMS release implements passes while the in
   assert.equal(result.status, 0, result.stdout);
 });
 
+test("a DMS release the registry fails to serve leaves a range behind the interface's newest release passing, where a step that falls back to that release fails a range the unread module may implement", async (t) => {
+  const root = repoWithRange(t, ">=0.7.0 <0.8.0", "dependencies", AUTOMATION);
+  const result = await checks(
+    root,
+    await stubRegistry(t, { [AUTOMATION]: "0.8.0" }, {}, [
+      "@antelopejs/dms-automation",
+    ]),
+  );
+  assert.equal(result.status, 0, result.stdout);
+});
+
 test("a DMS release whose range on the interface semver cannot read leaves the interface's newest release deciding, where a step that hands that range to semver crashes checks before any summary", async (t) => {
   const root = repoWithRange(t, ">=0.6.0 <0.7.0", "dependencies", AUTOMATION);
   const result = await checks(
