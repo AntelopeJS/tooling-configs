@@ -5,8 +5,8 @@ import test from "node:test";
 
 import { packedPack } from "./helpers/packed-pack.ts";
 
-test("antelopejs-sync --check from a pnpm-packed tarball of the pack passes, where a toolingVersions that reads packageManager from the installed manifest fails because pnpm pack strips that field", (t) => {
-  const { source, packed } = packedPack(t);
+test("antelopejs-sync --check from a pnpm-packed tarball of the pack passes, where a toolingVersions that reads packageManager from the installed manifest fails because pnpm pack strips that field", async (t) => {
+  const { source, packed } = await packedPack(t);
   const result = spawnSync(
     process.execPath,
     [join(packed, "dist", "bin", "sync.mjs"), "--check"],

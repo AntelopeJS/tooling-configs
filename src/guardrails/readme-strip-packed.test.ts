@@ -6,8 +6,8 @@ import test from "node:test";
 import { packedPack } from "./helpers/packed-pack.ts";
 import { read, testRepo } from "./helpers/test-repo.ts";
 
-test("antelopejs-readme-strip from a pnpm-packed tarball writes the strip with both fonts, where a package that leaves assets out of its files fails on the missing font", (t) => {
-  const { packed } = packedPack(t);
+test("antelopejs-readme-strip from a pnpm-packed tarball writes the strip with both fonts, where a package that leaves assets out of its files fails on the missing font", async (t) => {
+  const { packed } = await packedPack(t);
   const root = testRepo(t);
   const result = spawnSync(
     process.execPath,

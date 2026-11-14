@@ -18,6 +18,7 @@ interface FixtureFields {
   files?: string[];
   peerDependencies?: Record<string, string>;
   peerDependenciesMeta?: Record<string, { optional: boolean }>;
+  scripts?: Record<string, string>;
 }
 
 function typedRepo(
@@ -126,6 +127,24 @@ test("a typed package in an npm repository passes checks, caught by an implement
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 9 skipped.\n");
 });
+
+for (const packageManager of ["pnpm@10.2.0", "npm@11.0.0"])
+  test(`a ${packageManager} package whose prepack writes its declaration and whose prepare fails passes checks, caught by an implementation that lets pack run lifecycle scripts, which pnpm pack runs through cmd.exe on Windows, or that skips prepack`, (t) => {
+    const root = typedRepo(
+      t,
+      {
+        packageManager,
+        scripts: {
+          prepack: `node -e "require('fs').writeFileSync('index.d.ts','export declare const count: number;')"`,
+          prepare: "exit 1",
+        },
+      },
+      {},
+    );
+    const result = checks(root);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 9 skipped.\n");
+  });
 
 test("a declaration using the compiler API of a typescript peer passes checks, caught by an implementation that installs the latest typescript over the peer's range", (t) => {
   const root = typedRepo(
