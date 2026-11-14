@@ -1,10 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, posix } from "node:path";
 
 import { type Document, isMap, isScalar, isSeq, parseDocument } from "yaml";
 
 import { admits } from "../garden/semver.ts";
+import type { AgentsBlockContext } from "./agents-block.ts";
 import { packageManager, usesCaptures, type Manifest } from "./package.ts";
+import { pnpmLockfiles } from "./singleton-packages.ts";
 import type { PlannedArtifact } from "./sync.ts";
 
 const PATH = "pnpm-workspace.yaml";
@@ -21,6 +23,16 @@ const EXCLUDE = "minimumReleaseAgeExclude";
  * locks two copies of one interface and `lockfile:singletons` fails.
  */
 const FRESH_RELEASES = "@antelopejs/interface-*";
+
+/**
+ * A folder pnpm installs as its own workspace root, and so the folder whose `pnpm-workspace.yaml` pnpm reads there: the
+ * repository root, or a nested folder with its own `pnpm-lock.yaml`, such as `playground`, which never reads the root's file.
+ * `builds` are the dependency builds sync decides in it.
+ */
+interface InstallRoot {
+  folder: string;
+  builds: string[];
+}
 
 /**
  * What sync does for a repository without a `pnpm-workspace.yaml`, by its pinned pnpm. An unpinned pnpm counts as current.
@@ -41,42 +53,58 @@ function skippedBuilds(captures: boolean): string[] {
   return captures ? ["lefthook", "mongodb-memory-server"] : ["lefthook"];
 }
 
+/**
+ * The repository root, deciding the builds of the full profile's hooks and captures, and each folder whose tracked
+ * `pnpm-lock.yaml` `lockfile:singletons` reads.
+ */
+function installRoots(
+  root: string,
+  profile: AgentsBlockContext["profile"],
+): InstallRoot[] {
+  const nested = pnpmLockfiles(root)
+    .map((lockfile) => dirname(lockfile))
+    .filter((folder) => folder !== ".")
+    .map((folder) => ({ folder, builds: [] }));
+  const builds = profile === "full" ? skippedBuilds(usesCaptures(root)) : [];
+  return [{ folder: "", builds }, ...nested];
+}
+
 /** Whether `current` holds nothing but the settings sync writes, so pnpm reads it only to make the repository root a workspace. */
 function onlySyncedSettings(current: string): boolean {
   const document = parseDocument(current);
-  const builds = document.get("allowBuilds");
-  const excluded = document.get(EXCLUDE);
-  if (
-    document.errors.length ||
-    !isMap(document.contents) ||
-    document.contents.items.length !== 2 ||
-    !isMap(builds) ||
-    !builds.items.length ||
-    !isSeq(excluded)
-  )
-    return false;
+  if (document.errors.length || !isMap(document.contents)) return false;
   const synced = skippedBuilds(true);
-  return (
-    builds.items.every(
-      ({ key, value }) =>
-        isScalar(key) &&
-        synced.includes(String(key.value)) &&
-        isScalar(value) &&
-        value.value === false,
-    ) &&
-    excluded.items.every(
-      (item) => isScalar(item) && item.value === FRESH_RELEASES,
-    )
-  );
+  return document.contents.items.every(({ key, value }) => {
+    if (!isScalar(key)) return false;
+    if (key.value === EXCLUDE)
+      return (
+        isSeq(value) &&
+        value.items.every(
+          (item) => isScalar(item) && item.value === FRESH_RELEASES,
+        )
+      );
+    return (
+      key.value === "allowBuilds" &&
+      isMap(value) &&
+      value.items.length > 0 &&
+      value.items.every(
+        (build) =>
+          isScalar(build.key) &&
+          synced.includes(String(build.key.value)) &&
+          isScalar(build.value) &&
+          build.value.value === false,
+      )
+    );
+  });
 }
 
 /** Sets `allowBuilds.<name>` to `false` for each of `names` the repository does not already decide. Returns whether it changed `document`. */
 function decideBuilds(document: Document, names: string[]): boolean {
+  if (!names.length) return false;
   if (document.get("allowBuilds") == null)
     document.set("allowBuilds", document.createNode({}));
   const builds = document.get("allowBuilds");
-  if (!isMap(builds))
-    throw new Error(`${PATH}: allowBuilds must be a mapping.`);
+  if (!isMap(builds)) throw new Error("allowBuilds must be a mapping.");
   const undecided = names.filter((name) => builds.get(name) == null);
   if (!undecided.length) return false;
   builds.flow = false;
@@ -87,7 +115,7 @@ function decideBuilds(document: Document, names: string[]): boolean {
 /** Adds `FRESH_RELEASES` to an existing `minimumReleaseAgeExclude` list unless it holds it. Returns whether it changed `document`. */
 function excludeFreshReleases(document: Document): boolean {
   const excluded = document.get(EXCLUDE);
-  if (!isSeq(excluded)) throw new Error(`${PATH}: ${EXCLUDE} must be a list.`);
+  if (!isSeq(excluded)) throw new Error(`${EXCLUDE} must be a list.`);
   if (
     excluded.items.some(
       (item) => isScalar(item) && item.value === FRESH_RELEASES,
@@ -99,9 +127,9 @@ function excludeFreshReleases(document: Document): boolean {
   return true;
 }
 
-/** `text` followed by a `minimumReleaseAgeExclude` block, so a file sync adds only that block to keeps every other byte, flow-map padding included. */
-function withExcludeBlock(text: string): string {
-  return `${text}${text === "" || text.endsWith("\n") ? "" : "\n"}${EXCLUDE}:\n  - "${FRESH_RELEASES}"\n`;
+/** `text` followed by a line break when it lacks one, and by `block`, so a file sync only appends to keeps every other byte, flow-map padding included. */
+function appended(text: string, block: string): string {
+  return `${text}${text === "" || text.endsWith("\n") ? "" : "\n"}${block}`;
 }
 
 /**
@@ -110,20 +138,20 @@ function withExcludeBlock(text: string): string {
  * about, and locks two copies of an interface released less than a day ago.
  */
 function withSyncedSettings(names: string[], current = ""): string {
+  const exclude = `${EXCLUDE}:\n  - "${FRESH_RELEASES}"\n`;
   const document = parseDocument(current);
   if (document.errors.length)
-    throw new Error(
-      `${PATH}: ${document.errors.map(({ message }) => message).join("; ")}`,
-    );
+    throw new Error(document.errors.map(({ message }) => message).join("; "));
   if (document.toJS() == null) {
     const kept = current.trimStart();
     const lines = names.map((name) => `  ${name}: false\n`).join("");
-    return withExcludeBlock(
-      `${kept}${kept === "" || kept.endsWith("\n") ? "" : "\n"}allowBuilds:\n${lines}`,
-    );
+    const builds = names.length
+      ? appended(kept, `allowBuilds:\n${lines}`)
+      : kept;
+    return appended(builds, exclude);
   }
   if (!isMap(document.contents))
-    throw new Error(`${PATH} must contain a YAML mapping.`);
+    throw new Error("its top level must be a YAML mapping.");
   const absent = document.get(EXCLUDE) == null;
   const decided = decideBuilds(document, names);
   const excluded = !absent && excludeFreshReleases(document);
@@ -132,47 +160,71 @@ function withSyncedSettings(names: string[], current = ""): string {
     decided || excluded
       ? document.toString({ lineWidth: 0, flowCollectionPadding: false })
       : current;
-  return absent ? withExcludeBlock(text) : text;
+  return absent ? appended(text, exclude) : text;
 }
 
-/** The `pnpm-workspace.yaml` a full-profile pnpm repository needs so pnpm 11 and later install the builds sync declares without `ERR_PNPM_IGNORED_BUILDS`, and lock one copy of an interface released less than a day ago. */
-export function pnpmWorkspaceArtifacts(
+/** Why sync refuses a repository root `pnpm-workspace.yaml` that holds only its own settings under `action`. */
+function refusal(action: "skip" | "raise", builds: string[]): string {
+  const need = builds.length
+    ? `to install ${builds.join(" and ")}`
+    : "to lock one copy of an interface released less than a day ago";
+  return action === "skip"
+    ? `${PATH} holds nothing but the settings antelopejs-sync writes. pnpm before 11 does not need it, and it makes a nested \`pnpm install\` install the repository root. Delete ${PATH}, then rerun antelopejs-sync.`
+    : `pnpm 11 needs a ${PATH} ${need}, and before ${SCOPED_NESTED_INSTALLS} that file makes a nested \`pnpm install\` install the repository root. Set \`packageManager\` to \`pnpm@${SCOPED_NESTED_INSTALLS}\` or later, then rerun antelopejs-sync.`;
+}
+
+/** The artifact for the `pnpm-workspace.yaml` of one install root; none for a file sync need not create. */
+function installRootArtifact(
   root: string,
   manifest: Manifest,
-  managed: boolean,
+  { folder, builds }: InstallRoot,
 ): PlannedArtifact[] {
-  if (!managed || packageManager(manifest) !== "pnpm") return [];
-  const file = join(root, PATH);
+  const path = folder === "" ? PATH : posix.join(folder, PATH);
+  const file = join(root, path);
   const current = existsSync(file) ? readFileSync(file, "utf8") : undefined;
-  const names = skippedBuilds(usesCaptures(root));
   try {
-    const content = withSyncedSettings(names, current);
+    const content = withSyncedSettings(builds, current);
     const action = creation(manifest);
-    if (action !== "write" && onlySyncedSettings(content)) {
-      if (action === "skip" && current === undefined) return [];
-      return [
-        {
-          kind: "error",
-          path: PATH,
-          message:
-            action === "skip"
-              ? `${PATH} holds nothing but the settings antelopejs-sync writes. pnpm before 11 does not need it, and it makes a nested \`pnpm install\` install the repository root. Delete ${PATH}, then rerun antelopejs-sync.`
-              : `pnpm 11 needs a ${PATH} to install ${names.join(" and ")}, and before ${SCOPED_NESTED_INSTALLS} that file makes a nested \`pnpm install\` install the repository root. Set \`packageManager\` to \`pnpm@${SCOPED_NESTED_INSTALLS}\` or later, then rerun antelopejs-sync.`,
-        },
-      ];
-    }
+    if (action === "skip" && current === undefined) return [];
+    if (folder === "" && action !== "write" && onlySyncedSettings(content))
+      return [{ kind: "error", path, message: refusal(action, builds) }];
     return [
       content === current
-        ? { kind: "unchanged", path: PATH }
-        : { kind: "write", path: PATH, content, mode: undefined },
+        ? { kind: "unchanged", path }
+        : { kind: "write", path, content, mode: undefined },
     ];
   } catch (error) {
+    const settings = [
+      ...(builds.length
+        ? [
+            `\`allowBuilds: { ${builds.map((name) => `${name}: false`).join(", ")} }\``,
+          ]
+        : []),
+      `\`${EXCLUDE}: ["${FRESH_RELEASES}"]\``,
+    ];
     return [
       {
         kind: "error",
-        path: PATH,
-        message: `${error instanceof Error ? error.message : String(error)} Add \`allowBuilds: { ${names.map((name) => `${name}: false`).join(", ")} }\` and \`${EXCLUDE}: ["${FRESH_RELEASES}"]\` to it, then rerun antelopejs-sync.`,
+        path,
+        message: `${path}: ${error instanceof Error ? error.message : String(error)} Add ${settings.join(" and ")} to it, then rerun antelopejs-sync.`,
       },
     ];
   }
+}
+
+/**
+ * The `pnpm-workspace.yaml` of each folder pnpm installs as its own workspace root in a pnpm repository: the repository root
+ * and each nested folder with its own `pnpm-lock.yaml`. Each lists `@antelopejs/interface-*` under `minimumReleaseAgeExclude`,
+ * so pnpm 11 and later lock one copy of an interface released less than a day ago. A full-profile root also decides the
+ * builds sync declares, so pnpm 11 installs them without `ERR_PNPM_IGNORED_BUILDS`.
+ */
+export function pnpmWorkspaceArtifacts(
+  root: string,
+  manifest: Manifest,
+  profile: AgentsBlockContext["profile"],
+): PlannedArtifact[] {
+  if (packageManager(manifest) !== "pnpm") return [];
+  return installRoots(root, profile).flatMap((installRoot) =>
+    installRootArtifact(root, manifest, installRoot),
+  );
 }
