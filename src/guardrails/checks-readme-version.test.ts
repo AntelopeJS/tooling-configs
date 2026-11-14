@@ -138,7 +138,7 @@ function checksWith(root: string, registryUrl: string) {
   return binAsync(root, "checks", ["--no-services"], {
     ANTELOPEJS_CHECKS_SKIP: OTHER_STEPS,
     npm_config_registry: registryUrl,
-    NPM_CONFIG_REGISTRY: undefined,
+    NPM_CONFIG_REGISTRY: registryUrl,
   });
 }
 
