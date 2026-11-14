@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import test, { type TestContext } from "node:test";
 
 import { freePort } from "../verify/record.ts";
+import { stubRegistry } from "./helpers/registry.ts";
 import { bin, binAsync, put, testRepo } from "./helpers/test-repo.ts";
 
 /** Every step but `readme:version`, so it alone decides the run. */
@@ -116,22 +117,8 @@ test("a README example of a package outside @antelopejs does not run the step, c
 });
 
 /** Serves `latest` as the newest published version of `@antelopejs/mongodb`, and a 404 for any other package. */
-async function registry(t: TestContext, latest: string): Promise<string> {
-  const server = createServer((request, response) => {
-    if (request.url !== "/@antelopejs%2fmongodb") {
-      response.writeHead(404).end();
-      return;
-    }
-    response
-      .writeHead(200, { "content-type": "application/json" })
-      .end(JSON.stringify({ "dist-tags": { latest } }));
-  });
-  const port = await freePort();
-  await new Promise<void>((resolve) =>
-    server.listen(port, "127.0.0.1", resolve),
-  );
-  t.after(() => server.close());
-  return `http://127.0.0.1:${port}/`;
+function registry(t: TestContext, latest: string): Promise<string> {
+  return stubRegistry(t, { "@antelopejs/mongodb": latest });
 }
 
 function checksWith(root: string, registryUrl: string) {

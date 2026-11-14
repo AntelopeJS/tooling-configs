@@ -1,10 +1,15 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { gtr, prerelease, valid, validRange } from "semver";
+
 import {
+  cappedReplacement,
   checkDependencyRanges,
   declaresAntelopePackage,
   describeViolation,
+  type InterfaceRange,
+  interfaceRanges,
   localVersions,
   type RangeViolation,
 } from "./dependency-ranges.ts";
@@ -15,6 +20,7 @@ import {
   serializeManifest,
   type Manifest,
 } from "./package.ts";
+import { publishedVersion } from "./registry.ts";
 import { runPnpm } from "./run-pnpm.ts";
 
 /** The manifests whose ranges moved, a note per moved range, and why the lockfile could not follow. */
@@ -109,14 +115,72 @@ export function hasDependencyRanges(root: string): boolean {
   );
 }
 
-/** Each `@antelopejs/*` range in a tracked manifest that does not stop below the next minor, one line each; empty when every range does. */
-export function checkRepositoryRanges(root: string): string {
-  const manifests = tracked(root);
-  const versions = localVersions(manifests.map(({ manifest }) => manifest));
-  const lines = manifests.flatMap(({ path, manifest }) =>
-    checkDependencyRanges(manifest, versions).map(
-      (violation) => `${path}: ${describeViolation(violation)}\n`,
+/** A capped `@antelopejs/interface-*` range on a package outside this repository, which the newest release on the registry must not outgrow. */
+interface PublishedRange extends InterfaceRange {
+  path: string;
+}
+
+/**
+ * One line per range among `ranges` whose every admitted release sits below the `latest` dist-tag of its package. A
+ * package whose dist-tags cannot be read, or whose `latest` is a prerelease no capped range admits, is skipped, so a
+ * registry outage leaves only the cap rule deciding the step.
+ */
+async function staleRanges(
+  ranges: readonly PublishedRange[],
+): Promise<string[]> {
+  const names = [...new Set(ranges.map(({ name }) => name))];
+  const newest = new Map(
+    await Promise.all(
+      names.map(async (name) => [name, await publishedVersion(name)] as const),
     ),
   );
-  return lines.join("");
+  return ranges.flatMap(({ path, field, name, spec }) => {
+    const version = newest.get(name);
+    if (
+      version === undefined ||
+      valid(version) === null ||
+      prerelease(version) !== null ||
+      validRange(spec) === null ||
+      !gtr(version, spec)
+    )
+      return [];
+    const expected = cappedReplacement(spec, version);
+    if (expected === undefined) return [];
+    return [
+      `${path}: ${field}["${name}"] is "${spec}", which stops below ${version}, its newest published version, and @antelopejs/core loads one copy of each interface; use "${expected}"\n`,
+    ];
+  });
+}
+
+/**
+ * Each `@antelopejs/*` range in a tracked manifest that does not stop below the next minor, and each capped
+ * `@antelopejs/interface-*` range on a package outside this repository that stops below its newest published release,
+ * one line each; empty when every range passes.
+ */
+export async function checkRepositoryRanges(root: string): Promise<string> {
+  const manifests = tracked(root);
+  const versions = localVersions(manifests.map(({ manifest }) => manifest));
+  const capped: string[] = [];
+  const published: PublishedRange[] = [];
+  for (const { path, manifest } of manifests) {
+    const violations = checkDependencyRanges(manifest, versions);
+    capped.push(
+      ...violations.map(
+        (violation) => `${path}: ${describeViolation(violation)}\n`,
+      ),
+    );
+    published.push(
+      ...interfaceRanges(manifest)
+        .filter(
+          ({ field, name }) =>
+            !versions.has(name) &&
+            !violations.some(
+              (violation) =>
+                violation.field === field && violation.name === name,
+            ),
+        )
+        .map((range) => ({ path, ...range })),
+    );
+  }
+  return [...capped, ...(await staleRanges(published))].join("");
 }

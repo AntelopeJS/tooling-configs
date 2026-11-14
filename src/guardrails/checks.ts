@@ -52,7 +52,7 @@ const OWN_STEPS = new Map<
     "lockfile:singletons",
     (root) => Promise.resolve(checkSingletonPackages(root)),
   ],
-  ["dependency:ranges", (root) => Promise.resolve(checkRepositoryRanges(root))],
+  ["dependency:ranges", checkRepositoryRanges],
   ["git:identity", checkGitIdentity],
   ["readme:version", checkReadmeVersion],
   ["published:types", checkPublishedTypes],
