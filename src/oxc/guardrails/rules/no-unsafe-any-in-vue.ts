@@ -6,6 +6,7 @@ import { typedFile, type TypedFile } from "../type-checker.ts";
 import { declaresTypeParameters, scriptView } from "../vue-script.ts";
 
 const UNTYPED = ts.TypeFlags.Any | ts.TypeFlags.Unknown;
+const MAX_DEPTH = 4;
 
 /** Which `typescript/no-unsafe-*` rule a finding stands in for. */
 type Unsafe = "assignment" | "argument" | "return";
@@ -47,18 +48,24 @@ function leaks(
   checker: ts.TypeChecker,
   sender: ts.Type,
   receiver: ts.Type | undefined,
+  depth = 0,
 ): boolean {
   if (isAnyType(checker, sender))
     return receiver === undefined || !takesAnything(receiver);
   if (
     receiver === undefined ||
+    depth === MAX_DEPTH ||
     checker.isTupleType(sender) !== checker.isTupleType(receiver) ||
     !checker.isTypeAssignableTo(receiver, sender)
   )
     return false;
   const from = elementType(checker, sender);
   const to = elementType(checker, receiver);
-  return from !== undefined && to !== undefined && leaks(checker, from, to);
+  return (
+    from !== undefined &&
+    to !== undefined &&
+    leaks(checker, from, to, depth + 1)
+  );
 }
 
 /** Whether `value`, flowing into the slot its context declares, lets `any` in. */

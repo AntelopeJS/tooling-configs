@@ -162,7 +162,7 @@ void [box, keep, target, a, b, view];
   );
 });
 
-test("a shorthand property, a destructuring default and an any[] passed or returned as a typed array are reported (fails if shorthand values, binding-element defaults, or arrays outside declarations are not checked)", () => {
+test("a shorthand property, a destructuring default and an any[] passed or returned as a typed array are reported, beside a recursive array alias (fails if shorthand values, binding-element defaults, or arrays outside declarations are not checked, or element types are compared without a depth bound)", () => {
   assert.deepEqual(
     findings({
       "tsconfig.json": tsconfig,
@@ -175,7 +175,10 @@ const box: { parsed: string } = { parsed };
 const { a = parsed } = pair;
 take(rows);
 function list(): string[] { return rows; }
-void [box, a, list];
+type Nest = Nest[];
+declare const nest: Nest;
+const same: Nest = nest;
+void [box, a, list, same];
 </script>
 `,
     }),
@@ -188,7 +191,7 @@ void [box, a, list];
   );
 });
 
-test("a binding an index signature or a Set types any, a spread into an any callee and a tuple into a tuple of another shape are left alone (fails if a binding is judged by its own type rather than its source's declared slot, the callee is not checked, or tuples are compared by element type alone)", () => {
+test("a binding an index signature or a Set types any, an object or tuple rest, a spread into an any callee or constructor and a tuple into a tuple of another shape are left alone (fails if a binding is judged by its own type rather than its source's declared slot, a rest is checked, the callee is not checked, or tuples are compared by element type alone)", () => {
   assert.deepEqual(
     findings({
       "tsconfig.json": tsconfig,
@@ -199,12 +202,16 @@ declare const record: Payload;
 declare const set: Set<any>;
 declare const call: any;
 declare const pairOf: [any, string];
+declare const labelled: [string, any];
 const { anything } = record;
 const [member] = set;
 call(...rows);
 const frozen: readonly [string, string] = pairOf;
 const longer: [string, string, number?] = pairOf;
-void [anything, member, frozen, longer];
+const { ...others } = { a: rows[0] as unknown, b: call as unknown };
+const [head, ...tail] = labelled;
+new call(...rows);
+void [anything, member, frozen, longer, others, head, tail];
 </script>
 `,
     }),
