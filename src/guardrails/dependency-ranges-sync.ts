@@ -1,7 +1,15 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { gtr, prerelease, valid, validRange } from "semver";
+import {
+  gtr,
+  minVersion,
+  prerelease,
+  Range,
+  satisfies,
+  valid,
+  validRange,
+} from "semver";
 
 import {
   cappedReplacement,
@@ -20,7 +28,12 @@ import {
   serializeManifest,
   type Manifest,
 } from "./package.ts";
-import { publishedVersion } from "./registry.ts";
+import { DMS_PACKAGES } from "./docs-modules.ts";
+import {
+  type ImplementingRelease,
+  implementingRelease,
+  publishedVersion,
+} from "./registry.ts";
 import { runPnpm } from "./run-pnpm.ts";
 
 /** The manifests whose ranges moved, a note per moved range, and why the lockfile could not follow. */
@@ -120,42 +133,152 @@ interface PublishedRange extends InterfaceRange {
   path: string;
 }
 
+/** Why a published range cannot start beside a release, and the range to use instead. */
+interface StaleFinding {
+  reason: string;
+  expected: string;
+}
+
+function belowNewest(
+  spec: string,
+  version: string | undefined,
+): StaleFinding | undefined {
+  if (
+    version === undefined ||
+    valid(version) === null ||
+    prerelease(version) !== null ||
+    !gtr(version, spec)
+  )
+    return undefined;
+  const expected = cappedReplacement(spec, version);
+  return expected === undefined
+    ? undefined
+    : {
+        reason: `which stops below ${version}, its newest published version`,
+        expected,
+      };
+}
+
+/** The lowest release `range` admits, without the prerelease suffix a floor such as `^0.10.0-rc.1` carries. */
+function stableFloor(range: string): string | undefined {
+  const floor = minVersion(range);
+  return floor === null
+    ? undefined
+    : `${floor.major}.${floor.minor}.${floor.patch}`;
+}
+
+/** Whether one release admitted by `a` is also admitted by `b`, counting releases only, as an install resolves them. */
+function sharesRelease(a: string, b: string): boolean {
+  return new Range(a).set.some((left) =>
+    new Range(b).set.some((right) => {
+      const both = [...left, ...right].join(" ");
+      const floor = stableFloor(both);
+      return floor !== undefined && satisfies(floor, both);
+    }),
+  );
+}
+
+/** A stable DMS release that implements an interface, and the range it declares on that interface. */
+interface Implementation {
+  release: ImplementingRelease;
+  range: string;
+}
+
+/** The implementation of `name` in each of `releases` that is not a prerelease and declares a range semver reads. */
+function implementations(
+  name: string,
+  releases: readonly ImplementingRelease[],
+): Implementation[] {
+  return releases.flatMap((release) => {
+    const range = release.implements.get(name);
+    return range === undefined ||
+      prerelease(release.version) !== null ||
+      validRange(range) === null
+      ? []
+      : [{ release, range }];
+  });
+}
+
+function outsideImplemented(
+  spec: string,
+  { release, range }: Implementation,
+): StaleFinding | undefined {
+  if (sharesRelease(spec, range)) return undefined;
+  const floor = stableFloor(range);
+  const expected =
+    floor === undefined ? undefined : cappedReplacement(spec, floor);
+  return expected === undefined
+    ? undefined
+    : {
+        reason: `which excludes "${range}", the range ${release.name} ${release.version}, its newest release, implements it on`,
+        expected,
+      };
+}
+
+/** The newest release of each DMS package outside this repository that could be read, and whether every published one could. */
+async function dmsReleases(
+  local: ReadonlySet<string>,
+): Promise<{ releases: ImplementingRelease[]; complete: boolean }> {
+  const reads = await Promise.all(
+    DMS_PACKAGES.filter((name) => !local.has(name)).map(implementingRelease),
+  );
+  return {
+    releases: reads.filter(
+      (read) => read !== undefined && read !== "unpublished",
+    ),
+    complete: !reads.includes(undefined),
+  };
+}
+
 /**
- * One line per range among `ranges` whose every admitted release sits below the `latest` dist-tag of its package. A
- * package whose dist-tags cannot be read, or whose `latest` is a prerelease no capped range admits, is skipped, so a
- * registry outage leaves only the cap rule deciding the step.
+ * One line per range among `ranges` that shares no release with the range the newest release of a DMS package outside
+ * `local` implements its interface on, since a project loads the interface version that release is built against. An
+ * interface no such release implements is held instead to the `latest` dist-tag of its package: one line when every
+ * release the range admits sits below it, and only when every published DMS release could be read, since an unread one
+ * may implement it. A line that gives the fix an earlier one gave is skipped. A package whose release cannot be read,
+ * or whose `latest` is a prerelease, is skipped, so a registry outage leaves only the cap rule deciding the step.
  */
 async function staleRanges(
   ranges: readonly PublishedRange[],
+  local: ReadonlySet<string>,
 ): Promise<string[]> {
+  if (!ranges.length) return [];
   const names = [...new Set(ranges.map(({ name }) => name))];
-  const newest = new Map(
-    await Promise.all(
+  const [newest, { releases, complete }] = await Promise.all([
+    Promise.all(
       names.map(async (name) => [name, await publishedVersion(name)] as const),
-    ),
-  );
+    ).then((entries) => new Map(entries)),
+    dmsReleases(local),
+  ]);
   return ranges.flatMap(({ path, field, name, spec }) => {
-    const version = newest.get(name);
-    if (
-      version === undefined ||
-      valid(version) === null ||
-      prerelease(version) !== null ||
-      validRange(spec) === null ||
-      !gtr(version, spec)
-    )
-      return [];
-    const expected = cappedReplacement(spec, version);
-    if (expected === undefined) return [];
-    return [
-      `${path}: ${field}["${name}"] is "${spec}", which stops below ${version}, its newest published version, and @antelopejs/core loads one copy of each interface; use "${expected}"\n`,
-    ];
+    if (validRange(spec) === null) return [];
+    const implemented = implementations(name, releases);
+    const findings = (
+      implemented.length
+        ? implemented.map((implementation) =>
+            outsideImplemented(spec, implementation),
+          )
+        : complete
+          ? [belowNewest(spec, newest.get(name))]
+          : []
+    ).filter((finding) => finding !== undefined);
+    return findings
+      .filter(
+        ({ expected }, index) =>
+          findings.findIndex((finding) => finding.expected === expected) ===
+          index,
+      )
+      .map(
+        ({ reason, expected }) =>
+          `${path}: ${field}["${name}"] is "${spec}", ${reason}, and @antelopejs/core loads one copy of each interface; use "${expected}"\n`,
+      );
   });
 }
 
 /**
  * Each `@antelopejs/*` range in a tracked manifest that does not stop below the next minor, and each capped
- * `@antelopejs/interface-*` range on a package outside this repository that stops below its newest published release,
- * one line each; empty when every range passes.
+ * `@antelopejs/interface-*` range on a package outside this repository that the newest DMS release implementing it, or
+ * else its newest published release, does not admit, one line each; empty when every range passes.
  */
 export async function checkRepositoryRanges(root: string): Promise<string> {
   const manifests = tracked(root);
@@ -182,5 +305,8 @@ export async function checkRepositoryRanges(root: string): Promise<string> {
         .map((range) => ({ path, ...range })),
     );
   }
-  return [...capped, ...(await staleRanges(published))].join("");
+  const local = new Set(
+    manifests.flatMap(({ manifest: { name } }) => (name ? [name] : [])),
+  );
+  return [...capped, ...(await staleRanges(published, local))].join("");
 }

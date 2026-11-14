@@ -174,3 +174,232 @@ test("a capped range semver cannot parse finishes the run, where a step that han
   );
   assert.match(result.stdout, /Checks: \d+ passed/);
 });
+
+/** The newest release of a DMS package that implements `name` on `range`. */
+function implementing(name: string, version: string, range: string) {
+  return {
+    name: name === AUTOMATION ? "@antelopejs/dms-automation" : name,
+    version,
+    antelopeJs: { implements: [name] },
+    dependencies: { [name]: range },
+  };
+}
+
+test("a range that excludes the interface version the newest release of its DMS module implements fails checks with that version's range, where a step that reads only the interface's own newest release passes a module a project running that DMS module cannot start", async (t) => {
+  const root = repoWithRange(t, ">=0.8.0 <0.9.0", "dependencies", AUTOMATION);
+  const result = await checks(
+    root,
+    await stubRegistry(
+      t,
+      { [AUTOMATION]: "0.8.0" },
+      {
+        "@antelopejs/dms-automation": implementing(
+          AUTOMATION,
+          "0.11.1",
+          ">=0.7.0 <0.8.0",
+        ),
+      },
+    ),
+  );
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(
+    result.stdout,
+    /\[dependency:ranges\]\nplayground\/package\.json: dependencies\["@antelopejs\/interface-dms-automation"\] is ">=0\.8\.0 <0\.9\.0", which excludes ">=0\.7\.0 <0\.8\.0", the range @antelopejs\/dms-automation 0\.11\.1, its newest release, implements it on, .*; use ">=0\.7\.0 <0\.8\.0"\n/,
+  );
+});
+
+test("a range on the interface the DMS core implements is held to the core's newest release, where a step that finds providers by the interface's name alone misses @antelopejs/dms", async (t) => {
+  const name = "@antelopejs/interface-dms-builder";
+  const root = repoWithRange(t, ">=0.3.0 <0.4.0", "dependencies", name);
+  const result = await checks(
+    root,
+    await stubRegistry(
+      t,
+      { [name]: "0.3.0" },
+      { "@antelopejs/dms": implementing(name, "0.20.0", ">=0.2.0 <0.3.0") },
+    ),
+  );
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stdout, /@antelopejs\/dms 0\.20\.0/);
+});
+
+test("a range that admits the interface version the newest DMS release implements passes, where a step that demands an equal range fails a module on the same minor", async (t) => {
+  const root = repoWithRange(t, "~0.7.1", "dependencies", AUTOMATION);
+  const result = await checks(
+    root,
+    await stubRegistry(
+      t,
+      { [AUTOMATION]: "0.7.1" },
+      {
+        "@antelopejs/dms-automation": implementing(
+          AUTOMATION,
+          "0.11.1",
+          ">=0.7.0 <0.8.0",
+        ),
+      },
+    ),
+  );
+  assert.equal(result.status, 0, result.stdout);
+});
+
+test("a DMS module the repository holds is not read from the registry, where a step that reads its published release fails a branch that moves the module to a new interface minor", async (t) => {
+  const root = repoWithRange(t, ">=0.8.0 <0.9.0", "dependencies", AUTOMATION);
+  put(
+    root,
+    "module/package.json",
+    JSON.stringify({
+      name: "@antelopejs/dms-automation",
+      version: "0.12.0",
+      private: true,
+      dependencies: { [AUTOMATION]: ">=0.8.0 <0.9.0" },
+    }),
+  );
+  commit(root);
+  const result = await checks(
+    root,
+    await stubRegistry(
+      t,
+      { [AUTOMATION]: "0.8.0" },
+      {
+        "@antelopejs/dms-automation": implementing(
+          AUTOMATION,
+          "0.11.1",
+          ">=0.7.0 <0.8.0",
+        ),
+      },
+    ),
+  );
+  assert.equal(result.status, 0, result.stdout);
+});
+
+test("a range behind two DMS releases that implement the interface on one range prints one line, where a step that reports each provider apart repeats the fix", async (t) => {
+  const root = repoWithRange(t, ">=0.6.0 <0.7.0", "dependencies", AUTOMATION);
+  const result = await checks(
+    root,
+    await stubRegistry(
+      t,
+      { [AUTOMATION]: "0.7.0" },
+      {
+        "@antelopejs/dms-automation": implementing(
+          AUTOMATION,
+          "0.11.1",
+          ">=0.7.0 <0.8.0",
+        ),
+        "@antelopejs/dms-api": {
+          ...implementing(AUTOMATION, "0.4.0", ">=0.7.0 <0.8.0"),
+          name: "@antelopejs/dms-api",
+        },
+      },
+    ),
+  );
+  assert.equal(result.status, 1, result.stdout);
+  assert.equal(result.stdout.match(/use ">=0\.7\.0 <0\.8\.0"/g)?.length, 1);
+});
+
+test("a range that shares a release with the second arm of a DMS release's range passes, where a step that compares only the lowest release of each range fails it", async (t) => {
+  const root = repoWithRange(t, ">=0.7.0 <0.8.0", "dependencies", AUTOMATION);
+  const result = await checks(
+    root,
+    await stubRegistry(
+      t,
+      { [AUTOMATION]: "0.7.3" },
+      {
+        "@antelopejs/dms-automation": implementing(
+          AUTOMATION,
+          "0.11.1",
+          ">=0.6.0 <0.7.0 || >=0.7.3 <0.8.0",
+        ),
+      },
+    ),
+  );
+  assert.equal(result.status, 0, result.stdout);
+});
+
+test("a range on the minor before a provider's prerelease floor fails, where a step that counts ranges meeting only at a prerelease as overlapping passes a module that resolves no version the provider admits", async (t) => {
+  const root = repoWithRange(t, ">=0.9.0 <0.10.0", "dependencies", AUTOMATION);
+  const result = await checks(
+    root,
+    await stubRegistry(
+      t,
+      { [AUTOMATION]: "0.9.0" },
+      {
+        "@antelopejs/dms-automation": implementing(
+          AUTOMATION,
+          "0.12.1",
+          "^0.10.0-rc.1",
+        ),
+      },
+    ),
+  );
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stdout, /use ">=0\.10\.0 <0\.11\.0"/);
+});
+
+test("a range on the minor the newest DMS release implements passes while the interface has a newer minor, where a step that also demands the interface's newest release leaves no range that passes until the module catches up", async (t) => {
+  const root = repoWithRange(t, ">=0.7.0 <0.8.0", "dependencies", AUTOMATION);
+  const result = await checks(
+    root,
+    await stubRegistry(
+      t,
+      { [AUTOMATION]: "0.8.0" },
+      {
+        "@antelopejs/dms-automation": implementing(
+          AUTOMATION,
+          "0.11.1",
+          ">=0.7.0 <0.8.0",
+        ),
+      },
+    ),
+  );
+  assert.equal(result.status, 0, result.stdout);
+});
+
+test("a DMS release the registry fails to serve leaves a range behind the interface's newest release passing, where a step that falls back to that release fails a range the unread module may implement", async (t) => {
+  const root = repoWithRange(t, ">=0.7.0 <0.8.0", "dependencies", AUTOMATION);
+  const result = await checks(
+    root,
+    await stubRegistry(t, { [AUTOMATION]: "0.8.0" }, {}, [
+      "@antelopejs/dms-automation",
+    ]),
+  );
+  assert.equal(result.status, 0, result.stdout);
+});
+
+test("a DMS release whose range on the interface semver cannot read leaves the interface's newest release deciding, where a step that hands that range to semver crashes checks before any summary", async (t) => {
+  const root = repoWithRange(t, ">=0.6.0 <0.7.0", "dependencies", AUTOMATION);
+  const result = await checks(
+    root,
+    await stubRegistry(
+      t,
+      { [AUTOMATION]: "0.7.0" },
+      {
+        "@antelopejs/dms-automation": implementing(
+          AUTOMATION,
+          "0.11.1",
+          ">=0.7.0 <y",
+        ),
+      },
+    ),
+  );
+  assert.match(result.stdout, /Checks: 9 passed, 1 failed\./);
+  assert.match(result.stdout, /its newest published version/);
+});
+
+test("a prerelease newest DMS release does not decide the range, where a step that reads it as a release fails a module on the interface's newest minor", async (t) => {
+  const root = repoWithRange(t, ">=0.8.0 <0.9.0", "dependencies", AUTOMATION);
+  const result = await checks(
+    root,
+    await stubRegistry(
+      t,
+      { [AUTOMATION]: "0.8.0" },
+      {
+        "@antelopejs/dms-automation": implementing(
+          AUTOMATION,
+          "0.12.0-beta.1",
+          ">=0.7.0 <0.8.0",
+        ),
+      },
+    ),
+  );
+  assert.equal(result.status, 0, result.stdout);
+});
