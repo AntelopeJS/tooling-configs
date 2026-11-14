@@ -9,9 +9,11 @@ import {
 	type WideningTarget,
 } from "../shared/dictionary-types.ts";
 import {
+	argumentParameters,
 	containsUnknownType,
 	functionParameterBindingName,
 	functionParameterTypeAnnotation,
+	type FunctionParameter,
 } from "../shared/function-parameters.ts";
 
 import type { ESTree, Scope, SourceCode, Variable } from "@oxlint/plugins";
@@ -204,13 +206,14 @@ function hasKnownCallArgumentEvidence(
 function typePredicateSubjectIndex(
 	sourceCode: SourceCode,
 	owner: FunctionExpression,
+	parameters: readonly FunctionParameter[],
 ): number | null {
 	const predicate = owner.returnType?.typeAnnotation;
 	if (predicate?.type !== "TSTypePredicate" || predicate.parameterName.type !== "Identifier") {
 		return null;
 	}
 	const predicateParameterName = predicate.parameterName.name;
-	const index = owner.params.findIndex(
+	const index = parameters.findIndex(
 		(parameter) =>
 			functionParameterBindingName(parameter, sourceCode) === predicateParameterName,
 	);
@@ -356,9 +359,10 @@ export const noKnownValueWideningRule = defineRule({
 				if (environment === null) return;
 				const owner = localFunctionForCall(context.sourceCode, node.callee);
 				if (owner === null) return;
-				const parameterIndex = typePredicateSubjectIndex(context.sourceCode, owner);
+				const parameters = argumentParameters(owner);
+				const parameterIndex = typePredicateSubjectIndex(context.sourceCode, owner, parameters);
 				if (parameterIndex === null) return;
-				const parameter = owner.params[parameterIndex];
+				const parameter = parameters[parameterIndex];
 				const argument = node.arguments[parameterIndex];
 				if (parameter === undefined || argument === undefined || argument.type === "SpreadElement") {
 					return;
