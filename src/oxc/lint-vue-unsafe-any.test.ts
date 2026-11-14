@@ -1,17 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { lintProject } from "./helpers/lint-project.ts";
-
-const tsconfig = JSON.stringify({
-  compilerOptions: {
-    strict: true,
-    module: "esnext",
-    moduleResolution: "bundler",
-    types: [],
-  },
-  include: ["app/**/*.vue", "src/**/*.ts"],
-});
+import {
+  parityLines,
+  tsconfig,
+  unsafeFindings as findings,
+} from "./helpers/unsafe-any-parity.ts";
 
 const component = `<template><p>{{ label }}</p></template>
 
@@ -26,34 +20,6 @@ show(String(kept));
 show(String(parse(raw)));
 </script>
 `;
-
-const UNSAFE = /\(no-unsafe-(?:assignment|argument|return|any-in-vue)\)$/;
-
-function findings(files: Record<string, string>): string[] {
-  const project = lintProject(true);
-  try {
-    for (const [path, source] of Object.entries(files))
-      project.write(path, source);
-    return project
-      .run()
-      .diagnostics.filter(
-        (diagnostic: { code: string; filename: string }) =>
-          UNSAFE.test(diagnostic.code) &&
-          Object.hasOwn(files, diagnostic.filename),
-      )
-      .map(
-        (diagnostic: {
-          code: string;
-          filename: string;
-          labels: { span: { line: number } }[];
-        }) =>
-          `${diagnostic.filename}:${diagnostic.labels[0]?.span.line} ${diagnostic.code}`,
-      )
-      .toSorted();
-  } finally {
-    project.remove();
-  }
-}
 
 test("an any assigned, passed or returned in a .vue script setup is reported once, and an unknown binding is not (fails if oxlint skips .vue scripts or the rule also reports .ts files)", () => {
   assert.deepEqual(
@@ -268,24 +234,11 @@ void [x, u, deep, q, h, keep, n, loose, same, a];
 `;
 
 test("a destructuring assignment, an object literal into a generic or any slot and an any default are reported, and a labelled tuple into an unlabelled one is not, on the same lines tsgolint reports in a .ts file (fails if destructuring assignments are skipped, an any slot counts as safe for an assignment, or tuples are compared by element type rather than generic target, an any[] pattern is reported per element, a computed literal key is skipped, or a declaration default is compared with its unknown slot rather than its binding's type)", () => {
-  const found = findings({
-    "tsconfig.json": tsconfig,
-    "src/parity.ts": `${parity}export {};\n`,
-    "app/Parity.vue": `<script setup lang="ts">${parity}</script>\n`,
-  });
-  const lines = (file: string) =>
-    found.flatMap((entry) =>
-      entry.startsWith(`${file}:`) ? [Number(entry.split(/[: ]/)[1])] : [],
-    );
   const expected = [9, 9, 10, 11, 12, 13, 13, 14, 15, 16, 22, 26, 28];
-  assert.deepEqual(
-    lines("src/parity.ts").toSorted((a, b) => a - b),
-    expected,
-  );
-  assert.deepEqual(
-    lines("app/Parity.vue").toSorted((a, b) => a - b),
-    expected,
-  );
+  assert.deepEqual(parityLines("Parity", parity), {
+    ts: expected,
+    vue: expected,
+  });
 });
 
 const aliased = `type AA = any[];
@@ -322,24 +275,11 @@ void [a, b, c, d, e, f, g, h, i, j, m, list, toAlias, toReadonly, toTuple, toSam
 `;
 
 test("an aliased any array or tuple, as in type AA = any[] or G<any>, assigned or passed is left alone, and one destructured through an annotated pattern or an any[] returned into anything but unknown[] is reported, on the same lines tsgolint reports in a .ts file (fails if a deferred reference such as an alias is compared by its generic target, an annotated pattern or a parameter default pattern is not destructured, or a returned any[] is compared by target rather than by its declared return)", () => {
-  const found = findings({
-    "tsconfig.json": tsconfig,
-    "src/aliased.ts": `${aliased}export {};\n`,
-    "app/Aliased.vue": `<script setup lang="ts">${aliased}</script>\n`,
-  });
-  const lines = (file: string) =>
-    found.flatMap((entry) =>
-      entry.startsWith(`${file}:`) ? [Number(entry.split(/[: ]/)[1])] : [],
-    );
   const expected = [13, 19, 21, 22, 27, 28, 29, 30];
-  assert.deepEqual(
-    lines("src/aliased.ts").toSorted((a, b) => a - b),
-    expected,
-  );
-  assert.deepEqual(
-    lines("app/Aliased.vue").toSorted((a, b) => a - b),
-    expected,
-  );
+  assert.deepEqual(parityLines("Aliased", aliased), {
+    ts: expected,
+    vue: expected,
+  });
 });
 
 const callbacks = `declare const parsedAny: any;
@@ -381,18 +321,9 @@ void [f, g, h, copy, once, tagged];
 `;
 
 test("an unannotated callback returning any or any[] is reported unless a signature of its context returns unknown or unknown[], and one whose own annotation returns any is not, on the same lines tsgolint reports in a .ts file (fails if a contextual any or any[] return counts as declared, a tuple holding any is not compared with its contextual tuple, an unannotated async callback's contextual Promise is awaited, only the first or merged contextual signature is read for an any, a tuple is compared with a signature other than the first, or an intersection of callables lends its signatures)", () => {
-  const found = findings({
-    "tsconfig.json": tsconfig,
-    "src/callbacks.ts": `${callbacks}export {};\n`,
-    "app/Callbacks.vue": `<script setup lang="ts">${callbacks}</script>\n`,
-  });
-  const lines = (file: string) =>
-    found
-      .flatMap((entry) =>
-        entry.startsWith(`${file}:`) ? [Number(entry.split(/[: ]/)[1])] : [],
-      )
-      .toSorted((a, b) => a - b);
   const expected = [5, 6, 8, 12, 14, 16, 19, 22, 24, 30, 32, 34];
-  assert.deepEqual(lines("src/callbacks.ts"), expected);
-  assert.deepEqual(lines("app/Callbacks.vue"), expected);
+  assert.deepEqual(parityLines("Callbacks", callbacks), {
+    ts: expected,
+    vue: expected,
+  });
 });
