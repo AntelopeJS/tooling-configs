@@ -261,13 +261,16 @@ function isPattern(node: ts.Node): node is Pattern {
   );
 }
 
+/** The key a property name spells, a computed literal such as `['a']` included. */
 function literalKey(
   name: ts.PropertyName | ts.BindingName,
 ): string | undefined {
-  return ts.isIdentifier(name) ||
-    ts.isStringLiteral(name) ||
-    ts.isNumericLiteral(name)
-    ? name.text
+  if (ts.isIdentifier(name)) return name.text;
+  const key = ts.isComputedPropertyName(name) ? name.expression : name;
+  return ts.isStringLiteral(key) ||
+    ts.isNumericLiteral(key) ||
+    ts.isNoSubstitutionTemplateLiteral(key)
+    ? key.text
     : undefined;
 }
 
@@ -390,9 +393,10 @@ function slotFindings(
 /**
  * The elements of an untyped destructuring declaration or of a destructuring
  * assignment that take `any` from what `source` declares: a property or
- * tuple slot typed `any`, or any element of an `any[]`, whatever the target's
- * own type. An index signature, another iterable and a rest from an object or
- * a tuple are left alone, as `typescript/no-unsafe-assignment` leaves them.
+ * tuple slot typed `any`, whatever the target's own type, or the whole
+ * pattern once when it reads an `any[]`. An index signature, another iterable
+ * and a rest from an object or a tuple are left alone, as
+ * `typescript/no-unsafe-assignment` leaves them.
  */
 function destructuredFindings(
   checker: ts.TypeChecker,
@@ -406,13 +410,13 @@ function destructuredFindings(
     return objectElements(pattern).flatMap((element) =>
       slotFindings(checker, element, source),
     );
-  const anyArray = isAnyOrAnyArray(checker, source);
-  if (!anyArray && !checker.isTupleType(source)) return [];
-  return arrayElements(pattern).flatMap((element) =>
-    anyArray
-      ? elementFindings(checker, element, checker.getAnyType())
-      : slotFindings(checker, element, source),
-  );
+  if (isAnyOrAnyArray(checker, source))
+    return [{ kind: "assignment", node: pattern }];
+  return checker.isTupleType(source)
+    ? arrayElements(pattern).flatMap((element) =>
+        slotFindings(checker, element, source),
+      )
+    : [];
 }
 
 function declarationFindings(
