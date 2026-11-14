@@ -178,6 +178,8 @@
   "src/oxc/guardrails/rules/no-inherited-key-lookup.guards.test.ts": 0.3,
   "src/oxc/guardrails/rules/no-inherited-key-lookup.test.ts": 0.3,
   "src/oxc/guardrails/rules/no-presence-only-type-guard.test.ts": 0.3,
+  "src/oxc/guardrails/rules/no-read-then-insert.calls.test.ts": 0.2,
+  "src/oxc/guardrails/rules/no-read-then-insert.decisions.test.ts": 0.2,
   "src/oxc/guardrails/rules/no-read-then-insert.fixes.test.ts": 0.2,
   "src/oxc/guardrails/rules/no-read-then-insert.recovery.test.ts": 0.2,
   "src/oxc/guardrails/rules/no-read-then-insert.test.ts": 0.2,
