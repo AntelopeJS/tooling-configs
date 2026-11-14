@@ -458,11 +458,16 @@ function assignmentFindings(checker: ts.TypeChecker, node: ts.Node): Finding[] {
       ? destructuredFindings(checker, node.left, source)
       : [];
   }
-  if (
-    (ts.isParameter(node) || ts.isBindingElement(node)) &&
-    node.initializer !== undefined
-  )
+  if (ts.isParameter(node) && node.initializer !== undefined)
     return leaksIntoContext(checker, node.initializer)
+      ? [{ kind: "assignment", node }]
+      : [];
+  if (ts.isBindingElement(node) && node.initializer !== undefined)
+    return assignmentLeaks(
+      checker,
+      checker.getTypeAtLocation(node.initializer),
+      checker.getTypeAtLocation(node.name),
+    )
       ? [{ kind: "assignment", node }]
       : [];
   if (ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node))

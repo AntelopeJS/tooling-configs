@@ -263,10 +263,11 @@ declare const name: string;
 ] = rows;
 ({ ["a"]: x } = pair);
 ({ [name]: x } = pair);
-void [x, u, deep, q, h, keep, n, loose, same];
+const { a = parsedAny } = {} as { a?: unknown };
+void [x, u, deep, q, h, keep, n, loose, same, a];
 `;
 
-test("a destructuring assignment, an object literal into a generic or any slot and an any default are reported, and a labelled tuple into an unlabelled one is not, on the same lines tsgolint reports in a .ts file (fails if destructuring assignments are skipped, an any slot counts as safe for an assignment, or tuples are compared by element type rather than generic target, an any[] pattern is reported per element, or a computed literal key is skipped)", () => {
+test("a destructuring assignment, an object literal into a generic or any slot and an any default are reported, and a labelled tuple into an unlabelled one is not, on the same lines tsgolint reports in a .ts file (fails if destructuring assignments are skipped, an any slot counts as safe for an assignment, or tuples are compared by element type rather than generic target, an any[] pattern is reported per element, a computed literal key is skipped, or a declaration default is compared with its unknown slot rather than its binding's type)", () => {
   const found = findings({
     "tsconfig.json": tsconfig,
     "src/parity.ts": `${parity}export {};\n`,
@@ -276,7 +277,7 @@ test("a destructuring assignment, an object literal into a generic or any slot a
     found.flatMap((entry) =>
       entry.startsWith(`${file}:`) ? [Number(entry.split(/[: ]/)[1])] : [],
     );
-  const expected = [9, 9, 10, 11, 12, 13, 13, 14, 15, 16, 22, 26];
+  const expected = [9, 9, 10, 11, 12, 13, 13, 14, 15, 16, 22, 26, 28];
   assert.deepEqual(
     lines("src/parity.ts").toSorted((a, b) => a - b),
     expected,
