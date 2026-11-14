@@ -198,6 +198,41 @@ export async function page(): Promise<Page> {
   );
 });
 
+test("an async function that returns an unrun query held by a mapped, intersected or indexed project type is reported, not a handle holding a table", () => {
+  assert.deepEqual(
+    reported(`import type { Datum, Table } from "@antelopejs/interface-database";
+import { novels } from "./novels.ts";
+
+interface Totals {
+  total: Datum<number>;
+}
+interface Counts {
+  [name: string]: Datum<number>;
+}
+interface Handles {
+  novels: Table<{ title: string }>;
+}
+declare const frozen: Readonly<Totals>;
+declare const partial: Partial<Totals>;
+declare const joined: Totals & { page: number };
+declare const record: Record<string, Datum<number>>;
+declare const counts: Counts;
+declare const handles: Readonly<Handles> & Partial<Handles>;
+declare const tables: Record<string, Table<{ title: string }>>;
+export const values = [
+  async () => frozen,
+  async () => partial,
+  async () => joined,
+  async () => record,
+  async () => counts,
+  async () => handles,
+  async () => tables,
+];
+`),
+    [21, 22, 23, 24, 25],
+  );
+});
+
 test("resolve called with an unrun query in a named executor handed to new Promise is reported", () => {
   assert.deepEqual(
     reported(`import { novels } from "./novels.ts";
