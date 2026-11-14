@@ -1,13 +1,27 @@
-import { parseJson } from "../garden/json.ts";
+import {
+  isObject,
+  isString,
+  type JsonObject,
+  type JsonValue,
+  optStr,
+  parseJson,
+} from "../garden/json.ts";
 import { tagVersion } from "../garden/npm.ts";
 
 const DEFAULT_REGISTRY = "https://registry.npmjs.org/";
 
-/** How long one read of a package's dist-tags may take before it counts as failed. */
+/** How long one registry read may take before it counts as failed. */
 const REGISTRY_TIMEOUT_MS = 3000;
 
-/** How many times a read that failed or timed out is made before the version counts as unreadable. */
+/** How many times a read that failed or timed out is made before the document counts as unreadable. */
 const REGISTRY_ATTEMPTS = 2;
+
+/** The dependency fields a release resolves an interface it implements from. */
+const RELEASE_FIELDS = [
+  "dependencies",
+  "peerDependencies",
+  "optionalDependencies",
+] as const;
 
 /** The registry npm is configured with, ending in `/`. */
 export function registry(): string {
@@ -17,25 +31,86 @@ export function registry(): string {
   return configured.endsWith("/") ? configured : `${configured}/`;
 }
 
-/** The `latest` dist-tag of `name` on the {@link registry}, or `undefined` when it cannot be read within {@link REGISTRY_ATTEMPTS} reads of {@link REGISTRY_TIMEOUT_MS} each. */
-export async function publishedVersion(
-  name: string,
-): Promise<string | undefined> {
+/** The document at `path` under the {@link registry}, or `undefined` when it cannot be read within {@link REGISTRY_ATTEMPTS} reads of {@link REGISTRY_TIMEOUT_MS} each. */
+async function readRegistry(
+  path: string,
+  accept: string,
+): Promise<JsonValue | undefined> {
   for (let attempt = 0; attempt < REGISTRY_ATTEMPTS; attempt++) {
     try {
-      const response = await fetch(
-        new URL(name.replace("/", "%2f"), registry()),
-        {
-          headers: { accept: "application/vnd.npm.install-v1+json" },
-          signal: AbortSignal.timeout(REGISTRY_TIMEOUT_MS),
-        },
-      );
-      return response.ok
-        ? tagVersion(parseJson(await response.text()), "latest")
-        : undefined;
+      const response = await fetch(new URL(path, registry()), {
+        headers: { accept },
+        signal: AbortSignal.timeout(REGISTRY_TIMEOUT_MS),
+      });
+      return response.ok ? parseJson(await response.text()) : undefined;
     } catch {
       continue;
     }
   }
   return undefined;
+}
+
+const encodedName = (name: string): string => name.replace("/", "%2f");
+
+/** The `latest` dist-tag of `name` on the {@link registry}, or `undefined` when it cannot be read. */
+export async function publishedVersion(
+  name: string,
+): Promise<string | undefined> {
+  const packument = await readRegistry(
+    encodedName(name),
+    "application/vnd.npm.install-v1+json",
+  );
+  return packument === undefined ? undefined : tagVersion(packument, "latest");
+}
+
+/** The newest release of an AntelopeJS module and the range it declares on each interface it implements. */
+export interface ImplementingRelease {
+  name: string;
+  version: string;
+  /** Each interface named in the release's `antelopeJs.implements`, mapped to the range the release declares on it. */
+  implements: ReadonlyMap<string, string>;
+}
+
+function declaredRange(release: JsonObject, name: string): string | undefined {
+  for (const field of RELEASE_FIELDS) {
+    const dependencies = Object.hasOwn(release, field)
+      ? release[field]
+      : undefined;
+    const range =
+      dependencies !== undefined && isObject(dependencies)
+        ? optStr(dependencies, name)
+        : undefined;
+    if (range !== undefined) return range;
+  }
+  return undefined;
+}
+
+function implementedNames(release: JsonObject): string[] {
+  const config = Object.hasOwn(release, "antelopeJs")
+    ? release.antelopeJs
+    : undefined;
+  if (config === undefined || !isObject(config)) return [];
+  const names = Object.hasOwn(config, "implements")
+    ? config.implements
+    : undefined;
+  return Array.isArray(names) ? names.filter(isString) : [];
+}
+
+/** The release the `latest` dist-tag of `name` points at, or `undefined` when it cannot be read. */
+export async function implementingRelease(
+  name: string,
+): Promise<ImplementingRelease | undefined> {
+  const release = await readRegistry(
+    `${encodedName(name)}/latest`,
+    "application/json",
+  );
+  if (release === undefined || !isObject(release)) return undefined;
+  const version = optStr(release, "version");
+  if (version === undefined) return undefined;
+  const implemented = new Map<string, string>();
+  for (const interfaceName of implementedNames(release)) {
+    const range = declaredRange(release, interfaceName);
+    if (range !== undefined) implemented.set(interfaceName, range);
+  }
+  return { name, version, implements: implemented };
 }

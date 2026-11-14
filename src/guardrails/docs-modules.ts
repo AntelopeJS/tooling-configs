@@ -57,6 +57,15 @@ const MODULES: readonly DmsModule[] = [
   },
 ];
 
+/** The package of the DMS core, which implements `@antelopejs/interface-dms` beside the modules of {@link MODULES}. */
+const DMS_CORE_PACKAGE = "@antelopejs/dms";
+
+/** The npm package of the DMS core and of each DMS module, each published under its repository's name. */
+export const DMS_PACKAGES: readonly string[] = [
+  DMS_CORE_PACKAGE,
+  ...MODULES.map(({ repo }) => `@antelopejs/${repo}`),
+];
+
 /** The generated block, formatted as oxfmt leaves it. */
 export function modulesBlock(): string {
   return [

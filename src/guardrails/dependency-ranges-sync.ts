@@ -1,7 +1,14 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { gtr, prerelease, valid, validRange } from "semver";
+import {
+  gtr,
+  intersects,
+  minVersion,
+  prerelease,
+  valid,
+  validRange,
+} from "semver";
 
 import {
   cappedReplacement,
@@ -20,7 +27,12 @@ import {
   serializeManifest,
   type Manifest,
 } from "./package.ts";
-import { publishedVersion } from "./registry.ts";
+import { DMS_PACKAGES } from "./docs-modules.ts";
+import {
+  type ImplementingRelease,
+  implementingRelease,
+  publishedVersion,
+} from "./registry.ts";
 import { runPnpm } from "./run-pnpm.ts";
 
 /** The manifests whose ranges moved, a note per moved range, and why the lockfile could not follow. */
@@ -120,35 +132,100 @@ interface PublishedRange extends InterfaceRange {
   path: string;
 }
 
+/** Why a published range cannot start beside a release, and the range to use instead. */
+interface StaleFinding {
+  reason: string;
+  expected: string;
+}
+
+function belowNewest(
+  spec: string,
+  version: string | undefined,
+): StaleFinding | undefined {
+  if (
+    version === undefined ||
+    valid(version) === null ||
+    prerelease(version) !== null ||
+    !gtr(version, spec)
+  )
+    return undefined;
+  const expected = cappedReplacement(spec, version);
+  return expected === undefined
+    ? undefined
+    : {
+        reason: `which stops below ${version}, its newest published version`,
+        expected,
+      };
+}
+
+function outsideImplemented(
+  spec: string,
+  name: string,
+  release: ImplementingRelease,
+): StaleFinding | undefined {
+  const implemented = release.implements.get(name);
+  if (
+    implemented === undefined ||
+    prerelease(release.version) !== null ||
+    validRange(implemented) === null ||
+    intersects(spec, implemented)
+  )
+    return undefined;
+  const floor = minVersion(implemented);
+  const expected =
+    floor === null ? undefined : cappedReplacement(spec, floor.version);
+  return expected === undefined
+    ? undefined
+    : {
+        reason: `which excludes "${implemented}", the range ${release.name} ${release.version}, its newest release, implements it on`,
+        expected,
+      };
+}
+
+/** The newest release of each DMS package outside this repository that could be read. */
+async function dmsReleases(
+  local: ReadonlySet<string>,
+): Promise<ImplementingRelease[]> {
+  const releases = await Promise.all(
+    DMS_PACKAGES.filter((name) => !local.has(name)).map(implementingRelease),
+  );
+  return releases.filter((release) => release !== undefined);
+}
+
 /**
- * One line per range among `ranges` whose every admitted release sits below the `latest` dist-tag of its package. A
- * package whose dist-tags cannot be read, or whose `latest` is a prerelease no capped range admits, is skipped, so a
- * registry outage leaves only the cap rule deciding the step.
+ * One line per range among `ranges` whose every admitted release sits below the `latest` dist-tag of its package, and
+ * one per newest release of a DMS package outside `local` whose range on that interface the range does not intersect,
+ * skipping a line that gives the fix an earlier one gave. A package whose release cannot be read, or whose `latest` is a
+ * prerelease no capped range admits, is skipped, so a registry outage leaves only the cap rule deciding the step.
  */
 async function staleRanges(
   ranges: readonly PublishedRange[],
+  local: ReadonlySet<string>,
 ): Promise<string[]> {
+  if (!ranges.length) return [];
   const names = [...new Set(ranges.map(({ name }) => name))];
-  const newest = new Map(
-    await Promise.all(
+  const [newest, releases] = await Promise.all([
+    Promise.all(
       names.map(async (name) => [name, await publishedVersion(name)] as const),
-    ),
-  );
+    ).then((entries) => new Map(entries)),
+    dmsReleases(local),
+  ]);
   return ranges.flatMap(({ path, field, name, spec }) => {
-    const version = newest.get(name);
-    if (
-      version === undefined ||
-      valid(version) === null ||
-      prerelease(version) !== null ||
-      validRange(spec) === null ||
-      !gtr(version, spec)
-    )
-      return [];
-    const expected = cappedReplacement(spec, version);
-    if (expected === undefined) return [];
-    return [
-      `${path}: ${field}["${name}"] is "${spec}", which stops below ${version}, its newest published version, and @antelopejs/core loads one copy of each interface; use "${expected}"\n`,
-    ];
+    if (validRange(spec) === null) return [];
+    const findings = [
+      belowNewest(spec, newest.get(name)),
+      ...releases.map((release) => outsideImplemented(spec, name, release)),
+    ].filter((finding) => finding !== undefined);
+    return findings
+      .filter(
+        ({ expected }, index) =>
+          findings.findIndex((finding) => finding.expected === expected) ===
+          index,
+      )
+      .map(
+        ({ reason, expected }) =>
+          `${path}: ${field}["${name}"] is "${spec}", ${reason}, and @antelopejs/core loads one copy of each interface; use "${expected}"\n`,
+      );
   });
 }
 
@@ -182,5 +259,8 @@ export async function checkRepositoryRanges(root: string): Promise<string> {
         .map((range) => ({ path, ...range })),
     );
   }
-  return [...capped, ...(await staleRanges(published))].join("");
+  const local = new Set(
+    manifests.flatMap(({ manifest: { name } }) => (name ? [name] : [])),
+  );
+  return [...capped, ...(await staleRanges(published, local))].join("");
 }
