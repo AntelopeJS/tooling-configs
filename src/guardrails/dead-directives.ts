@@ -136,7 +136,7 @@ export function deadDirectiveFailures(root: string, files: string[]): string[] {
   const dead = new Map<Directive, Set<string>>();
   const unplaced = unreadable.map(
     ({ location, message }) =>
-      `${location}: oxlint cannot parse this file: ${message}. Fix: make the file parse, then rerun the check.`,
+      `${location === undefined ? "" : `${location}: `}oxlint cannot check the directives here: ${message}. Fix: correct the file so oxlint reads it without errors, then rerun the check.`,
   );
   for (const item of unused) {
     const directive = reported(readByOxlint, item);

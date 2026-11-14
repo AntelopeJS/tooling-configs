@@ -46,7 +46,8 @@ interface OxlintSpan {
 
 interface OxlintDiagnostic {
   code?: string;
-  filename: string;
+  /** Absent when oxlint could not open the file, as for one that is not UTF-8; the message names the path. */
+  filename?: string;
   message: string;
   help?: string;
   labels?: { span: OxlintSpan }[];
@@ -75,10 +76,13 @@ function parseReport(text: string): OxlintDiagnostic[] | undefined {
 }
 
 function toDiagnostic(item: OxlintDiagnostic, root: string): Diagnostic {
+  const rule = ruleId(item.code ?? "");
+  if (item.filename === undefined)
+    throw new Error(`oxlint reported ${rule} with no file: ${item.message}`);
   const file = repositoryPath(root, item.filename);
   const span = item.labels?.[0]?.span;
   return {
-    rule: ruleId(item.code ?? ""),
+    rule,
     file,
     location: span ? `${file}:${span.line}:${span.column}` : file,
     message: item.message,
@@ -173,10 +177,10 @@ export interface UnusedDirective {
   rules: string[] | undefined;
 }
 
-/** An error oxlint reports with no rule code, such as a parse error: oxlint could not read the file, so its directives went unchecked. */
+/** An error oxlint reports with no rule code, such as a parse error or a file it cannot open, so the file's directives went unchecked. */
 export interface UnreadableFile {
-  /** `file:line:column` of the first label, or the file when oxlint gives no span. */
-  location: string;
+  /** `file:line:column` of the first label, the file when oxlint gives no span, or undefined when it names no file outside the message. */
+  location: string | undefined;
   message: string;
 }
 
@@ -208,9 +212,12 @@ export function directiveReport(
     "--report-unused-disable-directives",
   ])) {
     if (item.code !== undefined) continue;
-    const file = repositoryPath(root, item.filename);
+    const file =
+      item.filename === undefined
+        ? undefined
+        : repositoryPath(root, item.filename);
     const span = item.labels?.[0]?.span;
-    if (isUnusedDirective(item.message))
+    if (file !== undefined && isUnusedDirective(item.message))
       report.unused.push({
         file,
         line: span?.line ?? 0,
@@ -219,7 +226,10 @@ export function directiveReport(
       });
     else
       report.unreadable.push({
-        location: span ? `${file}:${span.line}:${span.column}` : file,
+        location:
+          file !== undefined && span
+            ? `${file}:${span.line}:${span.column}`
+            : file,
         message: item.message,
       });
   }

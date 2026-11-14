@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
 import { linkTsgolint } from "../oxc/helpers/tsgolint.ts";
@@ -312,7 +314,28 @@ test("a touched file with a directive that oxlint cannot parse fails with the pa
     assert.equal(result.status, 1, result.stderr);
     assert.match(
       result.stderr,
-      /src\/probe\.ts:2:\d+: oxlint cannot parse this file: Empty parenthesized expression\./u,
+      /src\/probe\.ts:2:\d+: oxlint cannot check the directives here: Empty parenthesized expression\./u,
+    );
+  }
+});
+
+test("a touched file with a directive that oxlint cannot open as UTF-8 fails with oxlint's error, naming the file", (t) => {
+  const root = presetRepo(
+    t,
+    { "src/latin.ts": PARSER('"a"') },
+    { "eslint/no-console": 1 },
+  );
+  const { staged, full } = bothModes(root, () =>
+    writeFileSync(
+      join(root, "src/latin.ts"),
+      Buffer.concat([Buffer.from(PARSER('"')), Buffer.from([0xff])]),
+    ),
+  );
+  for (const result of [staged, full]) {
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(
+      result.stderr,
+      /oxlint cannot check the directives here: .*src\/latin\.ts.*valid UTF-8/u,
     );
   }
 });
