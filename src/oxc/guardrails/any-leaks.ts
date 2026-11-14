@@ -36,49 +36,58 @@ function isReference(type: ts.ObjectType): type is ts.TypeReference {
 }
 
 /**
- * The array or tuple reference `type` is, for comparing by its generic target
- * as tsgolint does. A deferred reference, such as one a type alias names as
- * in `type AA = any[]` or `G<any>`, is not compared, as tsgolint compares
- * only references that are not deferred.
+ * The generic reference `type` is, such as `Set<any>`, `any[]` or a tuple,
+ * for comparing by its generic target as tsgolint does. A deferred reference,
+ * such as one a type alias names as in `type AA = any[]` or `G<any>`, is not
+ * compared, as tsgolint compares only references that are not deferred.
  */
-function arrayReference(
-  checker: ts.TypeChecker,
-  type: ts.Type,
-): ts.TypeReference | undefined {
-  return (checker.isArrayType(type) || checker.isTupleType(type)) &&
-    isObjectType(type) &&
-    isReference(type) &&
-    type.node === undefined
+function reference(type: ts.Type): ts.TypeReference | undefined {
+  return isObjectType(type) && isReference(type) && type.node === undefined
     ? type
     : undefined;
+}
+
+/** Whether `node` is `new Map()`, which the lib types `Map<any, any>` and tsgolint lets into any `Map`. */
+function isEmptyMap(node: ts.Node | undefined): boolean {
+  return (
+    node !== undefined &&
+    ts.isNewExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === "Map" &&
+    node.typeArguments === undefined &&
+    (node.arguments === undefined || node.arguments.length === 0)
+  );
 }
 
 /**
  * Whether a `sender` value lets `any` into a `receiver` slot as an argument,
  * an assignment or a type argument: `any` into a slot that is undeclared or
- * typed neither `any` nor `unknown`, or an array or tuple holding `any`, as
- * in `any[]`, into one of the same generic target, such as `string[]`, with
- * another type in that position. `readonly` and labelled tuples have targets
- * of their own.
+ * typed neither `any` nor `unknown`, or a generic reference holding `any`, as
+ * in `any[]` or `Set<any>`, into one of the same generic target, such as
+ * `string[]` or `Set<string>`, with another type in that position. `readonly`
+ * and labelled tuples have targets of their own, and `node`, the expression
+ * that sends the value, lets `new Map()` in.
  */
 export function leaks(
   checker: ts.TypeChecker,
   sender: ts.Type,
   receiver: ts.Type | undefined,
+  node?: ts.Node,
   depth = 0,
 ): boolean {
   if (isAnyType(checker, sender))
     return receiver === undefined || !takesAnything(receiver);
-  if (receiver === undefined || depth === MAX_DEPTH) return false;
-  const from = arrayReference(checker, sender);
-  const to = arrayReference(checker, receiver);
+  if (receiver === undefined || depth === MAX_DEPTH || isEmptyMap(node))
+    return false;
+  const from = reference(sender);
+  const to = reference(receiver);
   if (from === undefined || to === undefined || from.target !== to.target)
     return false;
   const slots = checker.getTypeArguments(to);
   return checker
     .getTypeArguments(from)
     .some((argument, index) =>
-      leaks(checker, argument, slots[index], depth + 1),
+      leaks(checker, argument, slots[index], undefined, depth + 1),
     );
 }
 
@@ -92,6 +101,7 @@ export function returnLeaks(
   checker: ts.TypeChecker,
   sender: ts.Type,
   receiver: ts.Type | undefined,
+  node: ts.Node,
 ): boolean {
   const element = arrayElement(checker, sender);
   if (
@@ -99,7 +109,7 @@ export function returnLeaks(
     element === undefined ||
     !isAnyType(checker, element)
   )
-    return leaks(checker, sender, receiver);
+    return leaks(checker, sender, receiver, node);
   const slot = arrayElement(checker, receiver);
   return (
     sender !== receiver &&

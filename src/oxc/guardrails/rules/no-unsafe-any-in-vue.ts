@@ -24,15 +24,16 @@ function isAny(checker: ts.TypeChecker, node: ts.Node): boolean {
   return isAnyType(checker, checker.getTypeAtLocation(node));
 }
 
-/** Whether `sender` lets `any` into an assigned `receiver`: `any` into anything but `unknown`, a slot declared `any` included, or what {@link leaks} finds. */
+/** Whether `value` lets `any` into an assigned `receiver`: `any` into anything but `unknown`, a slot declared `any` included, or what {@link leaks} finds. */
 function assignmentLeaks(
   checker: ts.TypeChecker,
-  sender: ts.Type,
+  value: ts.Expression,
   receiver: ts.Type | undefined,
 ): boolean {
+  const sender = checker.getTypeAtLocation(value);
   return isAnyType(checker, sender)
     ? !isUnknown(receiver)
-    : leaks(checker, sender, receiver);
+    : leaks(checker, sender, receiver, value);
 }
 
 /** Whether `value`, flowing into the slot its context declares, lets `any` in. */
@@ -40,11 +41,7 @@ function leaksIntoContext(
   checker: ts.TypeChecker,
   value: ts.Expression,
 ): boolean {
-  return assignmentLeaks(
-    checker,
-    checker.getTypeAtLocation(value),
-    checker.getContextualType(value),
-  );
+  return assignmentLeaks(checker, value, checker.getContextualType(value));
 }
 
 /** Whether `literal` is the target of a destructuring assignment, as in `({ a } = value)`, whose elements name targets, not values. */
@@ -135,7 +132,7 @@ function argumentFindings(
     const parameter = checker.getContextualType(argument);
     return ts.isSpreadElement(argument) ||
       parameter === undefined ||
-      !leaks(checker, checker.getTypeAtLocation(argument), parameter)
+      !leaks(checker, checker.getTypeAtLocation(argument), parameter, argument)
       ? []
       : [{ kind: "argument", node: argument }];
   });
@@ -155,6 +152,7 @@ function returned(checker: ts.TypeChecker, value: ts.Expression): Finding[] {
           checker,
           sender,
           annotatedReturn(checker, owner, owner.type),
+          value,
         );
   return unsafe ? [{ kind: "return", node: value }] : [];
 }
@@ -192,7 +190,7 @@ function propertyFindings(
     return fallback !== undefined &&
       assignmentLeaks(
         checker,
-        checker.getTypeAtLocation(fallback),
+        fallback,
         checker.getTypeAtLocation(property.name),
       )
       ? [{ kind: "assignment", node: property }]
@@ -404,9 +402,8 @@ function declarationFindings(
   node: ts.VariableDeclaration,
   initializer: ts.Expression,
 ): Finding[] {
-  const source = checker.getTypeAtLocation(initializer);
   const declared = node.type && checker.getTypeAtLocation(node.name);
-  return assignmentLeaks(checker, source, declared)
+  return assignmentLeaks(checker, initializer, declared)
     ? [{ kind: "assignment", node }]
     : bindingFindings(checker, node.name, initializer);
 }
@@ -418,12 +415,17 @@ function assignmentFindings(checker: ts.TypeChecker, node: ts.Node): Finding[] {
     ts.isBinaryExpression(node) &&
     node.operatorToken.kind === ts.SyntaxKind.EqualsToken
   ) {
-    const source = checker.getTypeAtLocation(node.right);
-    if (assignmentLeaks(checker, source, checker.getTypeAtLocation(node.left)))
+    if (
+      assignmentLeaks(checker, node.right, checker.getTypeAtLocation(node.left))
+    )
       return [{ kind: "assignment", node }];
     return ts.isObjectLiteralExpression(node.left) ||
       ts.isArrayLiteralExpression(node.left)
-      ? destructuredFindings(checker, node.left, source)
+      ? destructuredFindings(
+          checker,
+          node.left,
+          checker.getTypeAtLocation(node.right),
+        )
       : [];
   }
   if (ts.isParameter(node) && node.initializer !== undefined)
@@ -433,7 +435,7 @@ function assignmentFindings(checker: ts.TypeChecker, node: ts.Node): Finding[] {
   if (ts.isBindingElement(node) && node.initializer !== undefined)
     return assignmentLeaks(
       checker,
-      checker.getTypeAtLocation(node.initializer),
+      node.initializer,
       checker.getTypeAtLocation(node.name),
     )
       ? [{ kind: "assignment", node }]
