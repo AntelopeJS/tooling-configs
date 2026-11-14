@@ -235,3 +235,46 @@ export const sample = "show(JSON.parse(raw));";
     ["app/Echo.vue:7 antelopejs(no-unsafe-any-in-vue)"],
   );
 });
+
+const parity = `declare const parsedAny: any;
+declare const rows: any[];
+declare const labelledAnyTuple: [first: string, second: any];
+declare function gen<T>(value: T): T;
+let x: string;
+let u: unknown;
+let deep: string;
+let q: string;
+({ x } = { x: parsedAny });
+gen({ a: parsedAny });
+const h: { k: any } = { k: parsedAny };
+({ u } = { u: parsedAny });
+({ a: { deep } } = { a: { deep: parsedAny } });
+[q] = rows;
+({ x = parsedAny } = {} as { x?: string });
+function keep(value: any = parsedAny): void { void value; }
+const n: [string, string] = labelledAnyTuple;
+function loose(): any { return parsedAny; }
+const same: any[] = rows;
+void [x, u, deep, q, h, keep, n, loose, same];
+`;
+
+test("a destructuring assignment, an object literal into a generic or any slot and an any default are reported, and a labelled tuple into an unlabelled one is not, on the same lines tsgolint reports in a .ts file (fails if destructuring assignments are skipped, an any slot counts as safe for an assignment, or tuples are compared by element type rather than generic target)", () => {
+  const found = findings({
+    "tsconfig.json": tsconfig,
+    "src/parity.ts": `${parity}export {};\n`,
+    "app/Parity.vue": `<script setup lang="ts">${parity}</script>\n`,
+  });
+  const lines = (file: string) =>
+    found.flatMap((entry) =>
+      entry.startsWith(`${file}:`) ? [Number(entry.split(/[: ]/)[1])] : [],
+    );
+  const expected = [9, 9, 10, 11, 12, 13, 13, 14, 15, 16];
+  assert.deepEqual(
+    lines("src/parity.ts").toSorted((a, b) => a - b),
+    expected,
+  );
+  assert.deepEqual(
+    lines("app/Parity.vue").toSorted((a, b) => a - b),
+    expected,
+  );
+});
