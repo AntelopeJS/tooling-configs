@@ -109,6 +109,7 @@
   "src/guardrails/suppressions.test.ts": 0.3,
   "src/guardrails/sync-capture-peers.test.ts": 7.3,
   "src/guardrails/sync-dependency-ranges.test.ts": 6.6,
+  "src/guardrails/sync-gitattributes.test.ts": 5.3,
   "src/guardrails/sync-init-bare-js.test.ts": 47.4,
   "src/guardrails/sync-init-catalog.test.ts": 8.1,
   "src/guardrails/sync-init.test.ts": 35.1,

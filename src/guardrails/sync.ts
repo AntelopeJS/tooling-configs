@@ -36,6 +36,7 @@ import {
 import { recordedRelease } from "./adoption.ts";
 import { droppedChecksSteps } from "./checks.ts";
 import { isExecutable, makeExecutable } from "./exec-bit.ts";
+import { GITATTRIBUTES_ARTIFACT } from "./gitattributes.ts";
 import { pnpmWorkspaceArtifacts } from "./pnpm-workspace.ts";
 import { renovateArtifacts } from "./renovate.ts";
 import { measureBaseline } from "./ratchet.ts";
@@ -187,6 +188,7 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
       return { content, notes: droppedChecksSteps(current, content) };
     },
   },
+  GITATTRIBUTES_ARTIFACT,
   {
     path: ".nvmrc",
     profiles: ["full"],

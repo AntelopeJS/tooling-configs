@@ -1,9 +1,15 @@
+import {
+  enforcesLf,
+  GITATTRIBUTES,
+  LF_ATTRIBUTES,
+} from "../../guardrails/gitattributes.ts";
 import { runsOnWindows, windowsByDefault } from "../workflow-windows.ts";
 import { perRepo, type Check } from "../check.ts";
 import { isStackRepo } from "../stack.ts";
 import { finding } from "../types.ts";
 
 const CHECK = "windows-ci";
+const LINE_ENDINGS = "line-endings";
 const WORKFLOW = /^\.github\/workflows\/[^/]+\.ya?ml$/;
 const WORKFLOWS_REPO = ".github";
 const CI_NODE = ".github/workflows/ci-node.yml";
@@ -39,6 +45,29 @@ export const windowsCi: Check = {
             ? `No job in ${workflows.join(", ")} runs on Windows.`
             : "The repository has no workflow.",
           "The ci-node.yml caller passes windows: true or leaves it at a true default, or a workflow job runs on windows-latest.",
+        ),
+      ];
+    });
+  },
+};
+
+/** Reports every framework and DMS stack repository whose `.gitattributes` does not check text files out with LF, so a Windows clone keeps its shell scripts runnable. */
+export const lineEndings: Check = {
+  id: LINE_ENDINGS,
+  async run(context) {
+    const stack = (await context.repos()).filter(({ name }) =>
+      isStackRepo(name),
+    );
+    return perRepo(stack, async (repo) => {
+      const text = await context.file(repo, GITATTRIBUTES);
+      if (text !== undefined && enforcesLf(text)) return [];
+      return [
+        finding(
+          { repo: repo.name, check: LINE_ENDINGS, subject: "gitattributes" },
+          text === undefined
+            ? `${GITATTRIBUTES} does not exist.`
+            : `${GITATTRIBUTES} has no \`${LF_ATTRIBUTES}\` line.`,
+          `${GITATTRIBUTES} holds \`${LF_ATTRIBUTES}\`, as antelopejs-sync writes it.`,
         ),
       ];
     });

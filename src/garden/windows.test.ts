@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { runsOnWindows, windowsByDefault } from "./workflow-windows.ts";
-import { windowsCi } from "./checks/windows.ts";
+import { lineEndings, windowsCi } from "./checks/windows.ts";
 import { CALLER } from "./helpers/builders.ts";
 import { FakeApi } from "./helpers/fake-api.ts";
 import { isStackRepo } from "./stack.ts";
@@ -220,4 +220,24 @@ test("windows-ci counts a caller with no windows input as running on Windows onl
       post48: ["mqtt|windows-ci|windows", "redis|windows-ci|windows"],
     },
   );
+});
+
+test("line-endings reports each stack repository whose .gitattributes is missing or lacks the LF line, and skips repositories outside the stack", async () => {
+  const api = new FakeApi()
+    .org([
+      { name: "interface-core" },
+      { name: "mongodb" },
+      { name: "template-dms", pack: "template" },
+      { name: "cloud" },
+    ])
+    .repo("interface-core", {
+      ".gitattributes": "*.png binary\n* text=auto eol=lf\n",
+    })
+    .repo("mongodb", { ".gitattributes": "* text=auto\n" })
+    .repo("template-dms", { "README.md": "Template.\n" })
+    .repo("cloud", { "README.md": "Cloud.\n" });
+  assert.deepEqual(keys(await lineEndings.run(api.context())), [
+    "mongodb|line-endings|gitattributes",
+    "template-dms|line-endings|gitattributes",
+  ]);
 });
