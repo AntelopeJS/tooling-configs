@@ -79,3 +79,28 @@ test("a component with generic type parameters is skipped (fails if the rule rea
     [],
   );
 });
+
+test("rest, unknown and optional-callback targets, async unknown returns and another component's types are left alone, and an any past a rest position is reported (fails if parameters are read by index, a Promise or union target is not unwrapped, or an error type counts as any)", () => {
+  assert.deepEqual(
+    findings({
+      "tsconfig.json": tsconfig,
+      "app/List.vue":
+        '<script lang="ts">\nexport interface Item { name: string }\n</script>\n',
+      "app/Page.vue": `<script setup lang="ts">
+import type { Item } from "./List.vue";
+declare const raw: string;
+declare function log(...data: unknown[]): void;
+declare function tag(label: string, ...parts: string[]): string;
+declare function on(handler?: () => unknown): void;
+log(JSON.parse(raw));
+tag("a", "b", JSON.parse(raw));
+on(() => JSON.parse(raw));
+async function load(): Promise<unknown> { return JSON.parse(raw); }
+function label(item: Item): string { return item.name; }
+void load; void label;
+</script>
+`,
+    }),
+    ["app/Page.vue:8 antelopejs(no-unsafe-any-in-vue)"],
+  );
+});

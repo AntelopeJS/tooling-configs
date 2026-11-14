@@ -15,8 +15,9 @@ interface Finding {
   node: ts.Node;
 }
 
+/** Whether `node` is typed `any` itself, not an error type from an import the program cannot resolve, such as another component. */
 function isAny(checker: ts.TypeChecker, node: ts.Node): boolean {
-  return (checker.getTypeAtLocation(node).flags & ts.TypeFlags.Any) !== 0;
+  return checker.getTypeAtLocation(node) === checker.getAnyType();
 }
 
 function takesAnything(type: ts.Type | undefined): boolean {
@@ -32,25 +33,36 @@ function declaredReturn(
     if (ts.isSourceFile(owner)) return undefined;
     owner = owner.parent;
   }
-  if (owner.type !== undefined) return checker.getTypeFromTypeNode(owner.type);
-  const signature = ts.isExpression(owner)
-    ? checker.getContextualType(owner)?.getCallSignatures()[0]
+  const contextual = ts.isExpression(owner)
+    ? checker.getContextualType(owner)
     : undefined;
-  return signature?.getReturnType();
+  const declared =
+    owner.type === undefined
+      ? contextual &&
+        checker
+          .getNonNullableType(contextual)
+          .getCallSignatures()[0]
+          ?.getReturnType()
+      : checker.getTypeFromTypeNode(owner.type);
+  const isAsync =
+    ts.canHaveModifiers(owner) &&
+    ts
+      .getModifiers(owner)
+      ?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword);
+  return declared && isAsync ? checker.getAwaitedType(declared) : declared;
 }
 
 function argumentFindings(
   checker: ts.TypeChecker,
   call: ts.CallExpression | ts.NewExpression,
 ): Finding[] {
-  const signature = checker.getResolvedSignature(call);
-  return (call.arguments ?? []).flatMap((argument, index) => {
-    if (ts.isSpreadElement(argument) || !isAny(checker, argument)) return [];
-    const parameter = signature?.getParameters()[index];
-    const type =
-      parameter && checker.getTypeOfSymbolAtLocation(parameter, argument);
-    return takesAnything(type) ? [] : [{ kind: "argument", node: argument }];
-  });
+  return (call.arguments ?? []).flatMap((argument) =>
+    ts.isSpreadElement(argument) ||
+    !isAny(checker, argument) ||
+    takesAnything(checker.getContextualType(argument))
+      ? []
+      : [{ kind: "argument", node: argument }],
+  );
 }
 
 function returned(checker: ts.TypeChecker, value: ts.Expression): Finding[] {
