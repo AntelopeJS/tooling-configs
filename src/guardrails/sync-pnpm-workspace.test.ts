@@ -25,16 +25,24 @@ function pinnedRepo(t: TestContext, packageManager: string): string {
   return root;
 }
 
+/** The release-age exclusion sync writes, so pnpm 11 locks one copy of an interface released less than a day ago. */
+const FRESH_INTERFACES = {
+  minimumReleaseAgeExclude: ["@antelopejs/interface-*"],
+};
+const FRESH_INTERFACES_YAML =
+  'minimumReleaseAgeExclude:\n  - "@antelopejs/interface-*"\n';
+
 function synced(root: string): void {
   const result = bin(root, "sync");
   assert.equal(result.status, 0, result.stderr + result.stdout);
 }
 
-test("sync tells pnpm 11 not to build lefthook and then reports no drift, where a sync that writes no allowBuilds leaves every install failing with ERR_PNPM_IGNORED_BUILDS", (t) => {
+test("sync tells pnpm 11 not to build lefthook and to install an interface the day it is published, then reports no drift, where a sync that writes no allowBuilds leaves every install failing with ERR_PNPM_IGNORED_BUILDS and one that writes no minimumReleaseAgeExclude lets a fresh install lock two copies of an interface released less than a day ago", (t) => {
   const root = pinnedRepo(t, "pnpm@11.27.1");
   synced(root);
   assert.deepEqual(parse(read(root, "pnpm-workspace.yaml")), {
     allowBuilds: { lefthook: false },
+    ...FRESH_INTERFACES,
   });
   const check = bin(root, "sync", ["--check"]);
   assert.equal(check.status, 0, check.stdout + check.stderr);
@@ -51,9 +59,10 @@ test("sync keeps a repository's own pnpm-workspace.yaml settings and leaves a fi
   assert.deepEqual(parse(read(root, "pnpm-workspace.yaml")), {
     packages: ["packages/*"],
     allowBuilds: { esbuild: true, lefthook: false },
+    ...FRESH_INTERFACES,
   });
   const decided =
-    'packages: ["packages/*"]\nallowBuilds:\n    lefthook: true\n';
+    'packages: ["packages/*"]\nallowBuilds:\n    lefthook: true\nminimumReleaseAgeExclude: ["@antelopejs/interface-*"]\n';
   put(root, "pnpm-workspace.yaml", decided);
   synced(root);
   assert.equal(read(root, "pnpm-workspace.yaml"), decided);
@@ -65,11 +74,11 @@ test("sync tells pnpm 11 not to build the capture peer mongodb-memory-server in 
   synced(root);
   assert.deepEqual(parse(read(root, "pnpm-workspace.yaml")), {
     allowBuilds: { lefthook: false, "mongodb-memory-server": false },
+    ...FRESH_INTERFACES,
   });
   const check = bin(root, "sync", ["--check"]);
   assert.equal(check.status, 0, check.stdout + check.stderr);
-  const decided =
-    "allowBuilds:\n  lefthook: false\n  mongodb-memory-server: true\n";
+  const decided = `allowBuilds:\n  lefthook: false\n  mongodb-memory-server: true\n${FRESH_INTERFACES_YAML}`;
   put(root, "pnpm-workspace.yaml", decided);
   synced(root);
   assert.equal(read(root, "pnpm-workspace.yaml"), decided);
@@ -77,17 +86,28 @@ test("sync tells pnpm 11 not to build the capture peer mongodb-memory-server in 
   synced(root);
   assert.deepEqual(parse(read(root, "pnpm-workspace.yaml")), {
     allowBuilds: { lefthook: true, "mongodb-memory-server": false },
+    ...FRESH_INTERFACES,
   });
 });
 
 for (const [current, written] of [
-  ["---\n", "---\nallowBuilds:\n  lefthook: false\n"],
-  ["\n\n# settings\n", "# settings\nallowBuilds:\n  lefthook: false\n"],
+  ["---\n", `---\nallowBuilds:\n  lefthook: false\n${FRESH_INTERFACES_YAML}`],
+  [
+    "\n\n# settings\n",
+    `# settings\nallowBuilds:\n  lefthook: false\n${FRESH_INTERFACES_YAML}`,
+  ],
   [
     'packages: ["a"]\nallowBuilds: {}\n',
-    'packages: ["a"]\nallowBuilds:\n  lefthook: false\n',
+    `packages: ["a"]\nallowBuilds:\n  lefthook: false\n${FRESH_INTERFACES_YAML}`,
   ],
-  ["allowBuilds:\n  lefthook:\n", "allowBuilds:\n  lefthook: false\n"],
+  [
+    "allowBuilds:\n  lefthook:\n",
+    `allowBuilds:\n  lefthook: false\n${FRESH_INTERFACES_YAML}`,
+  ],
+  [
+    'minimumReleaseAgeExclude: ["left-pad"]\n',
+    `minimumReleaseAgeExclude:\n  - "left-pad"\n  - "@antelopejs/interface-*"\nallowBuilds:\n  lefthook: false\n`,
+  ],
 ])
   test(`sync writes ${JSON.stringify(current)} as oxfmt leaves it, where a sync that pads flow maps, keeps leading blank lines, rejects a bare document marker or counts a null lefthook as decided fails format:check or the install`, (t) => {
     const root = pinnedRepo(t, "pnpm@11.27.1");
@@ -103,6 +123,7 @@ for (const current of ["", "# workspace settings\n", "allowBuilds:\n"])
     synced(root);
     assert.deepEqual(parse(read(root, "pnpm-workspace.yaml")), {
       allowBuilds: { lefthook: false },
+      ...FRESH_INTERFACES,
     });
   });
 
@@ -129,7 +150,7 @@ for (const current of [
 
 test("sync keeps a pnpm 10 repository's pnpm-workspace.yaml that holds its own settings, where a sync that asks to delete it drops the repository's overrides", (t) => {
   const root = pinnedRepo(t, "pnpm@10.6.5");
-  const own = "overrides:\n  foo: 1.0.0\nallowBuilds:\n  lefthook: false\n";
+  const own = `overrides:\n  foo: 1.0.0\nallowBuilds:\n  lefthook: false\n${FRESH_INTERFACES_YAML}`;
   put(root, "pnpm-workspace.yaml", own);
   synced(root);
   assert.equal(read(root, "pnpm-workspace.yaml"), own);
