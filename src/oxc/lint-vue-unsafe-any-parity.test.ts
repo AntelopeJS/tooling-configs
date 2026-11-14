@@ -259,3 +259,26 @@ test("each element of a tuple spread into a call is reported against the paramet
     vue: expected,
   });
 });
+
+const jsxAttributes = `declare const parsedAny: any;
+declare const anySet: Set<any>;
+declare global { namespace JSX { interface Element { el?: 1 } interface IntrinsicElements { div: { onClick?: () => string; title?: string; data?: unknown; loose?: any; set?: Set<string>; maybe?: () => unknown }; span: { need: Set<string> } } } }
+const a = <div onClick={() => parsedAny} />;
+const b = <div title={parsedAny} />;
+const c = <div data={parsedAny} />;
+const d = <div loose={parsedAny} />;
+const e = <div set={anySet} />;
+const f = <div maybe={() => parsedAny} />;
+const g = <div title="x" {...parsedAny} />;
+const h = <div>{parsedAny}</div>;
+const i = <span need={anySet} />;
+void [a, b, c, d, e, f, g, h, i];
+`;
+
+test("in a tsx script, an any or an any-holding generic passed as a JSX attribute is reported against the prop it fills, an unknown or optional generic prop is not, and a callback attribute is judged by its prop, on the lines tsgolint reports (fails if a tsx script is parsed as TypeScript, JSX attributes are not checked, or an attribute is compared with its own type rather than its prop's)", () => {
+  const expected = [4, 5, 7, 12];
+  assert.deepEqual(parityLines("JsxAttributes", jsxAttributes, "tsx"), {
+    ts: expected,
+    vue: expected,
+  });
+});
