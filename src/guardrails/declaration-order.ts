@@ -174,6 +174,23 @@ function statementName(
   return statement.getText(source);
 }
 
+/** The top-level statements of `text` in written order, each with the name `normalizeBundle` orders it by. */
+export function namedStatements(
+  compiler: typeof ts,
+  text: string,
+): { name: string; text: string }[] {
+  const source = compiler.createSourceFile(
+    "bundle.d.ts",
+    text,
+    compiler.ScriptTarget.Latest,
+    true,
+  );
+  return source.statements.map((statement) => ({
+    name: statementName(compiler, statement, source),
+    text: statement.getText(source),
+  }));
+}
+
 /** Prints a bundle in canonical form: top-level statements by name and object members in a fixed order. Statements of one name, such as merged interface blocks, which the bundler emits in an order that varies between runs, are ordered by their normalized text. Merged blocks that declare the same method therefore compare equal in either block order, though TypeScript resolves the later block's overloads first. Function declarations of one name are overloads, come first among their name, and keep their order. */
 export function normalizeBundle(compiler: typeof ts, text: string): string {
   const source = compiler.createSourceFile(

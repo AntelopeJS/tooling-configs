@@ -155,6 +155,10 @@ interface CompareOptions {
   policy?: AddedPolicy;
   /** Each worktree resolves its workspace packages to its own revision, for a comparison that builds them there. */
   ownWorkspace?: boolean;
+  /** Rewrites one side's output directory after allowed additions are removed and before the sides are compared. */
+  collate?: (output: string) => void;
+  /** Rewrites the printed differences, given the directory that holds the `base` and `head` outputs. */
+  annotate?: (diff: string, root: string) => string;
 }
 
 /** Compares isolated committed revisions and removes both worktrees even when compilation fails; a policy lets matching `@internal` additions through. */
@@ -163,7 +167,7 @@ export function compareRevisions(
   baseRef: string,
   label: string,
   emit: (worktree: string, output: string, scratch: string) => RevisionOutput,
-  { policy, ownWorkspace = false }: CompareOptions = {},
+  { policy, ownWorkspace = false, collate, annotate }: CompareOptions = {},
 ) {
   const temporary = mkdtempSync(join(tmpdir(), "antelope-proof-"));
   const worktrees: string[] = [];
@@ -202,6 +206,8 @@ export function compareRevisions(
             results[1].published ?? [],
             (path) => rmSync(join(temporary, "head", path), { force: true }),
           );
+    if (collate !== undefined)
+      for (const side of ["base", "head"]) collate(join(temporary, side));
     const diff = spawnSync(
       "git",
       [
@@ -229,7 +235,7 @@ export function compareRevisions(
       different: diff.status === 1,
       output:
         diff.status === 1
-          ? `${label}: differences against ${baseRef} (committed HEAD).\n${diff.stdout}`
+          ? `${label}: differences against ${baseRef} (committed HEAD).\n${annotate === undefined ? diff.stdout : annotate(diff.stdout, temporary)}`
           : `${label}: ${packages} packages, ${results[1].entries - allowedAdditions} entries unchanged against ${baseRef} (committed HEAD).\n`,
     };
   } finally {

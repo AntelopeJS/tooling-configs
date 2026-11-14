@@ -42,8 +42,10 @@ test("api-diff expands slash-spanning exports, all conditions, main and typesVer
   commit(root);
   const removed = bin(root, "api-diff", ["HEAD~1"]);
   assert.equal(removed.status, 1);
-  assert.match(removed.stdout, /deleted file mode/);
-  assert.match(removed.stdout, /exports\/subpath\/nested%2Fentry\.d\.ts/);
+  assert.match(
+    removed.stdout,
+    /^-\/\/ {3}_root\/exports\/subpath\/nested%2Fentry\.d\.ts$/mu,
+  );
 });
 
 test("api-diff leaves compiled test files out of wildcard exports in both halves", (t) => {
@@ -139,4 +141,73 @@ test("api-diff compares published subpaths, allowing entry relocation but catchi
   commit(root);
   const moved = bin(root, "api-diff", ["base"]);
   assert.equal(moved.status, 0, moved.stdout + moved.stderr);
+});
+
+function exportsOf(names: readonly string[]): string {
+  return JSON.stringify({
+    name: "public-api",
+    type: "module",
+    exports: Object.fromEntries(
+      names.map((name) => [
+        name === "index" ? "." : `./${name}`,
+        { types: `./dist/${name}.d.ts`, default: `./dist/${name}.js` },
+      ]),
+    ),
+  });
+}
+
+function members(changed: readonly string[]): string {
+  return Array.from({ length: 16 }, (_, index) => {
+    const name = `m${String(index + 1).padStart(2, "0")}`;
+    return `${name}: ${changed.includes(name) ? "number" : "string"};`;
+  }).join(" ");
+}
+
+test("api-diff prints a declaration changed in several entries once, naming its entries once, and an added or removed declaration under its own entries", (t) => {
+  const root = apiRepo(t);
+  put(root, "package.json", exportsOf(["index", "extra", "other"]));
+  put(root, "src/shared.ts", `export interface Value { ${members([])} }\n`);
+  put(root, "src/index.ts", 'export type { Value } from "./shared.js";\n');
+  put(root, "src/extra.ts", 'export type { Value } from "./shared.js";\n');
+  const zed = "export interface Zed { zed: string }\n";
+  put(root, "src/other.ts", `export interface Other { other: string }\n${zed}`);
+  commit(root);
+  put(
+    root,
+    "src/shared.ts",
+    `export interface Value { ${members(["m04", "m12"])} }\n`,
+  );
+  commit(root);
+  const changed = bin(root, "api-diff", ["HEAD~1"]);
+  assert.equal(changed.status, 1, changed.stdout + changed.stderr);
+  assert.deepEqual(changed.stdout.match(/^[-+](?![-+]).*$/gmu), [
+    "-    m04: string;",
+    "+    m04: number;",
+    "-    m12: string;",
+    "+    m12: number;",
+  ]);
+  assert.deepEqual(
+    changed.stdout
+      .match(/^@@ .*$/gmu)
+      ?.map((header) => header.split(" @@ ")[1]),
+    [
+      "export interface Value { // In _root/exports/root.d.ts, _root/exports/subpath/extra.d.ts",
+      "export interface Value {",
+    ],
+  );
+  put(root, "package.json", exportsOf(["index", "extra", "more", "other"]));
+  put(root, "src/more.ts", 'export type { Value } from "./shared.js";\n');
+  commit(root);
+  const added = bin(root, "api-diff", ["HEAD~1"]);
+  assert.equal(added.status, 1, added.stdout + added.stderr);
+  assert.deepEqual(added.stdout.match(/^[-+](?![-+]).*$/gmu), [
+    "+//   _root/exports/subpath/more.d.ts",
+    "+// In _root/exports/subpath/more.d.ts",
+  ]);
+  put(root, "src/other.ts", "export interface Other { other: string }\n");
+  commit(root);
+  const removed = bin(root, "api-diff", ["HEAD~1"]);
+  assert.equal(removed.status, 1, removed.stdout + removed.stderr);
+  assert.match(removed.stdout, /^-export interface Zed \{$/mu);
+  assert.doesNotMatch(removed.stdout, /^@@ .*\/\/ In/mu);
 });
