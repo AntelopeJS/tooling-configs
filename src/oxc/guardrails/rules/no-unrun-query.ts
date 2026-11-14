@@ -74,7 +74,7 @@ function resultIsAwaited(fn: FunctionNode): boolean {
   );
 }
 
-/** Whether `call` calls the first parameter of a function it sits in, as a `new Promise` executor calls its `resolve`. */
+/** Whether `call` calls the first parameter after any `this` parameter of a function it sits in, as a `new Promise` executor calls its `resolve`. */
 function callsFirstParameter(call: ESTree.CallExpression): boolean {
   const { callee } = call;
   if (callee.type !== "Identifier") return false;
@@ -83,7 +83,9 @@ function callsFirstParameter(call: ESTree.CallExpression): boolean {
     fn !== null;
     fn = enclosingFunction(fn)
   ) {
-    const [first] = fn.params;
+    const first = fn.params.find(
+      (param) => param.type !== "Identifier" || param.name !== "this",
+    );
     const name = first?.type === "AssignmentPattern" ? first.left : first;
     if (name?.type === "Identifier" && name.name === callee.name) return true;
   }
@@ -192,20 +194,67 @@ function callbackResult(
 
 const executorsByFile = new WeakMap<ts.SourceFile, Set<ts.Node>>();
 
-/** The function a `new Promise` argument names: the function written there, or the function declaration or initialised variable its identifier resolves to. */
-function namedFunction(
+/** `expression` without the parentheses, `as`, `<T>`, `satisfies` and `!` around it. */
+function unwrapped(expression: ts.Expression): ts.Expression {
+  return ts.isParenthesizedExpression(expression) ||
+    ts.isAsExpression(expression) ||
+    ts.isTypeAssertionExpression(expression) ||
+    ts.isSatisfiesExpression(expression) ||
+    ts.isNonNullExpression(expression)
+    ? unwrapped(expression.expression)
+    : expression;
+}
+
+/** The function a declaration holds: the initialiser of a variable or property, the value a shorthand property names, or the declaration itself. */
+function declaredFunctions(
+  checker: ts.TypeChecker,
+  declaration: ts.Declaration,
+): readonly ts.Node[] {
+  if (ts.isShorthandPropertyAssignment(declaration))
+    return (
+      checker.getShorthandAssignmentValueSymbol(declaration)?.declarations ?? []
+    ).flatMap((value) => declaredFunctions(checker, value));
+  return (ts.isVariableDeclaration(declaration) ||
+    ts.isPropertyDeclaration(declaration) ||
+    ts.isPropertyAssignment(declaration)) &&
+    declaration.initializer !== undefined
+    ? [unwrapped(declaration.initializer)]
+    : [declaration];
+}
+
+/** The declarations of member `access` on the value its receiver variable is initialised with, past any type annotation that names only a signature. */
+function initialisedMember(
+  checker: ts.TypeChecker,
+  access: ts.PropertyAccessExpression,
+): readonly ts.Declaration[] {
+  const receiver = ts.isIdentifier(access.expression)
+    ? checker.getSymbolAtLocation(access.expression)?.valueDeclaration
+    : undefined;
+  return receiver !== undefined &&
+    ts.isVariableDeclaration(receiver) &&
+    receiver.initializer !== undefined
+    ? (checker
+        .getTypeAtLocation(unwrapped(receiver.initializer))
+        .getProperty(access.name.text)?.declarations ?? [])
+    : [];
+}
+
+/** The functions a `new Promise` argument names: the function written there, or each declaration, overloads included, or initialiser of the variable, property or method its identifier or member access resolves to. */
+function namedFunctions(
   checker: ts.TypeChecker,
   argument: ts.Expression,
-): ts.Node | undefined {
-  if (ts.isFunctionExpression(argument) || ts.isArrowFunction(argument))
-    return argument;
-  if (!ts.isIdentifier(argument)) return undefined;
-  const declaration = checker.getSymbolAtLocation(argument)?.valueDeclaration;
-  return declaration !== undefined &&
-    ts.isVariableDeclaration(declaration) &&
-    declaration.initializer !== undefined
-    ? declaration.initializer
-    : declaration;
+): readonly ts.Node[] {
+  const value = unwrapped(argument);
+  if (ts.isFunctionExpression(value) || ts.isArrowFunction(value))
+    return [value];
+  if (!ts.isIdentifier(value) && !ts.isPropertyAccessExpression(value))
+    return [];
+  return [
+    ...(checker.getSymbolAtLocation(value)?.declarations ?? []),
+    ...(ts.isPropertyAccessExpression(value)
+      ? initialisedMember(checker, value)
+      : []),
+  ].flatMap((declaration) => declaredFunctions(checker, declaration));
 }
 
 /** The functions `sourceFile` hands to `new Promise` as its executor, inline or by name. */
@@ -223,8 +272,8 @@ function promiseExecutors(
       node.expression.text === "Promise"
         ? node.arguments?.[0]
         : undefined;
-    const executor = argument && namedFunction(checker, argument);
-    if (executor !== undefined) executors.add(executor);
+    for (const executor of argument ? namedFunctions(checker, argument) : [])
+      executors.add(executor);
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
@@ -232,7 +281,7 @@ function promiseExecutors(
   return executors;
 }
 
-/** The value `call` resolves its promise with, when its callee is the first parameter of a function the file hands to `new Promise` as its executor. */
+/** The value `call` resolves its promise with, when its callee is the first parameter after any `this` parameter of a function the file hands to `new Promise` as its executor. */
 function resolvedValue(
   checker: ts.TypeChecker,
   call: ts.CallExpression,
@@ -245,7 +294,9 @@ function resolvedValue(
     ts.isParameter(parameter) &&
     executor !== undefined &&
     ts.isFunctionLike(executor) &&
-    executor.parameters[0] === parameter &&
+    executor.parameters.find(
+      ({ name }) => !ts.isIdentifier(name) || name.text !== "this",
+    ) === parameter &&
     promiseExecutors(checker, call.getSourceFile()).has(executor)
     ? call.arguments[0]
     : undefined;
