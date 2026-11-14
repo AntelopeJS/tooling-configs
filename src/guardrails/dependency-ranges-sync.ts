@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { gtr, valid } from "semver";
+import { gtr, prerelease, valid, validRange } from "semver";
 
 import {
   cappedReplacement,
@@ -121,8 +121,9 @@ interface PublishedRange extends InterfaceRange {
 }
 
 /**
- * One line per range among `ranges` that every release it admits sits below the `latest` dist-tag of its package. A
- * package whose dist-tags cannot be read is skipped, so a registry outage leaves only the cap rule deciding the step.
+ * One line per range among `ranges` whose every admitted release sits below the `latest` dist-tag of its package. A
+ * package whose dist-tags cannot be read, or whose `latest` is a prerelease no capped range admits, is skipped, so a
+ * registry outage leaves only the cap rule deciding the step.
  */
 async function staleRanges(
   ranges: readonly PublishedRange[],
@@ -135,7 +136,13 @@ async function staleRanges(
   );
   return ranges.flatMap(({ path, field, name, spec }) => {
     const version = newest.get(name);
-    if (version === undefined || valid(version) === null || !gtr(version, spec))
+    if (
+      version === undefined ||
+      valid(version) === null ||
+      prerelease(version) !== null ||
+      validRange(spec) === null ||
+      !gtr(version, spec)
+    )
       return [];
     const expected = cappedReplacement(spec, version);
     if (expected === undefined) return [];

@@ -141,3 +141,36 @@ test("a capped range on an AntelopeJS package that is not an interface passes be
   );
   assert.equal(result.status, 0, result.stdout);
 });
+
+test("a range on an interface the repository holds follows the version there, not the registry, where a step that reads every interface from the registry fails a branch cut before the interface's release", async (t) => {
+  const root = repoWithRange(t, ">=0.6.0 <0.7.0", "dependencies", AUTOMATION);
+  put(
+    root,
+    "interface/package.json",
+    JSON.stringify({ name: AUTOMATION, version: "0.6.3" }),
+  );
+  commit(root);
+  const result = await checks(
+    root,
+    await stubRegistry(t, { [AUTOMATION]: "0.7.0" }),
+  );
+  assert.equal(result.status, 0, result.stdout);
+});
+
+test("a prerelease newest version leaves the range passing, where a step that reads the prerelease as its release tells the module to move to a minor no release satisfies yet", async (t) => {
+  const root = repoWithRange(t, ">=0.6.0 <0.7.0", "dependencies", AUTOMATION);
+  const result = await checks(
+    root,
+    await stubRegistry(t, { [AUTOMATION]: "0.7.0-beta.1" }),
+  );
+  assert.equal(result.status, 0, result.stdout);
+});
+
+test("a capped range semver cannot parse finishes the run, where a step that hands it to semver unguarded crashes checks before any summary", async (t) => {
+  const root = repoWithRange(t, ">=0.06.0 <0.07.0", "dependencies", AUTOMATION);
+  const result = await checks(
+    root,
+    await stubRegistry(t, { [AUTOMATION]: "0.7.0" }),
+  );
+  assert.match(result.stdout, /Checks: \d+ passed/);
+});
