@@ -364,6 +364,14 @@ function assignmentFindings(checker: ts.TypeChecker, node: ts.Node): Finding[] {
     )
       ? [{ kind: "assignment", node }]
       : bindingFindings(checker, node.name, node.initializer);
+  if (ts.isPropertyDeclaration(node) && node.initializer !== undefined)
+    return assignmentLeaks(
+      checker,
+      node.initializer,
+      node.type && checker.getTypeAtLocation(node.name),
+    )
+      ? [{ kind: "assignment", node }]
+      : [];
   if (ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node))
     return propertyFindings(checker, node);
   return [];
