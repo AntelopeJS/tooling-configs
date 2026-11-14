@@ -182,3 +182,19 @@ test("an example of an @antelopejs package the registry does not list fails and 
     ),
   );
 });
+
+test("a registry that accepts the connection and never answers fails the step within the bound and names the registry, caught by an implementation that reads without a timeout", async (t) => {
+  const server = createServer(() => undefined);
+  const port = await freePort();
+  await new Promise<void>((resolve) =>
+    server.listen(port, "127.0.0.1", resolve),
+  );
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${port}/`;
+  const root = moduleRepo(t, "0.0.9", example("~1.0.0", "@antelopejs/mongodb"));
+  const started = Date.now();
+  const result = await checksWith(root, url);
+  assert.ok(Date.now() - started < 20_000, `took ${Date.now() - started}ms`);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stdout, new RegExp(`could not be read from ${url}\\.`));
+});
