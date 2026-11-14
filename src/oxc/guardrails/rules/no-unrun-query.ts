@@ -194,14 +194,49 @@ function callbackResult(
 
 const executorsByFile = new WeakMap<ts.SourceFile, Set<ts.Node>>();
 
-/** `expression` without the parentheses, `as`, `satisfies` and `!` around it. */
+/** `expression` without the parentheses, `as`, `<T>`, `satisfies` and `!` around it. */
 function unwrapped(expression: ts.Expression): ts.Expression {
   return ts.isParenthesizedExpression(expression) ||
     ts.isAsExpression(expression) ||
+    ts.isTypeAssertionExpression(expression) ||
     ts.isSatisfiesExpression(expression) ||
     ts.isNonNullExpression(expression)
     ? unwrapped(expression.expression)
     : expression;
+}
+
+/** The function a declaration holds: the initialiser of a variable or property, the value a shorthand property names, or the declaration itself. */
+function declaredFunctions(
+  checker: ts.TypeChecker,
+  declaration: ts.Declaration,
+): readonly ts.Node[] {
+  if (ts.isShorthandPropertyAssignment(declaration))
+    return (
+      checker.getShorthandAssignmentValueSymbol(declaration)?.declarations ?? []
+    ).flatMap((value) => declaredFunctions(checker, value));
+  return (ts.isVariableDeclaration(declaration) ||
+    ts.isPropertyDeclaration(declaration) ||
+    ts.isPropertyAssignment(declaration)) &&
+    declaration.initializer !== undefined
+    ? [unwrapped(declaration.initializer)]
+    : [declaration];
+}
+
+/** The declarations of member `access` on the value its receiver variable is initialised with, past any type annotation that names only a signature. */
+function initialisedMember(
+  checker: ts.TypeChecker,
+  access: ts.PropertyAccessExpression,
+): readonly ts.Declaration[] {
+  const receiver = ts.isIdentifier(access.expression)
+    ? checker.getSymbolAtLocation(access.expression)?.valueDeclaration
+    : undefined;
+  return receiver !== undefined &&
+    ts.isVariableDeclaration(receiver) &&
+    receiver.initializer !== undefined
+    ? (checker
+        .getTypeAtLocation(unwrapped(receiver.initializer))
+        .getProperty(access.name.text)?.declarations ?? [])
+    : [];
 }
 
 /** The functions a `new Promise` argument names: the function written there, or each declaration, overloads included, or initialiser of the variable, property or method its identifier or member access resolves to. */
@@ -214,15 +249,12 @@ function namedFunctions(
     return [value];
   if (!ts.isIdentifier(value) && !ts.isPropertyAccessExpression(value))
     return [];
-  return (checker.getSymbolAtLocation(value)?.declarations ?? []).map(
-    (declaration) =>
-      (ts.isVariableDeclaration(declaration) ||
-        ts.isPropertyDeclaration(declaration) ||
-        ts.isPropertyAssignment(declaration)) &&
-      declaration.initializer !== undefined
-        ? unwrapped(declaration.initializer)
-        : declaration,
-  );
+  return [
+    ...(checker.getSymbolAtLocation(value)?.declarations ?? []),
+    ...(ts.isPropertyAccessExpression(value)
+      ? initialisedMember(checker, value)
+      : []),
+  ].flatMap((declaration) => declaredFunctions(checker, declaration));
 }
 
 /** The functions `sourceFile` hands to `new Promise` as its executor, inline or by name. */

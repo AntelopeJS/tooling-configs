@@ -292,6 +292,41 @@ export const f = new Promise(((resolve: Resolve) => {
   );
 });
 
+test("resolve called with an unrun query in an angle-bracket cast, a shorthand member or a member behind a declared type is reported", () => {
+  assert.deepEqual(
+    reported(`import { novels } from "./novels.ts";
+
+type Resolve = (value: unknown) => void;
+interface Exec {
+  exec(resolve: Resolve): void;
+}
+const angle = <(resolve: Resolve) => void>((resolve: Resolve) => {
+  resolve(novels.count());
+});
+const exec = (resolve: Resolve) => {
+  resolve(novels.count());
+};
+const shorthand = { exec };
+const annotated: Exec = {
+  exec(resolve) {
+    resolve(novels.count());
+  },
+};
+class Executor implements Exec {
+  exec(resolve: Resolve) {
+    resolve(novels.count());
+  }
+}
+const instance: Exec = new Executor();
+export const a = new Promise(angle);
+export const b = new Promise(shorthand.exec);
+export const c = new Promise(annotated.exec);
+export const d = new Promise(instance.exec);
+`),
+    [8, 11, 16, 21],
+  );
+});
+
 test("an interface-typed handle or a class instance holding a table, and a function never handed to new Promise, are not reported", () => {
   assert.deepEqual(
     reported(`import type { Table } from "@antelopejs/interface-database";
