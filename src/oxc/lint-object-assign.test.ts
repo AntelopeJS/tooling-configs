@@ -278,3 +278,38 @@ test("a component the tsconfig lists keeps its declarations to itself, so a .ts 
     [],
   );
 });
+
+test("Object.assign writing unknown over a typed field in a .vue script is reported on its component line, and a generic component is skipped (fails if oxlint's script text is typed alone or a finding is not mapped back by the block's offset)", () => {
+  assert.deepEqual(
+    findings({
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          strict: true,
+          module: "esnext",
+          moduleResolution: "bundler",
+          types: [],
+        },
+        include: ["app/**/*.vue"],
+      }),
+      "app/Counter.vue": `<template><p>{{ item.count }}</p></template>
+
+<script lang="ts">
+export interface Item { count: number }
+export function reset(item: Item, raw: unknown): Item {
+  return Object.assign(item, { count: raw });
+}
+</script>
+
+<script setup lang="ts">
+declare const raw: unknown;
+const item: Item = { count: 0 };
+Object.assign(item, { count: raw });
+Object.assign(item, { count: 1 });
+</script>
+`,
+      "app/List.vue":
+        '<script setup lang="ts" generic="T">\ndefineProps<{ item: T }>();\ndeclare const raw: unknown;\nObject.assign({ count: 0 }, { count: raw });\n</script>\n',
+    }),
+    ["app/Counter.vue:13", "app/Counter.vue:6"],
+  );
+});

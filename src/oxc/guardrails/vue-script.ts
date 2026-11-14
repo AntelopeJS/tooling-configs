@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 const BLOCK =
   /<!--[\s\S]*?-->|(<script\b(?:"[^"]*"|'[^']*'|[^>"'])*>)([\s\S]*?)(?=<\/script\s*>)/giu;
 
@@ -31,6 +33,32 @@ export function scriptView(sfc: string): string | undefined {
     end = start + content.length;
   }
   return end === 0 ? undefined : `${view}${blank(sfc.slice(end))}${MODULE}`;
+}
+
+/** A linted file as the type checker reads it, and the offset of the linted text in it. */
+export interface LintedSource {
+  text: string;
+  offset: number;
+}
+
+/**
+ * The text to type for a linted file. A component whose linted text holds no
+ * script block, as oxlint passes a component's script alone, is read whole
+ * from disk, and `offset` is where that script starts in it. Undefined for a
+ * component whose script cannot be found in it, or that declares `generic`
+ * type parameters.
+ */
+export function lintedSource(
+  filename: string,
+  text: string,
+): LintedSource | undefined {
+  if (!filename.endsWith(".vue")) return { text, offset: 0 };
+  const component =
+    scriptView(text) === undefined ? readFileSync(filename, "utf8") : text;
+  const offset = component.indexOf(text);
+  return offset === -1 || declaresTypeParameters(component)
+    ? undefined
+    : { text: component, offset };
 }
 
 /** Whether a script block of the component declares type parameters with `generic`, which only Vue's compiler brings into scope, so the view types them as error types. */
