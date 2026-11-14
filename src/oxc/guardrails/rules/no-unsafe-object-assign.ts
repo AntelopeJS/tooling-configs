@@ -4,7 +4,7 @@ import ts from "@typescript/typescript6";
 import { callName } from "../shared.ts";
 import { literalFits, valueType } from "../literal-fit.ts";
 import { nodeAt, typedFile } from "../type-checker.ts";
-import { declaresTypeParameters } from "../vue-script.ts";
+import { lintedSource } from "../vue-script.ts";
 
 const UNTYPED = ts.TypeFlags.Any | ts.TypeFlags.Unknown;
 const MAX_DEPTH = 4;
@@ -218,14 +218,20 @@ export const noUnsafeObjectAssignRule = defineRule({
       CallExpression(node) {
         if (
           callName(node.callee) !== "Object.assign" ||
-          node.arguments.length < 2 ||
-          (context.filename.endsWith(".vue") &&
-            declaresTypeParameters(context.sourceCode.text))
+          node.arguments.length < 2
         )
           return;
-        const typed = typedFile(context.filename, context.sourceCode.text);
+        const linted = lintedSource(context.filename, context.sourceCode.text);
+        const typed = linted && typedFile(context.filename, linted.text);
+        const [start, end] = node.range;
         const call =
-          typed && nodeAt(typed.sourceFile, node, ts.isCallExpression);
+          linted &&
+          typed &&
+          nodeAt(
+            typed.sourceFile,
+            { range: [start + linted.offset, end + linted.offset] },
+            ts.isCallExpression,
+          );
         if (typed === undefined || call === undefined) return;
         const declared = typed.checker.getTypeAtLocation(call.arguments[0]);
         const target = declared.isTypeParameter()
