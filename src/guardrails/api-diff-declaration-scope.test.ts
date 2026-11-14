@@ -263,3 +263,20 @@ test("api-diff refuses a target its outDir emit misses instead of matching a mod
     /published target \.\/dist\/esm\/index\.d\.mts has no emitted declaration/,
   );
 });
+
+test("api-diff compares a bundler's dist declaration through its source module when rootDir is set without outDir", (t) => {
+  const root = bundledRepo(t, "a/b", { rootDir: "src" });
+  put(root, "src/a/b.ts", 'export { value } from "../value.ts";\n');
+  put(root, "src/c/b.ts", "export const other: number = 1;\n");
+  put(root, "src/value.ts", "export const value: number = 1;\n");
+  commit(root);
+  const same = bin(root, "api-diff", ["HEAD"]);
+  assert.equal(same.status, 0, same.stdout + same.stderr);
+  assert.match(same.stdout, /^API: 1 packages, 1 entries unchanged/mu);
+
+  put(root, "src/value.ts", 'export const value: string = "1";\n');
+  commit(root);
+  const changed = bin(root, "api-diff", ["HEAD~1"]);
+  assert.equal(changed.status, 1, changed.stdout + changed.stderr);
+  assert.match(changed.stdout, /^\+export declare const value: string;/mu);
+});
