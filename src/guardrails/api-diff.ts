@@ -165,17 +165,25 @@ function declarationStem(path: string): string {
   return path.replace(/\.d\.[cm]?ts$/u, "");
 }
 
-/** A bundler lays the declaration of `src/a/b.ts` out as `dist/a/b.d.mts`, a path no compiler emit takes; the one emitted declaration below another top-level directory at the same inner path, whatever its declaration extension, stands for it. */
-function bundledDeclaration(path: string, files: readonly string[]): string[] {
-  const [, ...inner] = path.split("/");
-  if (!inner.length || path.includes("*")) return [];
-  const stem = declarationStem(inner.join("/"));
-  const found = files.filter((file) => {
-    const [, ...rest] = file.split("/");
-    return (
-      /\.d\.[cm]?ts$/u.test(file) && declarationStem(rest.join("/")) === stem
-    );
-  });
+/** A path below its top-level directory; a top-level file is its own inner path. */
+function innerPath(path: string): string {
+  const [first, ...rest] = path.split("/");
+  return rest.length ? rest.join("/") : first;
+}
+
+/** A package whose tsconfig sets no `outDir` publishes what a bundler lays out: `dist/a/b.d.mts` for `src/a/b.ts`, a path no compiler emit takes. The one emitted declaration at the target's path below its top-level directory, whatever its declaration extension, stands for it; none or several leave the target unmatched. */
+function bundledDeclaration(
+  path: string,
+  files: readonly string[],
+  options: ts.CompilerOptions,
+): string[] {
+  if (options.outDir !== undefined || path.includes("*") || !path.includes("/"))
+    return [];
+  const stem = declarationStem(innerPath(path));
+  const found = files.filter(
+    (file) =>
+      /\.d\.[cm]?ts$/u.test(file) && declarationStem(innerPath(file)) === stem,
+  );
   return found.length === 1 ? found : [];
 }
 
@@ -204,7 +212,7 @@ function publishedEntries(
     if (!found.length) {
       const authored = authoredDeclaration(directory, target, path, scratch);
       if (authored !== undefined) found.push(authored);
-      else found.push(...bundledDeclaration(path, files));
+      else found.push(...bundledDeclaration(path, files, emitted.options));
     }
     if (!found.length && !path.includes("*"))
       throw new Error(

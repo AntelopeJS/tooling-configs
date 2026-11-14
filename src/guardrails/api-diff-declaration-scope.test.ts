@@ -182,7 +182,11 @@ test("api-diff names the declaration error of a published module whose emit root
   assert.match(declarationFailure(root), /src\/index\.ts.*TS2883/);
 });
 
-function bundledRepo(t: TestContext, include: string[]): string {
+function bundledRepo(
+  t: TestContext,
+  entry: string,
+  compilerOptions: Record<string, string> = {},
+): string {
   const root = apiRepo(t);
   put(
     root,
@@ -192,14 +196,17 @@ function bundledRepo(t: TestContext, include: string[]): string {
       type: "module",
       scripts: { build: "node build.mjs" },
       exports: {
-        ".": { types: "./dist/index.d.mts", default: "./dist/index.mjs" },
+        ".": {
+          types: `./dist/${entry}.d.mts`,
+          default: `./dist/${entry}.mjs`,
+        },
       },
     }),
   );
   put(
     root,
     "build.mjs",
-    'import { mkdirSync, writeFileSync } from "node:fs";\nmkdirSync("dist", { recursive: true });\nwriteFileSync("dist/index.mjs", "export const value = 1;\\n");\n',
+    `import { mkdirSync, writeFileSync } from "node:fs";\nimport { dirname } from "node:path";\nmkdirSync(dirname("dist/${entry}.mjs"), { recursive: true });\nwriteFileSync("dist/${entry}.mjs", "export const value = 1;\\n");\n`,
   );
   put(
     root,
@@ -213,16 +220,18 @@ function bundledRepo(t: TestContext, include: string[]): string {
         strict: true,
         noEmit: true,
         allowImportingTsExtensions: true,
+        ...compilerOptions,
       },
-      include,
+      include: ["src", "index.ts"],
     }),
   );
-  put(root, "src/index.ts", 'export { value } from "./value.ts";\n');
   return root;
 }
 
-test("api-diff compares a bundler's dist declaration through the source module at the same inner path", (t) => {
-  const root = bundledRepo(t, ["src"]);
+test("api-diff compares a bundler's dist declaration through the source module at the same inner path, not one sharing its basename", (t) => {
+  const root = bundledRepo(t, "api/index");
+  put(root, "src/api/index.ts", 'export { value } from "../value.ts";\n');
+  put(root, "src/other/index.ts", "export const other: number = 1;\n");
   put(root, "src/value.ts", "export const value: number = 1;\n");
   commit(root);
   const same = bin(root, "api-diff", ["HEAD"]);
@@ -236,15 +245,21 @@ test("api-diff compares a bundler's dist declaration through the source module a
   assert.match(changed.stdout, /^\+export declare const value: string;/mu);
 });
 
-test("api-diff refuses a bundler's dist declaration that two source modules could stand for", (t) => {
-  const root = bundledRepo(t, ["src", "lib"]);
-  put(root, "src/value.ts", "export const value: number = 1;\n");
-  put(root, "lib/index.ts", "export const other: number = 1;\n");
-  commit(root);
-  const result = bin(root, "api-diff", ["HEAD"]);
-  assert.equal(result.status, 1, result.stdout + result.stderr);
+test("api-diff refuses a bundler's dist declaration that a top-level module and a nested one could both stand for", (t) => {
+  const root = bundledRepo(t, "index");
+  put(root, "index.ts", "export const value: number = 1;\n");
+  put(root, "src/index.ts", "export const other: number = 1;\n");
   assert.match(
-    result.stdout,
+    declarationFailure(root),
     /published target \.\/dist\/index\.d\.mts has no emitted declaration/,
+  );
+});
+
+test("api-diff refuses a target its outDir emit misses instead of matching a module at the same inner path", (t) => {
+  const root = bundledRepo(t, "esm/index", { rootDir: "src", outDir: "dist" });
+  put(root, "src/api/index.ts", "export const value: number = 1;\n");
+  assert.match(
+    declarationFailure(root),
+    /published target \.\/dist\/esm\/index\.d\.mts has no emitted declaration/,
   );
 });
