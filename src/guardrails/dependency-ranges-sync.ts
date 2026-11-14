@@ -2,10 +2,12 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
-  checkInterfaceRanges,
+  checkDependencyRanges,
+  declaresAntelopePackage,
+  describeViolation,
   localVersions,
   type RangeViolation,
-} from "../interface-ranges.ts";
+} from "./dependency-ranges.ts";
 import { trackedManifests } from "./files.ts";
 import {
   packageManager,
@@ -41,7 +43,7 @@ function tracked(root: string): TrackedManifest[] {
 }
 
 function movedNote(path: string, violation: RangeViolation): string {
-  return `${path}: moved ${violation.field}["${violation.name}"] from "${violation.spec}" to "${violation.expected}", the range of the interface version this repository holds.`;
+  return `${path}: moved ${violation.field}["${violation.name}"] from "${violation.spec}" to "${violation.expected}", the range of the version this repository holds.`;
 }
 
 /** The relock failure, after which the moved manifests are back as they were so the next sync moves them again. */
@@ -63,25 +65,24 @@ function writeAndRelock(
 }
 
 /**
- * Moves each tracked manifest's range for an interface it implements from
- * this repository to the range `antelopejs-check-interface-ranges` expects,
- * then relocks, or leaves every manifest as it was when the relock fails. A
- * minor release of that interface otherwise leaves its module's range below
- * the new version and fails the check on the release commit. It runs before
- * the rest of sync, which then plans the docs-compat READMEs from the moved
- * ranges and the new lockfile. `check` reports the moves without writing.
+ * Moves each tracked manifest's range on a package that sits in this
+ * repository to the range `checkDependencyRanges` expects, then relocks, or
+ * leaves every manifest as it was when the relock fails. A minor release of
+ * that package otherwise leaves its dependents' ranges below the new version
+ * and fails the `dependency:ranges` check on the release commit. It runs
+ * before the rest of sync, which then plans the docs-compat READMEs from the
+ * moved ranges and the new lockfile. `check` reports the moves without
+ * writing.
  */
-export function moveInterfaceRanges(root: string, check: boolean): RangeMoves {
+export function moveDependencyRanges(root: string, check: boolean): RangeMoves {
   const manifests = tracked(root);
   const versions = localVersions(manifests.map(({ manifest }) => manifest));
   const moves: RangeMoves = { paths: [], notes: [], errors: [] };
   const moved = new Map<string, { before: string; after: string }>();
   for (const { path, text, manifest } of manifests) {
-    const fixes = checkInterfaceRanges(manifest, versions).filter(
+    const fixes = checkDependencyRanges(manifest, versions).filter(
       (violation) =>
-        violation.role === "implementer" &&
-        violation.expected !== undefined &&
-        versions.has(violation.name),
+        violation.local !== undefined && violation.expected !== undefined,
     );
     if (!fixes.length) continue;
     for (const { field, name, expected } of fixes) {
@@ -96,7 +97,26 @@ export function moveInterfaceRanges(root: string, check: boolean): RangeMoves {
   const failure = writeAndRelock(root, manifests, moved);
   if (failure !== undefined)
     moves.errors.push(
-      `Left the interface ranges in ${moves.paths.join(", ")} unmoved: the lockfile could not follow them. ${failure}`,
+      `Left the dependency ranges in ${moves.paths.join(", ")} unmoved: the lockfile could not follow them. ${failure}`,
     );
   return moves;
+}
+
+/** Whether a tracked manifest declares an `@antelopejs/*` package, so `checkRepositoryRanges` has a range to read. */
+export function hasDependencyRanges(root: string): boolean {
+  return tracked(root).some(({ manifest }) =>
+    declaresAntelopePackage(manifest),
+  );
+}
+
+/** Each `@antelopejs/*` range in a tracked manifest that does not stop below the next minor, one line each; empty when every range does. */
+export function checkRepositoryRanges(root: string): string {
+  const manifests = tracked(root);
+  const versions = localVersions(manifests.map(({ manifest }) => manifest));
+  const lines = manifests.flatMap(({ path, manifest }) =>
+    checkDependencyRanges(manifest, versions).map(
+      (violation) => `${path}: ${describeViolation(violation)}\n`,
+    ),
+  );
+  return lines.join("");
 }

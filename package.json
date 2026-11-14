@@ -1,7 +1,7 @@
 {
   "name": "@antelopejs/tooling-configs",
   "version": "0.5.8",
-  "description": "Shared tooling presets for AntelopeJS repositories: oxlint (with the vendored anti-slop rules), oxfmt, ESLint for Nuxt layers, Knip, and an interface range check",
+  "description": "Shared tooling presets for AntelopeJS repositories: oxlint (with the vendored anti-slop rules), oxfmt, ESLint for Nuxt layers, Knip, and a dependency range check",
   "keywords": [
     "antelopejs",
     "anti-slop",
@@ -24,7 +24,6 @@
     "antelopejs-api-diff": "./dist/bin/api-diff.mjs",
     "antelopejs-body-check": "./dist/bin/body-check.mjs",
     "antelopejs-capture": "./dist/bin/capture.mjs",
-    "antelopejs-check-interface-ranges": "./dist/bin/check-interface-ranges.mjs",
     "antelopejs-check-size": "./dist/bin/check-size.mjs",
     "antelopejs-checks": "./dist/bin/checks.mjs",
     "antelopejs-comment-proof": "./dist/bin/comment-proof.mjs",

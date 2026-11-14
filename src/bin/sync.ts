@@ -6,9 +6,9 @@ import { CI_CONTEXT, CI_PATH } from "../guardrails/ci-workflow.ts";
 import { repositoryRoot } from "../guardrails/files.ts";
 import { ENABLE_BRANCH_CLEANUP, initRepository } from "../guardrails/init.ts";
 import {
-  moveInterfaceRanges,
+  moveDependencyRanges,
   type RangeMoves,
-} from "../guardrails/interface-ranges-sync.ts";
+} from "../guardrails/dependency-ranges-sync.ts";
 import { syncRepository } from "../guardrails/sync.ts";
 import {
   isVerifyChoice,
@@ -125,7 +125,7 @@ runCli(() => {
   if (values.init) return init(values.verify);
   const root = repositoryRoot();
   const check = Boolean(values.check);
-  const ranges = moveInterfaceRanges(root, check);
+  const ranges = moveDependencyRanges(root, check);
   const result = ranges.errors.length
     ? undefined
     : syncRepository(root, {

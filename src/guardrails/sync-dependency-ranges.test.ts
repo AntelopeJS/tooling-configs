@@ -5,6 +5,7 @@ import { delimiter, join } from "node:path";
 import type { TestContext } from "node:test";
 import test from "node:test";
 
+import { checkRepositoryRanges } from "./dependency-ranges-sync.ts";
 import { parseManifest } from "./package.ts";
 import { writeTool } from "./helpers/shell.ts";
 import { bin, commit, put, read, testRepo } from "./helpers/test-repo.ts";
@@ -61,7 +62,7 @@ function workspace(
         name: "@antelopejs/dms-marketing",
         version: "0.9.2",
         dependencies: {
-          "@antelopejs/interface-dms": ">=0.12.0 <1.0.0",
+          "@antelopejs/interface-dms": ">=0.12.0 <0.13.0",
           [INTERFACE]: ">=0.6.0 <0.7.0",
         },
         antelopeJs: { implements: [INTERFACE] },
@@ -78,7 +79,7 @@ function moduleRange(root: string): string | undefined {
   return parseManifest(read(root, MODULE_MANIFEST)).dependencies?.[INTERFACE];
 }
 
-test("sync moves a module's range to the next minor of the interface released beside it and relocks with pnpm, where a sync that leaves the range fails antelopejs-check-interface-ranges on the release commit and one that skips the relock fails CI's frozen install", (t) => {
+test("sync moves a module's range to the next minor of the interface released beside it and relocks with pnpm, where a sync that leaves the range fails the dependency:ranges check on the release commit and one that skips the relock fails CI's frozen install", (t) => {
   const root = workspace(t, "0.7.0");
   const pnpm = recordingPnpm(t);
   const result = bin(root, "sync", [], pnpm.env);
@@ -88,7 +89,7 @@ test("sync moves a module's range to the next minor of the interface released be
     parseManifest(read(root, MODULE_MANIFEST)).dependencies?.[
       "@antelopejs/interface-dms"
     ],
-    ">=0.12.0 <1.0.0",
+    ">=0.12.0 <0.13.0",
   );
   assert.match(
     result.stdout,
@@ -97,8 +98,26 @@ test("sync moves a module's range to the next minor of the interface released be
   assert.deepEqual(pnpm.calls(), [
     `${realpathSync.native(root)} install --lockfile-only`,
   ]);
-  const check = bin(root, "check-interface-ranges");
-  assert.equal(check.status, 0, check.stderr);
+  assert.equal(checkRepositoryRanges(root), "");
+});
+
+test("sync moves a sibling's devDependency range on the released package too, where a sync that moves only the implementer's range leaves the sibling failing the dependency:ranges check on the release commit", (t) => {
+  const root = workspace(t, "0.7.0");
+  put(
+    root,
+    "packages/playground/package.json",
+    `${JSON.stringify({ name: "playground", private: true, devDependencies: { [INTERFACE]: "^0.6.0" } }, null, 2)}\n`,
+  );
+  commit(root);
+  const pnpm = recordingPnpm(t);
+  const result = bin(root, "sync", [], pnpm.env);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.equal(
+    parseManifest(read(root, "packages/playground/package.json"))
+      .devDependencies?.[INTERFACE],
+    ">=0.7.0 <0.8.0",
+  );
+  assert.equal(checkRepositoryRanges(root), "");
 });
 
 test("sync writes the module's docs-compat table from the moved range, where a sync that plans the README before moving the range leaves sync --check failing on the release commit", (t) => {
@@ -140,7 +159,7 @@ test("sync fails, names the manifest and leaves its range unmoved when the reloc
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(
     result.stderr,
-    /Left the interface ranges in packages\/dms-marketing\/package\.json unmoved: the lockfile could not follow them\. pnpm install --lockfile-only failed \(exit 1\)/,
+    /Left the dependency ranges in packages\/dms-marketing\/package\.json unmoved: the lockfile could not follow them\. pnpm install --lockfile-only failed \(exit 1\)/,
   );
   assert.equal(moduleRange(root), ">=0.6.0 <0.7.0");
   const pnpm = recordingPnpm(t);
@@ -151,13 +170,13 @@ test("sync fails, names the manifest and leaves its range unmoved when the reloc
   ]);
 });
 
-test("sync leaves a range it does not own: an implemented interface published from another repository and a sibling that only consumes the local interface, where a sync that drops either filter rewrites them and relocks from npm", (t) => {
+test("sync leaves a range it does not own or need to move: an open range on a package published from another repository and a capped range that admits the local version, where a sync that drops either filter rewrites them and relocks from npm", (t) => {
   const root = workspace(t, "0.6.2");
   const outsider = {
     name: "@antelopejs/dms-marketing-extra",
     version: "0.1.0",
     dependencies: {
-      "@antelopejs/interface-database": "^0.3.0",
+      "@antelopejs/interface-database": ">=0.3.0 <1.0.0",
       [INTERFACE]: "^0.6.0",
     },
     antelopeJs: { implements: ["@antelopejs/interface-database"] },
