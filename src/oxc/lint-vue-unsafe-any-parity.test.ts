@@ -55,3 +55,96 @@ test("an any inside a generic reference other than an array or tuple, as in Set<
     vue: expected,
   });
 });
+
+const asyncReturns = `declare const rows: any[];
+declare const pAny: Promise<any>;
+async function toUnknowns(): Promise<unknown[]> { return rows; }
+async function toString(): Promise<string> { return pAny; }
+function syncPromise(): Promise<string> { return pAny; }
+async function toUnknown(): Promise<unknown> { return pAny; }
+function toPlainUnknowns(): unknown[] { return rows; }
+async function toAnys(): Promise<any[]> { return rows; }
+declare function later(handler: () => Promise<unknown[]>): void;
+later(async () => rows);
+void [toUnknowns, toString, syncPromise, toUnknown, toPlainUnknowns, toAnys];
+`;
+
+test("an any[] returned from an async function declared Promise<unknown[]> and a Promise<any> returned from one declared Promise<string> are reported, and a Promise<any> a function not async returns is not, on the lines tsgolint reports (fails if the declared Promise is awaited before the unknown[] exemption, a Promise<any> is not told from a safe value, or a function not async is judged by the awaited Promise)", () => {
+  const expected = [3, 4, 10];
+  assert.deepEqual(parityLines("AsyncReturns", asyncReturns), {
+    ts: expected,
+    vue: expected,
+  });
+});
+
+const uncontextual = `declare const parsedAny: any;
+declare function on(handler: () => unknown): void;
+const property = { handler: () => parsedAny };
+const list = [() => parsedAny];
+const cast = (() => parsedAny) as () => unknown;
+const checked = (() => parsedAny) satisfies () => unknown;
+const picked = Math.random() ? () => parsedAny : () => 1;
+const wrapped: () => unknown = (() => parsedAny);
+function factory(): () => unknown { return () => parsedAny; }
+on(() => parsedAny);
+const typed: () => unknown = () => parsedAny;
+let later: () => unknown;
+later = () => parsedAny;
+void [property, list, cast, checked, picked, wrapped, factory, typed, later];
+`;
+
+test("an any-returning callback in an object literal, an array, as, satisfies, a conditional, parentheses or a factory's return is judged by its own any return, and one passed, annotated or assigned by its context, on the lines tsgolint reports (fails if every function expression is judged by its checker contextual type)", () => {
+  const expected = [3, 4, 5, 6, 7, 8, 9];
+  assert.deepEqual(parityLines("Uncontextual", uncontextual), {
+    ts: expected,
+    vue: expected,
+  });
+});
+
+const annotated = `declare const parsedAny: any;
+declare const a: any;
+declare function on(handler: () => unknown): void;
+declare function want(handler: () => string): void;
+on((): string => parsedAny);
+want((): any => a);
+const loose: () => unknown = (): string => parsedAny;
+const strict: () => string = (): any => a;
+on((): any => a);
+want((): string => parsedAny);
+const own = (): string => parsedAny;
+void [loose, strict, own];
+`;
+
+test("an annotated callback is excused by a context that returns its own type, any or unknown and reported against another, so (): string => any into () => unknown is not reported and (): any => a into () => string is, on the lines tsgolint reports (fails if an annotated callback is judged by its own annotation rather than its context's signatures)", () => {
+  const expected = [6, 8, 10, 11];
+  assert.deepEqual(parityLines("Annotated", annotated), {
+    ts: expected,
+    vue: expected,
+  });
+});
+
+const declarations = `declare const parsedAny: any;
+class Store {
+  get unknownValue(): unknown { return parsedAny; }
+  get anyValue(): any { return parsedAny; }
+  get inferred() { return parsedAny; }
+  method(): unknown { return parsedAny; }
+}
+function pick(x: string): string;
+function pick(x: number): number;
+function pick(x: any) { return x; }
+function loose(): unknown;
+function loose() { return parsedAny; }
+function strict(): string;
+function strict(): any { return parsedAny; }
+const object = { get value(): unknown { return parsedAny; }, read(): unknown { return parsedAny; } };
+void [Store, pick, loose, strict, object];
+`;
+
+test("a getter returning any is reported whatever it declares, a method is judged by its own signature, and an overload implementation by its overloads, on the lines tsgolint reports (fails if a getter is judged by its return annotation, or an overload implementation by its own signature rather than the overloads)", () => {
+  const expected = [3, 4, 5, 10, 14, 15];
+  assert.deepEqual(parityLines("Declarations", declarations), {
+    ts: expected,
+    vue: expected,
+  });
+});
