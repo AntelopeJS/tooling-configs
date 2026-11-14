@@ -210,8 +210,13 @@ const countLater = (resolve: (value: unknown) => void) => {
 };
 export const counted = new Promise(countNovels);
 export const later = new Promise(countLater);
+export const fallback = new Promise(
+  (resolve: (value: unknown) => void = () => undefined) => {
+    resolve(novels.count());
+  },
+);
 `),
-    [4, 7],
+    [4, 7, 13],
   );
 });
 
@@ -231,6 +236,9 @@ declare const tagged: Table<{ title: string }> & { tag: string };
 class Repository {
   novels = novels;
   pending = novels.count();
+}
+interface Repository {
+  later: ReturnType<typeof novels.count>;
 }
 function open(): Database {
   return { novels };

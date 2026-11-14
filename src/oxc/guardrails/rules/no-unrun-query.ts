@@ -84,7 +84,8 @@ function callsFirstParameter(call: ESTree.CallExpression): boolean {
     fn = enclosingFunction(fn)
   ) {
     const [first] = fn.params;
-    if (first?.type === "Identifier" && first.name === callee.name) return true;
+    const name = first?.type === "AssignmentPattern" ? first.left : first;
+    if (name?.type === "Identifier" && name.name === callee.name) return true;
   }
   return false;
 }
