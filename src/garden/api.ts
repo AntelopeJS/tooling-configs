@@ -162,11 +162,12 @@ function scopeList(header: string | null): string[] {
     .filter(Boolean);
 }
 
-/** The scopes an answer accepts when the classic token it went to holds none; empty for a token GitHub lists no scopes for. */
-function missingScopes(headers: Headers): string[] {
-  const held = headers.get("x-oauth-scopes");
-  if (held === null) return [];
-  const accepted = scopeList(headers.get("x-accepted-oauth-scopes"));
+/** The scopes a refused answer (403 or 404) accepts when the classic token it went to holds none; empty for any other answer or a token GitHub lists no scopes for. */
+function missingScopes(response: Response): string[] {
+  const held = response.headers.get("x-oauth-scopes");
+  if (held === null || (response.status !== 403 && response.status !== 404))
+    return [];
+  const accepted = scopeList(response.headers.get("x-accepted-oauth-scopes"));
   const holds = new Set(scopeList(held));
   return accepted.some((scope) => holds.has(scope)) ? [] : accepted;
 }
@@ -242,7 +243,7 @@ export function createApi(token: string): GardenApi {
       headers: accept ? { Accept: accept } : {},
     });
     if (!response.ok) {
-      const missing = missingScopes(response.headers);
+      const missing = missingScopes(response);
       throw new ApiError(
         response.status,
         missing.length
