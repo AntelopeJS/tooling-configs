@@ -161,6 +161,32 @@ function authoredDeclaration(
   return file;
 }
 
+function declarationStem(path: string): string {
+  return path.replace(/\.d\.[cm]?ts$/u, "");
+}
+
+/** A path below its top-level directory; a top-level file is its own inner path. */
+function innerPath(path: string): string {
+  const [first, ...rest] = path.split("/");
+  return rest.length ? rest.join("/") : first;
+}
+
+/** A package whose tsconfig sets no `outDir` publishes what a bundler lays out: `dist/a/b.d.mts` for `src/a/b.ts`, a path no compiler emit takes. The one emitted declaration at the target's path below its top-level directory, whatever its declaration extension, stands for it; none or several leave the target unmatched. */
+function bundledDeclaration(
+  path: string,
+  files: readonly string[],
+  options: ts.CompilerOptions,
+): string[] {
+  if (options.outDir !== undefined || path.includes("*") || !path.includes("/"))
+    return [];
+  const stem = declarationStem(innerPath(path));
+  const found = files.filter(
+    (file) =>
+      /\.d\.[cm]?ts$/u.test(file) && declarationStem(innerPath(file)) === stem,
+  );
+  return found.length === 1 ? found : [];
+}
+
 function publishedEntries(
   directory: string,
   manifest: ProofManifest,
@@ -186,6 +212,7 @@ function publishedEntries(
     if (!found.length) {
       const authored = authoredDeclaration(directory, target, path, scratch);
       if (authored !== undefined) found.push(authored);
+      else found.push(...bundledDeclaration(path, files, emitted.options));
     }
     if (!found.length && !path.includes("*"))
       throw new Error(
@@ -311,6 +338,7 @@ function bundlePackage(
         composite: false,
         incremental: false,
         noEmit: false,
+        emitDeclarationOnly: true,
         rootDir: scratch,
         paths: emittedPaths(emitted, scratch),
       },
