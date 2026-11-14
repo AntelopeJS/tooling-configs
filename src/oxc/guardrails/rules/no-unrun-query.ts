@@ -119,14 +119,28 @@ function heldValues(checker: ts.TypeChecker, type: ts.Type): ts.Type[] {
     : [];
 }
 
-/** Whether an awaiting caller receives an unrun query from a value of `type`: the query itself, possibly behind a promise, or one an array, a tuple or an object literal holds. */
+/** Whether `type` is a query, or an array, a tuple or an object literal that holds one at any depth. */
+function containsQuery(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+  visited: Set<ts.Type>,
+): boolean {
+  return members(type).some((member) => {
+    if (isQuery(checker, member)) return true;
+    if (visited.has(member)) return false;
+    visited.add(member);
+    return heldValues(checker, member).some((value) =>
+      containsQuery(checker, value, visited),
+    );
+  });
+}
+
+/** Whether an awaiting caller receives an unrun query from a value of `type`: the query itself, possibly behind a promise, or one arrays, tuples and object literals hold. */
 function holdsQuery(checker: ts.TypeChecker, type: ts.Type): boolean {
-  const isQueryMember = (value: ts.Type) =>
-    members(value).some((member) => isQuery(checker, member));
-  return members(checker.getAwaitedType(type) ?? type).some(
-    (member) =>
-      isQuery(checker, member) ||
-      heldValues(checker, member).some(isQueryMember),
+  return containsQuery(
+    checker,
+    checker.getAwaitedType(type) ?? type,
+    new Set(),
   );
 }
 

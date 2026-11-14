@@ -136,13 +136,14 @@ export const mapped = async () =>
   );
 });
 
-test("an async function that returns an unrun query in an object literal is reported", () => {
+test("an async function that returns an unrun query in an object literal, or nested in object literals and arrays, is reported", () => {
   assert.deepEqual(
     reported(`import { novels } from "./novels.ts";
 
 export const totals = async () => ({ total: novels.count() });
+export const page = async () => ({ page: { items: [novels.count()] } });
 `),
-    [3],
+    [3, 4],
   );
 });
 
@@ -175,7 +176,7 @@ export const counted = new Promise((resolve) => {
   );
 });
 
-test("run queries in each wrapper, another callee in an executor and a sync function's wrapped query are not reported", () => {
+test("run queries in each wrapper, reject or another callee in an executor and a sync function's wrapped query are not reported", () => {
   assert.deepEqual(
     reported(`import { novels } from "./novels.ts";
 
@@ -190,8 +191,9 @@ export const counted = Promise.resolve().then(countNovels);
 function keep(query: unknown) {
   return query;
 }
-export const kept = new Promise((resolve) => {
+export const kept = new Promise((resolve, reject) => {
   keep(novels.count());
+  reject(novels.count());
   resolve(novels.count().run());
 });
 `),
