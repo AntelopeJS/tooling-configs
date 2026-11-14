@@ -15,9 +15,19 @@ const FORMATTERS = `export function describe(value: unknown): string {
 export function describeObject(value: object): string {
   return String(value);
 }
+export function describeDefined(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  return String(value);
+}
+export function describeRecord(value: { name: string }): string {
+  return String(value);
+}
+export function describeError(value: Error): string {
+  return String(value);
+}
 `;
 
-test("oxlint no-base-to-string skips an unknown and still reports an object, so checkUnknown stays off", () => {
+test("oxlint no-base-to-string skips an unknown, also once narrowed past null and undefined, and still reports declared object types", () => {
   const project = lintProject(true);
   try {
     project.write("format.ts", FORMATTERS);
@@ -34,14 +44,14 @@ test("oxlint no-base-to-string skips an unknown and still reports an object, so 
             labels: { span: { line: number } }[];
           }) => `${diagnostic.filename}:${diagnostic.labels[0]?.span.line}`,
         ),
-      ["format.ts:5"],
+      ["format.ts:5", "format.ts:12"],
     );
   } finally {
     project.remove();
   }
 });
 
-test("the .vue no-base-to-string skips an unknown and still reports an object, so checkUnknown stays off", async () => {
+test("the .vue no-base-to-string skips an unknown, also once narrowed past null and undefined, and still reports declared object types", async () => {
   const root = mkdtempSync(join(tmpdir(), "antelope-eslint-"));
   const cwd = process.cwd();
   try {
@@ -72,7 +82,7 @@ test("the .vue no-base-to-string skips an unknown and still reports an object, s
             message.ruleId === "@typescript-eslint/no-base-to-string",
         )
         .map((message) => message.line),
-      [6],
+      [6, 13],
     );
   } finally {
     process.chdir(cwd);
