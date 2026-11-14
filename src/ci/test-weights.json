@@ -187,6 +187,7 @@
   "src/oxc/guardrails/rules/no-typeof-function-only-test.test.ts": 0.4,
   "src/oxc/guardrails/rules/require-assertion.test.ts": 0.6,
   "src/oxc/guardrails/self-import-lint.test.ts": 1.5,
+  "src/oxc/guardrails/type-checker.test.ts": 0.6,
   "src/oxc/guardrails/vue-script.test.ts": 0,
   "src/oxc/lint-approved-raises.test.ts": 3.1,
   "src/oxc/lint-hidden-any.test.ts": 2.9,
