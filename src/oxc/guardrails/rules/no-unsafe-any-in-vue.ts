@@ -393,7 +393,8 @@ function findings({ checker, sourceFile }: TypedFile): Finding[] {
 /**
  * `typescript/no-unsafe-assignment`, `no-unsafe-argument` and
  * `no-unsafe-return` for the script blocks of a `.vue` file, which
- * oxlint-tsgolint cannot read: an `any` or `any[]` reaching a declared type
+ * oxlint-tsgolint cannot read: an `any`, or a generic such as `any[]` or
+ * `Set<any>` holding one, reaching a declared type
  * through a declaration, an assignment, an object literal property, a
  * default value, an argument, a spread, a destructured binding, a
  * destructuring assignment such as `({ a } = value)` or a return. An `any`
