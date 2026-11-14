@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import test, { type TestContext } from "node:test";
 
 import ts from "@typescript/typescript6";
@@ -44,7 +44,9 @@ interface Layout {
 }
 
 function layout(t: TestContext): Layout {
-  const root = mkdtempSync(join(tmpdir(), "antelope-boundary-"));
+  const root = realpathSync.native(
+    mkdtempSync(join(tmpdir(), "antelope-boundary-")),
+  );
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const backend = join(root, "backend");
   const layer = join(backend, "frontend-vue");
@@ -245,23 +247,44 @@ for (const check of CASES)
     assert.equal(await outcome(config, fixture, check), check.expected);
   });
 
-test("backend boundary names the importer, or an entry point, and the backend package", async (t) => {
-  const fixture = layout(t);
-  const config = boundaryConfig(fixture.layer, backendBoundarySource(BACKEND));
-  await assert.rejects(
-    build({
-      root: fixture.layer,
-      configFile: config,
+/** The paths a boundary error names, or the build's own failure. */
+async function reported(
+  layer: string,
+  entry: string,
+): Promise<{ from: string; file: string } | string> {
+  try {
+    await build({
+      root: layer,
+      configFile: boundaryConfig(layer, backendBoundarySource(BACKEND)),
       logLevel: "silent",
-      build: {
-        write: false,
-        lib: { entry: join(fixture.backend, "src/x.ts"), formats: ["es"] },
-      },
-    }),
-    (error: Error) =>
-      error.message.includes(
-        `Backend boundary: an entry point imports ${join(fixture.backend, "src/x.ts")}, which is under the src of ${BACKEND}.`,
-      ),
+      build: { write: false, lib: { entry, formats: ["es"] } },
+    });
+    return "built";
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const match =
+      /Backend boundary: (.+) imports (.+), which is under the src of (\S+)\. /.exec(
+        message,
+      );
+    if (match?.[3] !== BACKEND) return message;
+    return { from: match[1] ?? "", file: match[2] ?? "" };
+  }
+}
+
+test("backend boundary names the importer and the backend file with / separators on every OS, Windows included (dms-saas #270)", async (t) => {
+  const fixture = layout(t);
+  const root = dirname(fixture.backend).split(sep).join("/");
+  put(fixture.layer, "entry.ts", 'export { default } from "../src/x.ts";\n');
+  assert.deepEqual(
+    await reported(fixture.layer, join(fixture.layer, "entry.ts")),
+    {
+      from: `${root}/backend/frontend-vue/entry.ts`,
+      file: `${root}/backend/src/x.ts`,
+    },
+  );
+  assert.deepEqual(
+    await reported(fixture.layer, join(fixture.backend, "src/x.ts")),
+    { from: "an entry point", file: `${root}/backend/src/x.ts` },
   );
 });
 
