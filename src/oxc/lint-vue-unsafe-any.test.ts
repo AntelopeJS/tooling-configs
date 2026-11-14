@@ -218,3 +218,20 @@ void [anything, member, frozen, longer, others, head, tail];
     [],
   );
 });
+
+test("a one-line script setup whose text repeats in an earlier block is reported at its own line only (fails if the script is located by the first occurrence of its text in the component)", () => {
+  assert.deepEqual(
+    findings({
+      "tsconfig.json": tsconfig,
+      "app/Echo.vue": `<script lang="ts">
+export declare const raw: string;
+export function show(text: string): string { return text; }
+export const sample = "show(JSON.parse(raw));";
+</script>
+
+<script setup lang="ts">show(JSON.parse(raw));</script>
+`,
+    }),
+    ["app/Echo.vue:7 antelopejs(no-unsafe-any-in-vue)"],
+  );
+});

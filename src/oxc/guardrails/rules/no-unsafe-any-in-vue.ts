@@ -1,9 +1,8 @@
-import { readFileSync } from "node:fs";
 import { defineRule } from "@oxlint/plugins";
 import ts from "@typescript/typescript6";
 
 import { typedFile, type TypedFile } from "../type-checker.ts";
-import { declaresTypeParameters, scriptView } from "../vue-script.ts";
+import { lintedSource } from "../vue-script.ts";
 
 const UNTYPED = ts.TypeFlags.Any | ts.TypeFlags.Unknown;
 const MAX_DEPTH = 4;
@@ -380,13 +379,10 @@ export const noUnsafeAnyInVueRule = defineRule({
         const { filename, sourceCode } = context;
         if (!filename.endsWith(".vue")) return;
         const { text } = sourceCode;
-        const component =
-          scriptView(text) === undefined
-            ? readFileSync(filename, "utf8")
-            : text;
-        const offset = component.indexOf(text);
-        if (offset === -1 || declaresTypeParameters(component)) return;
-        const typed = typedFile(filename, component);
+        const linted = lintedSource(filename, text);
+        if (linted === undefined) return;
+        const { offset } = linted;
+        const typed = typedFile(filename, linted.text);
         if (typed === undefined) return;
         for (const { kind, node } of findings(typed)) {
           const start = node.getStart(typed.sourceFile) - offset;
