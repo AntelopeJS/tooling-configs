@@ -57,6 +57,7 @@ interface OxlintReport {
 }
 
 const NO_FILES = "No files found to lint.";
+const PLUGIN_ERROR = "Error running JS plugin.";
 
 /** Whether oxlint matched no file, in which case it prints a notice before its report and exits 1. */
 function foundNoFiles(stdout: string): boolean {
@@ -135,6 +136,11 @@ function runOxlint(
       throw new Error(
         `oxlint failed without diagnostics: ${result.stderr || result.stdout}`,
       );
+    const crash = diagnostics.find(
+      ({ code, message }) =>
+        code === undefined && message.startsWith(PLUGIN_ERROR),
+    );
+    if (crash) throw new Error(crash.message);
     return diagnostics;
   } finally {
     if (temporary) rmSync(temporary, { recursive: true, force: true });
