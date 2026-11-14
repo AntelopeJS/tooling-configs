@@ -320,18 +320,15 @@ function arrayElements(
   });
 }
 
-/** An element that takes an `any` its source declares, but for one whose default is itself reported, and the elements nested under it. */
+/** An element that takes an `any` its source declares, and the elements nested under one with no default, as a nested pattern with a default reads that default. */
 function elementFindings(
   checker: ts.TypeChecker,
   element: PatternElement,
   source: ts.Type,
 ): Finding[] {
   if (isAnyType(checker, source))
-    return element.initializer !== undefined &&
-      isAny(checker, element.initializer)
-      ? []
-      : [{ kind: "assignment", node: element.node }];
-  return isPattern(element.target)
+    return [{ kind: "assignment", node: element.node }];
+  return element.initializer === undefined && isPattern(element.target)
     ? destructuredFindings(checker, element.target, source)
     : [];
 }
@@ -440,7 +437,7 @@ function assignmentFindings(checker: ts.TypeChecker, node: ts.Node): Finding[] {
       checker.getTypeAtLocation(node.name),
     )
       ? [{ kind: "assignment", node }]
-      : [];
+      : bindingFindings(checker, node.name, node.initializer);
   if (ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node))
     return propertyFindings(checker, node);
   return [];
