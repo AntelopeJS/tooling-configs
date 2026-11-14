@@ -16,12 +16,8 @@ interface DmsModule {
 /** The AntelopeJS DMS modules in display order. Every README holding the markers lists exactly these. */
 const MODULES: readonly DmsModule[] = [
   {
-    repo: "dms-builder",
-    row: "Edit pages, tables and data sources by clicking, as TypeScript that compiles",
-  },
-  {
-    repo: "dms-ai",
-    row: "An assistant chat in the dashboard, on your own Claude Code or Codex",
+    repo: "dms-assistant",
+    row: "An assistant chat in the dashboard and its onboarding, on your own Claude Code or Codex",
   },
   {
     repo: "dms-database",
