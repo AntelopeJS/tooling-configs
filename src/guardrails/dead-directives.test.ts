@@ -335,7 +335,7 @@ test("a touched file with a directive that oxlint cannot open as UTF-8 fails wit
     assert.equal(result.status, 1, result.stderr);
     assert.match(
       result.stderr,
-      /oxlint cannot check the directives here: .*src\/latin\.ts.*valid UTF-8/u,
+      /oxlint cannot check the directives here: .*src[\\/]latin\.ts.*valid UTF-8/u,
     );
   }
 });
