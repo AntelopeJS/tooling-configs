@@ -1,17 +1,20 @@
 import { defineRule } from "@oxlint/plugins";
 
-import type { ESTree } from "@oxlint/plugins";
+import type { ESTree, SourceCode } from "@oxlint/plugins";
+import {
+  calledFunction,
+  chainsFrom,
+  type Conditional,
+  decides,
+  isAwaitedRead,
+  readBinding,
+  type ReadSubject,
+} from "../read-decision.ts";
 import { memberName } from "../shared.ts";
 
-const READ_METHODS = new Set([
-  "get",
-  "getBy",
-  "getAll",
-  "count",
-  "find",
-  "findOne",
-]);
-const INSERT_METHODS = new Set(["insert", "insertOne", "insertMany"]);
+const READ_METHOD =
+  /^(?:get|getAll|count|find|findOne|(?:get|find)By(?:[A-Z]\w*)?)$/u;
+const INSERT_METHOD = /^(?:insert|insertOne|insertMany)$/u;
 const INLINE_CALLBACK_METHODS = new Set([
   "map",
   "flatMap",
@@ -30,11 +33,19 @@ const DUPLICATE_CHECK =
 type Range = readonly [number, number];
 type Scope = ESTree.Program | ESTree.Function | ESTree.ArrowFunctionExpression;
 
-interface Read {
+interface Read extends ReadSubject {
   range: Range;
   scope: Scope;
   receiver: string;
   receivers: ReadonlySet<string>;
+}
+
+/** A call to a function of this file by its name, such as `createAsset(target, file)`. */
+interface Site {
+  call: ESTree.CallExpression;
+  scope: Scope;
+  name: string;
+  target: Scope;
 }
 
 interface Insert {
@@ -114,16 +125,6 @@ function runningScope(node: ESTree.Node): Scope | null {
   return scope;
 }
 
-function chainsFrom(node: ESTree.Node, call: ESTree.CallExpression): boolean {
-  let current: ESTree.Node = node;
-  while (current !== call) {
-    if (current.type === "CallExpression") current = current.callee;
-    else if (current.type === "MemberExpression") current = current.object;
-    else return false;
-  }
-  return true;
-}
-
 function rootName(node: ESTree.Node): string | null {
   let current: ESTree.Node = node;
   while (
@@ -146,11 +147,11 @@ function declares(scope: Scope, name: string): boolean {
 
 function calledMember(
   node: ESTree.CallExpression,
-  methods: ReadonlySet<string>,
+  methods: RegExp,
 ): ESTree.MemberExpression | null {
   if (node.callee.type !== "MemberExpression") return null;
   const name = memberName(node.callee);
-  return name !== null && methods.has(name) ? node.callee : null;
+  return name !== null && methods.test(name) ? node.callee : null;
 }
 
 function isUpsert(node: ESTree.CallExpression): boolean {
@@ -178,10 +179,14 @@ function isUpsert(node: ESTree.CallExpression): boolean {
 /** What one file's traversal collected, read once it ends. */
 interface Facts {
   reads: Read[];
+  inserts: Insert[];
   duplicateChecks: Range[];
   throwRanges: Range[];
   throwBlocks: ESTree.Node[];
   exits: ESTree.Node[];
+  conditionals: Conditional[];
+  sites: Site[];
+  readonly source: SourceCode;
   text: (node: ESTree.Node) => string;
 }
 
@@ -256,7 +261,7 @@ function isHandedToHelper(
 }
 
 function recoveryOf(
-  insert: Insert,
+  site: ESTree.CallExpression,
   child: ESTree.Node,
   parent: ESTree.Node,
 ): ESTree.Node | null {
@@ -265,7 +270,7 @@ function recoveryOf(
   if (
     parent.type === "MemberExpression" &&
     parent.object === child &&
-    chainsFrom(child, insert.call) &&
+    chainsFrom(child, site) &&
     memberName(parent) === "catch" &&
     parent.parent?.type === "CallExpression" &&
     parent.parent.callee === parent
@@ -274,20 +279,30 @@ function recoveryOf(
   return null;
 }
 
-function isGuarded(facts: Facts, insert: Insert, read: Read): boolean {
-  let child: ESTree.Node = insert.call;
+/** Whether the insert is guarded on the way from `site` up to `stop`: `site` is the insert itself, or a call that reaches it. Only the insert's own function can shadow the read's receiver or hand the insert to a helper; any call on the way can recover from it. */
+function isGuarded(
+  facts: Facts,
+  insert: Insert,
+  site: ESTree.CallExpression,
+  stop: Scope,
+  read: Read | null,
+): boolean {
+  let child: ESTree.Node = site;
   let parent: ESTree.Node | null = child.parent;
-  while (parent !== null && child !== read.scope) {
-    const between = !contains(child.range, read.range);
+  while (parent !== null && child !== stop) {
+    const between =
+      site === insert.call &&
+      (read === null || !contains(child.range, read.range));
     if (
       between &&
+      read !== null &&
       insert.root !== null &&
       isScope(child) &&
       declares(child, insert.root)
     )
       return true;
     if (between && isHandedToHelper(facts, insert, child, parent)) return true;
-    const recovery = recoveryOf(insert, child, parent);
+    const recovery = recoveryOf(site, child, parent);
     if (recovery !== null && recovers(facts, recovery, insert)) return true;
     child = parent;
     parent = child.parent;
@@ -302,120 +317,225 @@ function isRaced(facts: Facts, insert: Insert): boolean {
       sameTable(read, insert) &&
       read.range[1] <= start &&
       read.scope === insert.scope &&
-      !isGuarded(facts, insert, read),
+      !isGuarded(facts, insert, insert.call, insert.scope, read),
   );
 }
 
-/** Writing a row that a startup read found missing races every other replica that read the same. A catch that rethrows nothing, recognises a duplicate in a condition, or reads the row back and branches, tolerates the lost race, and so does an upsert or a helper handed the table. */
+/** The unguarded inserts each function makes, in its own body or through the functions of this file it calls, grown until no call adds one so the order of a cycle does not matter. */
+function reachedInserts(facts: Facts): Map<Scope, Set<Insert>> {
+  const reached = new Map<Scope, Set<Insert>>();
+  const of = (scope: Scope): Set<Insert> => {
+    const known = reached.get(scope);
+    if (known !== undefined) return known;
+    const created = new Set<Insert>();
+    reached.set(scope, created);
+    return created;
+  };
+  for (const insert of facts.inserts)
+    if (!isGuarded(facts, insert, insert.call, insert.scope, null))
+      of(insert.scope).add(insert);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const site of facts.sites) {
+      const into = of(site.scope);
+      for (const insert of of(site.target)) {
+        if (
+          into.has(insert) ||
+          isGuarded(facts, insert, site.call, site.scope, null)
+        )
+          continue;
+        into.add(insert);
+        changed = true;
+      }
+    }
+  }
+  return reached;
+}
+
+/** An insert a call makes when a read before it found nothing, as in `if (record) return; await createAsset(target)`. */
+interface CalledInsert {
+  insert: Insert;
+  read: Read;
+  site: Site;
+}
+
+function racedThroughCalls(facts: Facts): CalledInsert[] {
+  const reached = reachedInserts(facts);
+  return facts.reads
+    .filter(({ call }) => isAwaitedRead(call))
+    .flatMap((read) => {
+      const conditionals = facts.conditionals.filter(
+        (conditional) =>
+          conditional.range[1] > read.range[0] &&
+          runningScope(conditional) === read.scope,
+      );
+      return facts.sites
+        .filter(
+          (site) =>
+            site.scope === read.scope &&
+            read.range[1] <= site.call.range[0] &&
+            conditionals.some((conditional) =>
+              decides(facts.source, read, conditional, site.call),
+            ),
+        )
+        .flatMap((site) =>
+          [...(reached.get(site.target) ?? [])]
+            .filter(
+              (insert) =>
+                !isGuarded(facts, insert, site.call, read.scope, null),
+            )
+            .map((insert) => ({ insert, read, site })),
+        );
+    });
+}
+
+function receiverChain(facts: Facts, start: ESTree.Node): Set<string> {
+  const texts = new Set<string>();
+  let current: ESTree.Node | null = start;
+  while (current !== null) {
+    texts.add(facts.text(current));
+    if (current.type === "CallExpression") current = current.callee;
+    else if (current.type === "MemberExpression") current = current.object;
+    else current = null;
+  }
+  return texts;
+}
+
+function collectCall(facts: Facts, node: ESTree.CallExpression): void {
+  if (facts.text(node.callee) === "Promise.reject") {
+    facts.throwRanges.push(node.range);
+    const statement = node.parent;
+    if (statement?.type === "ReturnStatement" && statement.parent !== null)
+      facts.throwBlocks.push(statement.parent);
+  }
+  const scope = runningScope(node);
+  if (scope === null) return;
+  const target =
+    node.callee.type === "Identifier"
+      ? calledFunction(facts.source, node.callee)
+      : null;
+  if (target !== null && node.callee.type === "Identifier")
+    facts.sites.push({ call: node, scope, name: node.callee.name, target });
+  const read = calledMember(node, READ_METHOD);
+  if (read !== null) {
+    facts.reads.push({
+      call: node,
+      binding: readBinding(facts.source, node),
+      range: node.range,
+      scope,
+      receiver: facts.text(read.object),
+      receivers: receiverChain(facts, read.object),
+    });
+  }
+  const insert = calledMember(node, INSERT_METHOD);
+  if (insert !== null && !isUpsert(node)) {
+    facts.inserts.push({
+      call: node,
+      scope,
+      callee: insert,
+      receiver: facts.text(insert.object),
+      root: rootName(insert.object),
+    });
+  }
+}
+
+const RACE =
+  'Two replicas that start on an empty table both read nothing and both insert, so one writes a duplicate row or fails on the key. Key the row by a stable id, wrap the insert in try/catch, read the row back in the catch, and rethrow only when it is still missing, or upsert with `insert(row, { conflict: "update" })`.';
+
+/** Writing a row that a startup read found missing races every other replica that read the same, whether the insert sits in the reading function or in a function of the file it calls only when the read found nothing. A catch that rethrows nothing, recognises a duplicate in a condition, or reads the row back and branches, tolerates the lost race, and so does an upsert or a helper handed the table. */
 export const noReadThenInsertRule = defineRule({
   meta: {
     type: "problem",
     docs: {
       description:
-        "Reject an insert that follows a read of the same table unless a catch tolerates losing it.",
+        "Reject an insert that follows a read of the same table, or that a called function makes when a read found nothing, unless a catch tolerates losing it.",
     },
     messages: {
-      readThenInsert:
-        '`{{receiver}}` is read and then inserted into. Two replicas that start on an empty table both read nothing and both insert, so one writes a duplicate row or fails on the key. Key the row by a stable id, wrap the insert in try/catch, read the row back in the catch, and rethrow only when it is still missing, or upsert with `insert(row, { conflict: "update" })`.',
+      readThenInsert: `\`{{receiver}}\` is read and then inserted into. ${RACE}`,
+      readThenCalledInsert: `\`{{read}}\` found nothing, so \`{{call}}\` runs and inserts into \`{{receiver}}\`. ${RACE}`,
     },
   },
   createOnce(context) {
-    const inserts: Insert[] = [];
     const facts: Facts = {
       reads: [],
+      inserts: [],
       duplicateChecks: [],
       throwRanges: [],
       throwBlocks: [],
       exits: [],
+      conditionals: [],
+      sites: [],
+      get source() {
+        return context.sourceCode;
+      },
       text: (node) => context.sourceCode.getText(node),
     };
-    const { reads, duplicateChecks, throwRanges, exits } = facts;
-
-    function receiverChain(start: ESTree.Node): Set<string> {
-      const texts = new Set<string>();
-      let current: ESTree.Node | null = start;
-      while (current !== null) {
-        texts.add(facts.text(current));
-        if (current.type === "CallExpression") current = current.callee;
-        else if (current.type === "MemberExpression") current = current.object;
-        else current = null;
-      }
-      return texts;
-    }
+    const exit = (node: ESTree.Node) => facts.exits.push(node);
+    const conditional = (node: Conditional) => facts.conditionals.push(node);
 
     return {
       before() {
-        reads.length = 0;
-        inserts.length = 0;
-        duplicateChecks.length = 0;
-        throwRanges.length = 0;
-        facts.throwBlocks.length = 0;
-        exits.length = 0;
+        for (const list of [
+          facts.reads,
+          facts.inserts,
+          facts.duplicateChecks,
+          facts.throwRanges,
+          facts.throwBlocks,
+          facts.exits,
+          facts.conditionals,
+          facts.sites,
+        ])
+          list.length = 0;
       },
       ThrowStatement(node) {
-        throwRanges.push(node.range);
+        facts.throwRanges.push(node.range);
         if (node.parent !== null) facts.throwBlocks.push(node.parent);
       },
-      ReturnStatement(node) {
-        exits.push(node);
-      },
-      ContinueStatement(node) {
-        exits.push(node);
-      },
-      BreakStatement(node) {
-        exits.push(node);
-      },
+      ReturnStatement: exit,
+      ContinueStatement: exit,
+      BreakStatement: exit,
+      IfStatement: conditional,
+      ConditionalExpression: conditional,
+      LogicalExpression: conditional,
       Identifier(node) {
-        if (DUPLICATE_CHECK.test(node.name)) duplicateChecks.push(node.range);
+        if (DUPLICATE_CHECK.test(node.name))
+          facts.duplicateChecks.push(node.range);
       },
       TemplateLiteral(node) {
         if (node.quasis.some((quasi) => DUPLICATE_CHECK.test(quasi.value.raw)))
-          duplicateChecks.push(node.range);
+          facts.duplicateChecks.push(node.range);
       },
       Literal(node) {
         if (DUPLICATE_CHECK.test(String(node.value)))
-          duplicateChecks.push(node.range);
+          facts.duplicateChecks.push(node.range);
       },
       CallExpression(node) {
-        if (facts.text(node.callee) === "Promise.reject") {
-          throwRanges.push(node.range);
-          const statement = node.parent;
-          if (
-            statement?.type === "ReturnStatement" &&
-            statement.parent !== null
-          )
-            facts.throwBlocks.push(statement.parent);
-        }
-        const read = calledMember(node, READ_METHODS);
-        const scope = runningScope(node);
-        if (read !== null && scope !== null) {
-          reads.push({
-            range: node.range,
-            scope,
-            receiver: facts.text(read.object),
-            receivers: receiverChain(read.object),
-          });
-        }
-        const insert = calledMember(node, INSERT_METHODS);
-        if (insert !== null && scope !== null && !isUpsert(node)) {
-          inserts.push({
-            call: node,
-            scope,
-            callee: insert,
-            receiver: facts.text(insert.object),
-            root: rootName(insert.object),
-          });
-        }
+        collectCall(facts, node);
       },
       "Program:exit"() {
-        for (const insert of inserts) {
-          if (isRaced(facts, insert)) {
-            context.report({
-              node: insert.callee,
-              messageId: "readThenInsert",
-              data: { receiver: insert.receiver },
-            });
-          }
+        const reported = new Set<Insert>();
+        for (const insert of facts.inserts) {
+          if (!isRaced(facts, insert)) continue;
+          reported.add(insert);
+          context.report({
+            node: insert.callee,
+            messageId: "readThenInsert",
+            data: { receiver: insert.receiver },
+          });
+        }
+        for (const { insert, read, site } of racedThroughCalls(facts)) {
+          if (reported.has(insert)) continue;
+          reported.add(insert);
+          context.report({
+            node: insert.callee,
+            messageId: "readThenCalledInsert",
+            data: {
+              read: facts.text(read.call.callee),
+              call: site.name,
+              receiver: insert.receiver,
+            },
+          });
         }
       },
     };

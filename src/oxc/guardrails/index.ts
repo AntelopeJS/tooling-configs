@@ -16,7 +16,7 @@ import { requireTsconfigTypesRule } from "./rules/require-tsconfig-types.ts";
 
 export { ASSERTION_FUNCTION_NAMES, TEST_FILE_GLOBS } from "./shared.ts";
 
-/** AntelopeJS rules that reject comments, inherited-key lookups, presence-only type guards, inserts that follow a read of the same table, unrun interface-database queries an awaited function returns, unchecked Object.assign writes, low-evidence tests, files no tsconfig lists and tsconfigs that list no `types`. */
+/** AntelopeJS rules that reject comments, inherited-key lookups, presence-only type guards, inserts that follow a read of the same table or that a called function makes once an awaited read found nothing, unrun interface-database queries an awaited function returns, unchecked Object.assign writes, low-evidence tests, files no tsconfig lists and tsconfigs that list no `types`. */
 const guardrailsPlugin = eslintCompatPlugin({
   meta: { name: "antelopejs" },
   rules: {
