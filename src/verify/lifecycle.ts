@@ -16,6 +16,7 @@ import {
   parseJson,
   str,
 } from "../garden/json.ts";
+import { packSteps } from "../guardrails/pack-tarball.ts";
 import { containerRunning, removeContainer, startServices } from "./docker.ts";
 import { installedPackage } from "./fixture.ts";
 import { linkDependencies } from "./interface.ts";
@@ -62,7 +63,7 @@ function script(workspace: Workspace, name: string): string | undefined {
   return optStr(child(workspace.manifest, "scripts"), name);
 }
 
-/** Whether `pnpm pack` builds the package itself, so a setup build before it would run the same build twice. */
+/** Whether packing builds the package itself through its `prepack`, so a setup build before it would run the same build twice. */
 function packBuilds(workspace: Workspace): boolean {
   const prepack = script(workspace, "prepack");
   return (
@@ -122,17 +123,19 @@ async function packInterface(
   const folder = join(state.dir, "pack");
   mkdirSync(folder, { recursive: true });
   const env = isolatedEnv(workspace, join(state.dir, "home"));
-  const packed = await runRecorded(join(state.evidence, "setup", "pack"), {
-    program: "pnpm",
-    args: ["pack", "--pack-destination", folder],
-    cwd: workspace.root,
-    env,
-  });
-  const tarball = readdirSync(folder).find((file) => file.endsWith(".tgz"));
-  if (packed.exitCode !== 0 || tarball === undefined)
-    throw new Error(
-      `pnpm pack failed; see ${packed.folder}\n${outputTail(packed)}`,
+  for (const [index, args] of packSteps("pnpm", folder).entries()) {
+    const step = await runRecorded(
+      join(state.evidence, "setup", "pack", `0${index + 1}-${args[0]}`),
+      { program: "pnpm", args, cwd: workspace.root, env },
     );
+    if (step.exitCode !== 0)
+      throw new Error(
+        `pnpm pack failed; see ${step.folder}\n${outputTail(step)}`,
+      );
+  }
+  const tarball = readdirSync(folder).find((file) => file.endsWith(".tgz"));
+  if (tarball === undefined)
+    throw new Error(`pnpm pack left no tarball in ${folder}`);
   const extract = await runRecorded(join(state.evidence, "setup", "extract"), {
     program: "tar",
     args: ["-xzf", tarball, "-C", "."],

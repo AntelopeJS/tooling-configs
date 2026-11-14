@@ -92,3 +92,13 @@ test("a failed pnpm pack names its evidence folder and carries the message its p
   );
   assert.match(result.stderr, /stdout:[\s\S]*prepack-said-this/);
 });
+
+test("new packs an interface whose prepack builds and whose prepare fails, caught by an implementation that lets pack run lifecycle scripts, which pnpm pack runs through cmd.exe on Windows, or that skips prepack", (t) => {
+  const { root, tmp } = interfaceRepo(t, {
+    build: BUILD,
+    prepack: "pnpm run build",
+    prepare: "exit 1",
+  });
+  const run = created(root, tmp);
+  assert.equal(read(run, "pack/package/dist/index.js"), "");
+});

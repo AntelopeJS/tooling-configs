@@ -18,7 +18,7 @@ const INTERFACE: KindText = {
   title: "Verify interface",
   user: "The user of an interface is a module author: one module implements it, others import it and call its functions through core.",
   launch:
-    "`new` runs the setup (`pnpm run build` by default), then packs the interface with `pnpm pack` and extracts it, so journeys load what npm would publish, `files` and `exports` included. Every `services` entry of `verify.config.ts` then starts in its own Docker container on a free loopback port, as for a module.",
+    "`new` runs the setup (`pnpm run build` by default), then runs the interface's `prepack` through `pnpm run`, packs it with `pnpm pack` with lifecycle scripts off, and extracts it, so journeys load what npm would publish, `files` and `exports` included. Every `services` entry of `verify.config.ts` then starts in its own Docker container on a free loopback port, as for a module.",
   builtins: `- \`every-function\`: a fixture project loads the packed interface with a stub provider and a consumer module. The consumer walks the loaded interface, and every function the \`.d.ts\` files declare is called through core:
   - an async proxy answers the stub's echo, and the stub's call log shows the same arguments (the second view);
   - a registering proxy registers and unregisters, and the stub logs both;
