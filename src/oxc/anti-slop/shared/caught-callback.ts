@@ -1,7 +1,7 @@
 import type { ESTree, SourceCode, Variable } from "@oxlint/plugins";
 
 import { variableOf } from "./binding-origin.ts";
-import { containsUnknownType, functionParameterTypeAnnotation } from "./function-parameters.ts";
+import { argumentParameters, containsUnknownType, functionParameterTypeAnnotation } from "./function-parameters.ts";
 import { isRuntimeFunction } from "./type-guards.ts";
 
 type Name = Extract<ESTree.Node, { type: "Identifier" }>;
@@ -58,7 +58,7 @@ export function isCaughtValueCallbackType(owner: ESTree.TSFunctionType, sourceCo
 	if (callback.type !== "Identifier") return false;
 	const holder = callback.parent;
 	if (!isRuntimeFunction(holder) || holder.body === null || holder.body === undefined) return false;
-	const unknownPositions = owner.params.flatMap((parameter, position) => {
+	const unknownPositions = argumentParameters(owner).flatMap((parameter, position) => {
 		const type = functionParameterTypeAnnotation(parameter)?.typeAnnotation;
 		return type !== undefined && containsUnknownType(type) ? [position] : [];
 	});

@@ -4,10 +4,12 @@ import type { ESTree, SourceCode } from "@oxlint/plugins";
 import { isBrandProbe } from "../shared/brand-probe.ts";
 import { isCaughtValueCallbackType } from "../shared/caught-callback.ts";
 import {
+  argumentParameters,
   containsUnknownType,
   type FunctionParameter,
   functionParameterBindingName,
   functionParameterTypeAnnotation,
+  isThisParameter,
 } from "../shared/function-parameters.ts";
 import { forwardsOnly } from "../shared/forward-only.ts";
 import { readsOnlyThroughGuards } from "../shared/guarded-reads.ts";
@@ -48,10 +50,6 @@ function hasBoundaryDecorator(parameter: FunctionParameter): boolean {
   });
 }
 
-function isThisParameter(parameter: FunctionParameter): boolean {
-  return parameter.type === "Identifier" && parameter.name === "this";
-}
-
 /** Return whether a function is passed directly as argument `position` of a `.method(...)` call. */
 function isMethodArgument(owner: ParameterOwner, method: string, position: number): boolean {
   const call = owner.parent;
@@ -76,7 +74,7 @@ function isRejectionCallback(owner: ParameterOwner): boolean {
 /** Return whether a binding is the second parameter of a `new Promise(...)` executor. */
 function isPromiseExecutorReject(binding: ESTree.Node): boolean {
   const executor = binding.parent;
-  if (executor === null || !isRuntimeFunction(executor) || executor.params[1] !== binding) return false;
+  if (executor === null || !isRuntimeFunction(executor) || argumentParameters(executor)[1] !== binding) return false;
   const construction = executor.parent;
   return (
     construction.type === "NewExpression" &&
@@ -90,7 +88,7 @@ function isPromiseExecutorReject(binding: ESTree.Node): boolean {
 function isRejectFunctionType(owner: ParameterOwner): boolean {
   if (
     owner.type !== "TSFunctionType" ||
-    owner.params.length !== 1 ||
+    argumentParameters(owner).length !== 1 ||
     owner.returnType.typeAnnotation.type !== "TSVoidKeyword" ||
     owner.parent.type !== "TSTypeAnnotation"
   ) {
@@ -106,7 +104,7 @@ function isRejectFunctionType(owner: ParameterOwner): boolean {
 /** Return whether a parameter is exempt whatever its name: `this`, a boundary-decorated request value, or a promise rejection reason. */
 function isExemptPosition(owner: ParameterOwner, parameter: FunctionParameter, sourceCode: SourceCode): boolean {
   if (isThisParameter(parameter) || hasBoundaryDecorator(parameter)) return true;
-  if (owner.params[0] === parameter && isRejectionCallback(owner)) return true;
+  if (argumentParameters(owner)[0] === parameter && isRejectionCallback(owner)) return true;
   return isRejectFunctionType(owner) || (owner.type === "TSFunctionType" && isCaughtValueCallbackType(owner, sourceCode));
 }
 
@@ -172,7 +170,7 @@ export const noUnknownParametersRule = defineRule({
 
     /** Return whether this rule exempts the parameter at `position` of a function the file declares, so a forward to it hands the value to a parser. */
     const acceptsForward = (callee: RuntimeFunction, position: number): boolean => {
-      const parameter = callee.params[position];
+      const parameter = argumentParameters(callee)[position];
       if (parameter === undefined || judging.has(parameter)) return false;
       const known = verdicts.get(parameter);
       if (known !== undefined) return known;

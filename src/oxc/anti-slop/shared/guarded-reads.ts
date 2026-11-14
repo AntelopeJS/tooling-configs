@@ -2,7 +2,7 @@ import type { ESTree, SourceCode } from "@oxlint/plugins";
 
 import { isGlobalName, variableOf } from "./binding-origin.ts";
 import { declaredFunctionOf, guardsParameterAt } from "./brand-probe.ts";
-import { functionParameterBindingName } from "./function-parameters.ts";
+import { argumentParameters, functionParameterBindingName } from "./function-parameters.ts";
 import { declaresParsedType, type FunctionFacts, promisedType } from "./parse-boundary.ts";
 import type { RuntimeFunction } from "./type-guards.ts";
 
@@ -390,9 +390,7 @@ export function readsOnlyThroughGuards(
 ): boolean {
 	const identifiers = handsBackParsedValue(owner) ? unknownParameterReads(owner, name, annotated, facts, sourceCode) : null;
 	if (identifiers === null) return false;
-	const position = owner.params
-		.filter((parameter) => parameter.type !== "Identifier" || parameter.name !== "this")
-		.findIndex((parameter) => functionParameterBindingName(parameter, sourceCode) === name);
+	const position = argumentParameters(owner).findIndex((parameter) => functionParameterBindingName(parameter, sourceCode) === name);
 	const reads: ParameterReads = { owner, position, references: new Set(identifiers), sourceCode };
 	return (
 		identifiers.some((read) => isTypeTestOperand(read, reads) || isTotalStringConversion(read, reads)) &&
