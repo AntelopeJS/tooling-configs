@@ -197,3 +197,30 @@ test("a tuple returned into a union context is compared with the member tsgo ord
     vue: expected,
   });
 });
+
+const classFields = `declare const parsedAny: any;
+declare const rows: any[];
+declare const anySet: Set<any>;
+class K {
+  s: string = parsedAny;
+  static t: string = parsedAny;
+  u = parsedAny;
+  #p: number = parsedAny;
+  accessor q: string = parsedAny;
+  r: unknown = parsedAny;
+  a: any = parsedAny;
+  list: string[] = rows;
+  set: Set<string> = anySet;
+  fresh: Map<string, number> = new Map();
+  [key: string]: unknown;
+}
+void K;
+`;
+
+test("a class field, static, private or accessor, initialized with an any or an any-holding generic is reported against its annotation, an unannotated one whatever its type, and an unknown field or new Map() is not, on the lines tsgolint reports (fails if class property initializers are not checked, or are compared without their annotation)", () => {
+  const expected = [5, 6, 7, 8, 9, 11, 12, 13];
+  assert.deepEqual(parityLines("ClassFields", classFields), {
+    ts: expected,
+    vue: expected,
+  });
+});
