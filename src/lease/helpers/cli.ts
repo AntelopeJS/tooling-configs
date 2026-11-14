@@ -53,10 +53,43 @@ export interface Row {
   readonly pids: readonly number[];
 }
 
+/** One step of a test's cleanup. */
+type Step = () => Promise<void> | void;
+
+const cleanups = new WeakMap<TestContext, Step[]>();
+
+/**
+ * Runs `step` after the test, before every step registered earlier through this, as a stack
+ * unwinds: a process started in a scratch directory ends before the directory goes, which Windows
+ * refuses to remove while a process works in it. A step that throws stops none of the others; the
+ * first error is thrown once all have run.
+ */
+export function cleanup(t: TestContext, step: Step): void {
+  const known = cleanups.get(t);
+  if (known !== undefined) {
+    known.push(step);
+    return;
+  }
+  const steps = [step];
+  cleanups.set(t, steps);
+  t.after(async () => {
+    const failures = [];
+    for (const each of steps.toReversed())
+      try {
+        await each();
+      } catch (error) {
+        failures.push(error);
+      }
+    if (failures.length > 0) throw failures[0];
+  });
+}
+
 /** A fresh directory under the system tmp, by real path, removed after the test. */
 export function scratch(t: TestContext): string {
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "lease-test-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  cleanup(t, () =>
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10 }),
+  );
   return dir;
 }
 

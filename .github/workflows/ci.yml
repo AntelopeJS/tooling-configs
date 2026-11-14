@@ -41,6 +41,7 @@ jobs:
   test:
     name: test (${{ matrix.shard }})${{ matrix.os == 'windows-latest' && ' on Windows' || '' }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -65,6 +66,11 @@ jobs:
           node-version: "24"
           cache: pnpm
       - run: pnpm install
+      - name: Point the lease tests at the runner's MongoDB
+        if: runner.os == 'Windows'
+        run: |
+          mongod=$(ls /c/Program\ Files/MongoDB/Server/*/bin/mongod.exe | tail -n 1)
+          echo "MONGOMS_SYSTEM_BINARY=$(cygpath -w "$mongod")" >> "$GITHUB_ENV"
       - env:
           SHARD: ${{ matrix.shard }}
           TOTAL: 8

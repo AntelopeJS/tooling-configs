@@ -7,6 +7,7 @@ import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import {
+  cleanup,
   endRun,
   externalEnv,
   firstLine,
@@ -207,7 +208,7 @@ test("gc keeps the lease of a run that is still running, however old its directo
     worktree,
     env,
   );
-  t.after(() => endRun(running));
+  cleanup(t, () => endRun(running));
   const dir = await firstLine(running);
   backdate(dir, 30);
   assert.equal((await lease(["gc", "--idle", "1"], root, env)).code, 0);

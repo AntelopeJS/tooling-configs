@@ -6,6 +6,8 @@ import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import {
+  cleanup,
+  endRun,
   envFor,
   externalEnv,
   firstLine,
@@ -16,29 +18,16 @@ import {
   startLease,
   statusRows,
 } from "./helpers/cli.ts";
+import { isLive as alive } from "./helpers/stop.ts";
 import { findMongod } from "./mongo.ts";
 import { accepting, claimPort, closeServer } from "./ports.ts";
+import { windowsProcesses } from "./windows.ts";
 
 const binary = findMongod(process.env);
 
 const noMongod =
-  process.platform === "win32"
-    ? "a lease runs no mongod of its own on Windows, where mongod has no --fork and holds mongod.lock exclusively"
-    : binary === undefined &&
-      "no mongod on PATH, in MONGOMS_SYSTEM_BINARY or in ~/.cache/mongodb-binaries";
-
-/** True while `pid` runs. A zombie has exited: it holds no port and no file. */
-function alive(pid: number): boolean {
-  try {
-    const state = execFileSync("ps", ["-o", "stat=", "-p", String(pid)], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    return !state.trim().startsWith("Z");
-  } catch {
-    return false;
-  }
-}
+  binary === undefined &&
+  "no mongod on PATH, in MONGOMS_SYSTEM_BINARY or in ~/.cache/mongodb-binaries";
 
 /** The `ps` field `column` of `pid`; `undefined` once the process table has no entry for it. */
 function psField(pid: number, column: "ppid" | "stat"): string | undefined {
@@ -50,6 +39,28 @@ function psField(pid: number, column: "ppid" | "stat"): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** The pid of the process that started `pid`; `undefined` once the process table has no entry for it. */
+function parentOf(pid: number): string | undefined {
+  if (process.platform !== "win32") return psField(pid, "ppid");
+  const entry = windowsProcesses().find((candidate) => candidate.pid === pid);
+  return entry === undefined ? undefined : String(entry.ppid);
+}
+
+/** Kills `pid` if it still runs and waits until it has exited, so the files it holds can go. */
+async function kill(pid: number): Promise<void> {
+  if (!alive(pid)) return;
+  process.kill(pid, "SIGKILL");
+  const deadline = Date.now() + 10_000;
+  while (alive(pid) && Date.now() < deadline) await sleep(50);
+}
+
+/** Whether the process table still has an entry for `pid`, a zombie included. Windows keeps none for an exited process. */
+function inTable(pid: number): boolean {
+  return process.platform === "win32"
+    ? alive(pid)
+    : psField(pid, "stat") !== undefined;
 }
 
 test(
@@ -66,9 +77,7 @@ test(
     const [row] = await statusRows(worktree, env);
     const pid = row?.mongod;
     if (pid === undefined) assert.fail("status shows no mongod for the lease");
-    t.after(() => {
-      if (alive(pid)) process.kill(pid, "SIGKILL");
-    });
+    cleanup(t, () => kill(pid));
     assert.equal(await accepting(port), true);
     await leasedEnv(worktree, env);
     const [again] = await statusRows(worktree, env);
@@ -96,14 +105,14 @@ test(
     if (port === undefined) assert.fail("status shows no ports for the lease");
     const foreign = await claimPort(port, "127.0.0.1");
     if (foreign === undefined) assert.fail(`port ${port} is already taken`);
-    t.after(() => closeServer(foreign));
+    cleanup(t, () => closeServer(foreign));
     const outcome = await lease(["run", "--", "true"], worktree, envFor(home));
     assert.equal(outcome.code, 1);
     assert.match(
       outcome.stderr,
       new RegExp(`mongod did not answer on port ${port}`, "u"),
     );
-    if (process.platform === "linux")
+    if (process.platform !== "darwin")
       assert.match(
         outcome.stderr,
         new RegExp(`held by pid ${process.pid}`, "u"),
@@ -127,9 +136,7 @@ test(
     );
     const [row] = await statusRows(worktree, env);
     const pid = row?.mongod;
-    t.after(() => {
-      if (pid !== undefined && alive(pid)) process.kill(pid, "SIGKILL");
-    });
+    cleanup(t, () => (pid === undefined ? undefined : kill(pid)));
     assert.deepEqual(
       outcomes.map((outcome) => outcome.code),
       Array.from({ length: 8 }, () => 0),
@@ -159,20 +166,17 @@ test(
       worktree,
       env,
     );
-    t.after(() => command.child.kill("SIGKILL"));
+    cleanup(t, () => endRun(command));
     assert.equal(await firstLine(command), "ready");
     const [row] = await statusRows(worktree, env);
     const pid = row?.mongod;
     if (pid === undefined) assert.fail("status shows no mongod for the lease");
-    t.after(() => {
-      if (alive(pid)) process.kill(pid, "SIGKILL");
-    });
-    assert.notEqual(psField(pid, "ppid"), String(command.child.pid));
+    cleanup(t, () => kill(pid));
+    assert.notEqual(parentOf(pid), String(command.child.pid));
     const outcome = await lease(["down"], worktree, env);
     assert.equal(outcome.code, 0, outcome.stderr);
     const deadline = Date.now() + 5_000;
-    while (psField(pid, "stat") !== undefined && Date.now() < deadline)
-      await sleep(50);
-    assert.equal(psField(pid, "stat"), undefined);
+    while (inTable(pid) && Date.now() < deadline) await sleep(50);
+    assert.equal(inTable(pid), false);
   },
 );
