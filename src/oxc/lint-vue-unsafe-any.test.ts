@@ -287,3 +287,57 @@ test("a destructuring assignment, an object literal into a generic or any slot a
     expected,
   );
 });
+
+const aliased = `type AA = any[];
+type G<T> = T[];
+type Pair = [any, string];
+declare const aa: AA;
+declare const ga: G<any>;
+declare const pair: Pair;
+declare const rows: any[];
+declare function take(list: string[]): void;
+const a: string[] = aa;
+const b: string[] = ga;
+const c: [string, string] = pair;
+take(aa);
+function list(): string[] { return ga; }
+const d: G<string> = rows;
+type Box = { rows: AA[]; plain: any[] };
+declare const box: Box;
+declare const nested: AA[];
+const e: string[][] = box.rows;
+const f: string[] = box.plain;
+const g: string[][] = nested;
+function toAlias(): G<string> { return rows; }
+function toReadonly(): readonly string[] { return rows; }
+function toTuple(): [string, string] { return pair; }
+function toSame(): AA { return aa; }
+function toUnknown(): unknown[] { return aa; }
+function toNested(): string[][] { return nested; }
+const [h]: string[] = aa;
+const [i, j]: [string, string] = pair;
+function first([k]: string[] = ga): string { return k; }
+const { plain: [m] }: { plain: string[] } = box;
+void [a, b, c, d, e, f, g, h, i, j, m, list, toAlias, toReadonly, toTuple, toSame, toUnknown, toNested, first];
+`;
+
+test("an aliased any array or tuple, as in type AA = any[] or G<any>, assigned or passed is left alone, and one destructured through an annotated pattern or an any[] returned into anything but unknown[] is reported, on the same lines tsgolint reports in a .ts file (fails if a deferred reference such as an alias is compared by its generic target, an annotated pattern or a parameter default pattern is not destructured, or a returned any[] is compared by target rather than by its declared return)", () => {
+  const found = findings({
+    "tsconfig.json": tsconfig,
+    "src/aliased.ts": `${aliased}export {};\n`,
+    "app/Aliased.vue": `<script setup lang="ts">${aliased}</script>\n`,
+  });
+  const lines = (file: string) =>
+    found.flatMap((entry) =>
+      entry.startsWith(`${file}:`) ? [Number(entry.split(/[: ]/)[1])] : [],
+    );
+  const expected = [13, 19, 21, 22, 27, 28, 29, 30];
+  assert.deepEqual(
+    lines("src/aliased.ts").toSorted((a, b) => a - b),
+    expected,
+  );
+  assert.deepEqual(
+    lines("app/Aliased.vue").toSorted((a, b) => a - b),
+    expected,
+  );
+});
