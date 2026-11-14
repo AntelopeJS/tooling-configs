@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.7.0
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.6.0...v0.7.0)
+
+### 🚀 Enhancements
+
+- **guardrails:** ⚠️  Typecheck each package's published declarations as a consumer installs them ([#355](https://github.com/AntelopeJS/tooling-configs/pull/355))
+
+### 🩹 Fixes
+
+- **anti-slop:** Skip a declared this parameter when no-known-value-widening matches a guard's predicate subject ([#348](https://github.com/AntelopeJS/tooling-configs/pull/348))
+- **guardrails:** Print a JS plugin's error and stack when its rule throws ([#349](https://github.com/AntelopeJS/tooling-configs/pull/349))
+- **garden:** Skip org-checks-ruleset with the scope the token lacks instead of failing on a bare 404 ([#350](https://github.com/AntelopeJS/tooling-configs/pull/350))
+- **lint:** Report an unrun query wrapped before an awaiting caller receives it ([#351](https://github.com/AntelopeJS/tooling-configs/pull/351))
+- **guardrails:** Fail the suppressions check when a touched file does not parse ([#353](https://github.com/AntelopeJS/tooling-configs/pull/353))
+- **guardrails:** Report an insert a called function makes once an awaited read found nothing ([#352](https://github.com/AntelopeJS/tooling-configs/pull/352))
+- **lint:** Report an unrun query an interface holds or a named promise executor resolves ([#354](https://github.com/AntelopeJS/tooling-configs/pull/354))
+
+### 🤖 CI
+
+- Download a mongod on Linux so the lease mongod tests run there ([#347](https://github.com/AntelopeJS/tooling-configs/pull/347))
+
+#### ⚠️ Breaking Changes
+
+- **guardrails:** ⚠️  Typecheck each package's published declarations as a consumer installs them ([#355](https://github.com/AntelopeJS/tooling-configs/pull/355))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.6.0
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.8...v0.6.0)
