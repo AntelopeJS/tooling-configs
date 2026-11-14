@@ -176,6 +176,85 @@ export const counted = new Promise((resolve) => {
   );
 });
 
+test("an async function that returns an unrun query held by an interface or an object type alias is reported", () => {
+  assert.deepEqual(
+    reported(`import type { Datum } from "@antelopejs/interface-database";
+import { novels } from "./novels.ts";
+
+interface Totals {
+  total: Datum<number>;
+}
+type Page = { totals: Totals };
+function build(): Totals {
+  return { total: novels.count() };
+}
+export const totals = async () => build();
+export async function page(): Promise<Page> {
+  const result: Page = { totals: build() };
+  return result;
+}
+`),
+    [11, 14],
+  );
+});
+
+test("resolve called with an unrun query in a named executor handed to new Promise is reported", () => {
+  assert.deepEqual(
+    reported(`import { novels } from "./novels.ts";
+
+function countNovels(resolve: (value: unknown) => void) {
+  resolve(novels.count());
+}
+const countLater = (resolve: (value: unknown) => void) => {
+  resolve(novels.count());
+};
+export const counted = new Promise(countNovels);
+export const later = new Promise(countLater);
+export const fallback = new Promise(
+  (resolve: (value: unknown) => void = () => undefined) => {
+    resolve(novels.count());
+  },
+);
+`),
+    [4, 7, 13],
+  );
+});
+
+test("an interface-typed handle or a class instance holding a table, and a function never handed to new Promise, are not reported", () => {
+  assert.deepEqual(
+    reported(`import type { Table } from "@antelopejs/interface-database";
+import { novels } from "./novels.ts";
+
+interface Database {
+  novels: Table<{ title: string }>;
+}
+interface Shelf extends Table<{ title: string }> {
+  shelf: number;
+}
+declare const shelf: Shelf;
+declare const tagged: Table<{ title: string }> & { tag: string };
+class Repository {
+  novels = novels;
+  pending = novels.count();
+}
+interface Repository {
+  later: ReturnType<typeof novels.count>;
+}
+function open(): Database {
+  return { novels };
+}
+export const database = async () => open();
+export const repository = async () => new Repository();
+export const literal = async () => ({ novels, shelf, tagged });
+function report(send: (value: unknown) => void) {
+  send(novels.count());
+}
+export const reported = report;
+`),
+    [],
+  );
+});
+
 test("run queries in each wrapper, reject or another callee in an executor and a sync function's wrapped query are not reported", () => {
   assert.deepEqual(
     reported(`import { novels } from "./novels.ts";

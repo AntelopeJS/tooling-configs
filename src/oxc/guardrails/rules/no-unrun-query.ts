@@ -74,31 +74,56 @@ function resultIsAwaited(fn: FunctionNode): boolean {
   );
 }
 
-/** Whether `call` sits inside the executor function of a `new Promise`, where it may call that executor's `resolve`. */
-function inPromiseExecutor(call: ESTree.CallExpression): boolean {
+/** Whether `call` calls the first parameter of a function it sits in, as a `new Promise` executor calls its `resolve`. */
+function callsFirstParameter(call: ESTree.CallExpression): boolean {
+  const { callee } = call;
+  if (callee.type !== "Identifier") return false;
   for (
     let fn = enclosingFunction(call);
     fn !== null;
     fn = enclosingFunction(fn)
-  )
-    if (
-      fn.parent?.type === "NewExpression" &&
-      fn.parent.callee.type === "Identifier" &&
-      fn.parent.callee.name === "Promise" &&
-      fn.parent.arguments[0] === fn
-    )
-      return true;
+  ) {
+    const [first] = fn.params;
+    const name = first?.type === "AssignmentPattern" ? first.left : first;
+    if (name?.type === "Identifier" && name.name === callee.name) return true;
+  }
   return false;
+}
+
+const HOLDERS =
+  ts.SymbolFlags.ObjectLiteral |
+  ts.SymbolFlags.Interface |
+  ts.SymbolFlags.TypeLiteral;
+
+function declaredIn(symbol: ts.Symbol | undefined, path: string): boolean {
+  return (
+    symbol?.declarations?.some((declaration) =>
+      declaration.getSourceFile().fileName.includes(path),
+    ) === true
+  );
 }
 
 /** Whether `type` is an interface-database query: its `run()` comes from that package. */
 function isQuery(checker: ts.TypeChecker, type: ts.Type): boolean {
+  return declaredIn(checker.getPropertyOfType(type, "run"), INTERFACE_DATABASE);
+}
+
+/** Whether `type` is an interface-database `Table`, alone, extended or intersected, which a value holds as a handle to query later rather than as a query to run: only a table has that package's `insert()`. */
+function isTable(checker: ts.TypeChecker, type: ts.Type): boolean {
+  return declaredIn(
+    checker.getPropertyOfType(type, "insert"),
+    INTERFACE_DATABASE,
+  );
+}
+
+/** Whether `type` is an object literal, or an interface or object type the project declares, as opposed to a class instance or a library type. */
+function isHolder(type: ts.Type): boolean {
+  const symbol = type.getSymbol();
   return (
-    checker
-      .getPropertyOfType(type, "run")
-      ?.declarations?.some((declaration) =>
-        declaration.getSourceFile().fileName.includes(INTERFACE_DATABASE),
-      ) === true
+    symbol !== undefined &&
+    (symbol.flags & HOLDERS) !== 0 &&
+    (symbol.flags & ts.SymbolFlags.Class) === 0 &&
+    !declaredIn(symbol, "/node_modules/")
   );
 }
 
@@ -106,41 +131,41 @@ function members(type: ts.Type): readonly ts.Type[] {
   return type.isUnion() ? type.types : [type];
 }
 
-/** The values an array, a tuple or an object literal holds, which awaiting it leaves as they are. */
+/** The values an array, a tuple or a holder keeps, which awaiting it leaves as they are. */
 function heldValues(checker: ts.TypeChecker, type: ts.Type): ts.Type[] {
   if (checker.isArrayType(type) || checker.isTupleType(type)) {
     const element = checker.getIndexTypeOfType(type, ts.IndexKind.Number);
     return element === undefined ? [] : [element];
   }
-  return (type.getSymbol()?.flags ?? 0) & ts.SymbolFlags.ObjectLiteral
+  return isHolder(type)
     ? checker
         .getPropertiesOfType(type)
         .map((property) => checker.getTypeOfSymbol(property))
     : [];
 }
 
-/** Whether `type` is a query, or an array, a tuple or an object literal that holds one at any depth. */
-function containsQuery(
+/** Whether an array, a tuple or a holder of `type` keeps a query other than a table at any depth. */
+function holdsHeldQuery(
   checker: ts.TypeChecker,
   type: ts.Type,
   visited: Set<ts.Type>,
 ): boolean {
-  return members(type).some((member) => {
-    if (isQuery(checker, member)) return true;
-    if (visited.has(member)) return false;
-    visited.add(member);
-    return heldValues(checker, member).some((value) =>
-      containsQuery(checker, value, visited),
-    );
-  });
+  return heldValues(checker, type).some((value) =>
+    members(value).some((member) => {
+      if (isQuery(checker, member)) return !isTable(checker, member);
+      if (visited.has(member)) return false;
+      visited.add(member);
+      return holdsHeldQuery(checker, member, visited);
+    }),
+  );
 }
 
-/** Whether an awaiting caller receives an unrun query from a value of `type`: the query itself, possibly behind a promise, or one arrays, tuples and object literals hold. */
+/** Whether an awaiting caller receives an unrun query from a value of `type`: the query itself, possibly behind a promise, or a query other than a table that arrays, tuples, object literals and project-declared object types keep. */
 function holdsQuery(checker: ts.TypeChecker, type: ts.Type): boolean {
-  return containsQuery(
-    checker,
-    checker.getAwaitedType(type) ?? type,
-    new Set(),
+  const visited = new Set<ts.Type>();
+  return members(checker.getAwaitedType(type) ?? type).some(
+    (member) =>
+      isQuery(checker, member) || holdsHeldQuery(checker, member, visited),
   );
 }
 
@@ -161,7 +186,49 @@ function callbackResult(
     .map((signature) => checker.getReturnTypeOfSignature(signature));
 }
 
-/** The value `call` resolves its promise with, when its callee is the first parameter of a `new Promise` executor. */
+const executorsByFile = new WeakMap<ts.SourceFile, Set<ts.Node>>();
+
+/** The function a `new Promise` argument names: the function written there, or the function declaration or initialised variable its identifier resolves to. */
+function namedFunction(
+  checker: ts.TypeChecker,
+  argument: ts.Expression,
+): ts.Node | undefined {
+  if (ts.isFunctionExpression(argument) || ts.isArrowFunction(argument))
+    return argument;
+  if (!ts.isIdentifier(argument)) return undefined;
+  const declaration = checker.getSymbolAtLocation(argument)?.valueDeclaration;
+  return declaration !== undefined &&
+    ts.isVariableDeclaration(declaration) &&
+    declaration.initializer !== undefined
+    ? declaration.initializer
+    : declaration;
+}
+
+/** The functions `sourceFile` hands to `new Promise` as its executor, inline or by name. */
+function promiseExecutors(
+  checker: ts.TypeChecker,
+  sourceFile: ts.SourceFile,
+): Set<ts.Node> {
+  const known = executorsByFile.get(sourceFile);
+  if (known !== undefined) return known;
+  const executors = new Set<ts.Node>();
+  const visit = (node: ts.Node): void => {
+    const argument =
+      ts.isNewExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "Promise"
+        ? node.arguments?.[0]
+        : undefined;
+    const executor = argument && namedFunction(checker, argument);
+    if (executor !== undefined) executors.add(executor);
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  executorsByFile.set(sourceFile, executors);
+  return executors;
+}
+
+/** The value `call` resolves its promise with, when its callee is the first parameter of a function the file hands to `new Promise` as its executor. */
 function resolvedValue(
   checker: ts.TypeChecker,
   call: ts.CallExpression,
@@ -170,17 +237,12 @@ function resolvedValue(
     call.expression,
   )?.valueDeclaration;
   const executor = parameter?.parent;
-  const construction = executor?.parent;
   return parameter !== undefined &&
     ts.isParameter(parameter) &&
     executor !== undefined &&
     ts.isFunctionLike(executor) &&
     executor.parameters[0] === parameter &&
-    construction !== undefined &&
-    ts.isNewExpression(construction) &&
-    construction.arguments?.[0] === executor &&
-    ts.isIdentifier(construction.expression) &&
-    construction.expression.text === "Promise"
+    promiseExecutors(checker, call.getSourceFile()).has(executor)
     ? call.arguments[0]
     : undefined;
 }
@@ -255,11 +317,7 @@ export const noUnrunQueryRule = defineRule({
                   : callbackResult(typed.checker, callback);
               });
         const [value] = node.arguments;
-        if (
-          node.callee.type === "Identifier" &&
-          value !== undefined &&
-          inPromiseExecutor(node)
-        )
+        if (value !== undefined && callsFirstParameter(node))
           check(value, (typed) => {
             const call = nodeAt(typed.sourceFile, node, ts.isCallExpression);
             return typeOf(call && resolvedValue(typed.checker, call), typed);
