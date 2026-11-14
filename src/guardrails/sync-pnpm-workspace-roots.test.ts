@@ -161,3 +161,21 @@ test("sync --profile template asks a pnpm 10 repository to delete a pnpm-workspa
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(result.stdout + result.stderr, /Delete pnpm-workspace\.yaml/);
 });
+
+test("sync lists the interface pattern in the pnpm-workspace.yaml of a pnpm-locked playground in an npm repository and writes no root file, then reports no drift, where a sync that skips every folder of a non-pnpm root lets that playground's pnpm 11 install lock two copies of an interface released less than a day ago", (t) => {
+  const root = pinnedRepo(t, "npm@10.9.0");
+  withPlayground(root);
+  synced(root);
+  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), FRESH_INTERFACES);
+  assert.equal(existsSync(join(root, "pnpm-workspace.yaml")), false);
+  const check = bin(root, "sync", ["--check"]);
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+});
+
+test("sync writes no pnpm-workspace.yaml in an unlocked playground below a package-lock.json, where a sync that writes one in every playground of an npm repository adds a pnpm file to a folder npm installs", (t) => {
+  const root = pinnedRepo(t, "npm@10.9.0");
+  put(root, "package-lock.json", '{ "lockfileVersion": 3 }\n');
+  put(root, "playground/package.json", '{ "private": true }\n');
+  synced(root);
+  assert.equal(existsSync(join(root, PLAYGROUND_WORKSPACE)), false);
+});

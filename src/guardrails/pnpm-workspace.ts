@@ -9,7 +9,7 @@ import { packageManager, usesCaptures, type Manifest } from "./package.ts";
 import { pnpmLockfiles } from "./singleton-packages.ts";
 import type { PlannedArtifact } from "./sync.ts";
 import { verifyLayers } from "./verify-layers.ts";
-import { inWorkspace } from "./verify-lockfiles.ts";
+import { installsWithPnpm, inWorkspace } from "./verify-lockfiles.ts";
 
 const PATH = "pnpm-workspace.yaml";
 
@@ -41,11 +41,15 @@ interface InstallRoot {
 }
 
 /**
- * What sync does for a repository without a `pnpm-workspace.yaml`, by its pinned pnpm. An unpinned pnpm counts as current.
+ * What sync does for a repository without a `pnpm-workspace.yaml`, by its pinned pnpm. An unpinned pnpm counts as current,
+ * and so does the pnpm of a repository whose root pins another package manager.
  * pnpm 10 and earlier only warn about an undecided build, so they get no file. pnpm 11 fails the install without one, and before 11.27.1 misroutes nested installs with one, so its pin must rise.
  */
 function creation(manifest: Manifest): "write" | "skip" | "raise" {
-  const pinned = manifest.packageManager?.split("@")[1];
+  const pinned =
+    packageManager(manifest) === "pnpm"
+      ? manifest.packageManager?.split("@")[1]
+      : undefined;
   if (pinned === undefined || admits(`>=${SCOPED_NESTED_INSTALLS}`, pinned))
     return "write";
   return admits(">=11.0.0", pinned) ? "raise" : "skip";
@@ -75,17 +79,24 @@ function playgrounds(root: string): string[] {
 }
 
 /**
- * The repository root, deciding the builds of the full profile's hooks and captures, each folder whose tracked
- * `pnpm-lock.yaml` `lockfile:singletons` reads, and each playground verify installs on its own.
+ * Each folder whose tracked `pnpm-lock.yaml` `lockfile:singletons` reads and each playground verify installs on its own,
+ * and in a pnpm repository the root, deciding the builds of the full profile's hooks and captures. In a repository whose
+ * root another package manager installs, only the nested folders pnpm installs.
  */
 function installRoots(
   root: string,
+  manifest: Manifest,
   profile: AgentsBlockContext["profile"],
 ): InstallRoot[] {
+  const pnpmRoot = packageManager(manifest) === "pnpm";
   const locked = pnpmLockfiles(root).map((lockfile) => dirname(lockfile));
-  const nested = [...new Set([...locked, ...playgrounds(root)])]
+  const unlocked = playgrounds(root).filter(
+    (folder) => pnpmRoot || installsWithPnpm(root, folder),
+  );
+  const nested = [...new Set([...locked, ...unlocked])]
     .filter((folder) => folder !== ".")
     .map((folder) => ({ folder, builds: [] }));
+  if (!pnpmRoot) return nested;
   const builds = profile === "full" ? skippedBuilds(usesCaptures(root)) : [];
   return [{ folder: "", builds }, ...nested];
 }
@@ -234,8 +245,8 @@ function installRootArtifact(
 }
 
 /**
- * The `pnpm-workspace.yaml` of each folder pnpm installs as its own workspace root in a pnpm repository: the repository root
- * and each nested folder with its own `pnpm-lock.yaml` or that verify installs on its own. Each lists `@antelopejs/interface-*` under `minimumReleaseAgeExclude`,
+ * The `pnpm-workspace.yaml` of each folder pnpm installs as its own workspace root: the root of a pnpm repository and each
+ * nested folder with its own `pnpm-lock.yaml` or that verify installs with pnpm on its own. Each lists `@antelopejs/interface-*` under `minimumReleaseAgeExclude`,
  * so pnpm 11 and later lock one copy of an interface released less than a day ago. A full-profile root also decides the
  * builds sync declares, so pnpm 11 installs them without `ERR_PNPM_IGNORED_BUILDS`.
  */
@@ -244,8 +255,7 @@ export function pnpmWorkspaceArtifacts(
   manifest: Manifest,
   profile: AgentsBlockContext["profile"],
 ): PlannedArtifact[] {
-  if (packageManager(manifest) !== "pnpm") return [];
-  return installRoots(root, profile).flatMap((installRoot) =>
+  return installRoots(root, manifest, profile).flatMap((installRoot) =>
     installRootArtifact(root, manifest, installRoot),
   );
 }
