@@ -15,6 +15,13 @@ interface ParameterReads {
 	readonly position: number;
 	readonly references: ReadonlySet<ESTree.Node>;
 	readonly sourceCode: SourceCode;
+	readonly forwards: (read: Name) => boolean;
+}
+
+/** The file's source, and which reads of the parameter the forward-only exemption accepts as handed on unread. */
+export interface GuardedReadContext {
+	readonly sourceCode: SourceCode;
+	forwards(read: Name): boolean;
 }
 
 /** No type test on the parameter holds. */
@@ -293,6 +300,7 @@ const ALLOWED_READS: readonly ((read: Name, reads: ParameterReads) => boolean)[]
 	isRecursiveArgument,
 	isTotalStringConversion,
 	isNarrowedRead,
+	(read, reads) => reads.forwards(read),
 ];
 
 /** Return the declarator a read's value initializes, through the branches of `?:`, the operands of `&&`, `||` and `??`, and `await`. */
@@ -386,14 +394,16 @@ export function readsOnlyThroughGuards(
 	name: string,
 	annotated: ESTree.TSType,
 	facts: FunctionFacts,
-	sourceCode: SourceCode,
+	{ sourceCode, forwards }: GuardedReadContext,
 ): boolean {
 	const identifiers = handsBackParsedValue(owner) ? unknownParameterReads(owner, name, annotated, facts, sourceCode) : null;
 	if (identifiers === null) return false;
 	const position = argumentParameters(owner).findIndex((parameter) => functionParameterBindingName(parameter, sourceCode) === name);
-	const reads: ParameterReads = { owner, position, references: new Set(identifiers), sourceCode };
+	const reads: ParameterReads = { owner, position, references: new Set(identifiers), sourceCode, forwards };
+	const tested = identifiers.some((read) => isTypeTestOperand(read, reads));
+	const converted = identifiers.some((read) => isTotalStringConversion(read, reads));
 	return (
-		identifiers.some((read) => isTypeTestOperand(read, reads) || isTotalStringConversion(read, reads)) &&
+		(tested || (converted && !identifiers.some(forwards))) &&
 		identifiers.every((read) => !isRecast(read) && ALLOWED_READS.some((allowed) => allowed(read, reads)))
 	);
 }

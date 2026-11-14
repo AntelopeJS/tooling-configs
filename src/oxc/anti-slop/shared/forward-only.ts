@@ -1,6 +1,6 @@
 import type { ESTree, SourceCode, Variable } from "@oxlint/plugins";
 
-import { variableOf } from "./binding-origin.ts";
+import { isGlobalName, variableOf } from "./binding-origin.ts";
 import { declaredFunctionOf } from "./brand-probe.ts";
 import { argumentParameters, functionParameterTypeAnnotation } from "./function-parameters.ts";
 import { answersVerdict, convertsToText, guardsArgument, type Name, unknownParameterReads } from "./guarded-reads.ts";
@@ -86,7 +86,48 @@ function reachesTrustedCallee(call: ESTree.CallExpression, position: number, tar
 	if (callee.type !== "Identifier") return false;
 	const declared = declaredFunctionOf(callee, sourceCode);
 	if (declared !== null) return takesUnknownAt(declared, position) && targets.accepts(declared, position);
-	return variableOf(callee, sourceCode)?.defs[0]?.type === "ImportBinding";
+	const variable = variableOf(callee, sourceCode);
+	if (variable?.defs[0]?.type === "ImportBinding") return true;
+	return variable !== null && holdsBuiltFunction(variable, sourceCode) && !isRootedAtParameter(callee, sourceCode, new Set());
+}
+
+/** Return the expression under `await` and the type wrappers `as`, `<T>`, `satisfies` and `!`. */
+function unwrapped(node: ESTree.Node): ESTree.Node {
+	switch (node.type) {
+		case "AwaitExpression":
+			return unwrapped(node.argument);
+		case "TSAsExpression":
+		case "TSNonNullExpression":
+		case "TSSatisfiesExpression":
+		case "TSTypeAssertion":
+			return unwrapped(node.expression);
+		default:
+			return node;
+	}
+}
+
+/** Return whether a value is `null` or the global `undefined`, which a lazily built callee starts as. */
+function isNothing(node: ESTree.Node, sourceCode: SourceCode): boolean {
+	return (node.type === "Literal" && node.value === null) || (node.type === "Identifier" && node.name === "undefined" && isGlobalName(node, sourceCode));
+}
+
+/** Return whether a variable is bound by the head of a `for...of` or `for...in` loop, which writes it an element of what it iterates. */
+function isLoopBinding(variable: Variable): boolean {
+	return variable.defs.some(({ node }) => node.type === "VariableDeclarator" && (node.parent.parent?.type === "ForOfStatement" || node.parent.parent?.type === "ForInStatement"));
+}
+
+/**
+ * Return whether a variable holds a function another owner built and this file does not write: every value it is initialized,
+ * destructured or assigned from is a call's result, or `null` or `undefined` before one, and at least one is a call. A function
+ * literal, an alias or any other value is not one.
+ */
+function holdsBuiltFunction(variable: Variable, sourceCode: SourceCode): boolean {
+	if (isLoopBinding(variable)) return false;
+	const values = writtenValues(variable).map(unwrapped);
+	return (
+		values.some((value) => value.type === "CallExpression") &&
+		values.every((value) => value.type === "CallExpression" || isNothing(value, sourceCode))
+	);
 }
 
 /**
@@ -94,7 +135,7 @@ function reachesTrustedCallee(call: ESTree.CallExpression, position: number, tar
  * not a type guard, the global `String` or `JSON.stringify`, or a decoder or validator by name, which the parse-boundary
  * exemption judges.
  */
-function isForward(read: Name, targets: ForwardTargets): boolean {
+export function isForward(read: Name, targets: ForwardTargets): boolean {
 	const call = read.parent;
 	if (call.type !== "CallExpression") return false;
 	const position = call.arguments.findIndex((argument) => argument === read);
