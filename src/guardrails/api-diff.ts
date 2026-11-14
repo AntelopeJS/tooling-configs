@@ -171,19 +171,26 @@ function innerPath(path: string): string {
   return rest.length ? rest.join("/") : first;
 }
 
-/** A package whose tsconfig sets no `outDir` publishes what a bundler lays out: `dist/a/b.d.mts` for `src/a/b.ts`, a path no compiler emit takes. The one emitted declaration at the target's path below its top-level directory, whatever its declaration extension, stands for it; none or several leave the target unmatched. */
+/** A package whose tsconfig sets no `outDir` publishes what a bundler lays out: `dist/a/b.d.mts` for `src/a/b.ts`, a path no compiler emit takes. The emit lays each module out below `rootDir`, else the package directory; the one emitted declaration of a module in the package whose path below its top-level directory is the target's, whatever its declaration extension, stands for it; none or several leave the target unmatched. */
 function bundledDeclaration(
   path: string,
   files: readonly string[],
   options: ts.CompilerOptions,
+  directory: string,
 ): string[] {
   if (options.outDir !== undefined || path.includes("*") || !path.includes("/"))
     return [];
+  const root = options.rootDir ?? directory;
   const stem = declarationStem(innerPath(path));
-  const found = files.filter(
-    (file) =>
-      /\.d\.[cm]?ts$/u.test(file) && declarationStem(innerPath(file)) === stem,
-  );
+  const found = files.filter((file) => {
+    const source = relative(directory, resolve(root, file)).replaceAll(
+      "\\",
+      "/",
+    );
+    return (
+      !source.startsWith("../") && declarationStem(innerPath(source)) === stem
+    );
+  });
   return found.length === 1 ? found : [];
 }
 
@@ -212,7 +219,10 @@ function publishedEntries(
     if (!found.length) {
       const authored = authoredDeclaration(directory, target, path, scratch);
       if (authored !== undefined) found.push(authored);
-      else found.push(...bundledDeclaration(path, files, emitted.options));
+      else
+        found.push(
+          ...bundledDeclaration(path, files, emitted.options, directory),
+        );
     }
     if (!found.length && !path.includes("*"))
       throw new Error(

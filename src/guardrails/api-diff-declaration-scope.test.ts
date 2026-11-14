@@ -186,11 +186,12 @@ function bundledRepo(
   t: TestContext,
   entry: string,
   compilerOptions: Record<string, string> = {},
+  directory = ".",
 ): string {
   const root = apiRepo(t);
   put(
     root,
-    "package.json",
+    `${directory}/package.json`,
     JSON.stringify({
       name: "bundled-api",
       type: "module",
@@ -205,12 +206,12 @@ function bundledRepo(
   );
   put(
     root,
-    "build.mjs",
+    `${directory}/build.mjs`,
     `import { mkdirSync, writeFileSync } from "node:fs";\nimport { dirname } from "node:path";\nmkdirSync(dirname("dist/${entry}.mjs"), { recursive: true });\nwriteFileSync("dist/${entry}.mjs", "export const value = 1;\\n");\n`,
   );
   put(
     root,
-    "tsconfig.json",
+    `${directory}/tsconfig.json`,
     JSON.stringify({
       compilerOptions: {
         target: "ES2022",
@@ -257,9 +258,48 @@ test("api-diff refuses a bundler's dist declaration that a top-level module and 
 
 test("api-diff refuses a target its outDir emit misses instead of matching a module at the same inner path", (t) => {
   const root = bundledRepo(t, "esm/index", { rootDir: "src", outDir: "dist" });
-  put(root, "src/api/index.ts", "export const value: number = 1;\n");
+  put(root, "src/index.ts", "export const value: number = 1;\n");
   assert.match(
     declarationFailure(root),
     /published target \.\/dist\/esm\/index\.d\.mts has no emitted declaration/,
   );
+});
+
+test("api-diff compares a bundler's dist declaration through its source module when rootDir is set without outDir", (t) => {
+  const root = bundledRepo(t, "a/b", { rootDir: "src" });
+  put(root, "src/a/b.ts", 'export { value } from "../value.ts";\n');
+  put(root, "src/c/b.ts", "export const other: number = 1;\n");
+  put(root, "src/value.ts", "export const value: number = 1;\n");
+  commit(root);
+  const same = bin(root, "api-diff", ["HEAD"]);
+  assert.equal(same.status, 0, same.stdout + same.stderr);
+  assert.match(same.stdout, /^API: 1 packages, 1 entries unchanged/mu);
+
+  put(root, "src/value.ts", 'export const value: string = "1";\n');
+  commit(root);
+  const changed = bin(root, "api-diff", ["HEAD~1"]);
+  assert.equal(changed.status, 1, changed.stdout + changed.stderr);
+  assert.match(changed.stdout, /^\+export declare const value: string;/mu);
+});
+
+test("api-diff matches a bundler's dist declaration only among its own package's modules when rootDir reaches outside it", (t) => {
+  const root = bundledRepo(t, "a/b", { rootDir: ".." }, "packages/public");
+  put(root, "package.json", JSON.stringify({ name: "root", private: true }));
+  put(root, "packages/a/b.ts", "export const value: number = 1;\n");
+  const own = "packages/public/src/a/b.ts";
+  put(root, own, 'import "../../../a/b.ts";\nexport const own: number = 1;\n');
+  commit(root);
+  const same = bin(root, "api-diff", ["HEAD"]);
+  assert.equal(same.status, 0, same.stdout + same.stderr);
+  assert.match(same.stdout, /^API: 1 packages, 1 entries unchanged/mu);
+
+  put(
+    root,
+    own,
+    'import "../../../a/b.ts";\nexport const own: string = "1";\n',
+  );
+  commit(root);
+  const changed = bin(root, "api-diff", ["HEAD~1"]);
+  assert.equal(changed.status, 1, changed.stdout + changed.stderr);
+  assert.match(changed.stdout, /^\+export declare const own: string;/mu);
 });
