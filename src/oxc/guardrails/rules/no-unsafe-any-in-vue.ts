@@ -36,23 +36,29 @@ function isReference(type: ts.ObjectType): type is ts.TypeReference {
   return (type.objectFlags & ts.ObjectFlags.Reference) !== 0;
 }
 
-/** The array or tuple reference `type` is, for comparing by its generic target as tsgolint does. */
+/**
+ * The array or tuple reference `type` is, for comparing by its generic target
+ * as tsgolint does. A deferred reference, such as one a type alias names as
+ * in `type AA = any[]` or `G<any>`, is not compared, as tsgolint compares
+ * only references that are not deferred.
+ */
 function arrayReference(
   checker: ts.TypeChecker,
   type: ts.Type,
 ): ts.TypeReference | undefined {
   return (checker.isArrayType(type) || checker.isTupleType(type)) &&
     isObjectType(type) &&
-    isReference(type)
+    isReference(type) &&
+    type.node === undefined
     ? type
     : undefined;
 }
 
 /**
  * Whether a `sender` value lets `any` into a `receiver` slot as an argument,
- * a return or a type argument: `any` into a slot that is undeclared or typed
- * neither `any` nor `unknown`, or an array or tuple holding `any`, as in
- * `any[]`, into one of the same generic target, such as `string[]`, with
+ * an assignment or a type argument: `any` into a slot that is undeclared or
+ * typed neither `any` nor `unknown`, or an array or tuple holding `any`, as
+ * in `any[]`, into one of the same generic target, such as `string[]`, with
  * another type in that position. `readonly` and labelled tuples have targets
  * of their own.
  */
@@ -167,8 +173,44 @@ function argumentFindings(
   });
 }
 
+/** The element type of an array, whether or not an alias names it. */
+function arrayElement(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+): ts.Type | undefined {
+  return checker.isArrayType(type)
+    ? checker.getIndexTypeOfType(type, ts.IndexKind.Number)
+    : undefined;
+}
+
+/**
+ * Whether returning `sender` from a function declared to return `receiver`
+ * lets `any` out: an array of `any`, aliased or not, into any other type but
+ * `any`, `unknown` and `unknown[]`, as `typescript/no-unsafe-return` reports
+ * it, or what {@link leaks} finds.
+ */
+function returnLeaks(
+  checker: ts.TypeChecker,
+  sender: ts.Type,
+  receiver: ts.Type | undefined,
+): boolean {
+  const element = arrayElement(checker, sender);
+  if (
+    receiver === undefined ||
+    element === undefined ||
+    !isAnyType(checker, element)
+  )
+    return leaks(checker, sender, receiver);
+  const slot = arrayElement(checker, receiver);
+  return (
+    sender !== receiver &&
+    !takesAnything(receiver) &&
+    (slot === undefined || (slot.flags & ts.TypeFlags.Unknown) === 0)
+  );
+}
+
 function returned(checker: ts.TypeChecker, value: ts.Expression): Finding[] {
-  return leaks(
+  return returnLeaks(
     checker,
     checker.getTypeAtLocation(value),
     declaredReturn(checker, value),
@@ -179,9 +221,7 @@ function returned(checker: ts.TypeChecker, value: ts.Expression): Finding[] {
 
 /** Whether `type` is `any` or an array of `any`, as a spread or rest holds it. */
 function isAnyOrAnyArray(checker: ts.TypeChecker, type: ts.Type): boolean {
-  const element = checker.isArrayType(type)
-    ? checker.getIndexTypeOfType(type, ts.IndexKind.Number)
-    : undefined;
+  const element = arrayElement(checker, type);
   return (
     isAnyType(checker, type) ||
     (element !== undefined && isAnyType(checker, element))
