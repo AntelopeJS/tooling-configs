@@ -206,3 +206,10 @@ test("sync lists the interface pattern in the root pnpm-workspace.yaml of a repo
     FRESH_INTERFACES.minimumReleaseAgeExclude,
   );
 });
+
+test("sync writes no root pnpm-workspace.yaml in a repository that pins no package manager and holds a yarn.lock, where a sync that looks only for package-lock.json adds a pnpm file to a yarn repository", (t) => {
+  const root = pinnedRepo(t, undefined);
+  put(root, "yarn.lock", "# yarn lockfile v1\n");
+  synced(root);
+  assert.equal(existsSync(join(root, "pnpm-workspace.yaml")), false);
+});
