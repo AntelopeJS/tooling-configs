@@ -62,8 +62,10 @@ export interface AntelopePresetOptions {
   /**
    * Type-aware rules. Defaults to true. Consumers must also set options.typeAware
    * in their root config because oxlint never reads that field from extends.
-   * oxlint-tsgolint reads only TypeScript files, so `.vue` script blocks get
-   * these rules from `antelopeNuxtConfig({ typeAware })` in ESLint instead.
+   * oxlint-tsgolint reads only TypeScript files, so in `.vue` script blocks
+   * `antelopejs/no-unsafe-any-in-vue` runs the `typescript/no-unsafe-*`
+   * checks, and `antelopeNuxtConfig({ typeAware })` runs every type-aware rule
+   * in ESLint.
    */
   typeAware?: boolean;
 }
@@ -220,6 +222,7 @@ function guardrailsPreset(typeAware: boolean) {
     ],
     rules: {
       "antelopejs/no-unrun-query": typeAware ? "error" : "off",
+      "antelopejs/no-unsafe-any-in-vue": typeAware ? "error" : "off",
       "antelopejs/no-unsafe-object-assign": typeAware ? "error" : "off",
       "antelopejs/require-tsconfig-include": typeAware ? "error" : "off",
       "antelopejs/require-tsconfig-types": typeAware ? "error" : "off",
