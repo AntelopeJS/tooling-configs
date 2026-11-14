@@ -116,9 +116,11 @@ function isTable(checker: ts.TypeChecker, type: ts.Type): boolean {
   );
 }
 
-/** Whether `type` is an object literal, or an interface or object type the project declares, as opposed to a class instance or a library type. */
+/** Whether `type` is an object literal, an interface or object type the project declares, a mapped type such as `Readonly<T>` or `Record<K, V>`, or an intersection of those, as opposed to a class instance or a library type. */
 function isHolder(type: ts.Type): boolean {
+  if (type.isIntersection()) return type.types.every(isHolder);
   const symbol = type.getSymbol();
+  if (symbol?.declarations?.some(ts.isMappedTypeNode) === true) return true;
   return (
     symbol !== undefined &&
     (symbol.flags & HOLDERS) !== 0 &&
@@ -131,17 +133,19 @@ function members(type: ts.Type): readonly ts.Type[] {
   return type.isUnion() ? type.types : [type];
 }
 
-/** The values an array, a tuple or a holder keeps, which awaiting it leaves as they are. */
+/** The values an array, a tuple or a holder keeps in its properties and index signatures, which awaiting it leaves as they are. */
 function heldValues(checker: ts.TypeChecker, type: ts.Type): ts.Type[] {
   if (checker.isArrayType(type) || checker.isTupleType(type)) {
     const element = checker.getIndexTypeOfType(type, ts.IndexKind.Number);
     return element === undefined ? [] : [element];
   }
-  return isHolder(type)
-    ? checker
-        .getPropertiesOfType(type)
-        .map((property) => checker.getTypeOfSymbol(property))
-    : [];
+  if (!isHolder(type)) return [];
+  return [
+    ...checker
+      .getPropertiesOfType(type)
+      .map((property) => checker.getTypeOfSymbol(property)),
+    ...checker.getIndexInfosOfType(type).map((info) => info.type),
+  ];
 }
 
 /** Whether an array, a tuple or a holder of `type` keeps a query other than a table at any depth. */
