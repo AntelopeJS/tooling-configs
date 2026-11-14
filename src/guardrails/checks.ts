@@ -54,7 +54,7 @@ const OWN_STEPS = new Map<
   ],
   ["dependency:ranges", (root) => Promise.resolve(checkRepositoryRanges(root))],
   ["git:identity", checkGitIdentity],
-  ["readme:version", (root) => Promise.resolve(checkReadmeVersion(root))],
+  ["readme:version", checkReadmeVersion],
   ["published:types", checkPublishedTypes],
 ]);
 
