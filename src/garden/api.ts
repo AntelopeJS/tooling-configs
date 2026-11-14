@@ -21,10 +21,17 @@ import {
 /** A GitHub or npm answer that is not a success. */
 export class ApiError extends Error {
   readonly status: number;
+  /** The OAuth scopes GitHub accepts for the call, when the token holds none of them; empty otherwise. */
+  readonly missingScopes: readonly string[];
 
-  constructor(status: number, message: string) {
+  constructor(
+    status: number,
+    message: string,
+    missingScopes: readonly string[] = [],
+  ) {
     super(message);
     this.status = status;
+    this.missingScopes = missingScopes;
   }
 }
 
@@ -148,6 +155,23 @@ function githubHeaders(token: string) {
   };
 }
 
+function scopeList(header: string | null): string[] {
+  return (header ?? "")
+    .split(",")
+    .map((scope) => scope.trim())
+    .filter(Boolean);
+}
+
+/** The scopes a refused answer (403 or 404) accepts when the classic token it went to holds none; empty for any other answer or a token GitHub lists no scopes for. */
+function missingScopes(response: Response): string[] {
+  const held = response.headers.get("x-oauth-scopes");
+  if (held === null || (response.status !== 403 && response.status !== 404))
+    return [];
+  const accepted = scopeList(response.headers.get("x-accepted-oauth-scopes"));
+  const holds = new Set(scopeList(held));
+  return accepted.some((scope) => holds.has(scope)) ? [] : accepted;
+}
+
 interface RequestInit {
   method?: string;
   headers?: { [name: string]: string };
@@ -218,11 +242,16 @@ export function createApi(token: string): GardenApi {
     const response = await request(headers, url, {
       headers: accept ? { Accept: accept } : {},
     });
-    if (!response.ok)
+    if (!response.ok) {
+      const missing = missingScopes(response);
       throw new ApiError(
         response.status,
-        `GET ${path}: HTTP ${response.status} ${(await response.text()).slice(0, 200)}`,
+        missing.length
+          ? `GET ${path}: HTTP ${response.status}, the token lacks the ${missing.join(" or ")} scope`
+          : `GET ${path}: HTTP ${response.status} ${(await response.text()).slice(0, 200)}`,
+        missing,
       );
+    }
     return response;
   }
 

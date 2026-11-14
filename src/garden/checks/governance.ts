@@ -1,4 +1,5 @@
 import { CI_CONTEXT } from "../../guardrails/ci-workflow.ts";
+import { ApiError } from "../api.ts";
 import { PartialFailure, perRepo, scanEach, type Check } from "../check.ts";
 import { GardenContext, Memo, ORG, type GardenRepo } from "../context.ts";
 import {
@@ -13,7 +14,7 @@ import {
   strings,
   type JsonObject,
 } from "../json.ts";
-import { finding, found, type Finding, type Severity } from "../types.ts";
+import { finding, found, skip, type Finding, type Severity } from "../types.ts";
 
 const ALLOWED_OWNERS = ["Upd4ting", "mwesto", "dada-sudo"];
 const ALLOWED_REPO_ADMINS = [
@@ -388,9 +389,17 @@ async function orgDrift(
 export const orgChecksRuleset: Check = {
   id: "org-checks-ruleset",
   async run(context) {
-    const summaries = (await context.api.pages(`/orgs/${ORG}/rulesets`)).map(
-      (entry) => object(entry, "ruleset"),
-    );
+    let listed;
+    try {
+      listed = await context.api.pages(`/orgs/${ORG}/rulesets`);
+    } catch (error) {
+      if (error instanceof ApiError && error.missingScopes.length)
+        return skip(
+          `listing organization rulesets needs the ${error.missingScopes.join(" or ")} scope, which the token lacks`,
+        );
+      throw error;
+    }
+    const summaries = listed.map((entry) => object(entry, "ruleset"));
     const findings: Finding[] = [];
     for (const policy of ORG_RULESETS)
       findings.push(...(await orgDrift(context, summaries, policy)));
