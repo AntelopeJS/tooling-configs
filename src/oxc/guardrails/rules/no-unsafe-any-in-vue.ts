@@ -2,14 +2,8 @@ import { defineRule } from "@oxlint/plugins";
 import ts from "@typescript/typescript6";
 
 import { typedFile, type TypedFile } from "../type-checker.ts";
-import {
-  arrayElement,
-  isAnyOrAnyArray,
-  isAnyType,
-  isUnknown,
-  leaks,
-  returnLeaks,
-} from "../any-leaks.ts";
+import { isAnyOrAnyArray, isAnyType, isUnknown, leaks } from "../any-leaks.ts";
+import { returnLeaks } from "../any-returns.ts";
 import { lintedSource } from "../vue-script.ts";
 
 /** Which `typescript/no-unsafe-*` rule a finding stands in for. */
@@ -24,15 +18,16 @@ function isAny(checker: ts.TypeChecker, node: ts.Node): boolean {
   return isAnyType(checker, checker.getTypeAtLocation(node));
 }
 
-/** Whether `sender` lets `any` into an assigned `receiver`: `any` into anything but `unknown`, a slot declared `any` included, or what {@link leaks} finds. */
+/** Whether `value` lets `any` into an assigned `receiver`: `any` into anything but `unknown`, a slot declared `any` included, or what {@link leaks} finds. */
 function assignmentLeaks(
   checker: ts.TypeChecker,
-  sender: ts.Type,
+  value: ts.Expression,
   receiver: ts.Type | undefined,
 ): boolean {
+  const sender = checker.getTypeAtLocation(value);
   return isAnyType(checker, sender)
     ? !isUnknown(receiver)
-    : leaks(checker, sender, receiver);
+    : leaks(checker, sender, receiver, value);
 }
 
 /** Whether `value`, flowing into the slot its context declares, lets `any` in. */
@@ -40,11 +35,7 @@ function leaksIntoContext(
   checker: ts.TypeChecker,
   value: ts.Expression,
 ): boolean {
-  return assignmentLeaks(
-    checker,
-    checker.getTypeAtLocation(value),
-    checker.getContextualType(value),
-  );
+  return assignmentLeaks(checker, value, checker.getContextualType(value));
 }
 
 /** Whether `literal` is the target of a destructuring assignment, as in `({ a } = value)`, whose elements name targets, not values. */
@@ -72,61 +63,6 @@ function isDestructuringTarget(literal: ts.Node): boolean {
   );
 }
 
-/** The call signatures of `type` as tsgolint lists them: each union member's in turn, and an intersection's only when one member alone is callable. */
-function callSignatures(type: ts.Type): readonly ts.Signature[] {
-  if (type.isUnion()) return type.types.flatMap(callSignatures);
-  if (!type.isIntersection()) return type.getCallSignatures();
-  const callable = type.types
-    .map(callSignatures)
-    .filter((signatures) => signatures.length > 0);
-  return callable.length === 1 ? (callable[0] ?? []) : [];
-}
-
-/** The return type `owner`'s annotation declares, awaited when `owner` is async. */
-function annotatedReturn(
-  checker: ts.TypeChecker,
-  owner: ts.SignatureDeclaration,
-  annotation: ts.TypeNode,
-): ts.Type | undefined {
-  const declared = checker.getTypeFromTypeNode(annotation);
-  const isAsync =
-    ts.canHaveModifiers(owner) &&
-    ts
-      .getModifiers(owner)
-      ?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword);
-  return isAsync ? checker.getAwaitedType(declared) : declared;
-}
-
-/**
- * Whether `owner`, a function with no return annotation, leaks `sender` into
- * the returns its context declares, one per call signature, as in
- * `() => unknown` for a callback parameter: an `any` none of them declares
- * `unknown`, or an `any[]` none declares `unknown[]`, as
- * `typescript/no-unsafe-return` judges such a function by its own inferred
- * `any` return, not by a contextual `any`, or another array or tuple holding
- * `any` that {@link leaks} finds against the first of them.
- */
-function unannotatedLeaks(
-  checker: ts.TypeChecker,
-  sender: ts.Type,
-  owner: ts.SignatureDeclaration,
-): boolean {
-  const contextual = ts.isExpression(owner)
-    ? checker.getContextualType(owner)
-    : undefined;
-  const receivers = contextual
-    ? callSignatures(checker.getNonNullableType(contextual)).map((signature) =>
-        signature.getReturnType(),
-      )
-    : [];
-  if (isAnyType(checker, sender)) return !receivers.some(isUnknown);
-  if (isAnyOrAnyArray(checker, sender))
-    return !receivers.some((receiver) =>
-      isUnknown(arrayElement(checker, receiver)),
-    );
-  return leaks(checker, sender, receivers[0]);
-}
-
 function argumentFindings(
   checker: ts.TypeChecker,
   call: ts.CallExpression | ts.NewExpression,
@@ -135,28 +71,14 @@ function argumentFindings(
     const parameter = checker.getContextualType(argument);
     return ts.isSpreadElement(argument) ||
       parameter === undefined ||
-      !leaks(checker, checker.getTypeAtLocation(argument), parameter)
+      !leaks(checker, checker.getTypeAtLocation(argument), parameter, argument)
       ? []
       : [{ kind: "argument", node: argument }];
   });
 }
 
 function returned(checker: ts.TypeChecker, value: ts.Expression): Finding[] {
-  let owner = value.parent;
-  while (!ts.isFunctionLike(owner)) {
-    if (ts.isSourceFile(owner)) return [];
-    owner = owner.parent;
-  }
-  const sender = checker.getTypeAtLocation(value);
-  const unsafe =
-    owner.type === undefined
-      ? unannotatedLeaks(checker, sender, owner)
-      : returnLeaks(
-          checker,
-          sender,
-          annotatedReturn(checker, owner, owner.type),
-        );
-  return unsafe ? [{ kind: "return", node: value }] : [];
+  return returnLeaks(checker, value) ? [{ kind: "return", node: value }] : [];
 }
 
 function spreadFindings(
@@ -192,7 +114,7 @@ function propertyFindings(
     return fallback !== undefined &&
       assignmentLeaks(
         checker,
-        checker.getTypeAtLocation(fallback),
+        fallback,
         checker.getTypeAtLocation(property.name),
       )
       ? [{ kind: "assignment", node: property }]
@@ -320,18 +242,15 @@ function arrayElements(
   });
 }
 
-/** An element that takes an `any` its source declares, but for one whose default is itself reported, and the elements nested under it. */
+/** An element that takes an `any` its source declares, and the elements nested under one with no default, as a nested pattern with a default reads that default. */
 function elementFindings(
   checker: ts.TypeChecker,
   element: PatternElement,
   source: ts.Type,
 ): Finding[] {
   if (isAnyType(checker, source))
-    return element.initializer !== undefined &&
-      isAny(checker, element.initializer)
-      ? []
-      : [{ kind: "assignment", node: element.node }];
-  return isPattern(element.target)
+    return [{ kind: "assignment", node: element.node }];
+  return element.initializer === undefined && isPattern(element.target)
     ? destructuredFindings(checker, element.target, source)
     : [];
 }
@@ -407,9 +326,8 @@ function declarationFindings(
   node: ts.VariableDeclaration,
   initializer: ts.Expression,
 ): Finding[] {
-  const source = checker.getTypeAtLocation(initializer);
   const declared = node.type && checker.getTypeAtLocation(node.name);
-  return assignmentLeaks(checker, source, declared)
+  return assignmentLeaks(checker, initializer, declared)
     ? [{ kind: "assignment", node }]
     : bindingFindings(checker, node.name, initializer);
 }
@@ -421,12 +339,17 @@ function assignmentFindings(checker: ts.TypeChecker, node: ts.Node): Finding[] {
     ts.isBinaryExpression(node) &&
     node.operatorToken.kind === ts.SyntaxKind.EqualsToken
   ) {
-    const source = checker.getTypeAtLocation(node.right);
-    if (assignmentLeaks(checker, source, checker.getTypeAtLocation(node.left)))
+    if (
+      assignmentLeaks(checker, node.right, checker.getTypeAtLocation(node.left))
+    )
       return [{ kind: "assignment", node }];
     return ts.isObjectLiteralExpression(node.left) ||
       ts.isArrayLiteralExpression(node.left)
-      ? destructuredFindings(checker, node.left, source)
+      ? destructuredFindings(
+          checker,
+          node.left,
+          checker.getTypeAtLocation(node.right),
+        )
       : [];
   }
   if (ts.isParameter(node) && node.initializer !== undefined)
@@ -436,11 +359,11 @@ function assignmentFindings(checker: ts.TypeChecker, node: ts.Node): Finding[] {
   if (ts.isBindingElement(node) && node.initializer !== undefined)
     return assignmentLeaks(
       checker,
-      checker.getTypeAtLocation(node.initializer),
+      node.initializer,
       checker.getTypeAtLocation(node.name),
     )
       ? [{ kind: "assignment", node }]
-      : [];
+      : bindingFindings(checker, node.name, node.initializer);
   if (ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node))
     return propertyFindings(checker, node);
   return [];
@@ -470,7 +393,8 @@ function findings({ checker, sourceFile }: TypedFile): Finding[] {
 /**
  * `typescript/no-unsafe-assignment`, `no-unsafe-argument` and
  * `no-unsafe-return` for the script blocks of a `.vue` file, which
- * oxlint-tsgolint cannot read: an `any` or `any[]` reaching a declared type
+ * oxlint-tsgolint cannot read: an `any`, or a generic such as `any[]` or
+ * `Set<any>` holding one, reaching a declared type
  * through a declaration, an assignment, an object literal property, a
  * default value, an argument, a spread, a destructured binding, a
  * destructuring assignment such as `({ a } = value)` or a return. An `any`
