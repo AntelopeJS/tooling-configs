@@ -25,25 +25,6 @@ const DAEMON = `if (process.env.IGNORE_TERM) process.on("SIGTERM", () => {});
 require("node:net").createServer().listen(Number(process.env.LISTEN_PORT), "127.0.0.1");
 setInterval(() => {}, 1000);`;
 
-function exists(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Whether `pid` is a process that has not exited; a zombie has. Windows has no zombies and no
- * start time to read, so it only asks whether the pid exists.
- */
-export function isLive(pid: number): boolean {
-  return process.platform === "win32"
-    ? exists(pid)
-    : identify(pid) !== undefined;
-}
-
 /** A live process as a test saw it: its pid and its start time. */
 export interface Seen {
   readonly pid: number;

@@ -18,7 +18,7 @@ import {
   startLease,
   statusRows,
 } from "./helpers/cli.ts";
-import { isLive as alive } from "./helpers/stop.ts";
+import { running, see, type Seen } from "./helpers/stop.ts";
 import { findMongod } from "./mongo.ts";
 import { accepting, claimPort, closeServer } from "./ports.ts";
 import { windowsProcesses } from "./windows.ts";
@@ -48,19 +48,31 @@ function parentOf(pid: number): string | undefined {
   return entry === undefined ? undefined : String(entry.ppid);
 }
 
-/** Kills `pid` if it still runs and waits until it has exited, so the files it holds can go. */
-async function kill(pid: number): Promise<void> {
-  if (!alive(pid)) return;
-  process.kill(pid, "SIGKILL");
-  const deadline = Date.now() + 10_000;
-  while (alive(pid) && Date.now() < deadline) await sleep(50);
+/** Whether the process `seen` names still runs, not one that took its pid since. */
+function alive(seen: Seen): boolean {
+  return running([seen]).length > 0;
 }
 
-/** Whether the process table still has an entry for `pid`, a zombie included. Windows keeps none for an exited process. */
-function inTable(pid: number): boolean {
+/** The one process `pid` names now, for later checks to tell from a process that reuses its pid. */
+function seeOne(pid: number): Seen {
+  const [seen] = see([pid]);
+  if (seen === undefined) assert.fail(`no live process holds pid ${pid}`);
+  return seen;
+}
+
+/** Kills the process `seen` names if it still runs and waits until it has exited, so the files it holds can go. */
+async function kill(seen: Seen): Promise<void> {
+  if (!alive(seen)) return;
+  process.kill(seen.pid, "SIGKILL");
+  const deadline = Date.now() + 10_000;
+  while (alive(seen) && Date.now() < deadline) await sleep(50);
+}
+
+/** Whether the process table still has an entry for the process `seen` names, a zombie included. Windows keeps none for an exited process. */
+function inTable(seen: Seen): boolean {
   return process.platform === "win32"
-    ? alive(pid)
-    : psField(pid, "stat") !== undefined;
+    ? alive(seen)
+    : psField(seen.pid, "stat") !== undefined;
 }
 
 test(
@@ -77,14 +89,15 @@ test(
     const [row] = await statusRows(worktree, env);
     const pid = row?.mongod;
     if (pid === undefined) assert.fail("status shows no mongod for the lease");
-    cleanup(t, () => kill(pid));
+    const mongod = seeOne(pid);
+    cleanup(t, () => kill(mongod));
     assert.equal(await accepting(port), true);
     await leasedEnv(worktree, env);
     const [again] = await statusRows(worktree, env);
     assert.equal(again?.mongod, pid);
     const outcome = await lease(["down"], worktree, env);
     assert.equal(outcome.code, 0, outcome.stderr);
-    assert.equal(alive(pid), false);
+    assert.equal(alive(mongod), false);
     assert.equal(await accepting(port), false);
     assert.equal(existsSync(String(printed.ANTELOPEJS_LEASE_DIR)), false);
   },
@@ -136,7 +149,8 @@ test(
     );
     const [row] = await statusRows(worktree, env);
     const pid = row?.mongod;
-    cleanup(t, () => (pid === undefined ? undefined : kill(pid)));
+    const mongod = pid === undefined ? undefined : seeOne(pid);
+    cleanup(t, () => (mongod === undefined ? undefined : kill(mongod)));
     assert.deepEqual(
       outcomes.map((outcome) => outcome.code),
       Array.from({ length: 8 }, () => 0),
@@ -171,12 +185,13 @@ test(
     const [row] = await statusRows(worktree, env);
     const pid = row?.mongod;
     if (pid === undefined) assert.fail("status shows no mongod for the lease");
-    cleanup(t, () => kill(pid));
+    const mongod = seeOne(pid);
+    cleanup(t, () => kill(mongod));
     assert.notEqual(parentOf(pid), String(command.child.pid));
     const outcome = await lease(["down"], worktree, env);
     assert.equal(outcome.code, 0, outcome.stderr);
     const deadline = Date.now() + 5_000;
-    while (inTable(pid) && Date.now() < deadline) await sleep(50);
-    assert.equal(inTable(pid), false);
+    while (inTable(mongod) && Date.now() < deadline) await sleep(50);
+    assert.equal(inTable(mongod), false);
   },
 );
