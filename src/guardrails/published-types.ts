@@ -24,6 +24,7 @@ import {
   CONSUMER_OPTIONS,
   entrySpecifiers,
 } from "./published-entries.ts";
+import { packTarball } from "./pack-tarball.ts";
 import { runCommand } from "./run-command.ts";
 
 /** A package of the repository that publishes declarations: its directory relative to the root, `""` for the root, and its `name`. */
@@ -146,17 +147,18 @@ function packedManifest(destination: string): Packed {
     : { failure: "", tarball, manifest: parseManifest(text) };
 }
 
-/** Packs the package `name` once per run, running its `prepack`, and reads the manifest its tarball holds. */
+/** Packs the package `name` once per run through {@link packTarball} and reads the manifest its tarball holds. */
 async function pack(run: Run, name: string): Promise<Packed> {
   const cached = run.packs.get(name);
   if (cached) return cached;
   const slot = String(run.packs.size);
   const destination = join(run.scratch, "tarballs", slot);
   mkdirSync(destination, { recursive: true });
-  const result = await runCommand(
+  const result = await packTarball(
     run.manager,
-    ["pack", "--pack-destination", destination],
-    { cwd: join(run.root, run.members.get(name) ?? ""), signal: run.signal },
+    join(run.root, run.members.get(name) ?? ""),
+    destination,
+    run.signal,
   );
   const packed: Packed =
     result.status === 0
