@@ -7,6 +7,7 @@ import {
   leaks,
   takesAnything,
 } from "./any-leaks.ts";
+import { typeOrder } from "./type-order.ts";
 
 /** How a returned type holds `any`, as typescript-eslint's `discriminateAnyType` sorts it. */
 type AnyKind = "any" | "any[]" | "Promise<any>" | "safe";
@@ -74,12 +75,18 @@ function declaringType(
   return context ?? checker.getTypeAtLocation(owner);
 }
 
-/** The call signatures of `type` as tsgolint lists them: each union member's in turn, and an intersection's only when one member alone is callable. */
-function callSignatures(type: ts.Type): readonly ts.Signature[] {
-  if (type.isUnion()) return type.types.flatMap(callSignatures);
+/** The call signatures of `type` as tsgolint lists them: each union member's in turn, in the order {@link typeOrder} gives them, and an intersection's only when one member alone is callable. */
+function callSignatures(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+): readonly ts.Signature[] {
+  if (type.isUnion())
+    return type.types
+      .toSorted(typeOrder(checker))
+      .flatMap((member) => callSignatures(checker, member));
   if (!type.isIntersection()) return type.getCallSignatures();
   const callable = type.types
-    .map(callSignatures)
+    .map((member) => callSignatures(checker, member))
     .filter((signatures) => signatures.length > 0);
   return callable.length === 1 ? (callable[0] ?? []) : [];
 }
@@ -133,7 +140,7 @@ export function returnLeaks(
   const owner = ownerOf(value);
   if (owner === undefined) return false;
   const sender = checker.getTypeAtLocation(value);
-  const returns = callSignatures(declaringType(checker, owner)).map(
+  const returns = callSignatures(checker, declaringType(checker, owner)).map(
     (signature) => signature.getReturnType(),
   );
   const isAsync =
