@@ -51,9 +51,23 @@ function restOf(checker: ts.TypeChecker, type: ts.Type, index: number): Rest {
       };
 }
 
+/** An expression whose arguments fill a signature's parameters: a call, a `new`, or a tagged template, whose substitutions follow its template strings. */
+type Call = ts.CallExpression | ts.NewExpression | ts.TaggedTemplateExpression;
+
+function calleeOf(call: Call): ts.Expression {
+  return ts.isTaggedTemplateExpression(call) ? call.tag : call.expression;
+}
+
+function argumentsOf(call: Call): readonly ts.Expression[] {
+  if (!ts.isTaggedTemplateExpression(call)) return call.arguments ?? [];
+  return ts.isTemplateExpression(call.template)
+    ? call.template.templateSpans.map((span) => span.expression)
+    : [];
+}
+
 function parameterCursor(
   checker: ts.TypeChecker,
-  call: ts.CallExpression | ts.NewExpression,
+  call: Call,
   signature: ts.Signature,
 ): ParameterCursor {
   const fixed: ts.Type[] = [];
@@ -94,21 +108,24 @@ function parameterCursor(
  * `typescript/no-unsafe-argument` reports them: each argument against the
  * parameter it fills, a spread `any` or `any[]` once, and each element of a
  * spread tuple against the parameter that element fills, so one spread can be
- * reported once per element. A call whose callee is `any` is left alone.
+ * reported once per element. The substitutions of a tagged template fill the
+ * parameters after the one its template strings fill. A call whose callee is
+ * `any` is left alone.
  */
 export function unsafeArguments(
   checker: ts.TypeChecker,
-  call: ts.CallExpression | ts.NewExpression,
+  call: Call,
 ): ts.Expression[] {
-  const args = call.arguments ?? [];
+  const args = argumentsOf(call);
   if (
     args.length === 0 ||
-    isAnyType(checker, checker.getTypeAtLocation(call.expression))
+    isAnyType(checker, checker.getTypeAtLocation(calleeOf(call)))
   )
     return [];
   const signature = checker.getResolvedSignature(call);
   if (signature === undefined) return [];
   const cursor = parameterCursor(checker, call, signature);
+  if (ts.isTaggedTemplateExpression(call)) cursor.next();
   return args.flatMap((argument) => {
     if (!ts.isSpreadElement(argument)) {
       const parameter = cursor.next();

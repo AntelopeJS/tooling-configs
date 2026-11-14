@@ -293,3 +293,29 @@ test("in a tsx script, an any or an any-holding generic passed as a JSX attribut
     vue: expected,
   });
 });
+
+const taggedTemplates = `declare const parsedAny: any;
+declare const anySet: Set<any>;
+declare function tag(s: TemplateStringsArray, x: string): string;
+declare function many(s: TemplateStringsArray, ...rest: string[]): string;
+declare function loose(s: TemplateStringsArray, ...rest: unknown[]): string;
+declare function sets(s: TemplateStringsArray, x: Set<string>): string;
+declare const anyTag: any;
+const a = tag\`\${parsedAny}\`;
+const b = many\`\${"a"} and \${parsedAny} and \${parsedAny}\`;
+const c = loose\`\${parsedAny}\`;
+const d = sets\`\${anySet}\`;
+const e = anyTag\`\${parsedAny}\`;
+const f = tag\`plain\`;
+const g = String.raw\`\${parsedAny}\`;
+const h = tag\`\${"x"}\`;
+void [a, b, c, d, e, f, g, h];
+`;
+
+test("each substitution of a tagged template is reported against the tag parameter it fills after the template strings, once per unsafe substitution, a substitution into any or unknown is not, and the any result of an any tag is reported where it is assigned, on the lines tsgolint reports (fails if tagged template substitutions are not checked as arguments, or are matched from the tag's first parameter)", () => {
+  const expected = [8, 9, 9, 11, 12];
+  assert.deepEqual(parityLines("TaggedTemplates", taggedTemplates), {
+    ts: expected,
+    vue: expected,
+  });
+});
