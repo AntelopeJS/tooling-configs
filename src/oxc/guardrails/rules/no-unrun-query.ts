@@ -107,10 +107,12 @@ function isQuery(checker: ts.TypeChecker, type: ts.Type): boolean {
   return declaredIn(checker.getPropertyOfType(type, "run"), INTERFACE_DATABASE);
 }
 
-/** Whether `type` is an interface-database `Table`, which a value holds as a handle to query later rather than as a query to run. */
-function isTable(type: ts.Type): boolean {
-  const symbol = type.getSymbol();
-  return symbol?.name === "Table" && declaredIn(symbol, INTERFACE_DATABASE);
+/** Whether `type` is an interface-database `Table`, alone, extended or intersected, which a value holds as a handle to query later rather than as a query to run: only a table has that package's `insert()`. */
+function isTable(checker: ts.TypeChecker, type: ts.Type): boolean {
+  return declaredIn(
+    checker.getPropertyOfType(type, "insert"),
+    INTERFACE_DATABASE,
+  );
 }
 
 /** Whether `type` is an object literal, or an interface or object type the project declares, as opposed to a class instance or a library type. */
@@ -149,7 +151,7 @@ function holdsHeldQuery(
 ): boolean {
   return heldValues(checker, type).some((value) =>
     members(value).some((member) => {
-      if (isQuery(checker, member)) return !isTable(member);
+      if (isQuery(checker, member)) return !isTable(checker, member);
       if (visited.has(member)) return false;
       visited.add(member);
       return holdsHeldQuery(checker, member, visited);

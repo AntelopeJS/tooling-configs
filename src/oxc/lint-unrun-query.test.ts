@@ -223,6 +223,11 @@ import { novels } from "./novels.ts";
 interface Database {
   novels: Table<{ title: string }>;
 }
+interface Shelf extends Table<{ title: string }> {
+  shelf: number;
+}
+declare const shelf: Shelf;
+declare const tagged: Table<{ title: string }> & { tag: string };
 class Repository {
   novels = novels;
   pending = novels.count();
@@ -232,7 +237,7 @@ function open(): Database {
 }
 export const database = async () => open();
 export const repository = async () => new Repository();
-export const literal = async () => ({ novels });
+export const literal = async () => ({ novels, shelf, tagged });
 function report(send: (value: unknown) => void) {
   send(novels.count());
 }
