@@ -178,7 +178,7 @@ export interface UnusedDirective {
 }
 
 /** An error oxlint reports with no rule code, such as a parse error or a file it cannot open, so the file's directives went unchecked. */
-export interface UnreadableFile {
+interface UnreadableFile {
   /** `file:line:column` of the first label, the file when oxlint gives no span, or undefined when it names no file outside the message. */
   location: string | undefined;
   message: string;
