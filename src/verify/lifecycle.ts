@@ -63,7 +63,7 @@ function script(workspace: Workspace, name: string): string | undefined {
   return optStr(child(workspace.manifest, "scripts"), name);
 }
 
-/** Whether `pnpm pack` builds the package itself, so a setup build before it would run the same build twice. */
+/** Whether packing builds the package itself through its `prepack`, so a setup build before it would run the same build twice. */
 function packBuilds(workspace: Workspace): boolean {
   const prepack = script(workspace, "prepack");
   return (
