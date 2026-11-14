@@ -179,3 +179,11 @@ test("sync writes no pnpm-workspace.yaml in an unlocked playground below a packa
   synced(root);
   assert.equal(existsSync(join(root, PLAYGROUND_WORKSPACE)), false);
 });
+
+test("sync writes no pnpm-workspace.yaml in a playground of an npm repository that holds its own package-lock.json, where a sync that reads only the folders above writes a pnpm file in a folder npm installs", (t) => {
+  const root = pinnedRepo(t, "npm@10.9.0");
+  put(root, "playground/package.json", '{ "private": true }\n');
+  put(root, "playground/package-lock.json", '{ "lockfileVersion": 3 }\n');
+  synced(root);
+  assert.equal(existsSync(join(root, PLAYGROUND_WORKSPACE)), false);
+});
