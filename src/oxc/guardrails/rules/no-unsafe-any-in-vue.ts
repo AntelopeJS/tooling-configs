@@ -2,10 +2,15 @@ import { defineRule } from "@oxlint/plugins";
 import ts from "@typescript/typescript6";
 
 import { typedFile, type TypedFile } from "../type-checker.ts";
+import {
+  arrayElement,
+  isAnyOrAnyArray,
+  isAnyType,
+  isUnknown,
+  leaks,
+  returnLeaks,
+} from "../any-leaks.ts";
 import { lintedSource } from "../vue-script.ts";
-
-const UNTYPED = ts.TypeFlags.Any | ts.TypeFlags.Unknown;
-const MAX_DEPTH = 4;
 
 /** Which `typescript/no-unsafe-*` rule a finding stands in for. */
 type Unsafe = "assignment" | "argument" | "return";
@@ -15,72 +20,8 @@ interface Finding {
   node: ts.Node;
 }
 
-/** Whether `type` is `any` itself, not an error type from an import the program cannot resolve, such as another component. */
-function isAnyType(checker: ts.TypeChecker, type: ts.Type): boolean {
-  return type === checker.getAnyType();
-}
-
 function isAny(checker: ts.TypeChecker, node: ts.Node): boolean {
   return isAnyType(checker, checker.getTypeAtLocation(node));
-}
-
-function takesAnything(type: ts.Type | undefined): boolean {
-  return type === undefined || (type.flags & UNTYPED) !== 0;
-}
-
-function isObjectType(type: ts.Type): type is ts.ObjectType {
-  return (type.flags & ts.TypeFlags.Object) !== 0;
-}
-
-function isReference(type: ts.ObjectType): type is ts.TypeReference {
-  return (type.objectFlags & ts.ObjectFlags.Reference) !== 0;
-}
-
-/**
- * The array or tuple reference `type` is, for comparing by its generic target
- * as tsgolint does. A deferred reference, such as one a type alias names as
- * in `type AA = any[]` or `G<any>`, is not compared, as tsgolint compares
- * only references that are not deferred.
- */
-function arrayReference(
-  checker: ts.TypeChecker,
-  type: ts.Type,
-): ts.TypeReference | undefined {
-  return (checker.isArrayType(type) || checker.isTupleType(type)) &&
-    isObjectType(type) &&
-    isReference(type) &&
-    type.node === undefined
-    ? type
-    : undefined;
-}
-
-/**
- * Whether a `sender` value lets `any` into a `receiver` slot as an argument,
- * an assignment or a type argument: `any` into a slot that is undeclared or
- * typed neither `any` nor `unknown`, or an array or tuple holding `any`, as
- * in `any[]`, into one of the same generic target, such as `string[]`, with
- * another type in that position. `readonly` and labelled tuples have targets
- * of their own.
- */
-function leaks(
-  checker: ts.TypeChecker,
-  sender: ts.Type,
-  receiver: ts.Type | undefined,
-  depth = 0,
-): boolean {
-  if (isAnyType(checker, sender))
-    return receiver === undefined || !takesAnything(receiver);
-  if (receiver === undefined || depth === MAX_DEPTH) return false;
-  const from = arrayReference(checker, sender);
-  const to = arrayReference(checker, receiver);
-  if (from === undefined || to === undefined || from.target !== to.target)
-    return false;
-  const slots = checker.getTypeArguments(to);
-  return checker
-    .getTypeArguments(from)
-    .some((argument, index) =>
-      leaks(checker, argument, slots[index], depth + 1),
-    );
 }
 
 /** Whether `sender` lets `any` into an assigned `receiver`: `any` into anything but `unknown`, a slot declared `any` included, or what {@link leaks} finds. */
@@ -90,7 +31,7 @@ function assignmentLeaks(
   receiver: ts.Type | undefined,
 ): boolean {
   return isAnyType(checker, sender)
-    ? receiver === undefined || (receiver.flags & ts.TypeFlags.Unknown) === 0
+    ? !isUnknown(receiver)
     : leaks(checker, sender, receiver);
 }
 
@@ -131,32 +72,59 @@ function isDestructuringTarget(literal: ts.Node): boolean {
   );
 }
 
-function declaredReturn(
+/** The call signatures of `type` as tsgolint lists them: each union member's in turn, and an intersection's only when one member alone is callable. */
+function callSignatures(type: ts.Type): readonly ts.Signature[] {
+  if (type.isUnion()) return type.types.flatMap(callSignatures);
+  if (!type.isIntersection()) return type.getCallSignatures();
+  const callable = type.types
+    .map(callSignatures)
+    .filter((signatures) => signatures.length > 0);
+  return callable.length === 1 ? (callable[0] ?? []) : [];
+}
+
+/** The return type `owner`'s annotation declares, awaited when `owner` is async. */
+function annotatedReturn(
   checker: ts.TypeChecker,
-  node: ts.Node,
+  owner: ts.SignatureDeclaration,
+  annotation: ts.TypeNode,
 ): ts.Type | undefined {
-  let owner = node.parent;
-  while (!ts.isFunctionLike(owner)) {
-    if (ts.isSourceFile(owner)) return undefined;
-    owner = owner.parent;
-  }
-  const contextual = ts.isExpression(owner)
-    ? checker.getContextualType(owner)
-    : undefined;
-  const declared =
-    owner.type === undefined
-      ? contextual &&
-        checker
-          .getNonNullableType(contextual)
-          .getCallSignatures()[0]
-          ?.getReturnType()
-      : checker.getTypeFromTypeNode(owner.type);
+  const declared = checker.getTypeFromTypeNode(annotation);
   const isAsync =
     ts.canHaveModifiers(owner) &&
     ts
       .getModifiers(owner)
       ?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword);
-  return declared && isAsync ? checker.getAwaitedType(declared) : declared;
+  return isAsync ? checker.getAwaitedType(declared) : declared;
+}
+
+/**
+ * Whether `owner`, a function with no return annotation, leaks `sender` into
+ * the returns its context declares, one per call signature, as in
+ * `() => unknown` for a callback parameter: an `any` none of them declares
+ * `unknown`, or an `any[]` none declares `unknown[]`, as
+ * `typescript/no-unsafe-return` judges such a function by its own inferred
+ * `any` return, not by a contextual `any`, or another array or tuple holding
+ * `any` that {@link leaks} finds against the first of them.
+ */
+function unannotatedLeaks(
+  checker: ts.TypeChecker,
+  sender: ts.Type,
+  owner: ts.SignatureDeclaration,
+): boolean {
+  const contextual = ts.isExpression(owner)
+    ? checker.getContextualType(owner)
+    : undefined;
+  const receivers = contextual
+    ? callSignatures(checker.getNonNullableType(contextual)).map((signature) =>
+        signature.getReturnType(),
+      )
+    : [];
+  if (isAnyType(checker, sender)) return !receivers.some(isUnknown);
+  if (isAnyOrAnyArray(checker, sender))
+    return !receivers.some((receiver) =>
+      isUnknown(arrayElement(checker, receiver)),
+    );
+  return leaks(checker, sender, receivers[0]);
 }
 
 function argumentFindings(
@@ -173,59 +141,22 @@ function argumentFindings(
   });
 }
 
-/** The element type of an array, whether or not an alias names it. */
-function arrayElement(
-  checker: ts.TypeChecker,
-  type: ts.Type,
-): ts.Type | undefined {
-  return checker.isArrayType(type)
-    ? checker.getIndexTypeOfType(type, ts.IndexKind.Number)
-    : undefined;
-}
-
-/**
- * Whether returning `sender` from a function declared to return `receiver`
- * lets `any` out: an array of `any`, aliased or not, into any other type but
- * `any`, `unknown` and `unknown[]`, as `typescript/no-unsafe-return` reports
- * it, or what {@link leaks} finds.
- */
-function returnLeaks(
-  checker: ts.TypeChecker,
-  sender: ts.Type,
-  receiver: ts.Type | undefined,
-): boolean {
-  const element = arrayElement(checker, sender);
-  if (
-    receiver === undefined ||
-    element === undefined ||
-    !isAnyType(checker, element)
-  )
-    return leaks(checker, sender, receiver);
-  const slot = arrayElement(checker, receiver);
-  return (
-    sender !== receiver &&
-    !takesAnything(receiver) &&
-    (slot === undefined || (slot.flags & ts.TypeFlags.Unknown) === 0)
-  );
-}
-
 function returned(checker: ts.TypeChecker, value: ts.Expression): Finding[] {
-  return returnLeaks(
-    checker,
-    checker.getTypeAtLocation(value),
-    declaredReturn(checker, value),
-  )
-    ? [{ kind: "return", node: value }]
-    : [];
-}
-
-/** Whether `type` is `any` or an array of `any`, as a spread or rest holds it. */
-function isAnyOrAnyArray(checker: ts.TypeChecker, type: ts.Type): boolean {
-  const element = arrayElement(checker, type);
-  return (
-    isAnyType(checker, type) ||
-    (element !== undefined && isAnyType(checker, element))
-  );
+  let owner = value.parent;
+  while (!ts.isFunctionLike(owner)) {
+    if (ts.isSourceFile(owner)) return [];
+    owner = owner.parent;
+  }
+  const sender = checker.getTypeAtLocation(value);
+  const unsafe =
+    owner.type === undefined
+      ? unannotatedLeaks(checker, sender, owner)
+      : returnLeaks(
+          checker,
+          sender,
+          annotatedReturn(checker, owner, owner.type),
+        );
+  return unsafe ? [{ kind: "return", node: value }] : [];
 }
 
 function spreadFindings(
@@ -561,7 +492,7 @@ export const noUnsafeAnyInVueRule = defineRule({
       argument:
         "Unsafe argument of type `any` to a typed parameter, which `typescript/no-unsafe-argument` reports in a TypeScript file. Pass a typed value.",
       return:
-        "Unsafe return of an `any` value from a function with a declared return type, which `typescript/no-unsafe-return` reports in a TypeScript file. Return a typed value.",
+        "Unsafe return of an `any` value, which `typescript/no-unsafe-return` reports in a TypeScript file. Return a typed value.",
     },
   },
   createOnce(context) {
