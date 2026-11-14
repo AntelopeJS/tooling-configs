@@ -56,7 +56,9 @@ function compareSymbols(
  * object types by their symbol's declaration, references first, and
  * intersections by their members. Where tsgo falls back to type creation
  * order this keeps the order the types already have, as a TypeScript 6 union
- * lists its members in creation order.
+ * lists its members in creation order. So does a tie tsgo breaks with data
+ * TypeScript 6 keeps internal: the type mappers of two instantiations of one
+ * anonymous type, and the file order of tsgo's program.
  */
 export function typeOrder(
   checker: ts.TypeChecker,

@@ -402,6 +402,14 @@ function findings({ checker, sourceFile }: TypedFile): Finding[] {
  * TypeScript files stay with tsgolint, and a
  * component with `generic` type parameters is skipped, as only Vue's compiler
  * brings them into scope.
+ *
+ * A tuple or generic returned into a union of callables is compared with the
+ * member tsgo, which tsgolint runs, orders first. Two ties stay in TypeScript
+ * 6's creation order, so the rule can compare another member than tsgolint
+ * does: two instantiations of one anonymous generic, as in
+ * `H<string>["m"] | H<unknown>["m"]`, which tsgo orders by their type
+ * mappers, and two same-named types declared in different files, which tsgo
+ * orders by its program's file order. TypeScript 6 exposes neither.
  */
 export const noUnsafeAnyInVueRule = defineRule({
   meta: {
