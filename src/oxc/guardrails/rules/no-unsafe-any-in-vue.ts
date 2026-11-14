@@ -498,9 +498,8 @@ function findings({ checker, sourceFile }: TypedFile): Finding[] {
  * through a declaration, an assignment, an object literal property, a
  * default value, an argument, a spread, a destructured binding, a
  * destructuring assignment such as `({ a } = value)` or a return. An `any`
- * assigned to a slot declared `any` is reported too, as tsgolint reports it;
- * an `any` passed or returned there is not. TypeScript files stay with
- * tsgolint, and a
+ * assigned to a slot declared `any` is reported too, as tsgolint reports it.
+ * TypeScript files stay with tsgolint, and a
  * component with `generic` type parameters is skipped, as only Vue's compiler
  * brings them into scope.
  */
