@@ -2,15 +2,16 @@ import { lintProject } from "./lint-project.ts";
 
 const UNSAFE = /\(no-unsafe-(?:assignment|argument|return|any-in-vue)\)$/;
 
-/** A strict tsconfig that lists the components under `app/` and the TypeScript files under `src/`. */
+/** A strict tsconfig that lists the components under `app/` and the TypeScript and TSX files under `src/`, with JSX kept as written. */
 export const tsconfig = JSON.stringify({
   compilerOptions: {
     strict: true,
     module: "esnext",
     moduleResolution: "bundler",
+    jsx: "preserve",
     types: [],
   },
-  include: ["app/**/*.vue", "src/**/*.ts"],
+  include: ["app/**/*.vue", "src/**/*.ts", "src/**/*.tsx"],
 });
 
 interface Diagnostic {
@@ -42,14 +43,18 @@ export function unsafeFindings(files: Record<string, string>): string[] {
   }
 }
 
-/** The lines, one per diagnostic and sorted, that tsgolint reports on `source` as `src/<name>.ts` and that the rule reports on it as the script setup of `app/<name>.vue`. */
-export function parityLines(name: string, source: string) {
-  const ts = `src/${name}.ts`;
+/** The lines, one per diagnostic and sorted, that tsgolint reports on `source` as `src/<name>.<lang>` and that the rule reports on it as the `lang` script setup of `app/<name>.vue`. */
+export function parityLines(
+  name: string,
+  source: string,
+  lang: "ts" | "tsx" = "ts",
+) {
+  const ts = `src/${name}.${lang}`;
   const vue = `app/${name}.vue`;
   const found = unsafeFindings({
     "tsconfig.json": tsconfig,
     [ts]: `${source}export {};\n`,
-    [vue]: `<script setup lang="ts">${source}</script>\n`,
+    [vue]: `<script setup lang="${lang}">${source}</script>\n`,
   });
   const lines = (file: string) =>
     found

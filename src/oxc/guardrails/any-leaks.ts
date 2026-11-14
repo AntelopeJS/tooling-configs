@@ -27,11 +27,13 @@ export function takesAnything(type: ts.Type | undefined): boolean {
   return type === undefined || (type.flags & UNTYPED) !== 0;
 }
 
-function isObjectType(type: ts.Type): type is ts.ObjectType {
+/** Whether `type` is an object type, such as an interface, a reference or an anonymous type. */
+export function isObjectType(type: ts.Type): type is ts.ObjectType {
   return (type.flags & ts.TypeFlags.Object) !== 0;
 }
 
-function isReference(type: ts.ObjectType): type is ts.TypeReference {
+/** Whether `type` is a reference to a generic type, such as `Set<string>`, an array or a tuple. */
+export function isReference(type: ts.ObjectType): type is ts.TypeReference {
   return (type.objectFlags & ts.ObjectFlags.Reference) !== 0;
 }
 

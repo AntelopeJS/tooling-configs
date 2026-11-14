@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import ts from "@typescript/typescript6";
 
 import { programConfig, project } from "./tsconfig-program.ts";
-import { scriptView } from "./vue-script.ts";
+import { isTsx, scriptView } from "./vue-script.ts";
 
 /** A linted file as the TypeScript program of its tsconfig types it. */
 export interface TypedFile {
@@ -24,20 +24,57 @@ function isVue(path: string): boolean {
   return path.endsWith(".vue");
 }
 
-/** A file as the program reads it: a component as its script view, undefined when it has none, and any other file as written. */
-function viewOf(path: string, text: string): string | undefined {
-  return isVue(path) ? scriptView(text) : text;
+/** A file as the program reads it, and whether it holds JSX that its extension does not announce, as a `lang="tsx"` component does. */
+interface View {
+  text: string;
+  tsx: boolean;
 }
 
-function readView(host: ts.CompilerHost, name: string): string | undefined {
+/** A file as the program reads it: a component as its script view, undefined when it has none, and any other file as written. */
+function viewOf(path: string, text: string): View | undefined {
+  if (!isVue(path)) return { text, tsx: false };
+  const view = scriptView(text);
+  return view === undefined ? undefined : { text: view, tsx: isTsx(text) };
+}
+
+/** The TSX component views, parsed outside {@link documents}, which keeps one parse kind per path and fails on a path whose script changes between `lang="ts"` and `lang="tsx"`. */
+const tsxViews = new Map<string, ts.SourceFile>();
+
+function tsxView(
+  name: string,
+  text: string,
+  language: ts.ScriptTarget | ts.CreateSourceFileOptions,
+): ts.SourceFile {
+  const cached = tsxViews.get(name);
+  if (cached?.text === text) return cached;
+  const parsed = ts.createSourceFile(
+    name,
+    text,
+    language,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  tsxViews.set(name, parsed);
+  return parsed;
+}
+
+function readView(host: ts.CompilerHost, name: string): View | undefined {
   const text = host.readFile(name);
   return text === undefined ? undefined : viewOf(name, text);
+}
+
+/** Whether `sourceFile` is `view` parsed as its kind, JSX read as JSX. */
+function parses(sourceFile: ts.SourceFile | undefined, view: View): boolean {
+  return (
+    sourceFile?.text === view.text &&
+    (sourceFile.languageVariant === ts.LanguageVariant.JSX) === view.tsx
+  );
 }
 
 function build(
   config: string,
   path: string,
-  view: string,
+  view: View,
 ): ts.Program | undefined {
   const parsed = project(config);
   if (parsed === undefined) return undefined;
@@ -48,13 +85,14 @@ function build(
   const host = ts.createCompilerHost(options, true);
   host.getSourceFile = (name, language) => {
     const content = normalize(name) === path ? view : readView(host, name);
-    return content === undefined
-      ? undefined
+    if (content === undefined) return undefined;
+    return content.tsx
+      ? tsxView(name, content.text, language)
       : documents.acquireDocument(
           name,
           options,
-          ts.ScriptSnapshot.fromString(content),
-          content,
+          ts.ScriptSnapshot.fromString(content.text),
+          content.text,
           undefined,
           language,
         );
@@ -82,10 +120,9 @@ export function typedFile(file: string, text: string): TypedFile | undefined {
   const view = viewOf(path, text);
   if (view === undefined) return undefined;
   const cached = programs.get(config);
-  const program =
-    cached?.getSourceFile(path)?.text === view
-      ? cached
-      : build(config, path, view);
+  const program = parses(cached?.getSourceFile(path), view)
+    ? cached
+    : build(config, path, view);
   const sourceFile = program?.getSourceFile(path);
   return program && sourceFile
     ? {
