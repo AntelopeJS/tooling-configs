@@ -254,7 +254,7 @@ test("staged ratchet passes when oxlint ignores every staged file but still fail
   execFileSync("git", ["add", "broken.ts"], { cwd: root });
   const broken = bin(root, "ratchet", ["--staged", "broken.ts"]);
   assert.notEqual(broken.status, 0);
-  assert.match(broken.stderr, /parser or configuration errors/);
+  assert.match(broken.stderr, /^broken\.ts: .*[Ee]xpected/mu);
 });
 
 test("ratchet removes zero ceilings without claiming a lowering from zero to zero", (t) => {
