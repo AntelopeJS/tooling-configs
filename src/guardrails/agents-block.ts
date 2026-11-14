@@ -94,7 +94,7 @@ const SHARED_RULES = [
     "`antelopejs/no-read-then-insert`",
   ],
   [
-    "An async function or promise callback returns no unrun database query",
+    "An awaited function or a promise resolves to no unrun database query",
     "`antelopejs/no-unrun-query`",
   ],
   [
