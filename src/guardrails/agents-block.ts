@@ -94,6 +94,10 @@ const SHARED_RULES = [
     "`antelopejs/no-read-then-insert`",
   ],
   [
+    "An async function or promise callback returns no unrun database query",
+    "`antelopejs/no-unrun-query`",
+  ],
+  [
     "`Object.assign` writes no `unknown`, `any` or mistyped value over a field",
     "`antelopejs/no-unsafe-object-assign`",
   ],

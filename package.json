@@ -88,6 +88,7 @@
     "yaml": "^2.9.1"
   },
   "devDependencies": {
+    "@antelopejs/interface-database": ">=0.4.0 <0.5.0",
     "@nuxt/eslint-config": "^1.17.0",
     "@types/node": "^24.13.3",
     "@types/semver": "^7.8.0",

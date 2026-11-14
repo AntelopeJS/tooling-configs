@@ -8,6 +8,7 @@ import { noPresenceOnlyTypeGuardRule } from "./rules/no-presence-only-type-guard
 import { noReadThenInsertRule } from "./rules/no-read-then-insert.ts";
 import { noSelfImportInTestsRule } from "./rules/no-self-import-in-tests.ts";
 import { noTypeofFunctionOnlyTestRule } from "./rules/no-typeof-function-only-test.ts";
+import { noUnrunQueryRule } from "./rules/no-unrun-query.ts";
 import { noUnsafeObjectAssignRule } from "./rules/no-unsafe-object-assign.ts";
 import { requireAssertionRule } from "./rules/require-assertion.ts";
 import { requireTsconfigIncludeRule } from "./rules/require-tsconfig-include.ts";
@@ -15,7 +16,7 @@ import { requireTsconfigTypesRule } from "./rules/require-tsconfig-types.ts";
 
 export { ASSERTION_FUNCTION_NAMES, TEST_FILE_GLOBS } from "./shared.ts";
 
-/** AntelopeJS rules that reject comments, inherited-key lookups, presence-only type guards, inserts that follow a read of the same table, unchecked Object.assign writes, low-evidence tests, files no tsconfig lists and tsconfigs that list no `types`. */
+/** AntelopeJS rules that reject comments, inherited-key lookups, presence-only type guards, inserts that follow a read of the same table, unrun interface-database queries an awaited function returns, unchecked Object.assign writes, low-evidence tests, files no tsconfig lists and tsconfigs that list no `types`. */
 const guardrailsPlugin = eslintCompatPlugin({
   meta: { name: "antelopejs" },
   rules: {
@@ -27,6 +28,7 @@ const guardrailsPlugin = eslintCompatPlugin({
     "no-constant-value-assertion": noConstantValueAssertionRule,
     "no-self-import-in-tests": noSelfImportInTestsRule,
     "no-typeof-function-only-test": noTypeofFunctionOnlyTestRule,
+    "no-unrun-query": noUnrunQueryRule,
     "no-unsafe-object-assign": noUnsafeObjectAssignRule,
     "require-assertion": requireAssertionRule,
     "require-tsconfig-include": requireTsconfigIncludeRule,

@@ -14,6 +14,7 @@ export const PACK_NEW_RULES = new Map([
   ["antelopejs/no-inherited-key-lookup", "0.2.17"],
   ["antelopejs/no-presence-only-type-guard", "0.2.17"],
   ["antelopejs/no-read-then-insert", "0.5.1"],
+  ["antelopejs/no-unrun-query", "0.6.0"],
   ["antelopejs/no-unsafe-object-assign", "0.4.2"],
   ["antelopejs/require-tsconfig-include", "0.2.18"],
   ["antelopejs/require-tsconfig-types", "0.4.2"],
