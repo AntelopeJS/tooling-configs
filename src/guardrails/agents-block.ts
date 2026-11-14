@@ -98,7 +98,7 @@ const SHARED_RULES = [
     "`antelopejs/no-unsafe-object-assign`",
   ],
   [
-    "Every file type-aware lint reads is listed by a tsconfig",
+    "Every file type-aware lint reads is listed by a tsconfig that resolves its imports",
     "`antelopejs/require-tsconfig-include`",
   ],
   [
