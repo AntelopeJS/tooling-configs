@@ -291,3 +291,23 @@ test("a range behind both the newest interface release and the newest DMS releas
   assert.equal(result.status, 1, result.stdout);
   assert.equal(result.stdout.match(/use ">=0\.7\.0 <0\.8\.0"/g)?.length, 1);
 });
+
+test("a range on the minor before a provider's prerelease floor fails, where a step that counts ranges meeting only at a prerelease as overlapping passes a module that resolves no version the provider admits", async (t) => {
+  const root = repoWithRange(t, ">=0.9.0 <0.10.0", "dependencies", AUTOMATION);
+  const result = await checks(
+    root,
+    await stubRegistry(
+      t,
+      { [AUTOMATION]: "0.9.0" },
+      {
+        "@antelopejs/dms-automation": implementing(
+          AUTOMATION,
+          "0.12.1",
+          "^0.10.0-rc.1",
+        ),
+      },
+    ),
+  );
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stdout, /use ">=0\.10\.0 <0\.11\.0"/);
+});

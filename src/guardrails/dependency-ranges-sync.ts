@@ -3,9 +3,9 @@ import { join } from "node:path";
 
 import {
   gtr,
-  intersects,
   minVersion,
   prerelease,
+  satisfies,
   valid,
   validRange,
 } from "semver";
@@ -158,6 +158,24 @@ function belowNewest(
       };
 }
 
+/** The lowest release `range` admits, without the prerelease suffix a floor such as `^0.10.0-rc.1` carries. */
+function stableFloor(range: string): string | undefined {
+  const floor = minVersion(range);
+  return floor === null
+    ? undefined
+    : `${floor.major}.${floor.minor}.${floor.patch}`;
+}
+
+/** Whether one release admitted by `a` is also admitted by `b`, counting releases only, as an install resolves them. */
+function sharesRelease(a: string, b: string): boolean {
+  const floorA = stableFloor(a);
+  const floorB = stableFloor(b);
+  return (
+    (floorA !== undefined && satisfies(floorA, b)) ||
+    (floorB !== undefined && satisfies(floorB, a))
+  );
+}
+
 function outsideImplemented(
   spec: string,
   name: string,
@@ -168,12 +186,12 @@ function outsideImplemented(
     implemented === undefined ||
     prerelease(release.version) !== null ||
     validRange(implemented) === null ||
-    intersects(spec, implemented)
+    sharesRelease(spec, implemented)
   )
     return undefined;
-  const floor = minVersion(implemented);
+  const floor = stableFloor(implemented);
   const expected =
-    floor === null ? undefined : cappedReplacement(spec, floor.version);
+    floor === undefined ? undefined : cappedReplacement(spec, floor);
   return expected === undefined
     ? undefined
     : {
