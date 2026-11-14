@@ -4,6 +4,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { accepting } from "../ports.ts";
 import { assertSignallable, identify } from "../procs.ts";
+import { windowsProcesses } from "../windows.ts";
 import {
   cleanup,
   firstLine,
@@ -41,6 +42,47 @@ export function isLive(pid: number): boolean {
   return process.platform === "win32"
     ? exists(pid)
     : identify(pid) !== undefined;
+}
+
+/** A live process as a test saw it: its pid and its start time. */
+export interface Seen {
+  readonly pid: number;
+  readonly start: string;
+}
+
+/** The start time of each of `pids` now, `undefined` for a pid no live process holds. */
+function startsOf(pids: readonly number[]): (string | undefined)[] {
+  if (process.platform !== "win32")
+    return pids.map((pid) => identify(pid)?.start);
+  const table = new Map(
+    windowsProcesses().map((entry) => [entry.pid, entry.start]),
+  );
+  return pids.map((pid) => table.get(pid));
+}
+
+/**
+ * Who each of the live `pids` is now, for `running` to tell later from a process the system gave
+ * the same pid. Throws when one is not running, so no later check passes on a process never seen.
+ */
+export function see(pids: readonly number[]): Seen[] {
+  const starts = startsOf(pids);
+  return pids.map((pid, index) => {
+    const start = starts[index];
+    if (start === undefined)
+      throw new Error(`no live process holds pid ${pid}`);
+    return { pid, start };
+  });
+}
+
+/**
+ * The pids of `seen` whose process still runs. A pid that a new process now holds does not count:
+ * Windows hands a freed pid to the next process within moments.
+ */
+export function running(seen: readonly Seen[]): number[] {
+  const now = startsOf(seen.map((entry) => entry.pid));
+  return seen
+    .filter((entry, index) => now[index] === entry.start)
+    .map((entry) => entry.pid);
 }
 
 /**
