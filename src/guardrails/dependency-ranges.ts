@@ -11,6 +11,8 @@
 
 const ANTELOPEJS_SCOPE = "@antelopejs/";
 
+const INTERFACE_PREFIX = `${ANTELOPEJS_SCOPE}interface-`;
+
 /** A linked folder is the copy the dependent builds against, not a release it resolves. */
 const LINK_SPEC_PREFIXES = ["file:", "link:"];
 
@@ -253,6 +255,30 @@ export function checkDependencyRanges(
     }
   }
   return violations;
+}
+
+/** An `@antelopejs/interface-*` range a manifest declares in a field this check reads. */
+export interface InterfaceRange {
+  field: Field;
+  name: string;
+  spec: string;
+}
+
+/**
+ * The `@antelopejs/interface-*` ranges of `manifest` that resolve from the registry: neither a linked folder nor a
+ * `workspace:` sibling.
+ */
+export function interfaceRanges(manifest: PackageManifest): InterfaceRange[] {
+  return CHECKED_FIELDS.flatMap((field) =>
+    Object.entries(manifest[field] ?? {})
+      .filter(
+        ([name, spec]) =>
+          name.startsWith(INTERFACE_PREFIX) &&
+          !isLinkSpec(spec) &&
+          !spec.startsWith(WORKSPACE_PREFIX),
+      )
+      .map(([name, spec]) => ({ field, name, spec })),
+  );
 }
 
 export function describeViolation(violation: RangeViolation): string {

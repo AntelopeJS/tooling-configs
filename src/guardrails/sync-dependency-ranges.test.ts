@@ -9,9 +9,13 @@ import { checkRepositoryRanges } from "./dependency-ranges-sync.ts";
 import { parseManifest } from "./package.ts";
 import { writeTool } from "./helpers/shell.ts";
 import { bin, commit, put, read, testRepo } from "./helpers/test-repo.ts";
+import { stubRegistry, useRegistry } from "./helpers/registry.ts";
 
 const INTERFACE = "@antelopejs/interface-dms-marketing";
 const MODULE_MANIFEST = "packages/dms-marketing/package.json";
+
+/** The newest release of the interface the workspace takes from the registry, which its range admits. */
+const PUBLISHED = { "@antelopejs/interface-dms": "0.12.3" };
 
 /** A pnpm on PATH that records each call's real directory and arguments, then succeeds or fails as `exitCode` says. */
 function recordingPnpm(t: TestContext, exitCode = 0) {
@@ -79,7 +83,7 @@ function moduleRange(root: string): string | undefined {
   return parseManifest(read(root, MODULE_MANIFEST)).dependencies?.[INTERFACE];
 }
 
-test("sync moves a module's range to the next minor of the interface released beside it and relocks with pnpm, where a sync that leaves the range fails the dependency:ranges check on the release commit and one that skips the relock fails CI's frozen install", (t) => {
+test("sync moves a module's range to the next minor of the interface released beside it and relocks with pnpm, where a sync that leaves the range fails the dependency:ranges check on the release commit and one that skips the relock fails CI's frozen install", async (t) => {
   const root = workspace(t, "0.7.0");
   const pnpm = recordingPnpm(t);
   const result = bin(root, "sync", [], pnpm.env);
@@ -98,10 +102,11 @@ test("sync moves a module's range to the next minor of the interface released be
   assert.deepEqual(pnpm.calls(), [
     `${realpathSync.native(root)} install --lockfile-only`,
   ]);
-  assert.equal(checkRepositoryRanges(root), "");
+  useRegistry(t, await stubRegistry(t, PUBLISHED));
+  assert.equal(await checkRepositoryRanges(root), "");
 });
 
-test("sync moves a sibling's devDependency range on the released package too, where a sync that moves only the implementer's range leaves the sibling failing the dependency:ranges check on the release commit", (t) => {
+test("sync moves a sibling's devDependency range on the released package too, where a sync that moves only the implementer's range leaves the sibling failing the dependency:ranges check on the release commit", async (t) => {
   const root = workspace(t, "0.7.0");
   put(
     root,
@@ -117,7 +122,8 @@ test("sync moves a sibling's devDependency range on the released package too, wh
       .devDependencies?.[INTERFACE],
     ">=0.7.0 <0.8.0",
   );
-  assert.equal(checkRepositoryRanges(root), "");
+  useRegistry(t, await stubRegistry(t, PUBLISHED));
+  assert.equal(await checkRepositoryRanges(root), "");
 });
 
 test("sync writes the module's docs-compat table from the moved range, where a sync that plans the README before moving the range leaves sync --check failing on the release commit", (t) => {
