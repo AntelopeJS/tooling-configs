@@ -249,11 +249,22 @@ after(...tup, parsedAny);
 declare const call: any;
 call(...tup);
 new Set<string>(...[[parsedAny]] as const);
+declare function takeMap(m: Map<string, number>): void;
+takeMap(new Map());
+takeMap((new Map()));
+takeMap(new Map<any, any>());
+declare function tupleRest(...args: [unknown, string]): void;
+tupleRest(parsedAny,
+  parsedAny);
+declare const three: [any, any, any];
+tupleRest(...three);
 void 0;
 `;
 
-test("each element of a tuple spread into a call is reported against the parameter it fills, once per unsafe element, a rest element sends later arguments to the rest parameter, and an argument after a spread fills the parameter past it, on the lines tsgolint reports (fails if tuple spreads are not checked, a spread is reported once whatever its elements, or arguments are matched with parameters by position without the spread's length)", () => {
-  const expected = [12, 13, 14, 14, 15, 17, 18, 19, 19, 20, 21, 21];
+test("each element of a tuple spread into a call is reported against the parameter it fills, once per unsafe element, a rest element sends later arguments to the rest parameter, and an argument after a spread fills the parameter past it, on the lines tsgolint reports (fails if tuple spreads are not checked, a spread is reported once whatever its elements, arguments are matched with parameters by position without the spread's length, a tuple rest parameter is read as one element type or not past its last element, or new Map() is not let into a Map parameter)", () => {
+  const expected = [
+    12, 13, 14, 14, 15, 17, 18, 19, 19, 20, 21, 21, 27, 28, 31, 33, 33,
+  ];
   assert.deepEqual(parityLines("TupleSpreads", tupleSpreads), {
     ts: expected,
     vue: expected,

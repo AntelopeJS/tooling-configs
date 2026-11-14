@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { declaresTypeParameters, scriptView } from "./vue-script.ts";
+import { declaresTypeParameters, isTsx, scriptView } from "./vue-script.ts";
 
 const COMPONENT = `<template>
   <p>é😀</p>
@@ -70,4 +70,19 @@ test("a component with `generic` type parameters keeps its view and is known to 
   assert.equal(scriptView(generic)?.includes("const b = 2;"), true);
   assert.equal(declaresTypeParameters(generic), true);
   assert.equal(declaresTypeParameters(COMPONENT), false);
+});
+
+test("a component is tsx when a script block's lang is tsx, quoted with double or single quotes or unquoted, and not when it is ts or names tsx elsewhere (fails if only the double-quoted form is read, or a lang starting with tsx or a data attribute counts)", () => {
+  assert.deepEqual(
+    [
+      '<script setup lang="tsx">a</script>',
+      "<script setup lang='tsx'>a</script>",
+      "<script setup lang=tsx>a</script>",
+      '<script lang="tsx" setup>a</script>',
+      '<script setup lang="ts">a</script>',
+      '<script setup lang="tsxx">a</script>',
+      '<script setup data-lang="tsx" lang="ts">a</script>',
+    ].map(isTsx),
+    [true, true, true, true, false, false, false],
+  );
 });

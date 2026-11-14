@@ -7,12 +7,14 @@ import ts from "@typescript/typescript6";
 
 import { typedFile } from "./type-checker.ts";
 
+const SCRIPT = 'const a: string = "x";\nvoid a;';
+
 const COMPONENTS = {
-  tsx: '<script setup lang="tsx">const a = <div title="x" />;\nvoid a;</script>\n',
-  ts: '<script setup lang="ts">const a: string = "x";\nvoid a;</script>\n',
+  tsx: `<script setup lang="tsx">${SCRIPT}</script>\n`,
+  ts: `<script setup lang="ts" >${SCRIPT}</script>\n`,
 };
 
-test("a component edited between lang tsx and lang ts in one process is typed as JSX, then as TypeScript, then as JSX again (fails if the parse cache keeps one kind per path and throws when it changes, or keeps the earlier kind)", () => {
+test("a component whose script switches between lang tsx and lang ts in one process, with the same script view, is typed as JSX, then as TypeScript, then as JSX again (fails if the parse cache keeps one kind per path and throws when it changes, or a cached program is reused for the same text in another kind)", () => {
   const root = mkdtempSync(join(tmpdir(), "antelope-typed-file-"));
   try {
     mkdirSync(join(root, "app"));
