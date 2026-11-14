@@ -68,10 +68,12 @@ function toPlainUnknowns(): unknown[] { return rows; }
 async function toAnys(): Promise<any[]> { return rows; }
 declare function later(handler: () => Promise<unknown[]>): void;
 later(async () => rows);
+declare function settle(handler: () => Promise<unknown>): void;
+settle(async () => pAny);
 void [toUnknowns, toString, syncPromise, toUnknown, toPlainUnknowns, toAnys];
 `;
 
-test("an any[] returned from an async function declared Promise<unknown[]> and a Promise<any> returned from one declared Promise<string> are reported, and a Promise<any> a function not async returns is not, on the lines tsgolint reports (fails if the declared Promise is awaited before the unknown[] exemption, a Promise<any> is not told from a safe value, or a function not async is judged by the awaited Promise)", () => {
+test("an any[] returned from an async function declared Promise<unknown[]> and a Promise<any> returned from one declared Promise<string> are reported, and a Promise<any> a function not async returns or an async callback returns into Promise<unknown> is not, on the lines tsgolint reports (fails if the declared Promise is awaited before the unknown[] exemption, a Promise<any> is not told from a safe value, a function not async is judged by the awaited Promise, or a Promise<unknown> context does not excuse a Promise<any>)", () => {
   const expected = [3, 4, 10];
   assert.deepEqual(parityLines("AsyncReturns", asyncReturns), {
     ts: expected,
@@ -92,10 +94,12 @@ on(() => parsedAny);
 const typed: () => unknown = () => parsedAny;
 let later: () => unknown;
 later = () => parsedAny;
-void [property, list, cast, checked, picked, wrapped, factory, typed, later];
+class Holder { handler: () => unknown = () => parsedAny; }
+function withDefault(handler: () => unknown = () => parsedAny): void { void handler; }
+void [property, list, cast, checked, picked, wrapped, factory, typed, later, Holder, withDefault];
 `;
 
-test("an any-returning callback in an object literal, an array, as, satisfies, a conditional, parentheses or a factory's return is judged by its own any return, and one passed, annotated or assigned by its context, on the lines tsgolint reports (fails if every function expression is judged by its checker contextual type)", () => {
+test("an any-returning callback in an object literal, an array, as, satisfies, a conditional, parentheses or a factory's return is judged by its own any return, and one passed, annotated, assigned, a class property's or a parameter default's by its context, on the lines tsgolint reports (fails if every function expression is judged by its checker contextual type, or an annotated class property or parameter does not give its default one)", () => {
   const expected = [3, 4, 5, 6, 7, 8, 9];
   assert.deepEqual(parityLines("Uncontextual", uncontextual), {
     ts: expected,
@@ -165,11 +169,29 @@ declare function namedFirst(handler: (() => [unknown]) | Beta): void;
 namedFirst(() => frozen as [any]);
 declare function inline(handler: (() => [unknown]) | (() => [string])): void;
 inline(() => frozen as [any]);
-void early;
+type Tagged = (() => [string]) & { tag?: 1 };
+declare function byFlags(handler: Tagged | (() => [unknown])): void;
+byFlags(() => frozen as [any]);
+type Of<T> = () => [T];
+declare function byAliasArguments(handler: Of<string> | Of<unknown>): void;
+byAliasArguments(() => frozen as [any]);
+interface Call<T> { (): [T] }
+declare function byReferenceArguments(handler: Call<string> | Call<unknown>): void;
+byReferenceArguments(() => frozen as [any]);
+interface Zed { (): [string] }
+interface Ant { (): [unknown] }
+declare function byInterfaceName(handler: Zed | Ant): void;
+byInterfaceName(() => frozen as [any]);
+const touched = unknownLater;
+function stringsFirst() { return ["" as string] as [string]; }
+function unknownLater() { return [1 as unknown] as [unknown]; }
+declare function bySymbol(handler: typeof unknownLater | typeof stringsFirst): void;
+bySymbol(() => frozen as [any]);
+void [early, touched, stringsFirst];
 `;
 
-test("a tuple returned into a union context is compared with the member tsgo orders first, named types by name before unnamed ones and unnamed ones by position, whatever an earlier line creates first, on the lines tsgolint reports (fails if the members are read in the TypeScript 6 checker's type creation order)", () => {
-  const expected = [6, 12];
+test("a tuple returned into a union context is compared with the member tsgo orders first, by type flags, then named types by name, alias and reference type arguments, and unnamed ones by declaration, whatever an earlier line creates first, on the lines tsgolint reports (fails if the members are read in the TypeScript 6 checker's type creation order)", () => {
+  const expected = [6, 12, 32];
   assert.deepEqual(parityLines("UnionOrder", unionOrder), {
     ts: expected,
     vue: expected,
