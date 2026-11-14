@@ -46,7 +46,8 @@ interface OxlintSpan {
 
 interface OxlintDiagnostic {
   code?: string;
-  filename: string;
+  /** Absent when oxlint could not open the file, as for one that is not UTF-8; the message names the path. */
+  filename?: string;
   message: string;
   help?: string;
   labels?: { span: OxlintSpan }[];
@@ -76,10 +77,13 @@ function parseReport(text: string): OxlintDiagnostic[] | undefined {
 }
 
 function toDiagnostic(item: OxlintDiagnostic, root: string): Diagnostic {
+  const rule = ruleId(item.code ?? "");
+  if (item.filename === undefined)
+    throw new Error(`oxlint reported ${rule} with no file: ${item.message}`);
   const file = repositoryPath(root, item.filename);
   const span = item.labels?.[0]?.span;
   return {
-    rule: ruleId(item.code ?? ""),
+    rule,
     file,
     location: span ? `${file}:${span.line}:${span.column}` : file,
     message: item.message,
@@ -179,30 +183,61 @@ export interface UnusedDirective {
   rules: string[] | undefined;
 }
 
+/** An error oxlint reports with no rule code, such as a parse error or a file it cannot open, so the file's directives went unchecked. */
+interface UnreadableFile {
+  /** `file:line:column` of the first label, the file when oxlint gives no span, or undefined when it names no file outside the message. */
+  location: string | undefined;
+  message: string;
+}
+
+/** What oxlint reports about the directives in a set of files. */
+export interface DirectiveReport {
+  unused: UnusedDirective[];
+  unreadable: UnreadableFile[];
+}
+
 const UNUSED_RULES = /\(no problems were reported from (.+)\)/u;
+
+function isUnusedDirective(message: string): boolean {
+  return (
+    message.startsWith("Unused ") && message.includes("-disable directive")
+  );
+}
 
 /**
  * The disable directives in `files` that suppress nothing, with every ratchet
- * rule enabled as in a measurement. `files` must not be empty, which would
- * lint the whole repository.
+ * rule enabled as in a measurement, and the files oxlint could not read.
+ * `files` must not be empty, which would lint the whole repository.
  */
-export function unusedDirectives(
+export function directiveReport(
   root: string,
   files: string[],
-): UnusedDirective[] {
-  return runOxlint(root, undefined, files, [
+): DirectiveReport {
+  const report: DirectiveReport = { unused: [], unreadable: [] };
+  for (const item of runOxlint(root, undefined, files, [
     "--report-unused-disable-directives",
-  ])
-    .filter(
-      ({ code, message }) =>
-        code === undefined &&
-        message.startsWith("Unused ") &&
-        message.includes("-disable directive"),
-    )
-    .map((item) => ({
-      file: repositoryPath(root, item.filename),
-      line: item.labels?.[0]?.span.line ?? 0,
-      message: item.message,
-      rules: UNUSED_RULES.exec(item.message)?.[1].split(/,\s*/u),
-    }));
+  ])) {
+    if (item.code !== undefined) continue;
+    const file =
+      item.filename === undefined
+        ? undefined
+        : repositoryPath(root, item.filename);
+    const span = item.labels?.[0]?.span;
+    if (file !== undefined && isUnusedDirective(item.message))
+      report.unused.push({
+        file,
+        line: span?.line ?? 0,
+        message: item.message,
+        rules: UNUSED_RULES.exec(item.message)?.[1].split(/,\s*/u),
+      });
+    else
+      report.unreadable.push({
+        location:
+          file !== undefined && span
+            ? `${file}:${span.line}:${span.column}`
+            : file,
+        message: item.message,
+      });
+  }
+  return report;
 }

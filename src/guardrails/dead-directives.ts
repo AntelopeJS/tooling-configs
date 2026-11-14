@@ -3,7 +3,7 @@ import { readdirSync } from "node:fs";
 import { join, posix } from "node:path";
 
 import { changedFiles } from "./files.ts";
-import { unusedDirectives, type UnusedDirective } from "./oxlint.ts";
+import { directiveReport, type UnusedDirective } from "./oxlint.ts";
 import {
   inWorktree,
   suppressionsIn,
@@ -130,9 +130,15 @@ export function deadDirectiveFailures(root: string, files: string[]): string[] {
       !(directive.startsWith("eslint-") && lintedByEslint(root, file)),
   );
   const lintable = [...new Set(readByOxlint.map(({ file }) => file))];
+  const { unused, unreadable } = lintable.length
+    ? directiveReport(root, lintable)
+    : { unused: [], unreadable: [] };
   const dead = new Map<Directive, Set<string>>();
-  const unplaced: string[] = [];
-  for (const item of lintable.length ? unusedDirectives(root, lintable) : []) {
+  const unplaced = unreadable.map(
+    ({ location, message }) =>
+      `${location === undefined ? "" : `${location}: `}oxlint cannot check the directives here: ${message}. Fix: correct the file so oxlint reads it without errors, then rerun the check.`,
+  );
+  for (const item of unused) {
     const directive = reported(readByOxlint, item);
     if (directive === undefined) {
       unplaced.push(
