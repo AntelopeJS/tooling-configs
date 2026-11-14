@@ -312,7 +312,7 @@ const h = tag\`\${"x"}\`;
 void [a, b, c, d, e, f, g, h];
 `;
 
-test("each substitution of a tagged template is reported against the tag parameter it fills after the template strings, once per unsafe substitution, and an any tag or a substitution into any or unknown is not, on the lines tsgolint reports (fails if tagged template substitutions are not checked as arguments, or are matched from the tag's first parameter)", () => {
+test("each substitution of a tagged template is reported against the tag parameter it fills after the template strings, once per unsafe substitution, a substitution into any or unknown is not, and the any result of an any tag is reported where it is assigned, on the lines tsgolint reports (fails if tagged template substitutions are not checked as arguments, or are matched from the tag's first parameter)", () => {
   const expected = [8, 9, 9, 11, 12];
   assert.deepEqual(parityLines("TaggedTemplates", taggedTemplates), {
     ts: expected,
