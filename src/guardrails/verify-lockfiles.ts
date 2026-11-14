@@ -302,14 +302,29 @@ function fixCommand(
     : `pnpm install --dir ${folder} --ignore-workspace --lockfile-only`;
 }
 
-function unlocked(root: string, folder: string): string {
-  if (inWorkspace(root, folder)) return "";
-  const manager = ancestors(folder).some((above) =>
+/** The lockfile an install writes in a folder that holds none: `package-lock.json` when a folder above holds one, `pnpm-lock.yaml` otherwise. */
+function unlockedLockfile(
+  root: string,
+  folder: string,
+): typeof PNPM_LOCK | typeof NPM_LOCK {
+  return ancestors(folder).some((above) =>
     existsSync(join(root, above, NPM_LOCK)),
   )
     ? NPM_LOCK
     : PNPM_LOCK;
-  return `${folder}/${MANIFEST} has dependencies and no lockfile: run \`${fixCommand(root, folder, manager)}\`.\n`;
+}
+
+/** Whether pnpm installs `folder`: it holds a `pnpm-lock.yaml`, or no lockfile and no folder above it holds a `package-lock.json`. */
+export function installsWithPnpm(root: string, folder: string): boolean {
+  return (
+    (lockfileIn(join(root, folder)) ?? unlockedLockfile(root, folder)) ===
+    PNPM_LOCK
+  );
+}
+
+function unlocked(root: string, folder: string): string {
+  if (inWorkspace(root, folder)) return "";
+  return `${folder}/${MANIFEST} has dependencies and no lockfile: run \`${fixCommand(root, folder, unlockedLockfile(root, folder))}\`.\n`;
 }
 
 function checkFolder(
