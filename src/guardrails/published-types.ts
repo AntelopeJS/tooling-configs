@@ -332,7 +332,9 @@ export async function checkPublishedTypes(
   );
   if (!packsWithPnpmOrNpm(manager))
     return `This check packs with pnpm or npm, not ${manager}.\n`;
-  const scratch = mkdtempSync(join(tmpdir(), "published-types-"));
+  const scratch = realpathSync.native(
+    mkdtempSync(join(tmpdir(), "published-types-")),
+  );
   const members = new Map(
     publicPackages(root).map(({ name, directory }) => [name, directory]),
   );
