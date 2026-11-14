@@ -471,3 +471,37 @@ test("Required CI that no longer targets the template pack is urgent", async () 
     ["ruleset:Required CI:urgent"],
   );
 });
+
+test("organization rulesets the token lacks the scope to list skip the check and name the scope", async () => {
+  const api = new FakeApi()
+    .org([])
+    .route(
+      "/orgs/AntelopeJS/rulesets",
+      new ApiError(404, "GET /orgs/AntelopeJS/rulesets: HTTP 404", [
+        "admin:org",
+      ]),
+    );
+  const outcome = await garden(api, { checks: [orgChecksRuleset] });
+  assert.deepEqual(outcome.failures, []);
+  assert.deepEqual(
+    outcome.report.skipped.map(({ check }) => check),
+    ["org-checks-ruleset"],
+  );
+  assert.match(outcome.report.skipped[0].reason, /needs the admin:org scope/);
+});
+
+test("organization rulesets that fail to list for another reason fail the check", async () => {
+  const api = new FakeApi()
+    .org([])
+    .route(
+      "/orgs/AntelopeJS/rulesets",
+      new ApiError(500, "GET /orgs/AntelopeJS/rulesets: HTTP 500"),
+    );
+  const outcome = await garden(api, { checks: [orgChecksRuleset] });
+  assert.deepEqual(outcome.failures, [
+    {
+      check: "org-checks-ruleset",
+      reason: "GET /orgs/AntelopeJS/rulesets: HTTP 500",
+    },
+  ]);
+});

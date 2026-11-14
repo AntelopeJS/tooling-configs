@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { ApiError, createApi } from "./api.ts";
 import { PartialFailure, type Check } from "./check.ts";
 import { FakeApi, NOW } from "./helpers/fake-api.ts";
 import { failureLines, garden } from "./run.ts";
@@ -94,4 +95,47 @@ test("the plain output lists failures only, urgent ones marked, and nothing for 
   assert.deepEqual(failureLines(outcome), [
     "URGENT mongodb advisories GHSA-1: critical in undici",
   ]);
+});
+
+async function failureOf(): Promise<ApiError> {
+  const error = await createApi("token")
+    .json("/orgs/AntelopeJS/rulesets")
+    .catch((caught: unknown) => caught);
+  assert.ok(error instanceof ApiError);
+  return error;
+}
+
+test("a refused GitHub read names the scope the classic token lacks", async (context) => {
+  context.mock.method(
+    globalThis,
+    "fetch",
+    async () =>
+      new Response("{}", {
+        status: 404,
+        headers: {
+          "X-Accepted-OAuth-Scopes": "admin:org",
+          "X-OAuth-Scopes": "gist, read:org, repo, workflow",
+        },
+      }),
+  );
+  const error = await failureOf();
+  assert.deepEqual(error.missingScopes, ["admin:org"]);
+  assert.match(error.message, /lacks the admin:org scope/);
+});
+
+test("a refused GitHub read names no scope when the token holds an accepted one or lists none", async (context) => {
+  const answers: { [name: string]: string }[] = [
+    {
+      "X-Accepted-OAuth-Scopes": "admin:org, read:org",
+      "X-OAuth-Scopes": "read:org",
+    },
+    { "X-Accepted-OAuth-Scopes": "admin:org" },
+  ];
+  context.mock.method(
+    globalThis,
+    "fetch",
+    async () => new Response("{}", { status: 404, headers: answers.shift() }),
+  );
+  assert.deepEqual((await failureOf()).missingScopes, []);
+  assert.deepEqual((await failureOf()).missingScopes, []);
 });
