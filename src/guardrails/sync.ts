@@ -466,7 +466,7 @@ export function syncRepository(
       manifest,
       profile === "full" || verify.kind === "template",
     ),
-    ...pnpmWorkspaceArtifacts(root, manifest, profile === "full"),
+    ...pnpmWorkspaceArtifacts(root, manifest, profile),
   ];
   let plan = [...planSync(current, executables, context), ...standalone];
   const errors = plan

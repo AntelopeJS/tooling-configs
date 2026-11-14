@@ -266,14 +266,26 @@ function declaresWorkspaces(path: string): boolean {
   }
 }
 
+/** Whether a `pnpm-workspace.yaml` lists `packages`, or cannot be read and so might; an empty one, or one without them, holds its own folder only. */
+function declaresPackages(path: string): boolean {
+  if (!existsSync(path)) return false;
+  const document = parseDocument(readFileSync(path, "utf8"));
+  if (document.errors.length > 0) return true;
+  const { contents } = document;
+  if (contents === null || (isScalar(contents) && contents.value === null))
+    return false;
+  return !isMap(contents) || contents.has("packages");
+}
+
 /**
- * Whether a folder above `folder` holds a workspace that may list it, a `pnpm-workspace.yaml` or a `package.json` with
- * `workspaces`: its membership then follows patterns this check does not evaluate, and that workspace's lockfile may hold it.
+ * Whether a folder above `folder` holds a workspace that may list it, a `pnpm-workspace.yaml` with `packages` or a
+ * `package.json` with `workspaces`: its membership then follows patterns this check does not evaluate, and that workspace's
+ * lockfile may hold it.
  */
-function inWorkspace(root: string, folder: string): boolean {
+export function inWorkspace(root: string, folder: string): boolean {
   return ancestors(folder).some(
     (above) =>
-      existsSync(join(root, above, PNPM_WORKSPACE)) ||
+      declaresPackages(join(root, above, PNPM_WORKSPACE)) ||
       declaresWorkspaces(join(root, above, MANIFEST)),
   );
 }

@@ -263,6 +263,22 @@ for (const { title, files } of [
     assert.equal(checkLockfiles(root), "");
   });
 
+for (const workspace of [
+  'minimumReleaseAgeExclude:\n  - "@antelopejs/interface-*"\n',
+  "",
+  "# no settings\n",
+  "~\n",
+])
+  test(`a playground with dependencies and no lockfile under a root pnpm-workspace.yaml without packages fails, caught by an implementation that counts any pnpm-workspace.yaml as a workspace that may list it: ${JSON.stringify(workspace)}`, (t) => {
+    const root = repo(t);
+    put(root, "pnpm-workspace.yaml", workspace);
+    put(root, "playground/package.json", manifest({ dependencies: LEFT_PAD }));
+    assert.equal(
+      checkLockfiles(root),
+      "playground/package.json has dependencies and no lockfile: run `pnpm install --dir playground --ignore-workspace --lockfile-only`.\n",
+    );
+  });
+
 for (const [file, content] of [
   ["pnpm-lock.yaml", "importers: [\n"],
   ["pnpm-lock.yaml", "lockfileVersion: 5.4\nspecifiers:\n  left-pad: ^1.3.0\n"],
