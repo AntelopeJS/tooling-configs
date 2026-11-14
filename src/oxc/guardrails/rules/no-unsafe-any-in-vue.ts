@@ -376,7 +376,11 @@ function assignmentFindings(checker: ts.TypeChecker, node: ts.Node): Finding[] {
 
 function nodeFindings(checker: ts.TypeChecker, node: ts.Node): Finding[] {
   if (ts.isSpreadElement(node)) return spreadFindings(checker, node);
-  if (ts.isCallExpression(node) || ts.isNewExpression(node))
+  if (
+    ts.isCallExpression(node) ||
+    ts.isNewExpression(node) ||
+    ts.isTaggedTemplateExpression(node)
+  )
     return unsafeArguments(checker, node).map((argument) => ({
       kind: "argument",
       node: argument,
@@ -405,7 +409,8 @@ function findings({ checker, sourceFile }: TypedFile): Finding[] {
  * `Set<any>` holding one, reaching a declared type
  * through a declaration, an assignment, an object literal property, a class
  * field, a JSX attribute in a `lang="tsx"` script, a default value, an
- * argument, a spread, a tuple spread into parameters, a destructured binding,
+ * argument, a tagged template substitution, a spread, a tuple spread into
+ * parameters, a destructured binding,
  * a destructuring assignment such as `({ a } = value)` or a return. An `any`
  * assigned to a slot declared `any` is reported too, as tsgolint reports it.
  * TypeScript files stay with tsgolint, and a
