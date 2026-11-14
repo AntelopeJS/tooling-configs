@@ -181,3 +181,70 @@ test("api-diff names the declaration error of a published module whose emit root
   put(root, "src/index.ts", `import "../test/fixtures.js";\n${NON_PORTABLE}`);
   assert.match(declarationFailure(root), /src\/index\.ts.*TS2883/);
 });
+
+function bundledRepo(t: TestContext, include: string[]): string {
+  const root = apiRepo(t);
+  put(
+    root,
+    "package.json",
+    JSON.stringify({
+      name: "bundled-api",
+      type: "module",
+      scripts: { build: "node build.mjs" },
+      exports: {
+        ".": { types: "./dist/index.d.mts", default: "./dist/index.mjs" },
+      },
+    }),
+  );
+  put(
+    root,
+    "build.mjs",
+    'import { mkdirSync, writeFileSync } from "node:fs";\nmkdirSync("dist", { recursive: true });\nwriteFileSync("dist/index.mjs", "export const value = 1;\\n");\n',
+  );
+  put(
+    root,
+    "tsconfig.json",
+    JSON.stringify({
+      compilerOptions: {
+        target: "ES2022",
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        types: [],
+        strict: true,
+        noEmit: true,
+        allowImportingTsExtensions: true,
+      },
+      include,
+    }),
+  );
+  put(root, "src/index.ts", 'export { value } from "./value.ts";\n');
+  return root;
+}
+
+test("api-diff compares a bundler's dist declaration through the source module at the same inner path", (t) => {
+  const root = bundledRepo(t, ["src"]);
+  put(root, "src/value.ts", "export const value: number = 1;\n");
+  commit(root);
+  const same = bin(root, "api-diff", ["HEAD"]);
+  assert.equal(same.status, 0, same.stdout + same.stderr);
+  assert.match(same.stdout, /^API: 1 packages, 1 entries unchanged/mu);
+
+  put(root, "src/value.ts", 'export const value: string = "1";\n');
+  commit(root);
+  const changed = bin(root, "api-diff", ["HEAD~1"]);
+  assert.equal(changed.status, 1, changed.stdout + changed.stderr);
+  assert.match(changed.stdout, /^\+export declare const value: string;/mu);
+});
+
+test("api-diff refuses a bundler's dist declaration that two source modules could stand for", (t) => {
+  const root = bundledRepo(t, ["src", "lib"]);
+  put(root, "src/value.ts", "export const value: number = 1;\n");
+  put(root, "lib/index.ts", "export const other: number = 1;\n");
+  commit(root);
+  const result = bin(root, "api-diff", ["HEAD"]);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(
+    result.stdout,
+    /published target \.\/dist\/index\.d\.mts has no emitted declaration/,
+  );
+});

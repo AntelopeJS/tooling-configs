@@ -161,6 +161,24 @@ function authoredDeclaration(
   return file;
 }
 
+function declarationStem(path: string): string {
+  return path.replace(/\.d\.[cm]?ts$/u, "");
+}
+
+/** A bundler lays the declaration of `src/a/b.ts` out as `dist/a/b.d.mts`, a path no compiler emit takes; the one emitted declaration below another top-level directory at the same inner path, whatever its declaration extension, stands for it. */
+function bundledDeclaration(path: string, files: readonly string[]): string[] {
+  const [, ...inner] = path.split("/");
+  if (!inner.length || path.includes("*")) return [];
+  const stem = declarationStem(inner.join("/"));
+  const found = files.filter((file) => {
+    const [, ...rest] = file.split("/");
+    return (
+      /\.d\.[cm]?ts$/u.test(file) && declarationStem(rest.join("/")) === stem
+    );
+  });
+  return found.length === 1 ? found : [];
+}
+
 function publishedEntries(
   directory: string,
   manifest: ProofManifest,
@@ -186,6 +204,7 @@ function publishedEntries(
     if (!found.length) {
       const authored = authoredDeclaration(directory, target, path, scratch);
       if (authored !== undefined) found.push(authored);
+      else found.push(...bundledDeclaration(path, files));
     }
     if (!found.length && !path.includes("*"))
       throw new Error(
@@ -311,6 +330,7 @@ function bundlePackage(
         composite: false,
         incremental: false,
         noEmit: false,
+        emitDeclarationOnly: true,
         rootDir: scratch,
         paths: emittedPaths(emitted, scratch),
       },
