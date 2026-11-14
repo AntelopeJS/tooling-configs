@@ -5,11 +5,21 @@ import { fileURLToPath } from "node:url";
 import packManifest from "../../package.json" with { type: "json" };
 import { admits } from "../garden/semver.ts";
 
+/** A `package.json` `exports` value: a path, `null` to hide a subpath, a list of fallbacks, or a map of subpaths or conditions. */
+export type ExportTarget =
+  | string
+  | null
+  | ExportTarget[]
+  | { [key: string]: ExportTarget };
+
 export interface Manifest {
   name?: string;
   version?: string;
   private?: boolean;
   type?: string;
+  types?: string;
+  typings?: string;
+  exports?: ExportTarget;
   packageManager?: string;
   bin?: { tsc?: string };
   scripts?: Record<string, string>;
