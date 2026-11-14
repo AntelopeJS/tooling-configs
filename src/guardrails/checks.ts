@@ -8,6 +8,7 @@ import {
   hasDependencyRanges,
 } from "./dependency-ranges-sync.ts";
 import { checkGitIdentity, isGitCheckout } from "./git-identity.ts";
+import { checkReadmeVersion, readmeExamples } from "./readme-version.ts";
 import { runCommand } from "./run-command.ts";
 import {
   type ServicesPlan,
@@ -35,6 +36,7 @@ const CHECK_STEPS = [
   "lockfile:singletons",
   "dependency:ranges",
   "git:identity",
+  "readme:version",
 ];
 
 /** Steps `antelopejs-checks` runs itself, no package.json script behind them: each returns what failed, empty when it passed. */
@@ -50,6 +52,7 @@ const OWN_STEPS = new Map<
   ],
   ["dependency:ranges", (root) => Promise.resolve(checkRepositoryRanges(root))],
   ["git:identity", checkGitIdentity],
+  ["readme:version", (root) => Promise.resolve(checkReadmeVersion(root))],
 ]);
 
 function hasWork(root: string, step: string): boolean {
@@ -60,6 +63,7 @@ function hasWork(root: string, step: string): boolean {
   if (step === "dependency:ranges")
     return isGitCheckout(root) && hasDependencyRanges(root);
   if (step === "git:identity") return isGitCheckout(root);
+  if (step === "readme:version") return readmeExamples(root).length > 0;
   return true;
 }
 

@@ -63,6 +63,7 @@
   "src/guardrails/checks-dependency-ranges.test.ts": 5.6,
   "src/guardrails/checks-git-identity.test.ts": 2.6,
   "src/guardrails/checks-prepare.test.ts": 11.2,
+  "src/guardrails/checks-readme-version.test.ts": 5.3,
   "src/guardrails/checks-services.test.ts": 24.8,
   "src/guardrails/checks-singletons.test.ts": 2.9,
   "src/guardrails/checks-verify-lockfiles.test.ts": 0.1,
