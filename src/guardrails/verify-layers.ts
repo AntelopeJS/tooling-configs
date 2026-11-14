@@ -6,7 +6,6 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
@@ -69,12 +68,24 @@ function isLayerCode(layer: string, file: string): boolean {
 /** The packages whose `tsc` a repository runs, in order: `typescript`, else `@typescript/native` when `typescript` is the TypeScript 6 API (`@typescript/typescript6`, whose only bin is `tsc6`) installed beside TypeScript 7 for tools that need that API. */
 const COMPILER_PACKAGES = ["typescript", "@typescript/native"];
 
-/** The `bin.tsc` entry of the package `name` that `root` resolves, found through its `package.json`, a subpath every TypeScript version exports, because TypeScript 7 declares an `exports` map that leaves `typescript/bin/tsc` out. */
+/**
+ * The `package.json` of the package `name` in the nearest `node_modules` from `root` up, where a workspace may hoist it.
+ * Node's resolution is not used: it falls back to `NODE_PATH`, where a package manager's bin shim lists the pack's own
+ * dependencies, so a repository without TypeScript would be checked with the pack's.
+ */
+function manifestOf(root: string, name: string): string | undefined {
+  for (let folder = resolve(root); ; folder = dirname(folder)) {
+    const manifestPath = join(folder, "node_modules", name, "package.json");
+    if (existsSync(manifestPath)) return manifestPath;
+    if (dirname(folder) === folder) return undefined;
+  }
+}
+
+/** The `bin.tsc` entry of the package `name` that `root` installs, read from its `package.json`, a file every TypeScript version ships, because TypeScript 7 declares an `exports` map that leaves `typescript/bin/tsc` out. */
 function binTsc(root: string, name: string): string | undefined {
+  const manifestPath = manifestOf(root, name);
+  if (manifestPath === undefined) return undefined;
   try {
-    const manifestPath = createRequire(join(root, "package.json")).resolve(
-      `${name}/package.json`,
-    );
     const tsc = parseManifest(readFileSync(manifestPath, "utf8")).bin?.tsc;
     return tsc === undefined ? undefined : join(dirname(manifestPath), tsc);
   } catch {
@@ -157,7 +168,7 @@ export async function typecheckLayers(
   if (layers.length === 0) return "";
   const compiler = compilerOf(root);
   if (compiler === undefined)
-    return "TypeScript is not installed in the repository root: run the package manager's install first.\n";
+    return "TypeScript is not installed in the repository root: add typescript to its devDependencies and run the package manager's install.\n";
   const outputs = await Promise.all(
     layers.map((layer) => typecheckLayer(root, compiler, layer, signal)),
   );

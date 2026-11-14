@@ -38,10 +38,11 @@ function put(root: string, path: string, content: string): void {
   writeFileSync(join(root, path), content);
 }
 
-/** A repository with one verify layer whose own TypeScript has the `package.json` text `manifest`, or none. */
-function repository(t: TestContext, manifest?: string): string {
-  const root = mkdtempSync(join(tmpdir(), "antelope-verify-layers-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+/** A repository at `folder` in a temporary folder, with one verify layer and a TypeScript in the temporary folder's `node_modules` whose `package.json` text is `manifest`, or none. */
+function repository(t: TestContext, manifest?: string, folder = "."): string {
+  const base = mkdtempSync(join(tmpdir(), "antelope-verify-layers-"));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const root = join(base, folder);
   put(root, "package.json", '{ "name": "consumer", "type": "module" }');
   put(
     root,
@@ -53,8 +54,8 @@ function repository(t: TestContext, manifest?: string): string {
   );
   put(root, `${LAYER}/verify.config.ts`, "export default {};\n");
   if (manifest !== undefined) {
-    put(root, "node_modules/typescript/package.json", manifest);
-    put(root, "node_modules/typescript/bin/tsc", FAKE_TSC);
+    put(base, "node_modules/typescript/package.json", manifest);
+    put(base, "node_modules/typescript/bin/tsc", FAKE_TSC);
   }
   return root;
 }
@@ -66,6 +67,13 @@ test("typecheckLayers runs the compiler of a TypeScript without an exports map",
 
 test("typecheckLayers runs the compiler of a TypeScript whose exports map leaves out bin/tsc", async (t) => {
   const output = await typecheckLayers(repository(t, TYPESCRIPT_7));
+  assert.equal(output, "fake tsc ran\n");
+});
+
+test("typecheckLayers runs the TypeScript a workspace hoists above the repository root, caught by an implementation that reads only the root's node_modules", async (t) => {
+  const output = await typecheckLayers(
+    repository(t, TYPESCRIPT_5, "packages/consumer"),
+  );
   assert.equal(output, "fake tsc ran\n");
 });
 
