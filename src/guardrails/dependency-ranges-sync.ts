@@ -1,6 +1,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { gtr, valid } from "semver";
+
 import {
   cappedReplacement,
   checkDependencyRanges,
@@ -113,32 +115,14 @@ export function hasDependencyRanges(root: string): boolean {
   );
 }
 
-/** A capped `@antelopejs/interface-*` range on a package outside this repository, which must also admit the newest release on the registry. */
+/** A capped `@antelopejs/interface-*` range on a package outside this repository, which the newest release on the registry must not outgrow. */
 interface PublishedRange extends InterfaceRange {
   path: string;
 }
 
-function publishedRanges(
-  manifests: readonly TrackedManifest[],
-  versions: ReadonlyMap<string, string>,
-): PublishedRange[] {
-  return manifests.flatMap(({ path, manifest }) => {
-    const violations = checkDependencyRanges(manifest, versions);
-    return interfaceRanges(manifest)
-      .filter(
-        ({ field, name }) =>
-          !versions.has(name) &&
-          !violations.some(
-            (violation) => violation.field === field && violation.name === name,
-          ),
-      )
-      .map((range) => ({ path, ...range }));
-  });
-}
-
 /**
- * One line per range among `ranges` that does not admit the `latest` dist-tag of its package. A package whose
- * dist-tags cannot be read is skipped, so a registry outage leaves only the cap rule deciding the step.
+ * One line per range among `ranges` that every release it admits sits below the `latest` dist-tag of its package. A
+ * package whose dist-tags cannot be read is skipped, so a registry outage leaves only the cap rule deciding the step.
  */
 async function staleRanges(
   ranges: readonly PublishedRange[],
@@ -151,28 +135,45 @@ async function staleRanges(
   );
   return ranges.flatMap(({ path, field, name, spec }) => {
     const version = newest.get(name);
-    const expected =
-      version === undefined ? undefined : cappedReplacement(spec, version);
+    if (version === undefined || valid(version) === null || !gtr(version, spec))
+      return [];
+    const expected = cappedReplacement(spec, version);
     if (expected === undefined) return [];
     return [
-      `${path}: ${field}["${name}"] is "${spec}", which does not admit ${version}, its newest published version, so a project that installs it next to this package cannot start; use "${expected}"\n`,
+      `${path}: ${field}["${name}"] is "${spec}", which stops below ${version}, its newest published version, and @antelopejs/core loads one copy of each interface; use "${expected}"\n`,
     ];
   });
 }
 
 /**
- * Each `@antelopejs/*` range in a tracked manifest that does not stop below the next minor, and each
- * `@antelopejs/interface-*` range that does not admit the newest published release of its package, one line each;
- * empty when every range passes.
+ * Each `@antelopejs/*` range in a tracked manifest that does not stop below the next minor, and each capped
+ * `@antelopejs/interface-*` range on a package outside this repository that stops below its newest published release,
+ * one line each; empty when every range passes.
  */
 export async function checkRepositoryRanges(root: string): Promise<string> {
   const manifests = tracked(root);
   const versions = localVersions(manifests.map(({ manifest }) => manifest));
-  const capped = manifests.flatMap(({ path, manifest }) =>
-    checkDependencyRanges(manifest, versions).map(
-      (violation) => `${path}: ${describeViolation(violation)}\n`,
-    ),
-  );
-  const stale = await staleRanges(publishedRanges(manifests, versions));
-  return [...capped, ...stale].join("");
+  const capped: string[] = [];
+  const published: PublishedRange[] = [];
+  for (const { path, manifest } of manifests) {
+    const violations = checkDependencyRanges(manifest, versions);
+    capped.push(
+      ...violations.map(
+        (violation) => `${path}: ${describeViolation(violation)}\n`,
+      ),
+    );
+    published.push(
+      ...interfaceRanges(manifest)
+        .filter(
+          ({ field, name }) =>
+            !versions.has(name) &&
+            !violations.some(
+              (violation) =>
+                violation.field === field && violation.name === name,
+            ),
+        )
+        .map((range) => ({ path, ...range })),
+    );
+  }
+  return [...capped, ...(await staleRanges(published))].join("");
 }

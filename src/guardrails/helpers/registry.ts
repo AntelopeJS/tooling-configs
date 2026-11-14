@@ -20,9 +20,10 @@ export async function stubRegistry(
       .end(JSON.stringify({ "dist-tags": { latest: version } }));
   });
   const port = await freePort();
-  await new Promise<void>((resolve) =>
-    server.listen(port, "127.0.0.1", resolve),
-  );
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", resolve);
+  });
   t.after(() => server.close());
   return `http://127.0.0.1:${port}/`;
 }
