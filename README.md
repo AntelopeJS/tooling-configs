@@ -180,7 +180,7 @@ antelopePreset({
 
 ### Add ignore patterns
 
-oxlint reads `ignorePatterns` only from the root config, never from `extends`, so the synced `oxlint.config.ts` sets `ignorePatterns: ANTELOPE_IGNORE_PATTERNS`, and sync replaces the earlier template that did not. `ANTELOPE_IGNORE_PATTERNS` holds generated output and what sync writes under the agent directories: the synced files of each shared skill and its `.claude/skills` link, which shows the repository's own files a second time. The repository's own files under `.agents/` and `.claude/` are linted. Spread the shared patterns when adding your own:
+oxlint reads `ignorePatterns` only from the root config, never from `extends`, so the synced `oxlint.config.ts` sets `ignorePatterns: ANTELOPE_IGNORE_PATTERNS`, and sync replaces the earlier template that did not. `ANTELOPE_IGNORE_PATTERNS` holds generated output and what sync writes under the agent directories: the synced files of each shared skill and its `.claude/skills` link, which shows the repository's own files a second time. The repository's own files under `.agents/` and `.claude/` are linted. oxlint skips `node_modules` only when a `.gitignore` or the root config's `ignorePatterns` leaves it out, so a root config without the shared patterns, in a project with no `.gitignore`, makes a bare `oxlint` lint every dependency file with the type-aware rules. Spread the shared patterns when adding your own:
 
 ```ts
 // oxlint.config.ts
