@@ -291,3 +291,28 @@ test("an eslint-disable directive under an ESLint config is left to ESLint, whic
   assert.equal(staged.status, 0, staged.stderr);
   assert.equal(full.status, 0, full.stderr);
 });
+
+const PARSER = (body: string) =>
+  [
+    "// oxlint-disable-next-line eslint/no-console -- the parser probe logs its own input",
+    `console.log(${body});`,
+    "",
+  ].join("\n");
+
+test("a touched file with a directive that oxlint cannot parse fails with the parser error", (t) => {
+  const root = presetRepo(
+    t,
+    { "src/probe.ts": PARSER("1") },
+    { "eslint/no-console": 1 },
+  );
+  const { staged, full } = bothModes(root, () =>
+    put(root, "src/probe.ts", PARSER("(")),
+  );
+  for (const result of [staged, full]) {
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(
+      result.stderr,
+      /src\/probe\.ts:2:\d+: oxlint cannot parse this file: Empty parenthesized expression\./u,
+    );
+  }
+});

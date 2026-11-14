@@ -173,30 +173,55 @@ export interface UnusedDirective {
   rules: string[] | undefined;
 }
 
+/** An error oxlint reports with no rule code, such as a parse error: oxlint could not read the file, so its directives went unchecked. */
+export interface UnreadableFile {
+  /** `file:line:column` of the first label, or the file when oxlint gives no span. */
+  location: string;
+  message: string;
+}
+
+/** What oxlint reports about the directives in a set of files. */
+export interface DirectiveReport {
+  unused: UnusedDirective[];
+  unreadable: UnreadableFile[];
+}
+
 const UNUSED_RULES = /\(no problems were reported from (.+)\)/u;
+
+function isUnusedDirective(message: string): boolean {
+  return (
+    message.startsWith("Unused ") && message.includes("-disable directive")
+  );
+}
 
 /**
  * The disable directives in `files` that suppress nothing, with every ratchet
- * rule enabled as in a measurement. `files` must not be empty, which would
- * lint the whole repository.
+ * rule enabled as in a measurement, and the files oxlint could not read.
+ * `files` must not be empty, which would lint the whole repository.
  */
-export function unusedDirectives(
+export function directiveReport(
   root: string,
   files: string[],
-): UnusedDirective[] {
-  return runOxlint(root, undefined, files, [
+): DirectiveReport {
+  const report: DirectiveReport = { unused: [], unreadable: [] };
+  for (const item of runOxlint(root, undefined, files, [
     "--report-unused-disable-directives",
-  ])
-    .filter(
-      ({ code, message }) =>
-        code === undefined &&
-        message.startsWith("Unused ") &&
-        message.includes("-disable directive"),
-    )
-    .map((item) => ({
-      file: repositoryPath(root, item.filename),
-      line: item.labels?.[0]?.span.line ?? 0,
-      message: item.message,
-      rules: UNUSED_RULES.exec(item.message)?.[1].split(/,\s*/u),
-    }));
+  ])) {
+    if (item.code !== undefined) continue;
+    const file = repositoryPath(root, item.filename);
+    const span = item.labels?.[0]?.span;
+    if (isUnusedDirective(item.message))
+      report.unused.push({
+        file,
+        line: span?.line ?? 0,
+        message: item.message,
+        rules: UNUSED_RULES.exec(item.message)?.[1].split(/,\s*/u),
+      });
+    else
+      report.unreadable.push({
+        location: span ? `${file}:${span.line}:${span.column}` : file,
+        message: item.message,
+      });
+  }
+  return report;
 }
