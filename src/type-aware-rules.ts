@@ -26,22 +26,18 @@ export const TYPE_AWARE_RULES = [
   "require-array-sort-compare",
 ] as const;
 
-interface BaseToStringOptions {
-  checkUnknown: boolean;
-  ignoredTypeNames: string[];
-}
-
 /**
  * The setting a type-aware rule runs at. `no-base-to-string` pins
  * `checkUnknown: false`, typescript-eslint's default, so `String(value)` on an
  * `unknown` stays allowed if a release changes that default. It adds `{}` to
  * the default `ignoredTypeNames`, so the same call stays allowed once `null`
- * and `undefined` checks narrow the `unknown` to `{}`; a value declared `{}`
- * has the same type and is skipped too.
+ * and `undefined` checks narrow the `unknown` to `{}`. Every other value typed
+ * `{}` is skipped too: one declared `{}`, the empty literal, a `T extends {}`,
+ * a union holding `{}`, and a `NonNullable<T>` or `T & {}` over a generic.
  */
 export function typeAwareRuleSetting(
   rule: (typeof TYPE_AWARE_RULES)[number],
-): "error" | ["error", BaseToStringOptions] {
+): "error" | ["error", { checkUnknown: boolean; ignoredTypeNames: string[] }] {
   return rule === "no-base-to-string"
     ? [
         "error",

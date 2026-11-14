@@ -22,6 +22,9 @@ export function describeDefined(value: unknown): string {
 export function describeRecord(value: { name: string }): string {
   return String(value);
 }
+export function describeError(value: Error): string {
+  return String(value);
+}
 `;
 
 test("oxlint no-base-to-string skips an unknown, also once narrowed past null and undefined, and still reports declared object types", () => {
