@@ -1,50 +1,48 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync } from "node:fs";
 import { join } from "node:path";
-import test, { type TestContext } from "node:test";
+import test from "node:test";
 
-import { put } from "../guardrails/helpers/test-repo.ts";
-import { ProjectCaches } from "./caches.ts";
+import { cacheProject as project } from "./helpers/cache-project.ts";
 
-function project(t: TestContext) {
-  const tmp = mkdtempSync(join(tmpdir(), "verify-caches-git-"));
-  t.after(() => rmSync(tmp, { recursive: true, force: true }));
-  const store = join(tmp, "store");
-  const cache = join(tmp, "project/.antelope/cache");
-  mkdirSync(cache, { recursive: true });
-  const caches = new ProjectCaches(store);
-  caches.seed(join(tmp, "project"));
-  let steps = 0;
-  const command = (files: Record<string, string>, ajs = true) => {
-    steps += 1;
-    const folder = join(tmp, "steps", String(steps));
-    mkdirSync(folder, { recursive: true });
-    for (const [path, text] of Object.entries(files)) put(cache, path, text);
-    caches.observed({ folder }, ajs);
-  };
-  const later = (...paths: string[]) => {
-    const next = join(tmp, "later");
-    mkdirSync(next, { recursive: true });
-    new ProjectCaches(store).seed(next);
-    return paths.map((path) => existsSync(join(next, ".antelope/cache", path)));
-  };
-  return { cache, caches, command, later };
-}
-
-test("a git module ajs then overwrites in place with a registry version keeps the cache out, where following only registry versions hands a later project the git clone and its build inside the registry module", (t) => {
+test("a git module a command that is not ajs relists under its key as a registry version keeps the cache out, where following only registry versions hands a later project the git clone and its build inside the registry module", (t) => {
   const { caches, command, later } = project(t);
   command({
     "x/.git/HEAD": "ref: refs/heads/main\n",
     "x/dist/built.txt": "A\n",
     "manifest.json": '{"x":"git:main:abc"}',
   });
-  command({ "x/value.txt": "installed\n", "manifest.json": '{"x":"1.0.0"}' });
+  command(
+    { "x/value.txt": "installed\n", "manifest.json": '{"x":"1.0.0"}' },
+    false,
+  );
   assert.match(
     caches.keep().join("\n"),
     /x changed from a git module to 1\.0\.0 after ajs installed it/,
   );
   assert.deepEqual(later("x/value.txt", "x/dist/built.txt"), [false, false]);
+});
+
+test("a registry module a command that is not ajs relists under its key as a git module keeps the cache out, where a check that skips every git version follows the rewritten module no more and keeps it with the files the command wrote", (t) => {
+  const { caches, command, later } = project(t);
+  command({
+    "@acme/api@1.0.0/value.txt": "installed\n",
+    "@acme/other@1.0.0/value.txt": "installed\n",
+    "manifest.json": '{"@acme/api@1.0.0":"1.0.0","@acme/other@1.0.0":"1.0.0"}',
+  });
+  command(
+    {
+      "@acme/api@1.0.0/dist/built.txt": "A\n",
+      "manifest.json":
+        '{"@acme/api@1.0.0":"git:main:abc","@acme/other@1.0.0":"1.0.0"}',
+    },
+    false,
+  );
+  assert.match(
+    caches.keep().join("\n"),
+    /@acme\/api@1\.0\.0 changed from 1\.0\.0 to git:main:abc after ajs installed it/,
+  );
+  assert.deepEqual(later("@acme/other@1.0.0/value.txt"), [false]);
 });
 
 test("a folder the harness cannot read inside a git module leaves the registry modules kept, where a check that walks the left-out git folder refuses the whole cache", (t) => {
