@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.6.0
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.8...v0.6.0)
+
+### 🚀 Enhancements
+
+- **guardrails:** Analyse repositories with the pack's own TypeScript 6 so they can move to TypeScript 7 ([#321](https://github.com/AntelopeJS/tooling-configs/pull/321))
+- **eslint:** Allow an empty catch block in the Nuxt preset ([#326](https://github.com/AntelopeJS/tooling-configs/pull/326))
+- **lint:** Pin no-base-to-string checkUnknown off and skip no-thenable in tests ([#327](https://github.com/AntelopeJS/tooling-configs/pull/327))
+- **anti-slop:** Exempt guard-only and forward-only unknown parameters ([#328](https://github.com/AntelopeJS/tooling-configs/pull/328))
+- **guardrails:** ⚠️  Fail checks on an AntelopeJS range open past the next minor ([#336](https://github.com/AntelopeJS/tooling-configs/pull/336))
+- **eslint:** Type-check .vue components with every type-aware rule and report imports a tsconfig cannot resolve ([#341](https://github.com/AntelopeJS/tooling-configs/pull/341))
+- **sync:** Write an LF .gitattributes and report stack repos without one ([#334](https://github.com/AntelopeJS/tooling-configs/pull/334))
+- **guardrails:** Fail checks when a README config example's version range does not admit package.json's version ([#343](https://github.com/AntelopeJS/tooling-configs/pull/343))
+- **anti-slop:** Exempt guarded reads beside forwards and forwards to a built callee ([#340](https://github.com/AntelopeJS/tooling-configs/pull/340))
+- **lint:** Report an unrun interface-database query an awaited function returns ([#333](https://github.com/AntelopeJS/tooling-configs/pull/333))
+
+### 🩹 Fixes
+
+- **eslint:** Align vue/html-self-closing with the formatter and leave hex case to it ([#329](https://github.com/AntelopeJS/tooling-configs/pull/329))
+- **guardrails:** Report backend boundary paths with / separators on every OS ([#331](https://github.com/AntelopeJS/tooling-configs/pull/331))
+- **lease:** Stop a lease's processes and run its own mongod on Windows ([#332](https://github.com/AntelopeJS/tooling-configs/pull/332))
+- **guardrails:** Show a linked workspace package's version in the docs-compat table ([#335](https://github.com/AntelopeJS/tooling-configs/pull/335))
+- **guardrails:** Type-check verify layers only with the repository's own TypeScript ([#339](https://github.com/AntelopeJS/tooling-configs/pull/339))
+- **body-check:** Print an empty findings block and the lint error when oxlint prints no report ([#342](https://github.com/AntelopeJS/tooling-configs/pull/342))
+- **eslint:** Report unreachable code and Vue script rules in Nuxt layer script files ([#337](https://github.com/AntelopeJS/tooling-configs/pull/337))
+- **garden:** Read organization rulesets through the repository endpoint so branch-governance runs without admin:org ([#344](https://github.com/AntelopeJS/tooling-configs/pull/344))
+- **garden:** Count a ci-node caller without a windows input by the default at its ref, and add mysql to the stack ([#345](https://github.com/AntelopeJS/tooling-configs/pull/345))
+- **api-diff:** Print each changed declaration once, under the entries it affects ([#346](https://github.com/AntelopeJS/tooling-configs/pull/346))
+- **anti-slop:** Skip a declared this parameter when matching call arguments in no-unknown-parameters ([#338](https://github.com/AntelopeJS/tooling-configs/pull/338))
+
+#### ⚠️ Breaking Changes
+
+- **guardrails:** ⚠️  Fail checks on an AntelopeJS range open past the next minor ([#336](https://github.com/AntelopeJS/tooling-configs/pull/336))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.5.8
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.5.7...v0.5.8)
