@@ -8,6 +8,7 @@ import {
   hasDependencyRanges,
 } from "./dependency-ranges-sync.ts";
 import { checkGitIdentity, isGitCheckout } from "./git-identity.ts";
+import { checkPublishedTypes, typedPackages } from "./published-types.ts";
 import { checkReadmeVersion, readmeExamples } from "./readme-version.ts";
 import { runCommand } from "./run-command.ts";
 import {
@@ -37,6 +38,7 @@ const CHECK_STEPS = [
   "dependency:ranges",
   "git:identity",
   "readme:version",
+  "published:types",
 ];
 
 /** Steps `antelopejs-checks` runs itself, no package.json script behind them: each returns what failed, empty when it passed. */
@@ -53,6 +55,7 @@ const OWN_STEPS = new Map<
   ["dependency:ranges", (root) => Promise.resolve(checkRepositoryRanges(root))],
   ["git:identity", checkGitIdentity],
   ["readme:version", (root) => Promise.resolve(checkReadmeVersion(root))],
+  ["published:types", checkPublishedTypes],
 ]);
 
 function hasWork(root: string, step: string): boolean {
@@ -64,6 +67,7 @@ function hasWork(root: string, step: string): boolean {
     return isGitCheckout(root) && hasDependencyRanges(root);
   if (step === "git:identity") return isGitCheckout(root);
   if (step === "readme:version") return readmeExamples(root).length > 0;
+  if (step === "published:types") return typedPackages(root).length > 0;
   return true;
 }
 
@@ -121,8 +125,11 @@ export function droppedChecksSteps(
   ];
 }
 
-/** The step that runs after the others, never beside them: tests often hold time limits that CPU contention would break. */
-const RUNS_ALONE = "test";
+/**
+ * The steps that run after the others, each alone and in this order: tests often hold time limits that CPU contention
+ * would break, and `published:types` packs each package, whose `prepack` rebuilds the output other steps and tests read.
+ */
+const RUNS_ALONE = ["test", "published:types"];
 
 /** The step that runs before the others when it writes files, such as a workspace package's `dist`, that they read. */
 const RUNS_FIRST = "typecheck";
@@ -131,11 +138,13 @@ const RUNS_FIRST = "typecheck";
 function phases(root: string, steps: readonly string[]): string[][] {
   const first =
     steps.includes(RUNS_FIRST) && typecheckWrites(root) ? [RUNS_FIRST] : [];
-  const last = steps.includes(RUNS_ALONE) ? [RUNS_ALONE] : [];
+  const alone = RUNS_ALONE.filter((step) => steps.includes(step));
   const together = steps.filter(
-    (step) => !first.includes(step) && !last.includes(step),
+    (step) => !first.includes(step) && !alone.includes(step),
   );
-  return [first, together, last].filter((phase) => phase.length > 0);
+  return [first, together, ...alone.map((step) => [step])].filter(
+    (phase) => phase.length > 0,
+  );
 }
 
 /** The environment variable naming, comma-separated, the steps `runChecks` leaves to another CI job. */
@@ -226,7 +235,7 @@ function summary(failures: string[], passed: number, skipped: number): string {
 /**
  * Runs the `checks:prepare` package script first when it exists and a step will run, and stops there if it fails.
  * Then runs `typecheck` first when it writes files the other steps read (see `typecheckWrites`), every other check step
- * except `test` at the same time, then `test` alone, and reports only what failed, each step's
+ * except `test` and `published:types` at the same time, then each of those alone, and reports only what failed, each step's
  * output buffered and listed in step order whichever step finishes first. `skipSetting` is the comma-separated value of
  * `ANTELOPEJS_CHECKS_SKIP`: the steps it names are not run and are counted as skipped, never as passed, and a name that
  * is not a step fails the run before any step starts so a typo cannot skip nothing. Unless `services` is false, the

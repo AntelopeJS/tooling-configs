@@ -87,6 +87,7 @@
   "src/guardrails/docs-skills.test.ts": 10.9,
   "src/guardrails/installed-typescript.test.ts": 60,
   "src/guardrails/plugin-errors.test.ts": 1.5,
+  "src/guardrails/published-types.test.ts": 25,
   "src/guardrails/ratchet-adoption-workspace.test.ts": 2.5,
   "src/guardrails/ratchet-adoption.test.ts": 14.9,
   "src/guardrails/ratchet-renames.test.ts": 7.9,
