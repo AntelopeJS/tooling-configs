@@ -15,7 +15,10 @@ const FRESH_INTERFACES = {
 const PLAYGROUND_LOCK = "playground/pnpm-lock.yaml";
 const PLAYGROUND_WORKSPACE = "playground/pnpm-workspace.yaml";
 
-function pinnedRepo(t: TestContext, packageManager: string): string {
+function pinnedRepo(
+  t: TestContext,
+  packageManager: string | undefined,
+): string {
   const root = testRepo(t);
   const manifest = parseManifest(read(root, "package.json"));
   put(
@@ -186,4 +189,20 @@ test("sync writes no pnpm-workspace.yaml in a playground of an npm repository th
   put(root, "playground/package-lock.json", '{ "lockfileVersion": 3 }\n');
   synced(root);
   assert.equal(existsSync(join(root, PLAYGROUND_WORKSPACE)), false);
+});
+
+test("sync writes no root pnpm-workspace.yaml in a repository that pins no package manager and holds a package-lock.json, where a sync that counts every unpinned root as pnpm's adds a pnpm file beside npm's lockfile", (t) => {
+  const root = pinnedRepo(t, undefined);
+  put(root, "package-lock.json", '{ "lockfileVersion": 3 }\n');
+  synced(root);
+  assert.equal(existsSync(join(root, "pnpm-workspace.yaml")), false);
+});
+
+test("sync lists the interface pattern in the root pnpm-workspace.yaml of a repository that pins no package manager and holds no lockfile, where a sync that counts every unpinned root as npm's lets its first pnpm 11 install lock two copies of an interface released less than a day ago", (t) => {
+  const root = pinnedRepo(t, undefined);
+  synced(root);
+  assert.deepEqual(
+    parse(read(root, "pnpm-workspace.yaml")).minimumReleaseAgeExclude,
+    FRESH_INTERFACES.minimumReleaseAgeExclude,
+  );
 });

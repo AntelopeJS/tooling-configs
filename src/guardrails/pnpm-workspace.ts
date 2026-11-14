@@ -81,14 +81,18 @@ function playgrounds(root: string): string[] {
 /**
  * Each folder whose tracked `pnpm-lock.yaml` `lockfile:singletons` reads and each playground verify installs on its own,
  * and in a pnpm repository the root, deciding the builds of the full profile's hooks and captures. In a repository whose
- * root another package manager installs, only the nested folders pnpm installs.
+ * root another package manager installs, only the nested folders pnpm installs. A root that pins no package manager is
+ * pnpm's unless it holds another package manager's lockfile.
  */
 function installRoots(
   root: string,
   manifest: Manifest,
   profile: AgentsBlockContext["profile"],
 ): InstallRoot[] {
-  const pnpmRoot = packageManager(manifest) === "pnpm";
+  const pnpmRoot =
+    manifest.packageManager === undefined
+      ? installsWithPnpm(root, ".")
+      : packageManager(manifest) === "pnpm";
   const locked = pnpmLockfiles(root).map((lockfile) => dirname(lockfile));
   const unlocked = playgrounds(root).filter(
     (folder) => pnpmRoot || installsWithPnpm(root, folder),
