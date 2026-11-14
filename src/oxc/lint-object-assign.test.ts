@@ -257,3 +257,24 @@ export function swap(holder: { token: Upper }, lower: Lower): object {
 test("Object.assign adding new fields, writing assignable values or copying into a fresh object passes", () => {
   assert.deepEqual(findings({ "proxy.ts": proxy, "checked.ts": checked }), []);
 });
+
+test("a component the tsconfig lists keeps its declarations to itself, so a .ts file's global type is unchanged (fails if a component without imports is read as a global script)", () => {
+  assert.deepEqual(
+    findings({
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          strict: true,
+          module: "esnext",
+          moduleResolution: "bundler",
+          types: [],
+        },
+      }),
+      "types/global.d.ts": "interface Item { count: number }\n",
+      "src/use.ts":
+        "export function bump(item: Item, next: number): void {\n  Object.assign(item, { count: next });\n}\n",
+      "app/Counter.vue":
+        '<template><p>{{ label.count }}</p></template>\n\n<script setup lang="ts">\ninterface Item { count: string }\nconst label: Item = { count: "" };\n</script>\n',
+    }),
+    [],
+  );
+});

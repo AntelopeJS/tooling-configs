@@ -4,6 +4,7 @@ import ts from "@typescript/typescript6";
 import { callName } from "../shared.ts";
 import { literalFits, valueType } from "../literal-fit.ts";
 import { nodeAt, typedFile } from "../type-checker.ts";
+import { declaresTypeParameters } from "../vue-script.ts";
 
 const UNTYPED = ts.TypeFlags.Any | ts.TypeFlags.Unknown;
 const MAX_DEPTH = 4;
@@ -217,7 +218,9 @@ export const noUnsafeObjectAssignRule = defineRule({
       CallExpression(node) {
         if (
           callName(node.callee) !== "Object.assign" ||
-          node.arguments.length < 2
+          node.arguments.length < 2 ||
+          (context.filename.endsWith(".vue") &&
+            declaresTypeParameters(context.sourceCode.text))
         )
           return;
         const typed = typedFile(context.filename, context.sourceCode.text);

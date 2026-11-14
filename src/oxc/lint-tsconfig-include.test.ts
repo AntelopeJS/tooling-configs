@@ -158,3 +158,72 @@ test("only the root configs sync writes are exempt: a hand-written package confi
     "packages/site/oxfmt.config.ts:1 antelopejs(require-tsconfig-include)",
   ]);
 });
+
+/** Imports a tsconfig that lists only `src` cannot resolve, one per form tsc resolves. */
+const UNRESOLVED_IMPORTS = `import type { Thing } from "#missing/thing";
+export type { Other } from "#missing/other";
+export * from "#missing/all";
+export const load = () => import("#missing/lazy");
+export type Alias = Thing;
+`;
+
+test("an import the tsconfig cannot resolve is reported on its module specifier, whether imported, re-exported or imported lazily, because everything imported through it is an error type", (t) => {
+  const project = lintProject(true);
+  t.after(project.remove);
+  project.write("tsconfig.json", packageTsconfig());
+  project.write("src/index.ts", UNRESOLVED_IMPORTS);
+  assert.deepEqual(findings(project.run(true).diagnostics), [
+    "src/index.ts:1 antelopejs(require-tsconfig-include)",
+    "src/index.ts:2 antelopejs(require-tsconfig-include)",
+    "src/index.ts:3 antelopejs(require-tsconfig-include)",
+    "src/index.ts:4 antelopejs(require-tsconfig-include)",
+  ]);
+});
+
+test("an untyped package, an ambient module, a side-effect import, a component import and an import in a JavaScript file are not reported, where no tsconfig would fix it", (t) => {
+  const project = lintProject(true);
+  t.after(project.remove);
+  project.write("tsconfig.json", packageTsconfig());
+  project.write(".gitignore", "node_modules\n");
+  project.write("node_modules/untyped-pkg/index.js", "exports.value = 1;\n");
+  project.write(
+    "src/virtual.d.ts",
+    'declare module "virtual:config" {\n  export const value: string;\n}\n',
+  );
+  project.write(
+    "src/index.ts",
+    'import * as untyped from "untyped-pkg";\nimport { value } from "virtual:config";\nimport "./missing.css";\nimport Card from "./Card.vue";\n\nexport { Card, untyped, value };\n',
+  );
+  project.write(
+    "scripts/tsconfig.json",
+    JSON.stringify({
+      extends: "../tsconfig.json",
+      compilerOptions: { noEmit: true, allowJs: true },
+      include: ["."],
+    }),
+  );
+  project.write("scripts/tool.mjs", 'export * from "#missing/thing";\n');
+  assert.deepEqual(findings(project.run(true).diagnostics), []);
+});
+
+test("a Node built-in is unresolved under a tsconfig that loads no Node types, and resolved under one that does (fails if every built-in counts as resolved)", (t) => {
+  const project = lintProject(true);
+  t.after(project.remove);
+  const source = 'export { readFileSync } from "node:fs";\n';
+  project.write("tsconfig.json", packageTsconfig());
+  project.write("src/index.ts", source);
+  project.write(
+    "web/tsconfig.json",
+    JSON.stringify({
+      compilerOptions: { ...OPTIONS, types: [] },
+      include: ["."],
+    }),
+  );
+  project.write("web/index.ts", source);
+  assert.deepEqual(
+    findings(project.run(true).diagnostics).filter((finding) =>
+      finding.includes("require-tsconfig-include"),
+    ),
+    ["web/index.ts:1 antelopejs(require-tsconfig-include)"],
+  );
+});

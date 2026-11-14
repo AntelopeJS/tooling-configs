@@ -1,11 +1,30 @@
 import { createConfigForNuxt } from "@nuxt/eslint-config/flat";
+import type { Plugin } from "@oxlint/plugins";
 
+import guardrailsPlugin from "./oxc/guardrails/index.ts";
 import { TYPE_AWARE_RULES, typeAwareRuleSetting } from "./type-aware-rules.ts";
 
 /** The rule map `overrideRules` accepts, derived so no transitive type is named. */
 type NuxtRules = Parameters<
   ReturnType<typeof createConfigForNuxt>["overrideRules"]
 >[0];
+
+/** The plugin type a flat config entry registers, derived so no transitive type is named. */
+type NuxtPlugin = NonNullable<
+  Awaited<ReturnType<typeof createConfigForNuxt>>[number]["plugins"]
+>[string];
+
+/** Whether every rule of `plugin` has the `create` function ESLint calls, which `eslintCompatPlugin` gives each oxlint rule. */
+function isEslintPlugin(plugin: Plugin): plugin is Plugin & NuxtPlugin {
+  return Object.values(plugin.rules).every((rule) => rule.create !== undefined);
+}
+
+/** The guardrail rules as ESLint registers them. */
+function eslintGuardrails(): NuxtPlugin {
+  if (!isEslintPlugin(guardrailsPlugin))
+    throw new Error("A guardrails rule has no `create` function for ESLint");
+  return guardrailsPlugin;
+}
 
 export interface AntelopeNuxtConfigOptions {
   /** Extra source directories for the Nuxt config, e.g. `["./playground"]`. */
@@ -14,12 +33,21 @@ export interface AntelopeNuxtConfigOptions {
   rules?: NuxtRules;
   /**
    * Runs the type-aware rules of the oxlint preset on `.vue` script blocks,
-   * which oxlint-tsgolint cannot read; TypeScript files stay with oxlint.
+   * which oxlint-tsgolint cannot read, along with the guardrail rules
+   * `antelopejs/no-unsafe-object-assign` and
+   * `antelopejs/require-tsconfig-include`; TypeScript files stay with oxlint.
    * `tsconfigRootDir` is the project root, usually `import.meta.dirname`.
    * Each `.vue` file must be listed by its nearest `tsconfig.json`, or it
-   * fails to parse. Without Volar, a type imported from another `.vue` file
-   * is an error type, which the `no-unsafe-*` rules report, and a
-   * `lang="tsx"` block fails to parse.
+   * fails to parse. In a Nuxt layer that tsconfig extends the generated
+   * `.nuxt/tsconfig.json`, which carries the `paths` of the layer's aliases,
+   * and the lint script runs `nuxt prepare` first so it exists. An import the
+   * tsconfig cannot resolve, such as `#dms-core/user` without those `paths`,
+   * is reported by `antelopejs/require-tsconfig-include`, because everything
+   * imported through it is an error type. Without Volar, a type imported
+   * from another `.vue` file is an error type, which the `no-unsafe-*` rules
+   * report, and a `lang="tsx"` block fails to parse.
+   * `antelopejs/no-unsafe-object-assign` skips a component with `generic`
+   * type parameters.
    */
   typeAware?: { tsconfigRootDir: string };
 }
@@ -118,12 +146,17 @@ export function antelopeNuxtConfig(
           tsconfigRootDir: options.typeAware.tsconfigRootDir,
         },
       },
-      rules: Object.fromEntries(
-        TYPE_AWARE_RULES.map((rule) => [
-          `@typescript-eslint/${rule}`,
-          typeAwareRuleSetting(rule),
-        ]),
-      ),
+      plugins: { antelopejs: eslintGuardrails() },
+      rules: {
+        ...Object.fromEntries(
+          TYPE_AWARE_RULES.map((rule) => [
+            `@typescript-eslint/${rule}`,
+            typeAwareRuleSetting(rule),
+          ]),
+        ),
+        "antelopejs/no-unsafe-object-assign": "error",
+        "antelopejs/require-tsconfig-include": "error",
+      },
     });
   }
   return composer.onResolved((configs) =>
