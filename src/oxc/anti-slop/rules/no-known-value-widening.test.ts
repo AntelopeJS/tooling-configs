@@ -38,6 +38,10 @@ tester.run("anti-slop/no-known-value-widening", noKnownValueWideningRule, {
 		"function isString(value: unknown): value is string { return true; } declare const input: unknown; isString(input);",
 		"function isString(value: string | unknown): value is string { return true; } declare const input: string | unknown; isString(input);",
 		"function isString(value: unknown): value is string { return true; } declare function readInput(): unknown; isString(readInput());",
+		{
+			name: "a guard declaring this: void beside a known label: fails one that reads the predicate subject at the argument index of the this parameter",
+			code: "function isString(this: void, value: unknown, label: string): value is string { return true; } declare const input: unknown; isString(input, 'known');",
+		},
 	],
 	invalid: [
 		{ code: "const value: unknown = {};", errors: [error] },
@@ -148,6 +152,16 @@ tester.run("anti-slop/no-known-value-widening", noKnownValueWideningRule, {
 		},
 		{
 			code: "function isString(value: string | unknown): value is string { return true; } isString('known');",
+			errors: [error],
+		},
+		{
+			name: "a known value handed to a guard declaring this: void: fails one that reads the predicate subject at the argument index of the this parameter",
+			code: "function isString(this: void, value: unknown): value is string { return true; } isString('known');",
+			errors: [{ ...error, column: 89 }],
+		},
+		{
+			name: "a known value handed to a guard expression declaring this: void: fails one that counts the this parameter of a function expression",
+			code: "const isString = function (this: void, value: unknown): value is string { return true; }; isString('known');",
 			errors: [error],
 		},
 		{
