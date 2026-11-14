@@ -271,7 +271,7 @@ test("sync writes the block of every qualifying workspace package, lists every p
   assert.equal(
     read(root, "packages/a/README.md"),
     `# A\n\n## Compatibility\n\n${compatBlock([
-      { name: "@antelopejs/b", supported: "workspace:*", tested: "workspace" },
+      { name: "@antelopejs/b", supported: "workspace:*", tested: "0.4.1" },
       { name: "@antelopejs/core", supported: ">=1.17.0 <2", tested: "1.17.2" },
       {
         name: "@antelopejs/interface-core",
@@ -320,7 +320,7 @@ test("sync writes the block of every qualifying workspace package, lists every p
   assert.deepEqual(syncRepository(root, { check: true }).paths, []);
 });
 
-test("a release that bumps a linked workspace sibling leaves --check clean", (t) => {
+test("a release that bumps a linked workspace sibling makes --check report the README until sync writes the new version", (t) => {
   const root = workspace(t);
   assert.deepEqual(syncRepository(root).errors, []);
   put(
@@ -331,6 +331,16 @@ test("a release that bumps a linked workspace sibling leaves --check clean", (t)
       version: "0.4.2",
       devDependencies: { "@antelopejs/core": "^1.17.0" },
     }),
+  );
+  assert.ok(
+    syncRepository(root, { check: true }).paths.includes(
+      "packages/a/README.md",
+    ),
+  );
+  assert.deepEqual(syncRepository(root).errors, []);
+  assert.match(
+    read(root, "packages/a/README.md"),
+    /`@antelopejs\/b`.*`0\.4\.2`/,
   );
   assert.deepEqual(syncRepository(root, { check: true }).paths, []);
 });
@@ -447,6 +457,30 @@ for (const setting of ["npmrc", "workspace"] as const)
       [],
     );
   });
+
+test("Tested with resolves a link in a package's own lockfile from that package's directory", (t) => {
+  const root = perPackageRepo(t, "npmrc");
+  put(
+    root,
+    "packages/a/package.json",
+    manifest({
+      name: "@antelopejs/a",
+      version: "1.0.0",
+      peerDependencies: { "@antelopejs/core": ">=1.17.0 <2" },
+      dependencies: { "@antelopejs/b": "workspace:*" },
+    }),
+  );
+  put(
+    root,
+    "packages/a/pnpm-lock.yaml",
+    `${PER_PACKAGE_LOCK("1.17.2")}      '@antelopejs/b':\n        specifier: workspace:*\n        version: link:../b\n`,
+  );
+  assert.deepEqual(syncRepository(root).errors, []);
+  assert.match(
+    read(root, "packages/a/README.md"),
+    /`@antelopejs\/b`.*`1\.0\.0`/,
+  );
+});
 
 test("a package without its own lockfile fails naming that lockfile when the workspace lockfile is not shared", (t) => {
   const root = perPackageRepo(t, "npmrc");
