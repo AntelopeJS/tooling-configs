@@ -41,20 +41,40 @@ const CHECK_STEPS = [
   "published:types",
 ];
 
-/** Steps `antelopejs-checks` runs itself, no package.json script behind them: each returns what failed, empty when it passed. */
-const OWN_STEPS = new Map<
-  string,
-  (root: string, signal: AbortSignal | undefined) => Promise<string>
->([
-  ["verify:types", typecheckLayers],
-  ["verify:lockfiles", (root) => Promise.resolve(checkLockfiles(root))],
+/** What a step `antelopejs-checks` runs itself reports: what failed, empty when it passed, and notes printed either way. */
+interface StepReport {
+  failure: string;
+  notes: string;
+}
+
+type OwnStep = (
+  root: string,
+  signal: AbortSignal | undefined,
+) => Promise<StepReport>;
+
+function failureOnly(
+  check: (root: string, signal: AbortSignal | undefined) => Promise<string>,
+): OwnStep {
+  return async (root, signal) => ({
+    failure: await check(root, signal),
+    notes: "",
+  });
+}
+
+/** Steps `antelopejs-checks` runs itself, no package.json script behind them. */
+const OWN_STEPS = new Map<string, OwnStep>([
+  ["verify:types", failureOnly(typecheckLayers)],
+  [
+    "verify:lockfiles",
+    failureOnly((root) => Promise.resolve(checkLockfiles(root))),
+  ],
   [
     "lockfile:singletons",
-    (root) => Promise.resolve(checkSingletonPackages(root)),
+    failureOnly((root) => Promise.resolve(checkSingletonPackages(root))),
   ],
-  ["dependency:ranges", checkRepositoryRanges],
-  ["git:identity", checkGitIdentity],
-  ["readme:version", checkReadmeVersion],
+  ["dependency:ranges", failureOnly(checkRepositoryRanges)],
+  ["git:identity", failureOnly(checkGitIdentity)],
+  ["readme:version", failureOnly(checkReadmeVersion)],
   ["published:types", checkPublishedTypes],
 ]);
 
@@ -169,32 +189,41 @@ async function runSteps(
   manifest: ReturnType<typeof parseManifest>,
   steps: string[],
   signal: AbortSignal | undefined,
-): Promise<string[]> {
+): Promise<{ failures: string[]; notes: string[] }> {
   const manager = packageManager(manifest);
-  const runStep = async (step: string): Promise<string[]> => {
-    if (signal?.aborted) return [];
+  const runStep = async (step: string): Promise<StepReport> => {
+    if (signal?.aborted) return { failure: "", notes: "" };
     const own = OWN_STEPS.get(step);
     if (own) {
-      const failure = await own(root, signal);
-      return failure ? [`[${step}]\n${failure}`] : [];
+      const { failure, notes } = await own(root, signal);
+      return {
+        failure: failure && `[${step}]\n${failure}`,
+        notes: notes && `[${step}]\n${notes}`,
+      };
     }
     if (!manifest.scripts?.[step])
-      return [
-        `[${step}] Missing package.json script "${step}". Run antelopejs-sync.\n`,
-      ];
+      return {
+        failure: `[${step}] Missing package.json script "${step}". Run antelopejs-sync.\n`,
+        notes: "",
+      };
     const result = await runCommand(manager, ["run", step], {
       cwd: root,
       env: { ...process.env, CI: "1" },
       signal,
     });
-    return result.status === 0 ? [] : [`[${step}]\n${result.output}`];
+    return {
+      failure: result.status === 0 ? "" : `[${step}]\n${result.output}`,
+      notes: "",
+    };
   };
-  const failures = new Map<string, string[]>();
+  const reports = new Map<string, StepReport>();
   for (const phase of phases(root, steps))
     await Promise.all(
-      phase.map(async (step) => failures.set(step, await runStep(step))),
+      phase.map(async (step) => reports.set(step, await runStep(step))),
     );
-  return steps.flatMap((step) => failures.get(step) ?? []);
+  const listed = (field: keyof StepReport) =>
+    steps.flatMap((step) => reports.get(step)?.[field] || []);
+  return { failures: listed("failure"), notes: listed("notes") };
 }
 
 /** The optional package script run once before the steps, to build what several steps read, such as a workspace package's `dist`. */
@@ -228,8 +257,13 @@ async function prepare(
   return undefined;
 }
 
-function summary(failures: string[], passed: number, skipped: number): string {
-  return `${failures.join("\n")}Checks: ${passed} passed, ${failures.length} failed${skipped ? `, ${skipped} skipped` : ""}.\n`;
+function summary(
+  reported: string,
+  failed: number,
+  passed: number,
+  skipped: number,
+): string {
+  return `${reported}Checks: ${passed} passed, ${failed} failed${skipped ? `, ${skipped} skipped` : ""}.\n`;
 }
 
 /**
@@ -277,22 +311,23 @@ export async function runChecks(root: string, options: ChecksOptions = {}) {
       ? await startServices(root, signal)
       : { failure: "", owned: false };
   let failures: string[] = [];
+  let notes: string[] = [];
   let stopped = "";
   try {
-    failures = started.failure
-      ? [`[services]\n${started.failure}`]
-      : await runSteps(root, manifest, steps, signal);
+    if (started.failure) failures = [`[services]\n${started.failure}`];
+    else ({ failures, notes } = await runSteps(root, manifest, steps, signal));
   } finally {
     if (started.owned) stopped = await stopServices(root);
   }
   const passed = started.failure ? 0 : steps.length - failures.length;
   if (stopped) failures.push(`[services]\n${stopped}`);
   const interrupted = signal?.aborted ?? false;
+  const reported = [...notes, ...failures].join("\n");
   return {
     failed: failures.length,
     interrupted,
     output: interrupted
-      ? `${failures.join("\n")}Checks interrupted by ${String(signal?.reason)}.\n`
-      : summary(failures, passed, skipped),
+      ? `${reported}Checks interrupted by ${String(signal?.reason)}.\n`
+      : summary(reported, failures.length, passed, skipped),
   };
 }
