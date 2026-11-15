@@ -16,6 +16,8 @@ const COMPONENTS = {
 
 const SITES = ["a", "b", "c"];
 
+const SHARED_DECLARATION = "export interface Shared { a: string }\n";
+
 const SITE_COMPONENT =
   '<script setup lang="ts">\nimport type { Shared } from "#shared";\nconst value: Shared = { a: "x" };\nvoid value;\n</script>\n';
 
@@ -23,10 +25,7 @@ test("a file that the programs of tsconfigs in different directories, each decla
   const root = mkdtempSync(join(tmpdir(), "antelope-typed-file-"));
   try {
     mkdirSync(join(root, "shared"));
-    writeFileSync(
-      join(root, "shared/types.d.ts"),
-      "export interface Shared { a: string }\n",
-    );
+    writeFileSync(join(root, "shared/types.d.ts"), SHARED_DECLARATION);
     const shared = SITES.map((site) => {
       mkdirSync(join(root, site, "app"), { recursive: true });
       writeFileSync(
@@ -53,7 +52,7 @@ test("a file that the programs of tsconfigs in different directories, each decla
           ?.declarations?.[0]?.getSourceFile()
       );
     });
-    assert.equal(shared[0]?.fileName, join(root, "shared/types.d.ts"));
+    assert.equal(shared[0]?.text, SHARED_DECLARATION);
     assert.equal(new Set(shared).size, 1);
   } finally {
     rmSync(root, { recursive: true, force: true });
