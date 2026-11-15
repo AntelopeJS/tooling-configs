@@ -49,11 +49,7 @@ test("api-diff fails on a published entry that throws on import unless --skip-ru
   assert.equal(loaded.status, 1, loaded.stdout + loaded.stderr);
   assert.match(loaded.stdout, /Execution error:.*build script ran on import/s);
 
-  const skipped = bin(root, "api-diff", [
-    "HEAD",
-    "--skip-runtime",
-    "scripts/build",
-  ]);
+  const skipped = bin(root, "api-diff", ["HEAD", "--skip-runtime", "**/build"]);
   assert.equal(skipped.status, 0, skipped.stdout + skipped.stderr);
   assert.match(skipped.stdout, /^API: 1 packages, 3 entries unchanged/m);
   assert.match(

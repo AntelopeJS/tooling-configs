@@ -374,7 +374,7 @@ Pass `--allow-added <glob>` (repeatable) to `antelopejs-api-diff` when a refacto
 pnpm exec antelopejs-api-diff origin/main --allow-added '**/internal/**'
 ```
 
-Pass `--skip-runtime <glob>` (repeatable) when a package publishes a script that throws or never settles on import, such as a build or server script under a wildcard export. The runtime half does not load an entry whose published subpath matches a glob, in either revision, and prints `Runtime API: skipped entry <subpath> in <directory>, which --skip-runtime names.` for each one. The declaration half still compares it. A wildcard export is resolved from the directory before its `*`, inside the package, and never from a `node_modules` directory, since Node does not resolve a subpath through one.
+Pass `--skip-runtime <glob>` (repeatable) when a package publishes a script that throws or never settles on import, such as a build or server script under a wildcard export. The runtime half does not load an entry whose published subpath matches a glob, in either revision, and prints `Runtime API: skipped entry <subpath> in <directory>, which --skip-runtime names.` for each one. The declaration half still compares it when the package publishes declarations for it; a script with none is left out of both halves, so an added, changed or removed one shows only as its skip notice. A wildcard export is resolved from the directory before its `*`, inside the package, and never from a `node_modules` directory, since Node does not resolve a subpath through one.
 
 ```bash
 pnpm exec antelopejs-api-diff origin/main --skip-runtime 'templates/vue/server.mjs'
