@@ -176,7 +176,7 @@ async function checksStatus(
   repo: GardenRepo,
 ): Promise<Finding[]> {
   const branch = await context.targetBranch(repo);
-  const [latest] = (await context.workflowRuns(repo, "ci.yml", branch)) ?? [];
+  const [latest] = (await context.branchRuns(repo, "ci.yml", branch)) ?? [];
   const runs = (
     await context.checkRuns(repo, latest?.headSha || branch)
   ).filter(({ name }) => name === CI_CONTEXT || name === "checks");

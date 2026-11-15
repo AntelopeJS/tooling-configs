@@ -218,6 +218,21 @@ test("a red ci / checks on the newest push and a repository still reporting the 
   ]);
 });
 
+test("on a repository without next, the newest nightly run's checks are judged, so a check that reads only push runs falls back to the branch head", async () => {
+  const nightly = conformant(world())
+    .ci(
+      "mongodb",
+      [{ ...run(1, "failure", 2), event: "schedule" }],
+      [checkRun("ci / checks", "failure")],
+    )
+    .route("/repos/AntelopeJS/mongodb/commits/main/check-runs", {
+      check_runs: [checkRun("ci / checks", "success")],
+    });
+  assert.deepEqual(subjects(await conformance.run(nightly.context())), [
+    "checks-red",
+  ]);
+});
+
 test("the ratchet file is reported only when the history deleted it before it came back", async () => {
   const files = {
     ".github/workflows/ci.yml": CALLER,

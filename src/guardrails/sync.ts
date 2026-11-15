@@ -53,7 +53,7 @@ import {
   hasChecksWorkflow,
   MISSING_CHECKS_WORKFLOW,
 } from "./workflow.ts";
-import { CI_PATH, ciWorkflow, placeholderTestScript } from "./ci-workflow.ts";
+import { CI_PATH, callerPlan, ciWorkflow, type CiPlan } from "./ci-workflow.ts";
 import { backendBoundaryArtifacts } from "./backend-boundary.ts";
 import { checkEntryOnlyConfiguration } from "./entry-only.ts";
 import { planDocs, type DocsPlan } from "./docs-compat.ts";
@@ -81,8 +81,8 @@ export interface RepoContext extends AgentsBlockContext {
   managesCi: boolean;
   /** The docs-compat READMEs and caller `docs-files` lines, planned under the full profile only. */
   docs: DocsPlan | undefined;
-  /** Whether package.json's `test` script only stands in for tests, so the CI caller turns its test job off. */
-  placeholderTests: boolean;
+  /** What package.json tells the CI caller: whether its test job runs, and the repository's CI profile. */
+  ci: CiPlan;
   /** Whether `docs/captures.ts` exists, so package.json declares the capture tool's peers. */
   captures: boolean;
 }
@@ -171,8 +171,7 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
         current,
         current === undefined ? [] : ciNodeCallers(current),
         current === undefined ? [] : ciRenovateSyncCallers(current),
-        context.docs,
-        context.placeholderTests,
+        { ...context.ci, docsFiles: context.docs },
       ),
       notes: [],
     }),
@@ -394,9 +393,7 @@ function repositoryContext(
       profile === "full" && current.has("package.json")
         ? planDocs(root, manager)
         : undefined,
-    placeholderTests:
-      current.has("package.json") &&
-      placeholderTestScript(manifest.scripts?.test),
+    ci: callerPlan(manifest),
     captures: usesCaptures(root),
   };
 }

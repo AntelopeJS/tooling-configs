@@ -38,6 +38,28 @@ test("a streak red for more than 24 hours is a finding, a shorter one or one bro
   assert.deepEqual(keys(await redBranch.run(mended.context())), []);
 });
 
+test("on a repository without next, a nightly red for more than 24 hours is a finding and a pull request run neither starts nor ends the streak, so a check that reads only push runs fails", async () => {
+  const nightly = world([
+    { ...run(4, "success", 1), event: "pull_request" },
+    { ...run(3, "failure", 2), event: "schedule" },
+    { ...run(2, "failure", 26), event: "schedule" },
+    run(1, "success", 50),
+  ]);
+  assert.deepEqual(keys(await redBranch.run(nightly.context())), [
+    "mongodb|red-branch|main",
+  ]);
+});
+
+test("cloud is judged on develop, its integration branch, so a check that only looks for next judges main", async () => {
+  const api = world([run(2, "failure", 2), run(1, "failure", 30)]).route(
+    "/repos/AntelopeJS/mongodb/branches/develop",
+    {},
+  );
+  assert.deepEqual(keys(await redBranch.run(api.context())), [
+    "mongodb|red-branch|develop",
+  ]);
+});
+
 test("a cancelled run neither starts nor ends a red streak", async () => {
   const api = world([run(3, "cancelled", 1), run(2, "failure", 30)]);
   assert.deepEqual(keys(await redBranch.run(api.context())), [
@@ -67,6 +89,16 @@ function timed(recent: number, usual: number): ReturnType<typeof run>[] {
     );
   return runs;
 }
+
+test("on a repository without next, nightly runs are timed, so a check that reads only push runs finds no slowdown", async () => {
+  const nightly = timed(125, 100).map((entry) => ({
+    ...entry,
+    event: "schedule",
+  }));
+  assert.deepEqual(keys(await ciDuration.run(world(nightly).context())), [
+    "mongodb|ci-duration|main",
+  ]);
+});
 
 test("the median of the last 10 runs is judged against the 30-day baseline by +20% or +60 s, whichever trips first", async () => {
   assert.deepEqual(

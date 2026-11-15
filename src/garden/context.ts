@@ -34,6 +34,7 @@ import {
 
 export const ORG = "AntelopeJS";
 const PACKS = ["full", "template", "none"] as const;
+const INTEGRATION_BRANCHES = ["next", "develop"] as const;
 const TIERS = ["N1", "N2", "N3", "N4"] as const;
 
 type Pack = (typeof PACKS)[number];
@@ -177,17 +178,38 @@ export class GardenContext {
     return (await this.repos()).filter(isInScope);
   }
 
+  /** The branch whose CI judges the repository: `next`, else `develop`, the cloud's integration branch, else the default branch. */
   async targetBranch(repo: GardenRepo): Promise<string> {
     return this.branches.get(repo.name, async () => {
-      try {
-        await this.api.json(`/repos/${ORG}/${repo.name}/branches/next`);
-        return "next";
-      } catch (error) {
-        if (error instanceof Error && isMissing(error))
-          return repo.defaultBranch;
-        throw error;
-      }
+      for (const branch of INTEGRATION_BRANCHES)
+        if (await this.hasBranch(repo, branch)) return branch;
+      return repo.defaultBranch;
     });
+  }
+
+  private async hasBranch(repo: GardenRepo, branch: string): Promise<boolean> {
+    try {
+      await this.api.json(`/repos/${ORG}/${repo.name}/branches/${branch}`);
+      return true;
+    } catch (error) {
+      if (error instanceof Error && isMissing(error)) return false;
+      throw error;
+    }
+  }
+
+  /**
+   * Completed runs of a workflow that judge a branch, newest first: its pushes, and the nightly schedule, which runs on
+   * the default branch since a push there no longer runs CI. Undefined when the workflow does not exist.
+   */
+  async branchRuns(
+    repo: GardenRepo,
+    workflow: string,
+    branch: string,
+  ): Promise<WorkflowRun[] | undefined> {
+    const runs = await this.workflowRuns(repo, workflow, branch, "");
+    return runs?.filter(
+      ({ event }) => event === "push" || event === "schedule",
+    );
   }
 
   tree(repo: GardenRepo): Promise<string[]> {

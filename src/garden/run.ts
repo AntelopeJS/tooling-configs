@@ -20,7 +20,7 @@ import {
 } from "./checks/governance.ts";
 import { captureScenes, webBuild } from "./checks/pipelines.ts";
 import { advisories, packageSize, stuckRenovate } from "./checks/supply.ts";
-import { lineEndings, windowsCi } from "./checks/windows.ts";
+import { lineEndings } from "./checks/line-endings.ts";
 import {
   staleRegistry,
   templateBehindLatest,
@@ -52,7 +52,6 @@ const CHECKS: readonly Check[] = [
   webBuild,
   linkRot,
   captureScenes,
-  windowsCi,
   lineEndings,
   staleBranches,
 ];

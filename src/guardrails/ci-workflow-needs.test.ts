@@ -6,6 +6,7 @@ import {
   CI_CALLER,
   CI_NODE_REF,
   CI_RENOVATE_SYNC_REF,
+  ciTriggers,
   ciWorkflow,
 } from "./ci-workflow.ts";
 import {
@@ -41,12 +42,7 @@ function adoptedRepo(t: TestContext): string {
 }
 
 const DMS_22ED5906_GATE = `name: ci
-on:
-  push:
-    branches:
-      - main
-  pull_request:
-permissions:
+${ciTriggers("next")}permissions:
   contents: read
 jobs:
   checks:
@@ -74,8 +70,7 @@ jobs:
 `;
 
 const EXTRA_JOBS = `name: ci
-on: [push, pull_request, workflow_dispatch]
-permissions:
+${ciTriggers("next")}permissions:
   contents: read
 jobs:
   ci:

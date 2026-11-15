@@ -10,6 +10,7 @@ import {
   CI_CONTEXT,
   CI_NODE_REF,
   CI_RENOVATE_SYNC_REF,
+  ciTriggers,
   ciWorkflow,
 } from "./ci-workflow.ts";
 import { syncRepository } from "./sync.ts";
@@ -88,14 +89,14 @@ test("the default caller reports the context ci / checks, because its job id is 
 
 test("a new caller lists the computed docs-files, so a second run that still has to add them fails", () => {
   const plan = { docsFiles: ["README.md"], exists: () => true };
-  const created = ciWorkflow(undefined, [], [], plan);
+  const created = ciWorkflow(undefined, [], [], { docsFiles: plan });
   assert.equal(jobs(created).ci.with?.["docs-files"], "README.md\n");
   assert.equal(
     ciWorkflow(
       created,
       ciNodeCallers(created),
       ciRenovateSyncCallers(created),
-      plan,
+      { docsFiles: plan },
     ),
     created,
   );
@@ -154,7 +155,7 @@ test("renaming the caller to ci also rewrites needs.<old-id> in if, env and run 
 });
 
 test("a conformant caller is returned byte for byte, comments and extra jobs included", () => {
-  const text = `# keep me\nname: ci\non: [push, workflow_dispatch]\njobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: true\n      docs-files: README.md # docs\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n  deploy:\n    needs: ci\n    runs-on: ubuntu-latest\n    steps: []\n`;
+  const text = `# keep me\nname: ci\n${ciTriggers("next")}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: true\n      docs-files: README.md # docs\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n  deploy:\n    needs: ci\n    runs-on: ubuntu-latest\n    steps: []\n`;
   assert.equal(rewrite(text), text);
   assert.equal(rewrite(CI_CALLER), CI_CALLER);
 });
@@ -223,7 +224,7 @@ test("a caller without the test-job input gets test-job: true, with or without a
 });
 
 test("a caller that sets test-job itself keeps its value, so a repository can opt out", () => {
-  const optOut = `on: workflow_dispatch\njobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: false\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n`;
+  const optOut = `${ciTriggers("next")}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: false\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n`;
   assert.equal(rewrite(optOut), optOut);
 });
 
@@ -288,49 +289,6 @@ test("a rewritten caller passes the pack's own formatter check, whether old-shap
     assert.equal(check.status, 0, `${name}: ${check.stdout}${check.stderr}`);
     assert.equal(rewrite(rewritten), rewritten, name);
   }
-});
-
-test("comments under an empty trigger keep their lines and columns through a rewrite, where the yaml default moves the first onto the trigger's line and a fix that ignores columns moves the indented and dedented ones", () => {
-  const triggers = [
-    "on:",
-    "  pull_request:",
-    "    branches: [main]",
-    "  workflow_dispatch:",
-    "  # Upstream documentation changes without a commit in this repository.",
-    "  # Rebuild and validate it daily; this workflow does not deploy the sites.",
-    "  schedule:",
-    '    - cron: "17 3 * * *"',
-    "  push: # on every branch",
-    "  # kept under the inline comment",
-    "",
-    "  # before a blank line",
-    "",
-    "  release:",
-    "    # indented under release",
-    "    # in two lines",
-    "  merge_group:",
-    "  # under the last trigger",
-    "",
-    "# above the jobs",
-    "",
-  ].join("\n");
-  const rewritten = rewrite(
-    `name: CI\n\n${triggers}jobs:\n  checks:\n    uses: ${CI_NODE_REF}\n`,
-  );
-  assert.equal(
-    rewritten.slice(rewritten.indexOf("on:"), rewritten.indexOf("jobs:")),
-    triggers,
-  );
-});
-
-test("a comment under the last trigger stays above the workflow_dispatch sync appends and a dedented one stays above permissions, where the yaml map comment trails the appended key and a fix that counts it as a source key pulls both into on", () => {
-  const rewritten = rewrite(
-    `on:\n  push:\n  pull_request:\n\n  # only pull requests\n\n# least privilege\npermissions:\n  contents: read\njobs:\n  checks:\n    uses: ${CI_NODE_REF}\n`,
-  );
-  assert.match(
-    rewritten,
-    /\n {2}pull_request:\n\n {2}# only pull requests\n {2}workflow_dispatch:[^\n]*\n\n# least privilege\npermissions:/,
-  );
 });
 
 test("a renamed caller still gets a renovate-sync job and keeps its dependents", () => {
@@ -409,32 +367,13 @@ test("sync --check reports an old-shape ci.yml with write grants as drift, sync 
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
 });
 
-test("the caller is dispatchable and its job holds exactly contents read, whatever the trigger shape or permissions it had", () => {
-  const triggers = [
-    "on: push",
-    "on: [push, pull_request]",
-    "on:\n  push:\n    branches: [main]",
-    "on:\n  workflow_dispatch:\n",
-  ];
-  for (const trigger of triggers) {
+test("the caller job holds exactly contents read, whatever permissions it had", () => {
+  for (const permissions of ["", "\n    permissions: write-all"]) {
     const rewritten = rewrite(
-      `name: ci\n${trigger}\njobs:\n  ci:\n    uses: ${CI_NODE_REF}\n`,
+      `on: push\njobs:\n  ci:${permissions}\n    uses: ${CI_NODE_REF}\n`,
     );
-    const parsed = parseDocument(rewritten).toJS();
-    const names = Array.isArray(parsed.on)
-      ? parsed.on
-      : Object(parsed.on) === parsed.on
-        ? Object.keys(parsed.on)
-        : [parsed.on];
-    assert.ok(names.includes("workflow_dispatch"), trigger);
-    assert.deepEqual(parsed.jobs.ci.permissions, { contents: "read" });
+    assert.deepEqual(jobs(rewritten).ci.permissions, { contents: "read" });
   }
-  const wide = rewrite(
-    `on: workflow_dispatch\njobs:\n  ci:\n    permissions: write-all\n    uses: ${CI_NODE_REF}\n`,
-  );
-  assert.deepEqual(parseDocument(wide).toJS().jobs.ci.permissions, {
-    contents: "read",
-  });
 });
 
 test("the template profile syncs the caller too", (t) => {
