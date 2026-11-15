@@ -12,7 +12,6 @@ export {
 } from "./checks.ts";
 export type {
   App,
-  BehaviourMethod,
   CallRequest,
   CallResult,
   Check,

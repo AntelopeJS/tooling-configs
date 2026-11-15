@@ -22,33 +22,16 @@ export interface DoorRule {
 /** Every door kind with its rule, or `null` when the kind cannot apply to the repository. */
 export type DoorRules = { [Kind in DoorKind]: DoorRule | null };
 
-/**
- * How `formal` decides whether a diff changed what the covered code does:
- * `emit` compares the structure of the covered files' JavaScript on the
- * base and on HEAD (top-level statements in order per file, function
- * declarations apart); `probe` runs `command` with a worktree of each commit as its last
- * argument and compares what it prints.
- */
-export type BehaviourMethod =
-  | { kind: "emit" }
-  | { kind: "probe"; command: string[] };
-
-/** A formal check, the source files it covers, its own files, the command that runs it and how its output names a violated and a passing rule. */
+/** A formal check, the source files it covers, its own files, the command that runs it and how its output names a violated rule. */
 export interface FormalCheck {
   name: string;
   covers: string[];
-  /** Globs of the check's own files (its model, its tests): a diff that changes one runs the check, even when no covered file changed, and also runs it on the base. */
+  /** Globs of the check's own files (its model, its tests): a diff that changes one runs the check, even when no covered file changed. */
   files?: string[];
   /** Runs from the repository root; exits 0 while every finding breaks as recorded. */
   command: string[];
-  /** The first capture group names a rule the output reports as broken, and an optional group named `states`, after it, gives its counterexample length in decimal digits; a `states` group that is the first group, that captures anything but digits, or whose number is above `Number.MAX_SAFE_INTEGER` gives no length; a covered behaviour change keeps the base's findings as known only when every one has the same length at HEAD as on the base. Without `violation`, a non-zero exit is the one rule `property` broken. */
+  /** The first capture group names a rule the output reports as broken. Without `violation`, a non-zero exit is the one rule `property` broken. */
   violation: RegExp | null;
-  /** The first capture group names a rule the output reports as holding; a base finding counts as fixed only when HEAD reports it so. Without `passing` and `violation`, a zero exit is the one rule `property` holding. */
-  passing?: RegExp | null;
-  /** How a diff is judged to change the covered behaviour; `emit` by default. */
-  behaviour?: BehaviourMethod;
-  /** The command run on a worktree of the base when the covered behaviour or the check's own files changed, to tell which findings HEAD fixed; `command` by default. */
-  baseCommand?: string[];
 }
 
 /** A backing service the harness runs in Docker for every run, published on a free loopback port. */

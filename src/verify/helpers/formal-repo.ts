@@ -12,12 +12,12 @@ import {
   verifyRepo,
 } from "./verify-repo.ts";
 
-export const SKILL = ".agents/skills/verify-module";
+const SKILL = ".agents/skills/verify-module";
 export const ADD = "export function add(a, b) {\n  return a + b;\n}\n";
-export const OPS =
+const OPS =
   'export const label = "ops";\nexport const mark = label.toUpperCase();\n';
 
-/** A model-like check: it prints the same rule names whatever the code looks like, as long as it behaves the same. */
+/** A model-like check over src/math.js: it prints `holds AddWorks`, or `BROKEN AddWorks` and exits 1 when `add` is wrong. */
 export const CHECK = `import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 const { add } = await import(pathToFileURL(join(process.cwd(), "src/math.js")).href);
@@ -25,22 +25,9 @@ if (add(1, 2) !== 3) {
   console.log("BROKEN AddWorks");
   process.exitCode = 1;
 } else console.log("holds AddWorks");
-if (Object.is(add(-0, -0), -0)) console.log("finding NegativeZero");
-else console.log("holds NegativeZero");
 `;
 
-/** A model-like check that prints each finding with its counterexample length, read from the covered code. */
-export const LENGTH_CHECK = `import { join } from "node:path";
-import { pathToFileURL } from "node:url";
-const math = await import(pathToFileURL(join(process.cwd(), "src/math.js")).href);
-for (const length of math.steps ?? [3]) console.log(\`finding NegativeZero: \${length} states\`);
-if (math.extra) console.log("finding Extra: 2 states");
-`;
-
-/** The same check after a rewrite that no longer reports the NegativeZero rule at all. */
-export const CHECK_WITHOUT_RULE = CHECK.replace(/if \(Object\.is[\s\S]*$/, "");
-
-export const CONFIG = `export default {
+const CONFIG = `export default {
   doors: ${PUBLISH_DOORS},
   formal: [
     {
@@ -48,8 +35,7 @@ export const CONFIG = `export default {
       covers: ["src/math.js", "src/ops.js", "src/typed.ts"],
       files: [".agents/skills/formal-add/**"],
       command: ["node", ".agents/skills/formal-add/check.mjs"],
-      violation: /^(?:finding|BROKEN) (\\w+)(?:: (?<states>\\d+) states)?/gm,
-      passing: /^holds (\\w+)/gm,
+      violation: /^BROKEN (\\w+)/gm,
     },
   ],
 };

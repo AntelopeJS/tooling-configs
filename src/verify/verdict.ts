@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { JourneyResult } from "./results.ts";
 import { flaggedDoors } from "./doors.ts";
 import {
-  formalGate,
+  formalOutcome,
   readFormalResult,
   touchedFormalChecks,
   type FormalResult,
@@ -189,20 +189,11 @@ function formalSection(workspace: Workspace, state: RunState, plan: Plan) {
       continue;
     }
     ran.push(result);
-    if (gate && result.behaviour === undefined && result.exitCode === 0)
-      reasons.push(
-        `formal check ${check.name} covers the diff but its run did not compare the covered behaviour with the base`,
-      );
-    const weight = formalGate(result);
-    if (gate && weight.fails)
-      reasons.push(`formal check ${check.name}: ${weight.outcome}`);
-    const summary = gate
-      ? weight.outcome
-      : result.violated.length > 0
-        ? `violated: ${result.violated.join(", ")}`
-        : `exit ${result.exitCode}, no violated rule`;
+    const { status, outcome } = formalOutcome(result);
+    if (gate && status !== "HOLDS")
+      reasons.push(`formal check ${check.name}: ${status} ${outcome}`);
     lines.push(
-      `\`${check.name}\` (${gate ? "covers the diff, gates the verdict" : "does not cover the diff, informational"}): ${summary}. [evidence](${result.folder})`,
+      `\`${check.name}\` (${gate ? "covers the diff, gates the verdict" : "does not cover the diff, informational"}): ${status} ${outcome}. [evidence](${result.folder})`,
     );
   }
   return { reasons, lines, ran };
@@ -301,7 +292,7 @@ export function renderVerdict(
     "### One-way doors",
     ...doorsSection(judgement),
     "",
-    `**Head** \`${short(plan.headSha)}\` · **Skill** \`verify-${workspace.kind}\` @ \`${short(skillSha)}\` (not trusted yet) · **Verifier** ${judgement.verifier}`,
+    `**Head** \`${short(plan.headSha)}\` · **Skill** \`verify-${workspace.kind}\` @ \`${short(skillSha)}\` · **Verifier** ${judgement.verifier}`,
     "",
     "### Touched features",
     ...bullets(touched, "none"),

@@ -244,33 +244,28 @@ const FORMAL = `formal: [{
     violation: null,
   }],`;
 
-function formalEnvironments(
+function formalEnvironment(
   root: string,
   tmp: string,
   env: Record<string, string>,
-): Record<string, string | undefined>[] {
+): Record<string, string | undefined> {
   put(root, "check.txt", "changed\n");
   commit(root);
   const run = newRun(root, tmp, env);
   const formal = verify(root, tmp, ["formal", run], env);
   assert.equal(formal.status, 0, formal.stdout + formal.stderr);
-  return ["stdout.txt", "base-stdout.txt"].map((file) =>
-    JSON.parse(read(run, join("evidence/formal/probe", file))),
-  );
+  return JSON.parse(read(run, "evidence/formal/probe/stdout.txt"));
 }
 
-test("a formal check, on the head and on the base, sees neither the dev-stack variables nor the lease's tmp under a lease (fails when runCommand spawns with the whole process environment)", (t) => {
+test("a formal check sees neither the dev-stack variables nor the lease's tmp under a lease (fails when runCommand spawns with the whole process environment)", (t) => {
   const { root, tmp } = envRepo(t, FORMAL, { "check.txt": "base\n" });
   const operator = scratchDir(t, "verify-operator-tmp-");
   const lease = scratchDir(t, "verify-lease-dir-");
   mkdirSync(join(lease, "tmp"));
-  const environments = formalEnvironments(root, tmp, leased(lease, operator));
-  assert.equal(environments.length, 2);
-  for (const environment of environments) {
-    for (const name of Object.keys(LEASED))
-      assert.equal(environment[name], undefined, name);
-    assert.equal(environment.TMPDIR, operator);
-  }
+  const environment = formalEnvironment(root, tmp, leased(lease, operator));
+  for (const name of Object.keys(LEASED))
+    assert.equal(environment[name], undefined, name);
+  assert.equal(environment.TMPDIR, operator);
 });
 
 test("a lease that recorded no parent TMPDIR keeps TMPDIR for the run and the journey, as before the lease was told apart (fails when a missing key is read as an operator with no TMPDIR)", (t) => {
@@ -384,36 +379,4 @@ test("a run created under the real lease run lives in the operator's tmp and sur
   assert.equal(down.code, 0, down.stderr);
   assert.equal(existsSync(leaseDir), false);
   assert.equal(existsSync(join(run, "run.json")), true);
-});
-
-test("a formal check's behaviour probe under a lease sees no dev-stack variable and runs in a worktree under the operator's tmp (fails when the probe spawns with the whole process environment or under tmpdir())", (t) => {
-  const operator = scratchDir(t, "verify-operator-tmp-");
-  const lease = scratchDir(t, "verify-lease-dir-");
-  mkdirSync(join(lease, "tmp"));
-  const seenBy = join(operator, "probe.json");
-  const probe = `formal: [{
-    name: "probe",
-    covers: [],
-    files: ["check.txt"],
-    command: [process.execPath, "-e", "0"],
-    violation: null,
-    behaviour: {
-      kind: "probe",
-      command: [process.execPath, "-e", ${JSON.stringify(
-        "require('node:fs').writeFileSync(process.argv[1], JSON.stringify({ env: process.env, dir: process.argv[2] }))",
-      )}, ${JSON.stringify(seenBy)}],
-    },
-  }],`;
-  const { root, tmp } = envRepo(t, probe, { "check.txt": "base\n" });
-  put(root, "check.txt", "changed\n");
-  commit(root);
-  const env0 = leased(lease, operator);
-  const run = newRun(root, tmp, env0);
-  const formal = verify(root, tmp, ["formal", run], env0);
-  assert.equal(formal.status, 0, formal.stdout + formal.stderr);
-  const { env, dir } = JSON.parse(read(operator, "probe.json"));
-  for (const name of Object.keys(LEASED))
-    assert.equal(env[name], undefined, name);
-  assert.equal(env.TMPDIR, operator);
-  assert.ok(String(dir).startsWith(operator), dir);
 });
