@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.7.4
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.7.3...v0.7.4)
+
+### 🚀 Enhancements
+
+- **guardrails:** Build and typecheck with TypeScript 7 through antelopejs-tsc while projects stay on TypeScript 6 ([#392](https://github.com/AntelopeJS/tooling-configs/pull/392))
+
+### 🩹 Fixes
+
+- **deps:** Keep the project's own tsc under npm by installing no aliased TypeScript ([#393](https://github.com/AntelopeJS/tooling-configs/pull/393))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.7.3
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.7.2...v0.7.3)
