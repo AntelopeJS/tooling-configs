@@ -28,8 +28,18 @@ function optionName(word: string): string | undefined {
     : undefined;
 }
 
-/** Options TypeScript 7 adds that take their value as the next word, which `-b` would otherwise read as a project. */
-const VALUED = new Set(["builders", "checkers", "pprofdir"]);
+/** The options `tsc -b` accepts that take a string as the next word, which would otherwise read as a project; TypeScript 7 adds `builders`, `checkers` and `pprofdir`. */
+const VALUED = new Set([
+  "builders",
+  "checkers",
+  "pprofdir",
+  "locale",
+  "generatetrace",
+  "generatecpuprofile",
+]);
+
+/** The explicit values a boolean option such as `--pretty false` takes, which are not projects. */
+const BOOLEAN_VALUES = new Set(["true", "false"]);
 
 export function tscRun(command: TscCommand, args: readonly string[]): TscRun {
   const build = ["b", "build"].includes(optionName(args[0] ?? "") ?? "");
@@ -42,7 +52,8 @@ export function tscRun(command: TscCommand, args: readonly string[]): TscRun {
     else if (option !== undefined && VALUED.has(option)) index++;
     else if (option === "skiplibcheck")
       skipsLibCheck = args[index + 1] !== "false";
-    else if (option === undefined) positional.push(args[index]);
+    else if (option === undefined && !BOOLEAN_VALUES.has(args[index]))
+      positional.push(args[index]);
   }
   const named = build ? positional : project === undefined ? [] : [project];
   return {

@@ -227,13 +227,13 @@ test("a repository whose build and typecheck run antelopejs-tsc keeps every lib 
   );
 });
 
-test("antelopejs-tsc -b reads the values of TypeScript 7's --builders, --checkers and --pprofDir as values, not projects; a check that takes each word after -b for a project reports 2/tsconfig.json as unchecked", (t) => {
+test("tsc -b reads the values of its string options and an explicit boolean as values, not projects; a check that takes each word after -b for a project reports 2/tsconfig.json as unchecked", (t) => {
   assert.deepEqual(
     findingsFor(
       t,
       {
         build:
-          "antelopejs-tsc -b --builders 2 --checkers 4 --pprofDir prof tsconfig.build.json --skipLibCheck",
+          "antelopejs-tsc -b --builders 2 --checkers 4 --pprofDir prof --locale fr --generateTrace trace --generateCpuProfile cpu.cpuprofile --pretty false tsconfig.build.json --skipLibCheck",
         typecheck: "antelopejs-tsc -b tsconfig.build.json",
       },
       { "tsconfig.json": "{}", "tsconfig.build.json": "{}" },
