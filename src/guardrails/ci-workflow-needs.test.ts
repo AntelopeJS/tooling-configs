@@ -79,6 +79,7 @@ jobs:
     permissions:
       contents: write
       actions: write
+      statuses: write
     uses: ${CI_RENOVATE_SYNC_REF}
   formal:
     runs-on: ubuntu-latest
