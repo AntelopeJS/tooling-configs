@@ -37,12 +37,15 @@ function run(cwd: string, command: string, args: string[]) {
   };
 }
 
-/** Writes a package at `directory` that pins `typescript`, declares the pack from `tarball`, and sets npm's `overrides`. */
+/** Writes a package at `directory` that pins `typescript`, declares the pack from `tarball`, and adds the `forced` versions: npm's `overrides` or yarn's `resolutions`. */
 function consumer(
   directory: string,
   tarball: string,
   typescript: string,
-  overrides: Record<string, string | Record<string, string>> = {},
+  forced: {
+    overrides?: Record<string, string | Record<string, string>>;
+    resolutions?: Record<string, string>;
+  } = {},
 ): void {
   mkdirSync(directory, { recursive: true });
   writeFileSync(
@@ -54,7 +57,7 @@ function consumer(
         typescript: typescript,
         "@antelopejs/tooling-configs": `file:${tarball}`,
       },
-      overrides,
+      ...forced,
     }),
   );
 }
@@ -121,7 +124,9 @@ test("a project keeps the tsc of the typescript it pins after installing the pac
     "npm, an override of typescript to 7.0.2: the pack's commands name the override and its exemption instead of failing on TypeScript 7's missing API, and the exemption gives the pack TypeScript 6 again",
     () => {
       const forced = join(scratch, "npm-override");
-      consumer(forced, tarball, "7.0.2", { typescript: "7.0.2" });
+      consumer(forced, tarball, "7.0.2", {
+        overrides: { typescript: "7.0.2" },
+      });
       assert.equal(run(forced, "npm", commands.npm).status, 0);
       const refused = run(forced, "npx", [
         "--no-install",
@@ -140,11 +145,27 @@ test("a project keeps the tsc of the typescript it pins after installing the pac
       assert.doesNotMatch(refused.output, /TypeError/);
       const exempt = join(scratch, "npm-override-exempt");
       consumer(exempt, tarball, "7.0.2", {
-        typescript: "7.0.2",
-        "@antelopejs/tooling-configs": { typescript: "^6.0.2" },
+        overrides: {
+          typescript: "7.0.2",
+          "@antelopejs/tooling-configs": { typescript: "^6.0.2" },
+        },
       });
       assert.equal(run(exempt, "npm", commands.npm).status, 0);
       assertCompilers(exempt, "npm", "7.0.2");
+    },
+  );
+  await t.test(
+    "yarn, a resolution of typescript to 7.0.2 after the pack's exemption, as the message words it: the pack keeps TypeScript 6; yarn 1 applies the first matching key, so an exemption listed second is ignored",
+    () => {
+      const exempt = join(scratch, "yarn-resolution-exempt");
+      consumer(exempt, tarball, "7.0.2", {
+        resolutions: {
+          "**/@antelopejs/tooling-configs/typescript": "^6.0.2",
+          typescript: "7.0.2",
+        },
+      });
+      assert.equal(run(exempt, "yarn", commands.yarn).status, 0);
+      assertCompilers(exempt, "yarn", "7.0.2");
     },
   );
 });
