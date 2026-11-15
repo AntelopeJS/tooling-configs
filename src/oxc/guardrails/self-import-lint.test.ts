@@ -26,9 +26,7 @@ test("the preset flags a self-import in a test file and not in source or in a li
     project.write("src/index.ts", "export const run = 1;\n");
     project.write("src/tests/index.test.ts", SELF_IMPORT);
     project.write("src/uses-self.ts", SELF_IMPORT);
-    assert.deepEqual(selfImports(project.run(true)), [
-      "src/tests/index.test.ts",
-    ]);
+    assert.deepEqual(selfImports(project.run()), ["src/tests/index.test.ts"]);
     mkdirSync(join(project.root, "node_modules/@antelopejs"), {
       recursive: true,
     });
@@ -37,7 +35,7 @@ test("the preset flags a self-import in a test file and not in source or in a li
       join(project.root, "node_modules/@antelopejs/interface-demo"),
       "dir",
     );
-    assert.deepEqual(selfImports(project.run(true)), []);
+    assert.deepEqual(selfImports(project.run()), []);
   } finally {
     project.remove();
   }

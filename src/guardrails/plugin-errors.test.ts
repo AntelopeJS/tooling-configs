@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 
-import { formatCeilings } from "./ceilings.ts";
 import { formatBudget } from "./suppression-budget.ts";
 import { bin, commit, linkOxlint, put, testRepo } from "./helpers/test-repo.ts";
 
@@ -47,11 +46,6 @@ function crashingRepo(t: TestContext): string {
   );
   put(
     root,
-    "guardrails.ratchet.json",
-    formatCeilings({ rules: { "boom/explode": 0 }, oversizeFiles: {} }),
-  );
-  put(
-    root,
     "guardrails.suppressions.json",
     formatBudget({
       rules: { "eslint/no-debugger": 1 },
@@ -66,10 +60,7 @@ function crashingRepo(t: TestContext): string {
   return root;
 }
 
-const CHECKS: [string, string[]][] = [
-  ["ratchet", []],
-  ["suppressions", []],
-];
+const CHECKS: [string, string[]][] = [["suppressions", []]];
 
 for (const [name, args] of CHECKS)
   test(`${name} prints the JS plugin's error and stack when a plugin rule throws`, (t) => {
@@ -78,8 +69,4 @@ for (const [name, args] of CHECKS)
     assert.equal(result.status, 1, result.stdout);
     assert.match(result.stderr, /Error running JS plugin\./u);
     assert.match(result.stderr, /Error: explode rule crashed\n\s+at Program /u);
-    assert.doesNotMatch(
-      result.stderr,
-      /Cannot measure oxlint diagnostic code/u,
-    );
   });

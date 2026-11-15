@@ -116,8 +116,8 @@ function reasonlessFailure(directive: Directive): string[] {
 
 /**
  * Fails, in each of `files`, every lint directive that suppresses nothing
- * under the repository's own lint configuration with its ratchet rules
- * enabled, and every directive naming rules that gives no reason. Directives
+ * under the repository's own lint configuration, and every directive naming
+ * rules that gives no reason. Directives
  * in other files are left alone, so adopting the check changes no existing
  * file until a change touches it. `eslint-` directives under an ESLint config
  * are left to ESLint, and `.vue` files are not linted by oxlint.

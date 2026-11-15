@@ -319,11 +319,6 @@ test("another job already named ci blocks the rename instead of overwriting it",
 
 test("sync writes the ci caller into a repository without it, never a mutation caller, and sync --check reports a drifted caller job id", (t) => {
   const root = testRepo(t, false);
-  put(
-    root,
-    "guardrails.ratchet.json",
-    '{"rules":{"eslint/no-alert":1},"oversizeFiles":{}}\n',
-  );
   const first = bin(root, "sync");
   assert.equal(first.status, 0, first.stderr);
   assert.deepEqual(
@@ -343,11 +338,6 @@ test("sync writes the ci caller into a repository without it, never a mutation c
 
 test("sync --check reports an old-shape ci.yml with write grants as drift, sync rewrites it and the new shape is clean", (t) => {
   const root = testRepo(t, false);
-  put(
-    root,
-    "guardrails.ratchet.json",
-    '{"rules":{"eslint/no-alert":1},"oversizeFiles":{}}\n',
-  );
   assert.equal(bin(root, "sync").status, 0);
   put(root, ".github/workflows/ci.yml", WRITE_GRANTED_CALLER);
   commit(root);
@@ -384,11 +374,6 @@ test("the template profile syncs the caller too", (t) => {
 
 test("sync leaves an existing mutation caller alone and --check accepts it", (t) => {
   const root = testRepo(t, false);
-  put(
-    root,
-    "guardrails.ratchet.json",
-    '{"rules":{"eslint/no-alert":1},"oversizeFiles":{}}\n',
-  );
   const caller = "name: mutation\non: workflow_dispatch\njobs: {}\n";
   put(root, ".github/workflows/mutation.yml", caller);
   commit(root);

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { formatCeilings } from "./ceilings.ts";
 import { parseManifest, toolingVersions } from "./package.ts";
 import { syncRepository } from "./sync.ts";
 import {
@@ -21,15 +20,9 @@ const TEMPLATE_SCRIPTS = {
 
 const VERSIONS = toolingVersions();
 
-const DEBT = formatCeilings({
-  rules: { "typescript/no-unsafe-assignment": 3 },
-  oversizeFiles: {},
-});
-
 function templateRepo(
   t: Parameters<typeof testRepo>[0],
   scripts: Record<string, string>,
-  ratchetFile = false,
   devDependencies: Record<string, string> = {},
 ): string {
   const root = testRepo(t);
@@ -38,7 +31,6 @@ function templateRepo(
     "package.json",
     `${JSON.stringify({ name: "template-test", type: "module", packageManager: "npm@11.0.0", scripts, devDependencies }, null, 2)}\n`,
   );
-  if (ratchetFile) put(root, "guardrails.ratchet.json", DEBT);
   commit(root);
   return root;
 }
@@ -46,21 +38,6 @@ function templateRepo(
 function scriptsOf(root: string) {
   return parseManifest(read(root, "package.json")).scripts ?? {};
 }
-
-test("template sync writes the ratchet scripts that checks requires once a ratchet file exists (#88)", (t) => {
-  const root = templateRepo(t, TEMPLATE_SCRIPTS, true);
-  const result = syncRepository(root, { profile: "template" });
-  assert.deepEqual(result.errors, []);
-  assert.equal(scriptsOf(root).ratchet, "antelopejs-ratchet");
-  assert.equal(
-    scriptsOf(root)["ratchet:update"],
-    "antelopejs-ratchet --update",
-  );
-  assert.equal(
-    bin(root, "sync", ["--check", "--profile", "template"]).status,
-    0,
-  );
-});
 
 test("template sync writes the suppressions scripts that checks requires (#88)", (t) => {
   const root = templateRepo(t, TEMPLATE_SCRIPTS);
@@ -90,7 +67,7 @@ test("template sync adopts the suppression budget that antelopejs-suppressions r
 });
 
 test("template sync --check reports a missing script and writes nothing (#88)", (t) => {
-  const root = templateRepo(t, TEMPLATE_SCRIPTS, true);
+  const root = templateRepo(t, TEMPLATE_SCRIPTS);
   const before = read(root, "package.json");
   const result = syncRepository(root, { check: true, profile: "template" });
   assert.ok(result.paths.includes("package.json"));
@@ -101,20 +78,11 @@ test("template sync --check reports a missing script and writes nothing (#88)", 
   );
 });
 
-test("template sync adds no ratchet script while there is no ratchet file", (t) => {
-  const root = templateRepo(t, TEMPLATE_SCRIPTS);
-  syncRepository(root, { profile: "template" });
-  assert.equal(scriptsOf(root).ratchet, undefined);
-  assert.equal(scriptsOf(root)["ratchet:update"], undefined);
-});
-
 test("template sync keeps the template profile's own scripts and leaves a complete package.json byte for byte", (t) => {
   const root = templateRepo(
     t,
     {
       ...TEMPLATE_SCRIPTS,
-      ratchet: "antelopejs-ratchet",
-      "ratchet:update": "antelopejs-ratchet --update",
       suppressions: "antelopejs-suppressions",
       "suppressions:update": "antelopejs-suppressions --update",
       size: "antelopejs-check-size",
@@ -124,7 +92,6 @@ test("template sync keeps the template profile's own scripts and leaves a comple
       "format:check": "oxfmt --check .",
       knip: "knip --workspace .",
     },
-    true,
     { knip: VERSIONS.knip, "oxlint-tsgolint": VERSIONS.tsgolint },
   );
   const before = read(root, "package.json");
@@ -133,7 +100,7 @@ test("template sync keeps the template profile's own scripts and leaves a comple
 });
 
 test("template sync keeps the template profile sync scripts while it adds the missing ones", (t) => {
-  const root = templateRepo(t, TEMPLATE_SCRIPTS, true);
+  const root = templateRepo(t, TEMPLATE_SCRIPTS);
   syncRepository(root, { profile: "template" });
   const scripts = scriptsOf(root);
   assert.equal(scripts.sync, TEMPLATE_SCRIPTS.sync);

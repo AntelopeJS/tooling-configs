@@ -15,7 +15,6 @@ test("the managed block stays within its byte cap for every profile and reposito
       for (const glossary of [undefined, "docs/GLOSSARY.md"]) {
         const block = agentsBlock({
           profile,
-          ratchet: false,
           verificationSkill,
           glossary,
         });
@@ -29,7 +28,6 @@ test("the managed block stays within its byte cap for every profile and reposito
 test("the full block sends the full checks to CI and names the fast local checks", () => {
   const block = agentsBlock({
     profile: "full",
-    ratchet: false,
     verificationSkill: undefined,
     glossary: undefined,
   });

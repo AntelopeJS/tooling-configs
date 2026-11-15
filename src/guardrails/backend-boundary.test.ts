@@ -9,7 +9,6 @@ import ts from "typescript";
 import { build, type Plugin } from "vite";
 
 import { backendBoundarySource } from "./backend-boundary.ts";
-import { formatCeilings } from "./ceilings.ts";
 import {
   bin,
   commit,
@@ -27,11 +26,6 @@ const DMS_AI_COPY = read(
 
 function adoptedRepo(t: TestContext): string {
   const root = testRepo(t);
-  put(
-    root,
-    "guardrails.ratchet.json",
-    formatCeilings({ rules: { "eslint/max-params": 1 }, oversizeFiles: {} }),
-  );
   const sync = bin(root, "sync");
   assert.equal(sync.status, 0, sync.stderr);
   commit(root);

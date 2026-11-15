@@ -4,7 +4,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
-import { formatCeilings, MAX_FILE_BYTES } from "./ceilings.ts";
+import { MAX_FILE_BYTES } from "./ceilings.ts";
 import { bin, commit, put, testRepo } from "./helpers/test-repo.ts";
 
 test("size catches untracked tests and real byte excess, not only tracked source or character counts", (t) => {
@@ -108,21 +108,6 @@ test("size excludes every JSON file and NUL-bearing binaries, not oversized code
   assert.match(result.stderr, /authored\.ts:/);
   assert.doesNotMatch(result.stderr, /\.json/u);
   assert.match(result.stderr, /late\.custom:/);
-});
-
-test("size honours a recorded allowance but rejects one byte of growth instead of exempting the path", (t) => {
-  const root = testRepo(t);
-  put(root, "large.ts", "x".repeat(20_123));
-  put(
-    root,
-    "guardrails.ratchet.json",
-    formatCeilings({ rules: {}, oversizeFiles: { "large.ts": 20_123 } }),
-  );
-  assert.equal(bin(root, "check-size").status, 0);
-  put(root, "large.ts", "x".repeat(20_124));
-  const result = bin(root, "check-size", ["large.ts"]);
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /1 bytes over the 20123-byte ceiling/);
 });
 
 test("staged size checks the index blob rather than the working tree in both directions", (t) => {

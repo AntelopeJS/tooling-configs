@@ -30,11 +30,6 @@ function rewrite(text: string): string {
 
 function adoptedRepo(t: TestContext): string {
   const root = testRepo(t, false);
-  put(
-    root,
-    "guardrails.ratchet.json",
-    '{"rules":{"eslint/no-alert":1},"oversizeFiles":{}}\n',
-  );
   const sync = bin(root, "sync");
   assert.equal(sync.status, 0, sync.stderr);
   commit(root);

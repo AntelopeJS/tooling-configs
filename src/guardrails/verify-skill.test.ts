@@ -302,11 +302,6 @@ test("antelopeJs.implements infers module and antelopeJs.kind wins over it", (t)
 
 test("without a signal sync writes nothing and stays quiet, whatever the package name says", (t) => {
   const root = testRepo(t);
-  put(
-    root,
-    "guardrails.ratchet.json",
-    '{"rules":{"eslint/no-alert":1},"oversizeFiles":{}}\n',
-  );
   withPackage(root, {
     name: "logging-interface",
     antelopeJs: { implements: [] },

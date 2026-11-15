@@ -233,31 +233,6 @@ test("on a repository without next, the newest nightly run's checks are judged, 
   ]);
 });
 
-test("the ratchet file is reported only when the history deleted it before it came back", async () => {
-  const files = {
-    ".github/workflows/ci.yml": CALLER,
-    "renovate.json": RENOVATE,
-    "package.json": PACKAGE,
-    "pnpm-lock.yaml": LOCK("0.2.7"),
-    "guardrails.ratchet.json": "{}",
-  };
-  const history = (status: string) =>
-    conformant(world())
-      .repo("mongodb", files)
-      .route("/repos/AntelopeJS/mongodb/commits", [{ sha: "abc" }])
-      .route("/repos/AntelopeJS/mongodb/commits/abc", {
-        files: [{ filename: "guardrails.ratchet.json", status }],
-      });
-  assert.deepEqual(
-    subjects(await conformance.run(history("removed").context())),
-    ["ratchet"],
-  );
-  assert.deepEqual(
-    subjects(await conformance.run(history("modified").context())),
-    [],
-  );
-});
-
 test("a TypeScript repository without the pack is new, an N4 one and a non-TypeScript one are not", async () => {
   const api = conformant(world()).org([
     { name: "mongodb" },

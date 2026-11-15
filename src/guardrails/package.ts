@@ -151,7 +151,6 @@ export function repositoryTools(manifest: Manifest) {
       commands: {
         checks: "antelopejs-checks",
         size: "antelopejs-check-size",
-        ratchet: "antelopejs-ratchet",
         suppressions: "antelopejs-suppressions",
         sync: "antelopejs-sync",
       },
@@ -166,7 +165,6 @@ export function repositoryTools(manifest: Manifest) {
       commands: {
         checks: "node src/bin/checks.ts",
         size: "node src/bin/check-size.ts",
-        ratchet: "node src/bin/ratchet.ts",
         suppressions: "node src/bin/suppressions.ts",
         sync: "node src/bin/sync.ts",
       },
@@ -345,7 +343,7 @@ export function bootstrappedManifest(
 export function managedPackage(
   current: string | undefined,
   versions: ReturnType<typeof toolingVersions>,
-  options: DependencyOptions & { nuxt?: boolean; ratchet?: boolean } = {},
+  options: DependencyOptions & { nuxt?: boolean } = {},
 ): string {
   if (current === undefined) throw new Error("package.json is missing.");
   const manifest = parseManifest(current);
@@ -353,14 +351,11 @@ export function managedPackage(
   scripts.prepare = prepareScript(scripts.prepare);
   const tools = repositoryTools(manifest);
   Object.assign(scripts, tools.commands, {
-    "ratchet:update": `${tools.commands.ratchet} --update`,
     "suppressions:update": `${tools.commands.suppressions} --update`,
     "sync:check": `${tools.commands.sync} --check`,
   });
-  if (options.ratchet === false) {
-    delete scripts.ratchet;
-    delete scripts["ratchet:update"];
-  }
+  delete scripts.ratchet;
+  delete scripts["ratchet:update"];
   for (const [name, command] of Object.entries(defaultScripts(options.nuxt)))
     scripts[name] ??= command;
   manifest.devDependencies = sortedEntries({
@@ -380,7 +375,7 @@ export function managedPackage(
 export function templatePackage(
   current: string | undefined,
   versions: ReturnType<typeof toolingVersions>,
-  options: { ratchet: boolean; nuxt?: boolean; typeAware?: boolean },
+  options: { nuxt?: boolean; typeAware?: boolean },
 ): string {
   if (current === undefined) throw new Error("package.json is missing.");
   const manifest = parseManifest(current);
@@ -393,10 +388,6 @@ export function templatePackage(
     size: commands.size,
     suppressions: commands.suppressions,
     "suppressions:update": `${commands.suppressions} --update`,
-    ...(options.ratchet && {
-      ratchet: commands.ratchet,
-      "ratchet:update": `${commands.ratchet} --update`,
-    }),
   }).filter(([name, command]) => scripts[name] !== command);
   const defaults = Object.entries({
     ...defaultScripts(options.nuxt),

@@ -16,12 +16,6 @@ import {
   type AgentsBlockContext,
 } from "./agents-block.ts";
 import {
-  CEILINGS_FILE,
-  formatCeilings,
-  isRetired,
-  readCeilings,
-} from "./ceilings.ts";
-import {
   addedDevDependencies,
   managedPackage,
   packageManager,
@@ -33,13 +27,11 @@ import {
   usesNuxt,
   type PackageManager,
 } from "./package.ts";
-import { recordedRelease } from "./adoption.ts";
 import { droppedChecksSteps } from "./checks.ts";
 import { isExecutable, makeExecutable } from "./exec-bit.ts";
 import { GITATTRIBUTES_ARTIFACT } from "./gitattributes.ts";
 import { pnpmWorkspaceArtifacts } from "./pnpm-workspace.ts";
 import { renovateArtifacts } from "./renovate.ts";
-import { measureBaseline } from "./ratchet.ts";
 import { adoptedBudget, SUPPRESSIONS_FILE } from "./suppression-budget.ts";
 import {
   lefthook,
@@ -75,7 +67,6 @@ export interface RepoContext extends AgentsBlockContext {
   typeAware: boolean;
   nuxt: boolean;
   claude: string;
-  baseline: string;
   suppressionBudget: string;
   /** Whether sync owns .github/workflows/ci.yml: it exists, or no other workflow runs the checks. */
   managesCi: boolean;
@@ -104,8 +95,6 @@ interface ManagedArtifact {
 
 const LEGACY_COMMENT_INSTRUCTION =
   "- Explain non-obvious constraints and decisions in comments; avoid restating the code. Document public contracts with TSDoc.";
-
-const RETIRED_RATCHET = `${CEILINGS_FILE} has no debt left. Run ratchet:update to delete it, then run antelopejs-sync.`;
 
 function managedAgents(current = "", context: RepoContext): ArtifactContent {
   const start = current.indexOf(AGENTS_BLOCK_START);
@@ -154,12 +143,7 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
     path: "lefthook.yml",
     profiles: ["full"],
     desired: (current, context) => ({
-      content: lefthook(
-        current,
-        context.manager,
-        context.tools,
-        context.ratchet,
-      ),
+      content: lefthook(current, context.manager),
       notes: [],
     }),
   },
@@ -213,14 +197,6 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
     }),
   },
   {
-    path: CEILINGS_FILE,
-    profiles: ["full"],
-    desired: (current, context) => ({
-      content: current ?? context.baseline,
-      notes: [],
-    }),
-  },
-  {
     path: SUPPRESSIONS_FILE,
     profiles: ["full", "template"],
     desired: (_current, context) => ({
@@ -260,7 +236,6 @@ function planSync(
   }
   for (const artifact of MANAGED_ARTIFACTS) {
     if (!artifact.profiles.includes(context.profile)) continue;
-    if (artifact.path === CEILINGS_FILE && !context.ratchet) continue;
     if (artifact.path === CI_PATH && !context.managesCi) continue;
     try {
       const { content, notes } = artifact.desired(
@@ -372,14 +347,12 @@ function repositoryContext(
   const manager = packageManager(manifest);
   return {
     profile,
-    ratchet: current.has(CEILINGS_FILE),
     manager,
     versions: toolingVersions(),
     tools: repositoryTools(manifest),
     typeAware: /\btypeAware["']?\s*:\s*true\b/.test(desiredLint),
     nuxt: usesNuxt(root, manifest),
     claude: profile === "full" ? claudeProse(root, current) : "",
-    baseline: "",
     suppressionBudget: adoptedBudget(root, current.get(SUPPRESSIONS_FILE)),
     managesCi: current.has(CI_PATH) || !hasChecksWorkflow(root),
     verificationSkill:
@@ -421,13 +394,10 @@ function repositoryNotices(root: string, context: RepoContext): string[] {
     existsSync(join(root, CI_PATH))
   )
     notices.push(MISSING_CHECKS_WORKFLOW);
-  if (context.ratchet && isRetired(readCeilings(root)))
-    notices.push(RETIRED_RATCHET);
   return notices;
 }
 
 /**
- * Measures debt only on first adoption, before sync has written the sync:check script; retired repositories stay retired.
  * Under the template profile the agent layer, `verify-template` and the writing skills, is synced only in the template source,
  * marked by its `.agents/skills/verify-template` folder or chosen with `--verify template`, because a scaffold ships without it,
  * and the AGENTS.md block, which a scaffold keeps, links no skill under it.
@@ -465,7 +435,7 @@ export function syncRepository(
     ),
     ...pnpmWorkspaceArtifacts(root, manifest, profile),
   ];
-  let plan = [...planSync(current, executables, context), ...standalone];
+  const plan = [...planSync(current, executables, context), ...standalone];
   const errors = plan
     .filter((artifact) => artifact.kind === "error")
     .map(({ message }) => message);
@@ -477,26 +447,6 @@ export function syncRepository(
     artifact.kind === "migrated" ? artifact.notes : [],
   );
   (options.check ? errors : notes).push(...repositoryNotices(root, context));
-  if (
-    !errors.length &&
-    profile === "full" &&
-    !options.check &&
-    !current.has(CEILINGS_FILE) &&
-    manifest.scripts?.["sync:check"] === undefined
-  ) {
-    const lint = PRESET_CONFIGS[0];
-    const desired = presetConfig(current.get(lint.path), lint, context.tools);
-    const baseline = measureBaseline(
-      root,
-      desired === current.get(lint.path) ? undefined : desired,
-    );
-    context.ratchet = !isRetired(baseline);
-    context.baseline = formatCeilings({
-      ...baseline,
-      pack: recordedRelease(undefined),
-    });
-    plan = [...planSync(current, executables, context), ...standalone];
-  }
   const writes = plan.filter(
     (artifact) => artifact.kind === "write" || artifact.kind === "migrated",
   );

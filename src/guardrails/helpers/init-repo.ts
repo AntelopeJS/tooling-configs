@@ -85,10 +85,6 @@ export function pushedWorld(root: string, deletesBranchOnMerge: boolean) {
     .repo(NAME, workingTree(root))
     .ci(NAME, [run(1, "success", 2)], [checkRun("ci / checks", "success")])
     .route(`/repos/AntelopeJS/${NAME}/pulls`, [])
-    .route(
-      `/repos/AntelopeJS/${NAME}/commits?path=guardrails.ratchet.json&sha=main&per_page=30`,
-      [],
-    )
     .route(`/repos/AntelopeJS/${NAME}`, {
       delete_branch_on_merge: deletesBranchOnMerge,
     });

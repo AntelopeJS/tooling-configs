@@ -21,11 +21,6 @@ function readyRepo(t: Parameters<typeof testRepo>[0]): string {
   const root = testRepo(t);
   put(
     root,
-    "guardrails.ratchet.json",
-    '{"rules":{"eslint/no-alert":1},"oversizeFiles":{}}\n',
-  );
-  put(
-    root,
     ".github/workflows/ci.yml",
     "jobs:\n  checks:\n    steps:\n      - run: pnpm run checks\n",
   );
@@ -169,6 +164,7 @@ test("lefthook merges managed commands without losing other commands, hooks, opt
   assert.match(merged, /run: echo custom/);
   assert.match(merged, /run: npm test/);
   assert.match(merged, /antelopejs-format:[\s\S]*antelopejs-lint:/);
+  assert.doesNotMatch(merged, /antelopejs-ratchet/);
   assert.ok(merged.indexOf("commit-msg:") < merged.indexOf("pre-commit:"));
   assert.equal(bin(root, "sync").status, 0);
   assert.equal(read(root, "lefthook.yml"), merged);
@@ -240,11 +236,6 @@ test("sync recognizes the consumer's single-line CLAUDE pointer without copying 
 
 test("missing checks CI is a note on sync and a failure on check; real run and reusable uses are accepted", (t) => {
   const root = testRepo(t, false);
-  put(
-    root,
-    "guardrails.ratchet.json",
-    '{"rules":{"eslint/no-alert":1},"oversizeFiles":{}}\n',
-  );
   put(
     root,
     ".github/workflows/ci.yml",

@@ -160,19 +160,6 @@ test("--init declares typescript and @types/node and writes a tsconfig under whi
   assert.match(tsc().stdout, /broken\.js.*TS2339/);
 });
 
-test("--init leaves a repository whose source oxfmt lengthens passing lint, where an init that formats after sync measured the baseline records no ceiling for the longer file", (t) => {
-  const root = bareJsRepo(t);
-  const statements = Array.from(
-    { length: 260 },
-    (_, index) => `let a${index} = ${index}; let b${index} = a${index};`,
-  );
-  put(root, "big.js", `${statements.join("\n")}\n`);
-  assert.equal(bin(root, "sync", ["--init"], fakeTools(t).env).status, 0);
-  assert.ok(read(root, "big.js").split("\n").length > 500);
-  const lint = nodeTool(root, "oxlint/bin/oxlint", []);
-  assert.deepEqual(javaScriptDiagnostics(lint.stdout), []);
-});
-
 test("a second --init on a bare JavaScript repository changes no file, where an init that rewrites the tsconfig, the test script or the formatted source every run never settles", (t) => {
   const root = bareJsRepo(t);
   const tools = fakeTools(t);

@@ -31,11 +31,6 @@ function capturePeers(root: string): Record<string, string | undefined> {
 
 function syncedRepo(t: TestContext): string {
   const root = testRepo(t);
-  put(
-    root,
-    "guardrails.ratchet.json",
-    '{"rules":{"eslint/no-alert":1},"oversizeFiles":{}}\n',
-  );
   const synced = bin(root, "sync");
   assert.equal(synced.status, 0, synced.stderr);
   return root;

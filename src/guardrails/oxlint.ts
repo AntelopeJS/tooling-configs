@@ -3,20 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, dirname, join } from "node:path";
 
-import { MEASURE_ENV } from "./ceilings.ts";
 import { repositoryPath } from "./files.ts";
-
-export interface Diagnostic {
-  rule: string;
-  file: string;
-  /** `file:line:column` of the first label, or the file when oxlint gives no span. */
-  location: string;
-  message: string;
-  line: number | undefined;
-  help: string | undefined;
-}
-
-const TSCONFIG_ERROR = "typescript/tsconfig-error";
 
 function resolveOxlint(root: string): string {
   try {
@@ -27,16 +14,6 @@ function resolveOxlint(root: string): string {
       "oxlint is not installed in this repository. Install dependencies first.",
     );
   }
-}
-
-function ruleId(code: string): string {
-  const match = /^([^()]+)\(([^()]+)\)$/.exec(code);
-  if (!match)
-    throw new Error(
-      `Cannot measure oxlint diagnostic code ${JSON.stringify(code)}. Fix parser or configuration errors before recording a baseline.`,
-    );
-  const [, plugin, rule] = match;
-  return `${plugin === "typescript-eslint" ? "typescript" : plugin}/${rule}`;
 }
 
 interface OxlintSpan {
@@ -69,36 +46,11 @@ function foundNoFiles(stdout: string): boolean {
 function parseReport(text: string): OxlintDiagnostic[] | undefined {
   const json = foundNoFiles(text) ? text.slice(text.indexOf("{")) : text;
   if (!json.startsWith("{")) return undefined;
-  /* SAFETY: this is oxlint's own -f json report; lintDiagnostics rejects any diagnostic without a plugin(rule) code. */
+  /* SAFETY: this is oxlint's own -f json report; the diagnostics array is checked before it is returned. */
   const report = JSON.parse(json) as OxlintReport | null;
   if (!Array.isArray(report?.diagnostics))
     throw new Error("oxlint did not return a JSON diagnostics array.");
   return report.diagnostics;
-}
-
-function toDiagnostic(item: OxlintDiagnostic, root: string): Diagnostic {
-  if (item.code === undefined || item.code === "") {
-    const where =
-      item.filename === undefined
-        ? ""
-        : `${repositoryPath(root, item.filename)}: `;
-    throw new Error(
-      `${where}${item.message}. Fix this parser or configuration error before measuring.`,
-    );
-  }
-  const rule = ruleId(item.code);
-  if (item.filename === undefined)
-    throw new Error(`oxlint reported ${rule} with no file: ${item.message}`);
-  const file = repositoryPath(root, item.filename);
-  const span = item.labels?.[0]?.span;
-  return {
-    rule,
-    file,
-    location: span ? `${file}:${span.line}:${span.column}` : file,
-    message: item.message,
-    line: span?.line,
-    help: item.help,
-  };
 }
 
 function runOxlint(
@@ -128,7 +80,6 @@ function runOxlint(
     const result = spawnSync(process.execPath, args, {
       cwd: root,
       encoding: "utf8",
-      env: { ...process.env, [MEASURE_ENV]: "1" },
       maxBuffer: 64 * 1024 * 1024,
     });
     if (result.error) throw result.error;
@@ -158,30 +109,6 @@ function runOxlint(
   } finally {
     if (temporary) rmSync(temporary, { recursive: true, force: true });
   }
-}
-
-export interface LintOptions {
-  /** Throws when a TypeScript project fails to load, whose type-aware rules would otherwise read as zero findings. */
-  rejectBrokenProject?: boolean;
-}
-
-export function lintDiagnostics(
-  root: string,
-  config?: string,
-  files?: string[],
-  { rejectBrokenProject = false }: LintOptions = {},
-): Diagnostic[] {
-  const diagnostics = runOxlint(root, config, files, []).map((item) =>
-    toDiagnostic(item, root),
-  );
-  const broken = rejectBrokenProject
-    ? diagnostics.find(({ rule }) => rule === TSCONFIG_ERROR)
-    : undefined;
-  if (broken)
-    throw new Error(
-      `${broken.location}: ${broken.message}${broken.help ? ` ${broken.help}` : ""}. The type-aware rules cannot be measured until the TypeScript project loads.`,
-    );
-  return diagnostics;
 }
 
 /** A lint directive oxlint reports as suppressing nothing: the rules it names as dead, or none named when the whole directive is dead. */
@@ -214,8 +141,8 @@ function isUnusedDirective(message: string): boolean {
 }
 
 /**
- * The disable directives in `files` that suppress nothing, with every ratchet
- * rule enabled as in a measurement, and the files oxlint could not read.
+ * The disable directives in `files` that suppress nothing and the files
+ * oxlint could not read.
  * `files` must not be empty, which would lint the whole repository.
  */
 export function directiveReport(

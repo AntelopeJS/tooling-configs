@@ -5,16 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { formatCeilings } from "./ceilings.ts";
 import { bin, commit, put, read, testRepo } from "./helpers/test-repo.ts";
 
 function seededRepo(t: Parameters<typeof testRepo>[0]): string {
   const root = testRepo(t);
-  put(
-    root,
-    "guardrails.ratchet.json",
-    formatCeilings({ rules: { "eslint/max-params": 123 }, oversizeFiles: {} }),
-  );
   return root;
 }
 
