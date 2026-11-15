@@ -90,7 +90,7 @@ test("full sync measures once, preserves handwritten text even behind a CLAUDE s
     read(root, "lefthook.yml"),
     /npm exec -- oxfmt --no-error-on-unmatched-pattern \{staged_files\}/,
   );
-  assert.match(read(root, "lefthook.yml"), /antelopejs-ratchet --staged\n/);
+  assert.doesNotMatch(read(root, "lefthook.yml"), /pre-push|--staged/);
   const mtimes = MANAGED_ARTIFACTS.map(
     ({ path }) => statSync(join(root, path)).mtimeMs,
   );
@@ -292,8 +292,6 @@ test("template profile manages presets, .gitattributes, AGENTS, the suppression 
     read(root, "AGENTS.md"),
     /^Handwritten without a final newline\.\n\n/,
   );
-  assert.match(read(root, "AGENTS.md"), /antelopejs-api-diff <base-ref>/);
-  assert.match(read(root, "AGENTS.md"), /antelopejs-comment-proof <base-ref>/);
   assert.match(
     read(root, "oxlint.config.ts"),
     /options: \{ typeAware: true \}/,
@@ -429,7 +427,6 @@ test("first adoption without debt writes no ratchet file, scripts or hook, but k
     config: { "category:correctness for *": 1 },
     agentFiles: true,
   });
-  assert.match(read(root, "lefthook.yml"), /antelopejs-suppressions --staged/);
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
 });
 

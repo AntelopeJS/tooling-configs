@@ -154,12 +154,7 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
     path: "lefthook.yml",
     profiles: ["full"],
     desired: (current, context) => ({
-      content: lefthook(
-        current,
-        context.manager,
-        context.tools,
-        context.ratchet,
-      ),
+      content: lefthook(current, context.manager),
       notes: [],
     }),
   },

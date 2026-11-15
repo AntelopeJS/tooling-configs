@@ -168,11 +168,35 @@ test("lefthook merges managed commands without losing other commands, hooks, opt
   assert.match(merged, /parallel: true/);
   assert.match(merged, /run: echo custom/);
   assert.match(merged, /run: npm test/);
-  assert.match(merged, /antelopejs-ratchet:[\s\S]*antelopejs-ratchet --staged/);
-  assert.match(merged, /antelopejs-check-size --staged/);
+  assert.match(merged, /antelopejs-format:[\s\S]*antelopejs-lint:/);
   assert.ok(merged.indexOf("commit-msg:") < merged.indexOf("pre-commit:"));
   assert.equal(bin(root, "sync").status, 0);
   assert.equal(read(root, "lefthook.yml"), merged);
+});
+
+test("sync removes the size, ratchet, suppressions and typecheck hooks earlier releases wrote, keeps the repository's own, and drops a hook left empty", (t) => {
+  const root = readyRepo(t);
+  const legacy = (prePush: string) =>
+    `pre-commit:\n  commands:\n    custom:\n      run: echo custom\n    antelopejs-size:\n      run: pnpm exec antelopejs-check-size --staged {staged_files}\n    antelopejs-ratchet:\n      run: pnpm exec antelopejs-ratchet --staged\n    antelopejs-suppressions:\n      run: pnpm exec antelopejs-suppressions --staged\npre-push:\n  commands:\n    antelopejs-typecheck:\n      run: pnpm run typecheck\n${prePush}`;
+  put(root, "lefthook.yml", legacy(""));
+  assert.equal(bin(root, "sync").status, 0);
+  const alone = read(root, "lefthook.yml");
+  assert.doesNotMatch(
+    alone,
+    /antelopejs-(size|ratchet|suppressions|typecheck)|pre-push/,
+  );
+  assert.match(
+    alone,
+    /run: echo custom[\s\S]*antelopejs-format:[\s\S]*antelopejs-lint:/,
+  );
+  put(root, "lefthook.yml", legacy("    integration:\n      run: npm test\n"));
+  assert.equal(bin(root, "sync").status, 0);
+  const shared = read(root, "lefthook.yml");
+  assert.doesNotMatch(shared, /antelopejs-typecheck/);
+  assert.match(
+    shared,
+    /pre-push:\n  commands:\n    integration:\n      run: npm test\n/,
+  );
 });
 
 test("sync migrates CLAUDE prose into handwritten AGENTS and removes only the exact legacy comment instruction", (t) => {
