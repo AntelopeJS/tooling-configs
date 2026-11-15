@@ -66,7 +66,6 @@
   "src/guardrails/checks-readme-version.test.ts": 14,
   "src/guardrails/checks-services.test.ts": 22.8,
   "src/guardrails/checks-singletons.test.ts": 2.3,
-  "src/guardrails/checks-verify-lockfiles.test.ts": 0.1,
   "src/guardrails/checks-verify.test.ts": 27.2,
   "src/guardrails/checks.test.ts": 11.1,
   "src/guardrails/ci-workflow-aggregator.test.ts": 3.3,
