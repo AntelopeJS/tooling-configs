@@ -27,7 +27,7 @@ function installTypeScript7(directory: string): void {
 
 test("api-diff analyses a package on TypeScript 7, whose own typescript and the generator's have no compiler API, with the pack's TypeScript 6", (t) => {
   const root = apiRepo(t);
-  onTypeScript(root, "@typescript/native");
+  onTypeScript(root, "typescript7");
   put(root, "src/index.ts", "export const value = 1;\n");
   commit(root);
   put(root, "src/index.ts", "export const value = 1 as const;\n");

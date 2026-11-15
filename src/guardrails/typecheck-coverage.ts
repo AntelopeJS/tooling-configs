@@ -55,7 +55,7 @@ function reach(
 
 function ownRuns(script: string): TscRun[] {
   return stepsOf(script).flatMap((step) =>
-    step.kind === "tsc" ? [tscRun(step.args)] : [],
+    step.kind === "tsc" ? [tscRun(step.command, step.args)] : [],
   );
 }
 
@@ -66,22 +66,22 @@ function runsOf(scripts: Scripts, name: string): TscRun[] {
 }
 
 function skipCoverageErrors(scripts: Scripts): string[] {
-  const skipped = [
-    ...new Set(
-      runsOf(scripts, "build")
-        .filter((run) => run.skipsLibCheck)
-        .flatMap((run) => run.programs),
-    ),
-  ];
+  const skipped = new Map(
+    runsOf(scripts, "build")
+      .filter((run) => run.skipsLibCheck)
+      .flatMap((run) =>
+        run.programs.map((program) => [program, run.command] as const),
+      ),
+  );
   const typecheck = runsOf(scripts, "typecheck");
   const covered = typecheck
     .filter((run) => !run.skipsLibCheck)
     .flatMap((run) => run.programs);
-  return skipped
-    .filter((program) => !covered.includes(program))
-    .map((program) => {
-      const lead = `package.json: script "build" passes --skipLibCheck to tsc for ${program}, but`;
-      const fix = `Make "typecheck" run \`tsc --noEmit${program === ROOT_PROGRAM ? "" : ` -p ${program}`}\` without --skipLibCheck, or drop --skipLibCheck from "build".`;
+  return [...skipped]
+    .filter(([program]) => !covered.includes(program))
+    .map(([program, command]) => {
+      const lead = `package.json: script "build" passes --skipLibCheck to ${command} for ${program}, but`;
+      const fix = `Make "typecheck" run \`${command} --noEmit${program === ROOT_PROGRAM ? "" : ` -p ${program}`}\` without --skipLibCheck, or drop --skipLibCheck from "build".`;
       if (!scripts.has("typecheck"))
         return `${lead} there is no "typecheck" script. ${fix}`;
       if (typecheck.some((run) => run.programs.includes(program)))

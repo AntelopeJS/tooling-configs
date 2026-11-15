@@ -34,6 +34,7 @@
     "antelopejs-suppressions": "./dist/bin/suppressions.mjs",
     "antelopejs-sync": "./dist/bin/sync.mjs",
     "antelopejs-triage": "./dist/bin/triage.mjs",
+    "antelopejs-tsc": "./dist/bin/tsc.mjs",
     "antelopejs-verify": "./dist/bin/verify.mjs"
   },
   "files": [
@@ -63,7 +64,7 @@
     "format": "oxfmt .",
     "prepack": "pnpm run build",
     "release": "pnpm run lint && pnpm run typecheck && pnpm run prepack && release-it",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node src/bin/tsc.ts --noEmit",
     "test": "node --test \"src/**/*.test.ts\"",
     "checks": "node src/bin/checks.ts",
     "format:check": "oxfmt --check .",
@@ -85,6 +86,7 @@
     "dts-bundle-generator": "^9.5.1",
     "minimatch": "^10.2.6",
     "semver": "^7.8.5",
+    "typescript7": "npm:typescript@~7.0.2",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
@@ -93,7 +95,6 @@
     "@types/node": "^24.13.3",
     "@types/semver": "^7.8.0",
     "@typescript-eslint/parser": "8.69.0",
-    "@typescript/native": "npm:typescript@^7.0.2",
     "eslint": "10.9.1",
     "eslint-plugin-perfectionist": "^5.11.0",
     "knip": "^6.34.0",
@@ -108,7 +109,7 @@
     "release-it-changelogen": "^0.1.0",
     "sharp": "^0.35.5",
     "tsdown": "^0.22.14",
-    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript": "^6.0.2",
     "typescript5": "npm:typescript@^5.9.3",
     "vite": "^8.3.4"
   },

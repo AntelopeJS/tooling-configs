@@ -18,7 +18,7 @@ import { PACKAGE_ROOT } from "./test-repo.ts";
 /**
  * Copies the pack's working tree into a fresh git repository, with the exec bits its index records, packs it there through {@link packTarball},
  * and extracts the tarball. Returns the copy as `source` and the extracted package as `packed`, both linked to the pack's
- * `node_modules`; `t.after` deletes them.
+ * `node_modules`, and the tarball's path as `tarball`; `t.after` deletes them.
  */
 export async function packedPack(t: TestContext) {
   const scratch = mkdtempSync(join(tmpdir(), "packed-pack-"));
@@ -52,5 +52,5 @@ export async function packedPack(t: TestContext) {
   execFileSync("tar", ["-xzf", `tarball/${tarball}`], { cwd: scratch });
   const packed = join(scratch, "package");
   symlinkSync(modules, join(packed, "node_modules"));
-  return { source, packed };
+  return { source, packed, tarball: join(destination, tarball) };
 }

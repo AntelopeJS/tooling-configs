@@ -65,6 +65,7 @@ jobs:
         with:
           node-version: "24"
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
       - run: pnpm install
       - name: Point the lease tests at the runner's MongoDB
         if: runner.os == 'Windows'

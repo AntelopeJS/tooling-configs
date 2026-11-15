@@ -1,0 +1,96 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import test from "node:test";
+
+import { packedPack } from "./helpers/packed-pack.ts";
+import { toolingVersions, type PackageManager } from "./package.ts";
+
+/** The install command of each manager; yarn gets a cache of its own, because yarn 1 serves a `file:` tarball it cached in an earlier run in place of the one under test. */
+function installs(scratch: string): Record<PackageManager, string[]> {
+  return {
+    npm: ["install", "--no-audit", "--no-fund"],
+    pnpm: ["install"],
+    yarn: [
+      "install",
+      "--non-interactive",
+      "--cache-folder",
+      join(scratch, "yarn-cache"),
+    ],
+    bun: ["install"],
+  };
+}
+
+function run(cwd: string, command: string, args: string[]) {
+  const result = spawnSync(command, args, {
+    cwd,
+    encoding: "utf8",
+    shell: process.platform === "win32",
+  });
+  return {
+    status: result.status,
+    output: `${result.error?.message ?? ""}${result.stdout}${result.stderr}`,
+  };
+}
+
+/** Writes a package at `directory` that declares TypeScript at `--init`'s range and the pack from `tarball`. */
+function consumer(directory: string, tarball: string): void {
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(
+    join(directory, "package.json"),
+    JSON.stringify({
+      name: `typescript7-${directory.split(/[\\/]/u).at(-1)}`,
+      private: true,
+      devDependencies: {
+        typescript: toolingVersions().typescript,
+        "@antelopejs/tooling-configs": `file:${tarball}`,
+      },
+    }),
+  );
+}
+
+/** The command that runs a bin the project installs: `npx`, except for bun on Windows, whose `.exe` and `.bunx` shims npx does not find. */
+function binRunner(manager: string): [string, ...string[]] {
+  return manager === "bun" && process.platform === "win32"
+    ? ["bun", "run"]
+    : ["npx", "--no-install"];
+}
+
+function assertCompilers(directory: string, manager: string): void {
+  const [runner, ...options] = binRunner(manager);
+  const tsc = run(directory, runner, [...options, "tsc", "--version"]);
+  assert.match(tsc.output, /^Version 6\./, tsc.output);
+  const native = run(directory, runner, [
+    ...options,
+    "antelopejs-tsc",
+    "--version",
+  ]);
+  assert.match(native.output, /^Version 7\.0\./, native.output);
+}
+
+test("a project on TypeScript 6 keeps tsc at 6 after installing the packed pack, and antelopejs-tsc runs TypeScript 7, under each package manager and in an npm workspace, where npm links one tsc for the whole tree; fails when TypeScript 7's alias sorts before every TypeScript 6 package that ships a tsc, when a pack bin is named tsc, or when antelopejs-tsc runs the project's typescript", async (t) => {
+  const { tarball } = await packedPack(t);
+  const scratch = dirname(tarball);
+  const commands = installs(scratch);
+  for (const [manager, install] of Object.entries(commands))
+    await t.test(manager, () => {
+      const project = join(scratch, manager);
+      consumer(project, tarball);
+      const installed = run(project, manager, install);
+      assert.equal(installed.status, 0, installed.output);
+      assertCompilers(project, manager);
+    });
+  await t.test("npm workspace", () => {
+    const root = join(scratch, "workspace");
+    mkdirSync(root);
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ private: true, workspaces: ["member"] }),
+    );
+    consumer(join(root, "member"), tarball);
+    const installed = run(root, "npm", commands.npm);
+    assert.equal(installed.status, 0, installed.output);
+    assertCompilers(join(root, "member"), "npm");
+  });
+});
