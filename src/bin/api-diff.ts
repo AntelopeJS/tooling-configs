@@ -5,7 +5,8 @@ import { apiDiff } from "../guardrails/api-diff.ts";
 import { runCli } from "../guardrails/cli.ts";
 import { repositoryRoot } from "../guardrails/files.ts";
 
-const USAGE = "Usage: antelopejs-api-diff <base-ref> [--allow-added <glob>]...";
+const USAGE =
+  "Usage: antelopejs-api-diff <base-ref> [--allow-added <glob>]... [--skip-runtime <glob>]...";
 
 function parse(args: string[]) {
   try {
@@ -14,6 +15,7 @@ function parse(args: string[]) {
       allowPositionals: true,
       options: {
         "allow-added": { type: "string", multiple: true },
+        "skip-runtime": { type: "string", multiple: true },
       },
     });
     if (positionals.length !== 1) throw new Error(USAGE);
@@ -24,8 +26,15 @@ function parse(args: string[]) {
 }
 
 runCli(() => {
-  const { baseRef, "allow-added": allowAdded } = parse(process.argv.slice(2));
-  const result = apiDiff(repositoryRoot(), baseRef, allowAdded);
+  const {
+    baseRef,
+    "allow-added": allowAdded,
+    "skip-runtime": skipRuntime,
+  } = parse(process.argv.slice(2));
+  const result = apiDiff(repositoryRoot(), baseRef, {
+    allowAdded,
+    skipRuntime,
+  });
   process.stdout.write(result.output);
   return result.different ? 1 : 0;
 });

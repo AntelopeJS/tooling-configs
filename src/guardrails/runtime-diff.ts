@@ -9,7 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, matchesGlob, relative, resolve, sep } from "node:path";
 
 import {
   fillStars,
@@ -131,7 +131,7 @@ function runtimeTargets(
   });
 }
 
-/** The regular files below `directory`, following a directory link unless it leads back to a directory the walk is already inside, so a dependency linked back to its own package cannot loop the walk. */
+/** The regular files below `directory`, outside any `node_modules`, whose files Node never resolves as a package's own subpath, following a directory link unless it leads back to a directory the walk is already inside, so a dependency linked back to its own package cannot loop the walk. */
 function filesUnder(
   directory: string,
   ancestors: ReadonlySet<string> = new Set(),
@@ -141,6 +141,7 @@ function filesUnder(
   const inside = new Set(ancestors).add(real);
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
+    if (entry.name === "node_modules") return [];
     if (
       entry.isDirectory() ||
       (entry.isSymbolicLink() &&
@@ -184,8 +185,10 @@ function builtEntries(
           );
         return [{ entry, file, subpath }];
       }
-      const prefix = resolve(directory, target.slice(0, target.indexOf("*")));
-      const parent = dirname(prefix);
+      const scanned = resolve(
+        directory,
+        target.slice(0, target.lastIndexOf("/", target.indexOf("*")) + 1),
+      );
       const pattern = new RegExp(
         `^${resolve(directory, target)
           .split("*")
@@ -193,9 +196,9 @@ function builtEntries(
           .join("(.*)")}$`,
         "u",
       );
-      if (!existsSync(parent))
+      if (!existsSync(scanned))
         throw new Error(`${directory}: missing build output for ${target}.`);
-      const found = filesUnder(parent).filter((file) => pattern.test(file));
+      const found = filesUnder(scanned).filter((file) => pattern.test(file));
       if (!found.length)
         throw new Error(`${directory}: missing built runtime entry ${target}.`);
       const modules = found.filter((file) => JS_MODULE.test(file));
@@ -383,14 +386,11 @@ function buildPackage(
   manager: PackageManager,
   output: string,
   manifest: ProofManifest,
-  describe: string,
-):
-  | {
-      count: number;
-      entries: { entry: string; subpath: string }[];
-      skipped: string[];
-    }
-  | undefined {
+  {
+    describe,
+    skipRuntime,
+  }: { describe: string; skipRuntime: readonly string[] },
+) {
   const buildManifest = runBuild(directory, manager);
   let built: BuiltEntries;
   try {
@@ -399,25 +399,31 @@ function buildPackage(
     if (buildManifest.scripts?.build) throw error;
     return undefined;
   }
-  const { entries, skipped } = built;
+  const named: string[] = [];
+  const entries = built.entries.filter(({ subpath }) => {
+    if (!skipRuntime.some((glob) => matchesGlob(subpath, glob))) return true;
+    named.push(subpath);
+    return false;
+  });
   for (const { entry, file } of entries) {
     const destination = join(output, `${encodeURIComponent(entry)}.json`);
     mkdirSync(dirname(destination), { recursive: true });
     describeEntry(describe, file, destination, directory);
   }
-  return { count: entries.length, entries, skipped };
+  return { count: entries.length, entries, skipped: built.skipped, named };
 }
 
-/** Builds both committed revisions and compares published runtime metadata. */
+/** Builds both committed revisions and compares published runtime metadata, leaving out the entries whose subpath matches a `skipRuntime` glob. */
 export function runtimeDiff(
   root: string,
   baseRef: string,
-  policy?: AddedPolicy,
+  policy: AddedPolicy | undefined,
+  skipRuntime: readonly string[],
 ) {
   const errors: string[] = [];
   const failedPackages = new Set<string>();
   const skippedPackages = new Set<string>();
-  const skippedTests = new Set<string>();
+  const skippedEntries = new Set<string>();
   const result = compareRevisions(
     root,
     baseRef,
@@ -448,14 +454,18 @@ export function runtimeDiff(
             declaredPackageManager(worktree, directory),
             join(output, folder),
             manifest,
-            describe,
+            { describe, skipRuntime },
           );
           if (built === undefined) skippedPackages.add(directory);
           else {
             entries += built.count;
             for (const target of built.skipped)
-              skippedTests.add(
+              skippedEntries.add(
                 testEntryNotice("Runtime API", directory, target),
+              );
+            for (const subpath of built.named)
+              skippedEntries.add(
+                `Runtime API: skipped entry ${subpath} in ${directory}, which --skip-runtime names.\n`,
               );
             published.push(
               ...built.entries.map(({ entry, subpath }) => ({
@@ -508,7 +518,7 @@ export function runtimeDiff(
             `Runtime API: skipped ${directory}, which has no build script and no committed runtime entry.\n`,
         )
         .join("") +
-      [...skippedTests].sort().join("") +
+      [...skippedEntries].sort().join("") +
       errors.join(""),
   };
 }
