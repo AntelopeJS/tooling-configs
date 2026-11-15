@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.8.0
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.7.4...v0.8.0)
+
+### 🚀 Enhancements
+
+- **sync:** Declare only the three-tier CI triggers and drop the Windows flag ([#395](https://github.com/AntelopeJS/tooling-configs/pull/395))
+- **sync:** Write the next-sync and release-train callers and call the shared workflows at @v2 ([#397](https://github.com/AntelopeJS/tooling-configs/pull/397))
+
+### 💅 Refactors
+
+- **guardrails:** Slim the managed AGENTS.md block to 2 KB and keep only format and lint in the commit hook ([#394](https://github.com/AntelopeJS/tooling-configs/pull/394))
+- Remove the checks and tools the tooling review dropped ([#396](https://github.com/AntelopeJS/tooling-configs/pull/396))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.7.4
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.7.3...v0.7.4)
