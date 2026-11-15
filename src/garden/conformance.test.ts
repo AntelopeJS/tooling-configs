@@ -51,7 +51,7 @@ test("a repository on the shared CI, the preset, the latest pack and a green ci 
   assert.deepEqual(subjects(await conformance.run(api.context())), []);
 });
 
-test("a caller job not named ci is reported even though the file calls ci-node.yml@v1", async () => {
+test("a caller job not named ci is reported even though the file calls ci-node.yml@v2", async () => {
   const api = conformant(world()).repo("mongodb", {
     ".github/workflows/ci.yml": CALLER.replace("\n  ci:", "\n  checks:"),
     "renovate.json": RENOVATE,
@@ -66,8 +66,8 @@ test("a caller job not named ci is reported even though the file calls ci-node.y
 test("a caller pinned to another ref or missing is a ci-caller finding", async () => {
   const pinned = conformant(world()).repo("mongodb", {
     ".github/workflows/ci.yml": CALLER.replace(
+      "ci-node.yml@v2",
       "ci-node.yml@v1",
-      "ci-node.yml@main",
     ),
     "renovate.json": RENOVATE,
     "package.json": PACKAGE,
@@ -129,8 +129,8 @@ test("a caller without a ci-renovate-sync job, or pinned to another ref, is a ci
     ["ci-renovate-sync"],
   );
   const pinned = CALLER.replace(
+    "ci-renovate-sync.yml@v2",
     "ci-renovate-sync.yml@v1",
-    "ci-renovate-sync.yml@main",
   );
   assert.deepEqual(
     subjects(await conformance.run(withCaller(pinned).context())),

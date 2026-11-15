@@ -45,7 +45,18 @@ import {
   hasChecksWorkflow,
   MISSING_CHECKS_WORKFLOW,
 } from "./workflow.ts";
-import { CI_PATH, callerPlan, ciWorkflow, type CiPlan } from "./ci-workflow.ts";
+import {
+  CI_PATH,
+  callerPlan,
+  ciProfile,
+  ciWorkflow,
+  type CiPlan,
+} from "./ci-workflow.ts";
+import {
+  NEXT_SYNC_PATH,
+  nextSyncCaller,
+  releaseArtifacts,
+} from "./release-workflow.ts";
 import { backendBoundaryArtifacts } from "./backend-boundary.ts";
 import { checkEntryOnlyConfiguration } from "./entry-only.ts";
 import { planDocs, type DocsPlan } from "./docs-compat.ts";
@@ -171,6 +182,16 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
       return { content, notes: droppedChecksSteps(current, content) };
     },
   },
+  {
+    path: NEXT_SYNC_PATH,
+    profiles: ["full"],
+    desired: (_current, context) => ({
+      content: nextSyncCaller(
+        (context.ci.profile ?? ciProfile(undefined)).integrationBranch,
+      ),
+      notes: [],
+    }),
+  },
   GITATTRIBUTES_ARTIFACT,
   {
     path: ".nvmrc",
@@ -216,6 +237,7 @@ export type PlannedArtifact =
       mode: number | undefined;
       notes: string[];
     }
+  | { kind: "remove"; path: string }
   | { kind: "error"; path: string; message: string };
 
 function planSync(
@@ -386,6 +408,10 @@ function writeArtifacts(
   }
 }
 
+function removeArtifacts(root: string, paths: readonly string[]): void {
+  for (const path of paths) unlinkSync(join(root, path));
+}
+
 function repositoryNotices(root: string, context: RepoContext): string[] {
   const notices: string[] = [];
   if (
@@ -434,6 +460,10 @@ export function syncRepository(
       profile === "full" || verify.kind === "template",
     ),
     ...pnpmWorkspaceArtifacts(root, manifest, profile),
+    ...releaseArtifacts(
+      root,
+      (context.ci.profile ?? ciProfile(undefined)).integrationBranch,
+    ),
   ];
   const plan = [...planSync(current, executables, context), ...standalone];
   const errors = plan
@@ -450,8 +480,12 @@ export function syncRepository(
   const writes = plan.filter(
     (artifact) => artifact.kind === "write" || artifact.kind === "migrated",
   );
+  const removals = plan.flatMap((artifact) =>
+    artifact.kind === "remove" ? [artifact.path] : [],
+  );
   if (!options.check && !errors.length) {
     writeArtifacts(root, writes);
+    removeArtifacts(root, removals);
     applyVerifyActions(root, actions);
   }
   const templateDependencies = ["knip"];
@@ -462,10 +496,19 @@ export function syncRepository(
       : templateDependencies.some((name) => !manifest.devDependencies?.[name]);
   return {
     artifacts: plan,
-    paths: errors.length ? [] : [...writes, ...actions].map(({ path }) => path),
-    removed: actions
-      .filter((action) => action.kind === "remove")
-      .map(({ path }) => path),
+    paths: errors.length
+      ? []
+      : [
+          ...writes.map(({ path }) => path),
+          ...removals,
+          ...actions.map(({ path }) => path),
+        ],
+    removed: [
+      ...removals,
+      ...actions
+        .filter((action) => action.kind === "remove")
+        .map(({ path }) => path),
+    ],
     errors,
     notes,
     verifyNotes: options.check || errors.length ? [] : verify.notes,

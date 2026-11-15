@@ -2,6 +2,14 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { isMap, isScalar, isSeq, parseDocument } from "yaml";
 
+/** The tag of AntelopeJS/.github every workflow sync writes calls; a repository that has not synced keeps its own ref. */
+const SHARED_WORKFLOWS_TAG = "v2";
+
+/** The `uses:` ref of the shared workflow `file` at the tag sync writes. */
+export function sharedWorkflow(file: string): string {
+  return `AntelopeJS/.github/.github/workflows/${file}@${SHARED_WORKFLOWS_TAG}`;
+}
+
 const CI_NODE_PATTERN =
   /^AntelopeJS\/\.github\/\.github\/workflows\/ci-node\.yml@\S+$/;
 const CI_RENOVATE_SYNC_PATTERN =

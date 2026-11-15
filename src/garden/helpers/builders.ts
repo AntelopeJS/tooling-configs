@@ -69,14 +69,14 @@ export const CALLER = [
   "  ci:",
   "    permissions:",
   "      contents: read",
-  "    uses: AntelopeJS/.github/.github/workflows/ci-node.yml@v1",
+  "    uses: AntelopeJS/.github/.github/workflows/ci-node.yml@v2",
   "    with:",
   "      renovate-sync: false",
   "  renovate-sync:",
   "    permissions:",
   "      contents: write",
   "      actions: write",
-  "    uses: AntelopeJS/.github/.github/workflows/ci-renovate-sync.yml@v1",
+  "    uses: AntelopeJS/.github/.github/workflows/ci-renovate-sync.yml@v2",
   "",
 ].join("\n");
 export const LOCK = (version: string) =>
