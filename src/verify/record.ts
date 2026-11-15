@@ -255,23 +255,45 @@ function bindable(port: number): Promise<number | null> {
   });
 }
 
+/** Ports `freePort` already returned in this process, so concurrent callers never get the same one. */
+const handedOut = new Set<number>();
+
+async function claim(port: number): Promise<number | null> {
+  if (handedOut.has(port)) return null;
+  handedOut.add(port);
+  const bound = await bindable(port);
+  if (bound === null) {
+    handedOut.delete(port);
+    return null;
+  }
+  if (bound !== port) {
+    if (handedOut.has(bound)) return null;
+    handedOut.delete(port);
+    handedOut.add(bound);
+  }
+  return bound;
+}
+
 /**
  * A free TCP port on the loopback interface for a process the harness starts
- * next. It tries random ports below the kernel's ephemeral range first, where
- * no outgoing connection on a busy host takes it between this check and the
- * app's own bind, and falls back to a port the kernel picks.
+ * next, never returned twice in this process, so parallel journeys cannot
+ * share one. It tries random ports below the kernel's ephemeral range first,
+ * where no outgoing connection on a busy host takes it between this check and
+ * the app's own bind, and falls back to a port the kernel picks.
  */
 export async function freePort(): Promise<number> {
   for (let attempt = 0; attempt < PORT_ATTEMPTS; attempt++) {
     const port =
       PORT_RANGE.low +
       Math.floor(Math.random() * (PORT_RANGE.high - PORT_RANGE.low));
-    const bound = await bindable(port);
-    if (bound !== null) return bound;
+    const claimed = await claim(port);
+    if (claimed !== null) return claimed;
   }
-  const picked = await bindable(0);
-  if (picked === null) throw new Error("no free loopback port");
-  return picked;
+  for (let attempt = 0; attempt < PORT_ATTEMPTS; attempt++) {
+    const claimed = await claim(0);
+    if (claimed !== null) return claimed;
+  }
+  throw new Error("no free loopback port");
 }
 
 function reason(error: Error): string {

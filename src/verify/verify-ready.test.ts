@@ -99,3 +99,13 @@ test("a free port for an app comes from below the kernel's ephemeral range and b
   const port = await freePort();
   assert.ok(port >= 10_000 && port < 20_000, String(port));
 });
+
+test("free-port allocations before any app binds never repeat a port; a bind-close-return allocator repeats one within a few hundred draws", async () => {
+  const ports: number[] = [];
+  for (let index = 0; index < 400; index++) ports.push(await freePort());
+  assert.equal(new Set(ports).size, ports.length);
+  const parallel = await Promise.all(
+    Array.from({ length: 200 }, () => freePort()),
+  );
+  assert.equal(new Set([...ports, ...parallel]).size, 600);
+});
