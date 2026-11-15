@@ -8,23 +8,22 @@ const MAX_BLOCK_BYTES = 2400;
 
 test("the managed block stays within its byte cap for every profile and repository shape", () => {
   for (const profile of ["full", "template"] as const)
-    for (const ratchet of [false, true])
-      for (const verificationSkill of [
-        undefined,
-        ".agents/skills/verify-module/SKILL.md",
-      ])
-        for (const glossary of [undefined, "docs/GLOSSARY.md"]) {
-          const block = agentsBlock({
-            profile,
-            ratchet,
-            verificationSkill,
-            glossary,
-          });
-          assert.ok(
-            Buffer.byteLength(block) <= MAX_BLOCK_BYTES,
-            `${profile}, ratchet ${ratchet}: ${Buffer.byteLength(block)} bytes`,
-          );
-        }
+    for (const verificationSkill of [
+      undefined,
+      ".agents/skills/verify-module/SKILL.md",
+    ])
+      for (const glossary of [undefined, "docs/GLOSSARY.md"]) {
+        const block = agentsBlock({
+          profile,
+          ratchet: false,
+          verificationSkill,
+          glossary,
+        });
+        assert.ok(
+          Buffer.byteLength(block) <= MAX_BLOCK_BYTES,
+          `${profile}: ${Buffer.byteLength(block)} bytes`,
+        );
+      }
 });
 
 test("the full block sends the full checks to CI and names the fast local checks", () => {

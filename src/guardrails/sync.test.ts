@@ -90,7 +90,8 @@ test("full sync measures once, preserves handwritten text even behind a CLAUDE s
     read(root, "lefthook.yml"),
     /npm exec -- oxfmt --no-error-on-unmatched-pattern \{staged_files\}/,
   );
-  assert.doesNotMatch(read(root, "lefthook.yml"), /pre-push|--staged/);
+  assert.match(read(root, "lefthook.yml"), /antelopejs-ratchet --staged\n/);
+  assert.doesNotMatch(read(root, "lefthook.yml"), /pre-push|antelopejs-size/);
   const mtimes = MANAGED_ARTIFACTS.map(
     ({ path }) => statSync(join(root, path)).mtimeMs,
   );
@@ -377,7 +378,6 @@ test("sync leaves retired files for ratchet:update, then removes ratchet wiring 
   assert.equal(first.status, 0, first.stderr);
   assert.match(first.stdout, /Note:.*ratchet:update/);
   assert.equal(existsSync(join(root, "guardrails.ratchet.json")), true);
-  assert.match(read(root, "AGENTS.md"), /### Debt/);
   const check = bin(root, "sync", ["--check"]);
   assert.equal(check.status, 1);
   assert.match(check.stderr, /ratchet:update/);

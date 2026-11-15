@@ -174,16 +174,16 @@ test("lefthook merges managed commands without losing other commands, hooks, opt
   assert.equal(read(root, "lefthook.yml"), merged);
 });
 
-test("sync removes the size, ratchet, suppressions and typecheck hooks earlier releases wrote, keeps the repository's own, and drops a hook left empty", (t) => {
+test("sync removes the size, suppressions and typecheck hooks earlier releases wrote, keeps the repository's own, and drops a hook left empty", (t) => {
   const root = readyRepo(t);
   const legacy = (prePush: string) =>
-    `pre-commit:\n  commands:\n    custom:\n      run: echo custom\n    antelopejs-size:\n      run: pnpm exec antelopejs-check-size --staged {staged_files}\n    antelopejs-ratchet:\n      run: pnpm exec antelopejs-ratchet --staged\n    antelopejs-suppressions:\n      run: pnpm exec antelopejs-suppressions --staged\npre-push:\n  commands:\n    antelopejs-typecheck:\n      run: pnpm run typecheck\n${prePush}`;
+    `pre-commit:\n  commands:\n    custom:\n      run: echo custom\n    antelopejs-size:\n      run: pnpm exec antelopejs-check-size --staged {staged_files}\n    antelopejs-suppressions:\n      run: pnpm exec antelopejs-suppressions --staged\npre-push:\n  commands:\n    antelopejs-typecheck:\n      run: pnpm run typecheck\n${prePush}`;
   put(root, "lefthook.yml", legacy(""));
   assert.equal(bin(root, "sync").status, 0);
   const alone = read(root, "lefthook.yml");
   assert.doesNotMatch(
     alone,
-    /antelopejs-(size|ratchet|suppressions|typecheck)|pre-push/,
+    /antelopejs-(size|suppressions|typecheck)|pre-push/,
   );
   assert.match(
     alone,

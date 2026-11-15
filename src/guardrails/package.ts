@@ -160,6 +160,7 @@ export function repositoryTools(manifest: Manifest) {
         "oxfmt.config.ts": "@antelopejs/tooling-configs/oxc/fmt",
         "knip.config.ts": "@antelopejs/tooling-configs/knip",
       },
+      hookPrefix: `${execCommand(packageManager(manifest))} `,
     },
     source: {
       commands: {
@@ -174,6 +175,7 @@ export function repositoryTools(manifest: Manifest) {
         "oxfmt.config.ts": "./src/oxc/fmt.ts",
         "knip.config.ts": "./src/knip.ts",
       },
+      hookPrefix: "",
     },
   };
   return targets[

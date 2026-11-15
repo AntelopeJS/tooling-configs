@@ -75,15 +75,16 @@ export function presetConfig(
 /** Commands earlier pack releases wrote into `lefthook.yml`; CI runs their checks now, so sync removes them. */
 const RETIRED_HOOK_COMMANDS = [
   ["pre-commit", "antelopejs-size"],
-  ["pre-commit", "antelopejs-ratchet"],
   ["pre-commit", "antelopejs-suppressions"],
   ["pre-push", "antelopejs-typecheck"],
 ] as const;
 
-/** Merges the pack's commit hook, which formats and lints the staged files, into `current`. */
+/** Merges the pack's commit hook, which formats and lints the staged files and, while the repository keeps a ratchet, runs it, into `current`. */
 export function lefthook(
   current: string | undefined,
   manager: PackageManager,
+  tools: ReturnType<typeof repositoryTools>,
+  ratchet: boolean,
 ): string {
   const exec = execCommand(manager);
   const document = parseDocument(current ?? "{}\n");
@@ -107,6 +108,10 @@ export function lefthook(
         glob,
         run: `${exec} oxlint --no-error-on-unmatched-pattern {staged_files}`,
       },
+      "antelopejs-ratchet": {
+        glob,
+        run: `${tools.hookPrefix}${tools.commands.ratchet} --staged`,
+      },
     },
   };
   for (const [hook, key] of RETIRED_HOOK_COMMANDS) {
@@ -127,6 +132,8 @@ export function lefthook(
     for (const [key, command] of Object.entries(commands))
       document.setIn([hook, "commands", key], document.createNode(command));
   }
+  if (!ratchet)
+    document.deleteIn(["pre-commit", "commands", "antelopejs-ratchet"]);
   return document.toString({ lineWidth: 0 });
 }
 

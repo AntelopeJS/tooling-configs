@@ -37,10 +37,6 @@ const SUPPRESSIONS = `### Suppressions
 
 \`guardrails.suppressions.json\` caps lint directives, \`@ts-expect-error\`, \`SAFETY:\` comments and rules a lint config turns off. Over a cap, fix the code or remove another suppression of that kind; only the operator raises a number. After removing suppressions, run \`pnpm run suppressions:update\` and commit the file.`;
 
-const DEBT = `### Debt
-
-\`guardrails.ratchet.json\` records existing lint debt; its numbers only go down. After you remove debt or upgrade the pack, run \`pnpm run ratchet:update\` and commit the file.`;
-
 function pointers(context: AgentsBlockContext): string[] {
   const lines: string[] = [];
   if (context.verificationSkill !== undefined) {
@@ -69,7 +65,6 @@ function fullBody(context: AgentsBlockContext): string[] {
     TESTS,
     REVIEW,
     SUPPRESSIONS,
-    ...(context.ratchet ? [DEBT] : []),
   );
 }
 
