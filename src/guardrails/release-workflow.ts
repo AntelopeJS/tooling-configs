@@ -64,12 +64,12 @@ function choiceOptions(document: YAMLMap, input: string): string[] {
     : undefined;
   return isSeq(options)
     ? options.items.flatMap((item) =>
-        isScalar(item) ? [normalizeDirectory(String(item.value))] : [],
+        isScalar(item) ? [String(item.value)] : [],
       )
     : [];
 }
 
-/** The directories a caller's `package-directory` names: a path, a release-train input with a fallback path, or a dispatch input whose choices are paths. */
+/** The directories a caller's `package-directory` names: a path, a release-train input with a fallback path, or a dispatch input whose choices, between an optional prefix and suffix, are paths. */
 function directoriesOf(root: YAMLMap, text: string | undefined): string[] {
   if (text === undefined) return ["."];
   if (!text.includes("${{")) return [normalizeDirectory(text)];
@@ -77,8 +77,12 @@ function directoriesOf(root: YAMLMap, text: string | undefined): string[] {
     text,
   );
   if (fallback) return [normalizeDirectory(fallback[1])];
-  const input = /^\$\{\{\s*inputs\.([\w-]+)\s*\}\}$/.exec(text);
-  return input ? choiceOptions(root, input[1]) : [];
+  const input = /^([^$]*)\$\{\{\s*inputs\.([\w-]+)\s*\}\}([^$]*)$/.exec(text);
+  if (!input) return [];
+  const [, prefix, name, suffix] = input;
+  return choiceOptions(root, name).map((option) =>
+    normalizeDirectory(`${prefix}${option}${suffix}`),
+  );
 }
 
 function droppedInputs(job: YAMLMap): string[] {
@@ -95,6 +99,16 @@ function droppedInputs(job: YAMLMap): string[] {
       ? [String(key.value)]
       : [],
   );
+}
+
+function needsOf(job: YAMLMap): string[] {
+  const needs: unknown = job.get("needs", true);
+  if (isScalar(needs)) return [String(needs.value)];
+  return isSeq(needs)
+    ? needs.items.flatMap((item) =>
+        isScalar(item) ? [String(item.value)] : [],
+      )
+    : [];
 }
 
 function addPackage(
@@ -123,12 +137,19 @@ function readCallers(file: string, text: string, found: ReleaseCallers): void {
   );
   if (!callers.length) return;
   found.files.set(file, text);
+  const needed = new Set(
+    callers.flatMap(({ value }) => (isMap(value) ? needsOf(value) : [])),
+  );
   for (const { key, value } of jobs.items) {
     if (!isMap(value)) continue;
     const id = String(isScalar(key) ? key.value : key);
     const registry = RELEASE_CALLER.exec(String(value.get("uses")))?.[1];
     if (registry !== "public" && registry !== "private") {
-      found.dropped.push(`job ${id} of ${file}`);
+      if (needed.has(id)) found.dropped.push(`job ${id} of ${file}`);
+      else
+        found.errors.push(
+          `${file}: the job ${id} is not part of the release, and sync moves the release callers of this file into ${RELEASE_PATH}. Move ${id} to a workflow file of its own, then rerun antelopejs-sync.`,
+        );
       continue;
     }
     found.dropped.push(
@@ -183,13 +204,20 @@ function jobId(release: ReleasePackage, several: boolean): string {
     : `release-${release.directory.replaceAll("/", "-")}`;
 }
 
+/** The condition under which a release-train dispatch is for `directory`; the train leaves `package-directory` out for the root package. */
+function dispatched(directory: string): string {
+  return directory === "."
+    ? "inputs.package-directory == '' || inputs.package-directory == '.'"
+    : `inputs.package-directory == '${directory}'`;
+}
+
 function releaseJob(release: ReleasePackage, several: boolean): string {
   const nested = release.directory !== ".";
   const lines = [
     `  ${jobId(release, several)}:`,
     ...(several
       ? [
-          `    if: github.event_name == 'push' || inputs.package-directory == '${release.directory}'`,
+          `    if: github.event_name == 'push' || ${dispatched(release.directory)}`,
         ]
       : []),
     `    uses: ${sharedWorkflow(`release-npm-${release.registry}.yml`)}`,

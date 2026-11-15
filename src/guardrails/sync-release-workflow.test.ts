@@ -332,3 +332,49 @@ test("every other workflow's call to a shared workflow the tag ships moves to @v
   assert.equal(read(root, ".github/workflows/modules-update.yml"), modules);
   assert.equal(syncRepository(root, { check: true }).paths.length, 0);
 });
+
+test("dms's interface caller, a choice input behind a path prefix, migrates with the root caller into one job per package, so a sync that only reads a bare input aborts", (t) => {
+  const interfaces = CLOUD_SDK.replace(
+    "options: [sdk, cli]",
+    "options: [interface-dms, interface-dms-builder]",
+  ).replace(
+    "package-directory: ${{ inputs.package }}",
+    "package-directory: packages/${{ inputs.package }}",
+  );
+  const root = repoWith(t, {
+    [RELEASE_PATH]: VALIDATED("release-npm-public.yml", "packages/dms"),
+    ".github/workflows/release-interface.yml": interfaces,
+  });
+  assert.deepEqual(syncRepository(root).errors, []);
+  assert.deepEqual(Object.keys(release(root).jobs), [
+    "release-packages-dms",
+    "release-packages-interface-dms",
+    "release-packages-interface-dms-builder",
+  ]);
+});
+
+test("a root package beside a nested one runs on a train dispatch that leaves package-directory out, so a gate on '.' alone skips its stable release", (t) => {
+  const root = repoWith(t, {
+    [RELEASE_PATH]: MONGODB,
+    ".github/workflows/release-sub.yml": VALIDATED(
+      "release-npm-public.yml",
+      "packages/sub",
+    ),
+  });
+  syncRepository(root);
+  assert.equal(
+    release(root).jobs["release-root"].if,
+    "github.event_name == 'push' || inputs.package-directory == '' || inputs.package-directory == '.'",
+  );
+});
+
+test("a release caller sharing its file with a job it does not need stops sync with the file untouched, so a sync that deletes the other job fails", (t) => {
+  const ci = `on: pull_request\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: pnpm run checks\n  publish:\n    uses: AntelopeJS/.github/.github/workflows/release-npm-public.yml@v1\n`;
+  const root = repoWith(t, { ".github/workflows/publish.yml": ci });
+  const result = syncRepository(root);
+  assert.match(
+    result.errors.join("\n"),
+    /the job lint is not part of the release/,
+  );
+  assert.equal(read(root, ".github/workflows/publish.yml"), ci);
+});
