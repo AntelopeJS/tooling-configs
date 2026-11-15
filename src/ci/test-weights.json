@@ -59,7 +59,6 @@
   "src/guardrails/api-diff-workspace-members.test.ts": 43.4,
   "src/guardrails/api-diff.test.ts": 63.3,
   "src/guardrails/backend-boundary.test.ts": 8.7,
-  "src/guardrails/body-check.test.ts": 12.6,
   "src/guardrails/checks-concurrency.test.ts": 7.7,
   "src/guardrails/checks-dependency-ranges.test.ts": 23.9,
   "src/guardrails/checks-git-identity.test.ts": 3.1,

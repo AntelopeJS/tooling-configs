@@ -67,7 +67,6 @@ function crashingRepo(t: TestContext): string {
 }
 
 const CHECKS: [string, string[]][] = [
-  ["body-check", ["--findings"]],
   ["ratchet", []],
   ["suppressions", []],
 ];

@@ -22,7 +22,6 @@
   },
   "bin": {
     "antelopejs-api-diff": "./dist/bin/api-diff.mjs",
-    "antelopejs-body-check": "./dist/bin/body-check.mjs",
     "antelopejs-capture": "./dist/bin/capture.mjs",
     "antelopejs-check-size": "./dist/bin/check-size.mjs",
     "antelopejs-checks": "./dist/bin/checks.mjs",

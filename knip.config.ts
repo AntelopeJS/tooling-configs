@@ -13,10 +13,5 @@ export default {
       entry: ["check.mjs", "check.test.mjs"],
       project: ["*.mjs"],
     },
-    "scripts/browser-bench": {
-      entry: ["run.mjs", "drivers/*.mjs"],
-      project: ["**/*.mjs"],
-      ignoreBinaries: ["taskset"],
-    },
   },
 };

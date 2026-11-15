@@ -16,7 +16,6 @@ export default {
     "./src/bin/suppressions.ts",
     "./src/bin/checks.ts",
     "./src/bin/api-diff.ts",
-    "./src/bin/body-check.ts",
     "./src/bin/comment-proof.ts",
     "./src/bin/garden.ts",
     "./src/bin/triage.ts",
