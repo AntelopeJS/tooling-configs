@@ -7,6 +7,7 @@ import test, { type TestContext } from "node:test";
 
 import { bin, put, testRepo } from "./helpers/test-repo.ts";
 import { KNOWN_FAILURES_FILE, readKnownFailures } from "./known-failures.ts";
+import { shimInvocation } from "./run-command.ts";
 
 const OTHER_STEPS =
   "typecheck,lint,format:check,knip,test,size,suppressions,sync:check,git:identity,lockfile:singletons";
@@ -28,12 +29,18 @@ function vendorTarball(t: TestContext, declaration: string): string {
     }),
   );
   put(directory, "index.d.ts", declaration);
-  const file = execFileSync(
-    "npm",
-    ["pack", "--silent", "--pack-destination", directory],
-    { cwd: directory, encoding: "utf8" },
-  ).trim();
-  return join(directory, file);
+  const pack = shimInvocation("npm", [
+    "pack",
+    "--silent",
+    "--pack-destination",
+    directory,
+  ]);
+  const file = execFileSync(pack.command, pack.args, {
+    cwd: directory,
+    encoding: "utf8",
+    shell: pack.shell,
+  }).trim();
+  return join(directory, file).replaceAll("\\", "/");
 }
 
 /** A typed package that re-exports `vendor-types`, with `own` as its own declaration and `entries` as its known failures. */
