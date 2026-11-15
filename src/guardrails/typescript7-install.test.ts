@@ -37,11 +37,12 @@ function run(cwd: string, command: string, args: string[]) {
   };
 }
 
-/** Writes a package at `directory` that pins `typescript` and declares the pack from `tarball`. */
+/** Writes a package at `directory` that pins `typescript`, declares the pack from `tarball`, and sets npm's `overrides`. */
 function consumer(
   directory: string,
   tarball: string,
   typescript: string,
+  overrides: Record<string, string | Record<string, string>> = {},
 ): void {
   mkdirSync(directory, { recursive: true });
   writeFileSync(
@@ -53,6 +54,7 @@ function consumer(
         typescript: typescript,
         "@antelopejs/tooling-configs": `file:${tarball}`,
       },
+      overrides,
     }),
   );
 }
@@ -90,7 +92,7 @@ function assertCompilers(
   assert.match(packTypeScript(directory), /^6\./);
 }
 
-test("a project keeps the tsc of the typescript it pins after installing the packed pack, antelopejs-tsc runs TypeScript 7 and the pack's modules import TypeScript 6, under each package manager and in an npm workspace; fails when the pack installs an aliased package that ships a tsc, which npm and bun link over the project's whatever names sort first", async (t) => {
+test("a project keeps the tsc of the typescript it pins after installing the packed pack, antelopejs-tsc runs TypeScript 7 and the pack's modules import TypeScript 6, under each package manager and in an npm workspace; fails when the pack installs an aliased package that ships a tsc, which npm and bun link over the project's whatever names sort first; and names the exemption when a project's override forces another typescript on the pack", async (t) => {
   const { tarball } = await packedPack(t);
   const scratch = dirname(tarball);
   const commands = installs(scratch);
@@ -115,4 +117,34 @@ test("a project keeps the tsc of the typescript it pins after installing the pac
     assert.equal(installed.status, 0, installed.output);
     assertCompilers(join(root, "member"), "npm", "5.9.3");
   });
+  await t.test(
+    "npm, an override of typescript to 7.0.2: the pack's commands name the override and its exemption instead of failing on TypeScript 7's missing API, and the exemption gives the pack TypeScript 6 again",
+    () => {
+      const forced = join(scratch, "npm-override");
+      consumer(forced, tarball, "7.0.2", { typescript: "7.0.2" });
+      assert.equal(run(forced, "npm", commands.npm).status, 0);
+      const refused = run(forced, "npx", [
+        "--no-install",
+        "antelopejs-api-diff",
+        "HEAD",
+      ]);
+      assert.notEqual(refused.status, 0);
+      assert.match(
+        refused.output,
+        /needs TypeScript 6 for its analyses, but the typescript it resolves is 7\.0\.2/,
+      );
+      assert.match(
+        refused.output,
+        /"@antelopejs\/tooling-configs": \{ "typescript": "\^6\.0\.2" \}/,
+      );
+      assert.doesNotMatch(refused.output, /TypeError/);
+      const exempt = join(scratch, "npm-override-exempt");
+      consumer(exempt, tarball, "7.0.2", {
+        typescript: "7.0.2",
+        "@antelopejs/tooling-configs": { typescript: "^6.0.2" },
+      });
+      assert.equal(run(exempt, "npm", commands.npm).status, 0);
+      assertCompilers(exempt, "npm", "7.0.2");
+    },
+  );
 });

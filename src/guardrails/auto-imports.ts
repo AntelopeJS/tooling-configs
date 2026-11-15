@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, posix } from "node:path";
-import ts from "typescript";
+import ts from "../typescript6.ts";
 
 import {
   autoImports,

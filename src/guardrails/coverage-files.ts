@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import ts from "typescript";
+import ts from "../typescript6.ts";
 
 import { gitFiles } from "./files.ts";
 

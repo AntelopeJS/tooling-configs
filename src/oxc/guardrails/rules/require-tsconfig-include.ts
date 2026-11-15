@@ -1,5 +1,5 @@
 import { defineRule, type ESTree } from "@oxlint/plugins";
-import ts from "typescript";
+import ts from "../../../typescript6.ts";
 
 import { programConfig, resolves } from "../tsconfig-program.ts";
 import { nodeAt, typedFile } from "../type-checker.ts";

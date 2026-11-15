@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { isBuiltin } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import ts from "typescript";
+import ts from "../../typescript6.ts";
 
 import {
   asInstalledCompilerReads,

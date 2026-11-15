@@ -1,5 +1,5 @@
 import { defineRule } from "@oxlint/plugins";
-import ts from "typescript";
+import ts from "../../../typescript6.ts";
 
 import { typedFile, type TypedFile } from "../type-checker.ts";
 import { isAnyOrAnyArray, isAnyType, isUnknown, leaks } from "../any-leaks.ts";
