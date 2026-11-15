@@ -147,6 +147,7 @@ test("a public caller on the channel interface becomes the release-train caller 
   assert.deepEqual(synced.on.push, { branches: ["next"] });
   assert.deepEqual(Object.keys(synced.on.workflow_dispatch.inputs), [
     "release-version",
+    "release-commit",
     "dependency-ranges",
   ]);
   assert.equal(
@@ -161,6 +162,7 @@ test("a public caller on the channel interface becomes the release-train caller 
     uses: "AntelopeJS/.github/.github/workflows/release-npm-public.yml@v2",
     with: {
       "release-version": "${{ inputs.release-version }}",
+      "release-commit": "${{ inputs.release-commit }}",
       "dependency-ranges": "${{ inputs.dependency-ranges }}",
     },
     secrets: { RELEASE_GITHUB_TOKEN: "${{ secrets.RELEASE_GITHUB_TOKEN }}" },

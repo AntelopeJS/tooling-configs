@@ -92,6 +92,7 @@ function droppedInputs(job: YAMLMap): string[] {
     isScalar(key) &&
     ![
       "release-version",
+      "release-commit",
       "dependency-ranges",
       "install-core",
       "package-directory",
@@ -223,6 +224,7 @@ function releaseJob(release: ReleasePackage, several: boolean): string {
     `    uses: ${sharedWorkflow(`release-npm-${release.registry}.yml`)}`,
     "    with:",
     "      release-version: ${{ inputs.release-version }}",
+    "      release-commit: ${{ inputs.release-commit }}",
     "      dependency-ranges: ${{ inputs.dependency-ranges }}",
     ...(release.installCore === undefined
       ? []
@@ -245,7 +247,7 @@ function releaseJob(release: ReleasePackage, several: boolean): string {
 
 /**
  * The release.yml that publishes `packages`: a preview of each on every push to `branch`, and the stable version the
- * release train dispatches on the default branch with `release-version`, `dependency-ranges` and, when a package is
+ * release train dispatches on the default branch with `release-version`, `release-commit`, `dependency-ranges` and, when a package is
  * not at the root, `package-directory`. With several packages, each has its own job, which a dispatch runs only for
  * the `package-directory` it names.
  */
@@ -274,6 +276,10 @@ on:
     inputs:
       release-version:
         description: Stable version to release, set by the release train
+        required: false
+        type: string
+      release-commit:
+        description: Commit SHA to release, set by the release train
         required: false
         type: string
       dependency-ranges:
