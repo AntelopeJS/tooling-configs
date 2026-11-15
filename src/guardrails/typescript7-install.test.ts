@@ -7,12 +7,20 @@ import test from "node:test";
 import { packedPack } from "./helpers/packed-pack.ts";
 import { toolingVersions, type PackageManager } from "./package.ts";
 
-const INSTALLS: Record<PackageManager, string[]> = {
-  npm: ["install", "--no-audit", "--no-fund"],
-  pnpm: ["install"],
-  yarn: ["install", "--non-interactive"],
-  bun: ["install"],
-};
+/** The install command of each manager; yarn gets a cache of its own, because yarn 1 serves a `file:` tarball it cached in an earlier run in place of the one under test. */
+function installs(scratch: string): Record<PackageManager, string[]> {
+  return {
+    npm: ["install", "--no-audit", "--no-fund"],
+    pnpm: ["install"],
+    yarn: [
+      "install",
+      "--non-interactive",
+      "--cache-folder",
+      join(scratch, "yarn-cache"),
+    ],
+    bun: ["install"],
+  };
+}
 
 function run(cwd: string, command: string, args: string[]) {
   const result = spawnSync(command, args, {
@@ -56,7 +64,8 @@ function assertCompilers(directory: string): void {
 test("a project on TypeScript 6 keeps tsc at 6 after installing the packed pack, and antelopejs-tsc runs TypeScript 7, under each package manager and in an npm workspace, where npm links one tsc for the whole tree; fails when TypeScript 7's alias sorts before every TypeScript 6 package that ships a tsc, when a pack bin is named tsc, or when antelopejs-tsc runs the project's typescript", async (t) => {
   const { tarball } = await packedPack(t);
   const scratch = dirname(tarball);
-  for (const [manager, install] of Object.entries(INSTALLS))
+  const commands = installs(scratch);
+  for (const [manager, install] of Object.entries(commands))
     await t.test(manager, () => {
       const project = join(scratch, manager);
       consumer(project, tarball);
@@ -72,7 +81,7 @@ test("a project on TypeScript 6 keeps tsc at 6 after installing the packed pack,
       JSON.stringify({ private: true, workspaces: ["member"] }),
     );
     consumer(join(root, "member"), tarball);
-    const installed = run(root, "npm", INSTALLS.npm);
+    const installed = run(root, "npm", commands.npm);
     assert.equal(installed.status, 0, installed.output);
     assertCompilers(join(root, "member"));
   });
