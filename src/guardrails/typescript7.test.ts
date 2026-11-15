@@ -100,7 +100,7 @@ test("antelopejs-tsc names each tsconfig option TypeScript 7 removed and exits n
   }
 });
 
-test("the pack installs TypeScript 7 for every platform TypeScript 7 ships one, at TypeScript 7's range, and depends on no aliased package; a list that misses a platform leaves antelopejs-tsc without a compiler there, and an alias of typescript, such as typescript7 or @typescript/typescript6's @typescript/old, ships a tsc npm can link over the project's", () => {
+test("the pack installs TypeScript 7 for every platform TypeScript 7 ships one, at TypeScript 7's range, and declares no npm: alias as a dependency; a list that misses a platform leaves antelopejs-tsc without a compiler there, and a declared alias of typescript, such as typescript7, ships a tsc npm can link over the project's", () => {
   const range = pack.devDependencies.typescript7.replace("npm:typescript@", "");
   assert.deepEqual(
     pack.optionalDependencies,
@@ -114,4 +114,20 @@ test("the pack installs TypeScript 7 for every platform TypeScript 7 ships one, 
     Object.values(pack.dependencies).filter((spec) => spec.startsWith("npm:")),
     [],
   );
+});
+
+test("antelopejs-tsc passes on the compiler's exit status where it cannot replace its process, as on Windows; an implementation whose spawn fallback drops the status exits 0 on a type error", (t) => {
+  const root = project(
+    t,
+    { noEmit: true },
+    "export const answer: string = 42;\n",
+  );
+  put(root, "no-execve.cjs", "delete process.execve;\n");
+  const env = {
+    NODE_OPTIONS: `--require ${JSON.stringify(join(root, "no-execve.cjs"))}`,
+  };
+  const failed = bin(root, "tsc", ["-p", ".", "--pretty", "false"], env);
+  assert.equal(failed.status, 1);
+  assert.match(failed.stdout, /error TS2322/);
+  assert.equal(bin(root, "tsc", ["--version"], env).status, 0);
 });

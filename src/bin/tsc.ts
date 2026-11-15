@@ -15,13 +15,11 @@ try {
   );
   process.exit(1);
 }
-const exe = join(
-  dirname(manifest),
-  "lib",
-  process.platform === "win32" ? "tsc.exe" : "tsc",
-);
+const windows = process.platform === "win32";
+const path = join(dirname(manifest), "lib", windows ? "tsc.exe" : "tsc");
+const exe = windows && path.length >= 248 ? `\\\\?\\${path}` : path;
 const args = process.argv.slice(2);
-if (process.platform !== "win32" && process.execve !== undefined)
+if (!windows && process.execve !== undefined)
   process.execve(exe, [exe, ...args]);
 const result = spawnSync(exe, args, { stdio: "inherit" });
 if (result.error) throw result.error;

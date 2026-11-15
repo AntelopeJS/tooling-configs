@@ -92,7 +92,7 @@ function assertCompilers(
   assert.match(packTypeScript(directory), /^6\./);
 }
 
-test("a project keeps the tsc of the typescript it pins after installing the packed pack, antelopejs-tsc runs TypeScript 7 and the pack's modules import TypeScript 6, under each package manager and in an npm workspace; fails when the pack installs an aliased package that ships a tsc, which npm and bun link over the project's whatever names sort first; and names the exemption when a project's override forces another typescript on the pack", async (t) => {
+test("a project keeps the tsc of the typescript it pins after installing the packed pack, antelopejs-tsc runs TypeScript 7 and the pack's modules import TypeScript 6, under each package manager and in an npm workspace; fails when the pack installs an aliased package that ships a tsc, which npm links over the project's when its name sorts first; and names the exemption when a project's override forces another typescript on the pack", async (t) => {
   const { tarball } = await packedPack(t);
   const scratch = dirname(tarball);
   const commands = installs(scratch);
