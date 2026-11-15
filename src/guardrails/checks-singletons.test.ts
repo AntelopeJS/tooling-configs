@@ -273,3 +273,25 @@ test("a copy an importer locks by tarball URL names that importer, caught by rea
     ),
   );
 });
+
+test("a module lock under antelope-lock/ holding two copies passes while the same lockfile elsewhere fails, caught by reading every lockfile git knows", (t) => {
+  const root = testRepo(t);
+  const document = stringify({
+    lockfileVersion: "9.0",
+    packages: {
+      "@antelopejs/interface-core@0.1.1": {},
+      "@antelopejs/interface-core@0.2.6": {},
+    },
+    snapshots: {
+      "@antelopejs/interface-core@0.1.1": {},
+      "@antelopejs/interface-core@0.2.6": {},
+    },
+  });
+  put(root, "antelope-lock/api/pnpm-lock.yaml", document);
+  assert.equal(checkSingletonPackages(root), "");
+  put(root, "playground/pnpm-lock.yaml", document);
+  assert.match(
+    checkSingletonPackages(root),
+    /^playground\/pnpm-lock\.yaml resolves "@antelopejs\/interface-core" at 2 versions/,
+  );
+});

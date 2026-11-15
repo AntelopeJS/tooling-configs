@@ -139,11 +139,15 @@ function report(file: string, copies: Copies): string {
     .join("");
 }
 
-/** The `pnpm-lock.yaml` files on disk in the repository, tracked or not yet added, outside what `.gitignore` leaves out. */
+/** The folder holding a project's module locks, whose dev-only copies no production install reaches. */
+const MODULE_LOCKS = "antelope-lock";
+
+/** The `pnpm-lock.yaml` files on disk in the repository, tracked or not yet added, outside what `.gitignore` leaves out and outside `antelope-lock/`. */
 export function pnpmLockfiles(root: string): string[] {
   return gitFiles(root).filter(
     (file) =>
       (file === PNPM_LOCK || file.endsWith(`/${PNPM_LOCK}`)) &&
+      !file.split("/").includes(MODULE_LOCKS) &&
       existsSync(join(root, file)),
   );
 }
