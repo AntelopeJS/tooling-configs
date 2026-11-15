@@ -54,13 +54,11 @@ for (const job of jobs) {
 }
 `;
 
-/** Places a copy of `dts-bundle-generator` beside a `typescript` link to the pack's `@typescript/typescript6`. The generator requires `typescript` by name, and the one it was installed with may be TypeScript 7, which has no compiler API, so this makes it drive the pack's TypeScript 6. Returns a path to require the copy from. */
+/** Places a copy of `dts-bundle-generator` beside a `typescript` link to the pack's own `typescript` 6. The generator requires `typescript` by name, and the one it was installed with may be TypeScript 7, which has no compiler API, so this makes it drive the pack's TypeScript 6. Returns a path to require the copy from. */
 function installGenerator(scratch: string): string {
   const require = createRequire(import.meta.url);
   const source = dirname(require.resolve("dts-bundle-generator/package.json"));
-  const compilerRoot = dirname(
-    require.resolve("@typescript/typescript6/package.json"),
-  );
+  const compilerRoot = dirname(require.resolve("typescript/package.json"));
   const modules = join(scratch, "generator", "node_modules");
   mkdirSync(modules, { recursive: true });
   cpSync(source, join(modules, "dts-bundle-generator"), {

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, matchesGlob, relative, resolve, sep } from "node:path";
-import ts from "@typescript/typescript6";
+import ts from "../typescript6.ts";
 
 import { declaresTypeScript, describePackage } from "./declared-typescript.ts";
 import { workspaceDirectories, workspacePatterns } from "./docs-compat.ts";

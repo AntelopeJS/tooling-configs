@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import ts from "@typescript/typescript6";
+import ts from "../typescript6.ts";
 
 /** The `typescript` manifest fields read here: every TypeScript version exports `typescript/package.json`, including 7, whose `exports` map hides the rest. */
 interface TypeScriptManifest {

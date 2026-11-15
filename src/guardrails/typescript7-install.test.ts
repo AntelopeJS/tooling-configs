@@ -5,7 +5,10 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 
 import { packedPack } from "./helpers/packed-pack.ts";
-import { toolingVersions, type PackageManager } from "./package.ts";
+import type { PackageManager } from "./package.ts";
+
+/** The TypeScript versions a project pins: the 5.9 line most repositories still run, and a 6.0 patch older than the newest. */
+const PINS = ["5.9.3", "6.0.2"];
 
 /** The install command of each manager; yarn gets a cache of its own, because yarn 1 serves a `file:` tarball it cached in an earlier run in place of the one under test. */
 function installs(scratch: string): Record<PackageManager, string[]> {
@@ -34,18 +37,27 @@ function run(cwd: string, command: string, args: string[]) {
   };
 }
 
-/** Writes a package at `directory` that declares TypeScript at `--init`'s range and the pack from `tarball`. */
-function consumer(directory: string, tarball: string): void {
+/** Writes a package at `directory` that pins `typescript`, declares the pack from `tarball`, and adds the `forced` versions: npm's `overrides` or yarn's `resolutions`. */
+function consumer(
+  directory: string,
+  tarball: string,
+  typescript: string,
+  forced: {
+    overrides?: Record<string, string | Record<string, string>>;
+    resolutions?: Record<string, string>;
+  } = {},
+): void {
   mkdirSync(directory, { recursive: true });
   writeFileSync(
     join(directory, "package.json"),
     JSON.stringify({
-      name: `typescript7-${directory.split(/[\\/]/u).at(-1)}`,
+      name: `typescript-${directory.split(/[\\/]/u).at(-1)}`,
       private: true,
       devDependencies: {
-        typescript: toolingVersions().typescript,
+        typescript: typescript,
         "@antelopejs/tooling-configs": `file:${tarball}`,
       },
+      ...forced,
     }),
   );
 }
@@ -57,40 +69,108 @@ function binRunner(manager: string): [string, ...string[]] {
     : ["npx", "--no-install"];
 }
 
-function assertCompilers(directory: string, manager: string): void {
+/** The version of the `typescript` the installed pack's own modules import, from the nearest `node_modules` that holds the pack, as a workspace may hoist it; Node runs without a shell, which on Windows would split the script. */
+function packTypeScript(directory: string): string {
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      'import { createRequire } from "node:module"; import { existsSync, realpathSync } from "node:fs"; import { dirname, join } from "node:path"; let folder = process.cwd(); while (!existsSync(join(folder, "node_modules/@antelopejs/tooling-configs"))) folder = dirname(folder); const pack = realpathSync(join(folder, "node_modules/@antelopejs/tooling-configs/package.json")); process.stdout.write(createRequire(pack)("typescript/package.json").version);',
+    ],
+    { cwd: directory, encoding: "utf8" },
+  );
+  return result.stdout + result.stderr;
+}
+
+function assertCompilers(
+  directory: string,
+  manager: string,
+  typescript: string,
+): void {
   const [runner, ...options] = binRunner(manager);
   const tsc = run(directory, runner, [...options, "tsc", "--version"]);
-  assert.match(tsc.output, /^Version 6\./, tsc.output);
+  assert.equal(tsc.output.trim(), `Version ${typescript}`, tsc.output);
   const native = run(directory, runner, [
     ...options,
     "antelopejs-tsc",
     "--version",
   ]);
   assert.match(native.output, /^Version 7\.0\./, native.output);
+  assert.match(packTypeScript(directory), /^6\./);
 }
 
-test("a project on TypeScript 6 keeps tsc at 6 after installing the packed pack, and antelopejs-tsc runs TypeScript 7, under each package manager and in an npm workspace, where npm links one tsc for the whole tree; fails when TypeScript 7's alias sorts before every TypeScript 6 package that ships a tsc, when a pack bin is named tsc, or when antelopejs-tsc runs the project's typescript", async (t) => {
+test("a project keeps the tsc of the typescript it pins after installing the packed pack, antelopejs-tsc runs TypeScript 7 and the pack's modules import TypeScript 6, under each package manager and in an npm workspace; fails when the pack installs an aliased package that ships a tsc, which npm links over the project's when its name sorts first; and names the exemption when a project's override forces another typescript on the pack", async (t) => {
   const { tarball } = await packedPack(t);
   const scratch = dirname(tarball);
   const commands = installs(scratch);
   for (const [manager, install] of Object.entries(commands))
-    await t.test(manager, () => {
-      const project = join(scratch, manager);
-      consumer(project, tarball);
-      const installed = run(project, manager, install);
-      assert.equal(installed.status, 0, installed.output);
-      assertCompilers(project, manager);
-    });
-  await t.test("npm workspace", () => {
+    for (const typescript of PINS)
+      await t.test(`${manager}, typescript ${typescript}`, () => {
+        const project = join(scratch, `${manager}-${typescript}`);
+        consumer(project, tarball, typescript);
+        const installed = run(project, manager, install);
+        assert.equal(installed.status, 0, installed.output);
+        assertCompilers(project, manager, typescript);
+      });
+  await t.test("npm workspace, typescript 5.9.3", () => {
     const root = join(scratch, "workspace");
     mkdirSync(root);
     writeFileSync(
       join(root, "package.json"),
       JSON.stringify({ private: true, workspaces: ["member"] }),
     );
-    consumer(join(root, "member"), tarball);
+    consumer(join(root, "member"), tarball, "5.9.3");
     const installed = run(root, "npm", commands.npm);
     assert.equal(installed.status, 0, installed.output);
-    assertCompilers(join(root, "member"), "npm");
+    assertCompilers(join(root, "member"), "npm", "5.9.3");
   });
+  await t.test(
+    "npm, an override of typescript to 7.0.2: the pack's commands name the override and its exemption instead of failing on TypeScript 7's missing API, and the exemption gives the pack TypeScript 6 again",
+    () => {
+      const forced = join(scratch, "npm-override");
+      consumer(forced, tarball, "7.0.2", {
+        overrides: { typescript: "7.0.2" },
+      });
+      assert.equal(run(forced, "npm", commands.npm).status, 0);
+      const refused = run(forced, "npx", [
+        "--no-install",
+        "antelopejs-api-diff",
+        "HEAD",
+      ]);
+      assert.notEqual(refused.status, 0);
+      assert.match(
+        refused.output,
+        /needs TypeScript 6 for its analyses, but the typescript it resolves is 7\.0\.2/,
+      );
+      assert.match(
+        refused.output,
+        /"@antelopejs\/tooling-configs": \{ "typescript": "\^6\.0\.2" \}/,
+      );
+      assert.doesNotMatch(refused.output, /TypeError/);
+      const exempt = join(scratch, "npm-override-exempt");
+      consumer(exempt, tarball, "7.0.2", {
+        overrides: {
+          typescript: "7.0.2",
+          "@antelopejs/tooling-configs": { typescript: "^6.0.2" },
+        },
+      });
+      assert.equal(run(exempt, "npm", commands.npm).status, 0);
+      assertCompilers(exempt, "npm", "7.0.2");
+    },
+  );
+  await t.test(
+    "yarn, a resolution of typescript to 7.0.2 after the pack's exemption, as the message words it: the pack keeps TypeScript 6; yarn 1 applies the first matching key, so an exemption listed second is ignored",
+    () => {
+      const exempt = join(scratch, "yarn-resolution-exempt");
+      consumer(exempt, tarball, "7.0.2", {
+        resolutions: {
+          "**/@antelopejs/tooling-configs/typescript": "^6.0.2",
+          typescript: "7.0.2",
+        },
+      });
+      assert.equal(run(exempt, "yarn", commands.yarn).status, 0);
+      assertCompilers(exempt, "yarn", "7.0.2");
+    },
+  );
 });

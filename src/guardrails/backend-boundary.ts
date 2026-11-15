@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 
-import ts from "@typescript/typescript6";
+import ts from "../typescript6.ts";
 
 import { parseManifest } from "./package.ts";
 import type { PlannedArtifact } from "./sync.ts";

@@ -1,6 +1,27 @@
 #!/usr/bin/env node
+import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
-const manifest = fileURLToPath(import.meta.resolve("typescript7/package.json"));
-await import(pathToFileURL(join(dirname(manifest), "bin", "tsc")).href);
+const platformPackage = `@typescript/typescript-${process.platform}-${process.arch}`;
+let manifest: string;
+try {
+  manifest = fileURLToPath(
+    import.meta.resolve(`${platformPackage}/package.json`),
+  );
+} catch {
+  process.stderr.write(
+    `antelopejs-tsc: ${platformPackage}, TypeScript 7 for this platform, is not installed. Install the pack's optional dependencies, or run tsc.\n`,
+  );
+  process.exit(1);
+}
+const windows = process.platform === "win32";
+const path = join(dirname(manifest), "lib", windows ? "tsc.exe" : "tsc");
+const exe = windows && path.length >= 248 ? `\\\\?\\${path}` : path;
+const args = process.argv.slice(2);
+if (!windows && process.execve !== undefined)
+  process.execve(exe, [exe, ...args]);
+const result = spawnSync(exe, args, { stdio: "inherit" });
+if (result.error) throw result.error;
+if (result.signal) process.kill(process.pid, result.signal);
+process.exitCode = result.status ?? 1;
