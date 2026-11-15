@@ -13,7 +13,7 @@ const RELEASE_CALLER =
   /^AntelopeJS\/\.github\/\.github\/workflows\/release-npm-(public|private)\.yml@\S+$/;
 
 /** A package the repository publishes through a shared release workflow. */
-export interface ReleasePackage {
+interface ReleasePackage {
   /** The package directory relative to the repository root, `.` for the root package. */
   directory: string;
   /** The shared workflow that publishes it: `public` to npmjs, `private` to the AntelopeJS registry. */
@@ -221,7 +221,7 @@ function releaseJob(release: ReleasePackage, several: boolean): string {
  * not at the root, `package-directory`. With several packages, each has its own job, which a dispatch runs only for
  * the `package-directory` it names.
  */
-export function releaseCaller(
+function releaseCaller(
   packages: readonly ReleasePackage[],
   branch: string,
 ): string {
