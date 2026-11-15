@@ -1,4 +1,4 @@
-import ts from "@typescript/typescript6";
+import ts from "typescript";
 
 const MAX_DEPTH = 8;
 const INDEX = /^\d+$/u;

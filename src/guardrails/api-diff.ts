@@ -18,7 +18,7 @@ import {
   type AddedPolicy,
   type PublishedEntry,
 } from "./added-entries.ts";
-import ts from "@typescript/typescript6";
+import ts from "typescript";
 
 import { autoImportDiff } from "./auto-imports.ts";
 import { bundleDeclarations } from "./declaration-bundle.ts";

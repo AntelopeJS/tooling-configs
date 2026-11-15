@@ -1,4 +1,4 @@
-import type ts from "@typescript/typescript6";
+import type ts from "typescript";
 
 import { typescript } from "./parser.ts";
 

@@ -1,5 +1,5 @@
 import { defineRule } from "@oxlint/plugins";
-import ts from "@typescript/typescript6";
+import ts from "typescript";
 
 import { callName } from "../shared.ts";
 import { literalFits, valueType } from "../literal-fit.ts";

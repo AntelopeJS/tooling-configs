@@ -123,6 +123,9 @@ export function toolingVersions() {
       );
     return range;
   };
+  const typescript = manifest.dependencies?.typescript;
+  if (!typescript)
+    throw new Error("tooling-configs must declare typescript in dependencies.");
   if (!manifest.version)
     throw new Error("tooling-configs must declare its version.");
   return {
@@ -131,7 +134,7 @@ export function toolingVersions() {
     tsgolint: dev("oxlint-tsgolint"),
     oxlint: dev("oxlint"),
     oxfmt: dev("oxfmt"),
-    typescript: dev("typescript"),
+    typescript,
     nodeTypes: dev("@types/node"),
     capture: CAPTURE_PEERS.map((name): [CapturePeer, string] => [
       name,

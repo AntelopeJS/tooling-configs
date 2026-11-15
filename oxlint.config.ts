@@ -20,17 +20,5 @@ export default defineConfig({
   ],
   rules: {
     ...antiSlopRules(),
-    "no-restricted-imports": [
-      "error",
-      {
-        paths: [
-          {
-            name: "typescript",
-            message:
-              "A repository's typescript may be 7, which has no compiler API: import the pack's own @typescript/typescript6.",
-          },
-        ],
-      },
-    ],
   },
 });

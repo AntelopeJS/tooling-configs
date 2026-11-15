@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import ts from "@typescript/typescript6";
+import ts from "typescript";
 
 import { programConfig, project } from "./tsconfig-program.ts";
 import { isTsx, scriptView } from "./vue-script.ts";

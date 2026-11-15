@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { join, relative } from "node:path";
 
-import type ts from "@typescript/typescript6";
+import type ts from "typescript";
 
 import { namedStatements } from "./declaration-order.ts";
 

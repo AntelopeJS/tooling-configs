@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import ts from "@typescript/typescript6";
+import ts from "typescript";
 
 import type { ExportTarget } from "./package.ts";
 

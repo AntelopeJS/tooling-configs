@@ -4,6 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
+import typescript7 from "typescript7/package.json" with { type: "json" };
+
+import pack from "../../package.json" with { type: "json" };
 import { bin, put } from "./helpers/test-repo.ts";
 
 const CRASH = /panic:|goroutine \d|^\s+at .+:\d+:\d+\)?$/mu;
@@ -95,4 +98,20 @@ test("antelopejs-tsc names each tsconfig option TypeScript 7 removed and exits n
       assert.doesNotMatch(output, CRASH, config);
     }
   }
+});
+
+test("the pack installs TypeScript 7 for every platform TypeScript 7 ships one, at TypeScript 7's range, and depends on no aliased package; a list that misses a platform leaves antelopejs-tsc without a compiler there, and an alias of typescript, such as typescript7 or @typescript/typescript6's @typescript/old, ships a tsc npm can link over the project's", () => {
+  const range = pack.devDependencies.typescript7.replace("npm:typescript@", "");
+  assert.deepEqual(
+    pack.optionalDependencies,
+    Object.fromEntries(
+      Object.keys(typescript7.optionalDependencies)
+        .sort()
+        .map((name) => [name, range]),
+    ),
+  );
+  assert.deepEqual(
+    Object.values(pack.dependencies).filter((spec) => spec.startsWith("npm:")),
+    [],
+  );
 });

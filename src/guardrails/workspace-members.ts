@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type ts from "@typescript/typescript6";
+import type ts from "typescript";
 import {
   isAlias,
   isMap,

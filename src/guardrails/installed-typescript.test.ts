@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import ts from "@typescript/typescript6";
+import ts from "typescript";
 import ts5 from "typescript5";
 
 import { asInstalledCompilerReads } from "./installed-typescript.ts";

@@ -1,5 +1,5 @@
 import { posix } from "node:path";
-import ts from "@typescript/typescript6";
+import ts from "typescript";
 
 import {
   isFile,

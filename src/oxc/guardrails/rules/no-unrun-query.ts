@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { defineRule } from "@oxlint/plugins";
-import ts from "@typescript/typescript6";
+import ts from "typescript";
 
 import type { ESTree } from "@oxlint/plugins";
 import { memberName } from "../shared.ts";

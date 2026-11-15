@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { matchesGlob } from "node:path";
-import type ts from "@typescript/typescript6";
+import type ts from "typescript";
 
 /** A published entry's output file, relative to its revision's output root, and the package subpath it publishes. */
 export interface PublishedEntry {

@@ -1,4 +1,4 @@
-import ts from "@typescript/typescript6";
+import ts from "typescript";
 
 function isObject(type: ts.Type): type is ts.ObjectType {
   return (type.flags & ts.TypeFlags.Object) !== 0;
