@@ -1,7 +1,5 @@
 import { defineConfig } from "oxlint";
 
-import { findGitRoot, MEASURE_ENV } from "../guardrails/ceilings.ts";
-import { readCarriedCeilings } from "../guardrails/renames.ts";
 import { PRESET_CONFIGS } from "../guardrails/templates.ts";
 import { TYPE_AWARE_RULES, typeAwareRuleSetting } from "../type-aware-rules.ts";
 import { TEST_FILE_GLOBS } from "./guardrails/shared.ts";
@@ -63,9 +61,7 @@ export interface AntelopePresetOptions {
    * Type-aware rules. Defaults to true. Consumers must also set options.typeAware
    * in their root config because oxlint never reads that field from extends.
    * oxlint-tsgolint reads only TypeScript files, so in `.vue` script blocks
-   * `antelopejs/no-unsafe-any-in-vue` runs the `typescript/no-unsafe-*`
-   * checks, and `antelopeNuxtConfig({ typeAware })` runs every type-aware rule
-   * in ESLint.
+   * `antelopeNuxtConfig({ typeAware })` runs every type-aware rule in ESLint.
    */
   typeAware?: boolean;
 }
@@ -222,7 +218,6 @@ function guardrailsPreset(typeAware: boolean) {
     ],
     rules: {
       "antelopejs/no-unrun-query": typeAware ? "error" : "off",
-      "antelopejs/no-unsafe-any-in-vue": typeAware ? "error" : "off",
       "antelopejs/no-unsafe-object-assign": typeAware ? "error" : "off",
       "antelopejs/require-tsconfig-include": typeAware ? "error" : "off",
       "antelopejs/require-tsconfig-types": typeAware ? "error" : "off",
@@ -303,23 +298,7 @@ function importSortingPreset() {
   });
 }
 
-/** Overrides run after rules, including test-specific rules; measurement bypasses all ceilings. */
-function ratchetOverrides() {
-  if (process.env[MEASURE_ENV] !== undefined) return [];
-  const ceilings = readCarriedCeilings(findGitRoot());
-  const rules: Record<string, "off"> = Object.fromEntries(
-    Object.keys(ceilings.rules).map((rule) => [rule, "off"]),
-  );
-  return [
-    ...Object.keys(ceilings.oversizeFiles).map((path) => ({
-      files: [path.replaceAll(/([*?[\]{}])/gu, "\\$1")],
-      rules: { "eslint/max-lines": "off" as const },
-    })),
-    { files: ["**/*"], rules },
-  ];
-}
-
-/** The shared AntelopeJS preset. Every enabled rule fails CI; recorded debt is enforced by the ratchet. */
+/** The shared AntelopeJS preset. Every enabled rule fails CI. */
 export function antelopePreset(options: AntelopePresetOptions = {}) {
   let thresholds = DEFAULT_COMPLEXITY_THRESHOLDS;
   if (
@@ -344,6 +323,5 @@ export function antelopePreset(options: AntelopePresetOptions = {}) {
       "typescript/no-floating-promises":
         options.typeAware === false ? "off" : "error",
     },
-    overrides: ratchetOverrides(),
   });
 }

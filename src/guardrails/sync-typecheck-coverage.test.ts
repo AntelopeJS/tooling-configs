@@ -253,11 +253,6 @@ test("a release reaches typecheck through the scripts it runs, to a bounded dept
 
 function syncedRepo(t: TestContext): string {
   const root = testRepo(t);
-  put(
-    root,
-    "guardrails.ratchet.json",
-    '{"rules":{"eslint/no-alert":1},"oversizeFiles":{}}\n',
-  );
   const result = bin(root, "sync");
   assert.equal(result.status, 0, result.stderr);
   commit(root);

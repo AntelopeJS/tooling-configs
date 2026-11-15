@@ -5,7 +5,6 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
 import { linkTsgolint } from "../oxc/helpers/tsgolint.ts";
-import { formatCeilings } from "./ceilings.ts";
 import { formatBudget } from "./suppression-budget.ts";
 import {
   bin,
@@ -70,13 +69,6 @@ const PAYMENT_TEARDOWN_AFTER = [
   ");",
 ].join("\n");
 
-const DICTIONARY = (name: string) =>
-  [
-    "// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- the CDN reply carries arbitrary per-file metadata keys chosen by the uploader",
-    `export const ${name}: Record<string, unknown> = {};`,
-    "",
-  ].join("\n");
-
 function linkTypeAware(root: string): void {
   linkOxlint(root);
   linkTsgolint(root);
@@ -87,7 +79,6 @@ function presetRepo(
   t: TestContext,
   files: Record<string, string>,
   rules: Record<string, number>,
-  ratchet: Record<string, number> = {},
 ): string {
   const root = testRepo(t);
   linkTypeAware(root);
@@ -106,12 +97,6 @@ function presetRepo(
       include: ["**/*.ts"],
     }),
   );
-  if (Object.keys(ratchet).length)
-    put(
-      root,
-      "guardrails.ratchet.json",
-      formatCeilings({ rules: ratchet, oversizeFiles: {} }),
-    );
   put(
     root,
     "guardrails.suppressions.json",
@@ -217,20 +202,6 @@ test("a dead directive in a file the change does not touch is left to the burn-d
   );
   const { staged, full } = bothModes(root, () =>
     put(root, "src/other.ts", "export const other = 1;\n"),
-  );
-  assert.equal(staged.status, 0, staged.stderr);
-  assert.equal(full.status, 0, full.stderr);
-});
-
-test("a directive for a ratcheted rule that still suppresses a finding passes in a touched file", (t) => {
-  const root = presetRepo(
-    t,
-    { "src/meta.ts": DICTIONARY("meta") },
-    { "anti-slop/no-unsafe-dictionary-type": 1 },
-    { "anti-slop/no-unsafe-dictionary-type": 1 },
-  );
-  const { staged, full } = bothModes(root, () =>
-    put(root, "src/meta.ts", `${DICTIONARY("meta")}export const count = 1;\n`),
   );
   assert.equal(staged.status, 0, staged.stderr);
   assert.equal(full.status, 0, full.stderr);

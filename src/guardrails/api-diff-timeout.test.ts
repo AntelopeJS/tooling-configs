@@ -9,7 +9,7 @@ import {
   put,
 } from "./helpers/test-repo.ts";
 
-test("api-diff reports a probe timeout as an execution error", (t) => {
+test("api-diff reports a runtime entry whose load times out as an execution error", (t) => {
   const root = apiRepo(t);
   put(
     root,

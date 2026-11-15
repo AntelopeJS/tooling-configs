@@ -46,11 +46,6 @@ function workspace(
     "package.json",
     `${JSON.stringify({ name: "dms-marketing-workspace", private: true, type: "module", packageManager }, null, 2)}\n`,
   );
-  put(
-    root,
-    "guardrails.ratchet.json",
-    '{"rules":{"eslint/no-alert":1},"oversizeFiles":{}}\n',
-  );
   put(root, "pnpm-workspace.yaml", "packages:\n  - packages/*\n");
   put(root, "pnpm-lock.yaml", "lockfileVersion: '9.0'\n");
   put(

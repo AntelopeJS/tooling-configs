@@ -281,22 +281,13 @@ function countRows(base: SuppressionCounts, head: SuppressionCounts) {
   ];
 }
 
-/** The suppression table rows, `| label | base | head |`, counted in authored code files at both revisions with the shared suppression counter. */
-export function revisionCountRows(
-  root: string,
-  baseRef: string,
-  headRef = "HEAD",
-): string[] {
-  const [base, head] = [baseRef, headRef].map((ref) =>
-    countSuppressions(revisionSuppressions(root, resolveRevision(root, ref))),
-  );
-  return countRows(base, head).map(
-    ([label, before, after]) => `| ${label} | ${before} | ${after} |`,
-  );
-}
-
 /** Counts suppressions in authored code files at the base and at committed HEAD, so a PR body copies them instead of typing them. */
 export function revisionCounts(root: string, baseRef: string): string {
-  const rows = revisionCountRows(root, baseRef);
+  const [base, head] = [baseRef, "HEAD"].map((ref) =>
+    countSuppressions(revisionSuppressions(root, resolveRevision(root, ref))),
+  );
+  const rows = countRows(base, head).map(
+    ([label, before, after]) => `| ${label} | ${before} | ${after} |`,
+  );
   return `\nSuppressions in authored code files (${baseRef} and committed HEAD). A lint directive counts once per rule it names; \`*\` is a directive naming none.\n| Suppressions | base | HEAD |\n| --- | ---: | ---: |\n${rows.join("\n")}\n`;
 }

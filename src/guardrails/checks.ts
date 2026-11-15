@@ -1,8 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { packageManager, parseManifest } from "./package.ts";
-import { CEILINGS_FILE } from "./ceilings.ts";
 import {
   checkRepositoryRanges,
   hasDependencyRanges,
@@ -20,7 +19,6 @@ import {
 import { checkSingletonPackages, pnpmLockfiles } from "./singleton-packages.ts";
 import { typecheckWrites } from "./typecheck-writes.ts";
 import { typecheckLayers, verifyLayers } from "./verify-layers.ts";
-import { checkLockfiles, verifyInstallFolders } from "./verify-lockfiles.ts";
 
 const CHECK_STEPS = [
   "typecheck",
@@ -29,11 +27,9 @@ const CHECK_STEPS = [
   "knip",
   "test",
   "size",
-  "ratchet",
   "suppressions",
   "sync:check",
   "verify:types",
-  "verify:lockfiles",
   "lockfile:singletons",
   "dependency:ranges",
   "git:identity",
@@ -65,10 +61,6 @@ function failureOnly(
 const OWN_STEPS = new Map<string, OwnStep>([
   ["verify:types", failureOnly(typecheckLayers)],
   [
-    "verify:lockfiles",
-    failureOnly((root) => Promise.resolve(checkLockfiles(root))),
-  ],
-  [
     "lockfile:singletons",
     failureOnly((root) => Promise.resolve(checkSingletonPackages(root))),
   ],
@@ -79,9 +71,7 @@ const OWN_STEPS = new Map<string, OwnStep>([
 ]);
 
 function hasWork(root: string, step: string): boolean {
-  if (step === "ratchet") return existsSync(join(root, CEILINGS_FILE));
   if (step === "verify:types") return verifyLayers(root).length > 0;
-  if (step === "verify:lockfiles") return verifyInstallFolders(root).length > 0;
   if (step === "lockfile:singletons") return pnpmLockfiles(root).length > 0;
   if (step === "dependency:ranges")
     return isGitCheckout(root) && hasDependencyRanges(root);

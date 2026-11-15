@@ -9,7 +9,7 @@ import { packageManager, usesCaptures, type Manifest } from "./package.ts";
 import { pnpmLockfiles } from "./singleton-packages.ts";
 import type { PlannedArtifact } from "./sync.ts";
 import { verifyLayers } from "./verify-layers.ts";
-import { installsWithPnpm, inWorkspace } from "./verify-lockfiles.ts";
+import { installsWithPnpm, inWorkspace } from "./lockfile-reading.ts";
 
 const PATH = "pnpm-workspace.yaml";
 

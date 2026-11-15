@@ -7,7 +7,7 @@ import test from "node:test";
 import { apiRepo, bin, commit, put, read } from "./helpers/test-repo.ts";
 import type { Manifest } from "./package.ts";
 
-test("api-diff detects a CJS getter re-export with identical declarations and compares a captured probe", (t) => {
+test("api-diff detects a CJS getter re-export with identical declarations", (t) => {
   const root = apiRepo(t);
   put(
     root,
@@ -39,16 +39,6 @@ test("api-diff detects a CJS getter re-export with identical declarations and co
   assert.match(metadata.stdout, /API: 1 packages, 1 entries unchanged/);
   assert.match(metadata.stdout, /Runtime API: differences/);
   assert.match(metadata.stdout, /"key": "launch"/);
-  assert.match(metadata.stdout, /No behavioural probe ran/);
-  put(
-    root,
-    "probe.cjs",
-    'const api = require(require("node:path").join(process.argv[2], "dist/index.js")); process.stdout.write(JSON.stringify(Reflect.set(api, "launch", api.launch)));',
-  );
-  const probed = bin(root, "api-diff", ["base", "--probe", "probe.cjs"]);
-  assert.equal(probed.status, 1, probed.stdout + probed.stderr);
-  assert.match(probed.stdout, /diff --git a\/base\/probe.json/);
-  assert.match(probed.stdout, /-true\n\+false/);
 });
 
 test("api-diff inspects getter values once, never invokes class accessors, and detects async, arity, constructibility and member changes", (t) => {

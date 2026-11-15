@@ -70,7 +70,7 @@ function packageWithTests() {
 test("a file that no tsconfig includes is reported once, where type-aware lint reads it without the repository's types and reports Node calls as unsafe (antelopejs test/, file-storage-s3 scripts/)", (t) => {
   const project = packageWithTests();
   t.after(project.remove);
-  assert.deepEqual(findings(project.run(true).diagnostics), [
+  assert.deepEqual(findings(project.run().diagnostics), [
     "scripts/home.mjs:1 antelopejs(require-tsconfig-include)",
     "scripts/home.mjs:2 typescript(no-unsafe-return)",
     "test/index.test.ts:1 antelopejs(require-tsconfig-include)",
@@ -101,7 +101,7 @@ test("a tsconfig.json that includes the file with the repository's options clear
     }),
   );
   project.write("tsconfig.json", packageTsconfig("tool.config.ts"));
-  assert.deepEqual(findings(project.run(true).diagnostics), [
+  assert.deepEqual(findings(project.run().diagnostics), [
     "test/index.test.ts:4 typescript(no-unsafe-assignment)",
   ]);
 });
@@ -141,7 +141,7 @@ test("a file listed by a referenced tsconfig, or by an ancestor tsconfig above a
   project.write("test/index.test.ts", NODE_CALLS);
   project.write("packages/tool/src/index.ts", NODE_CALLS);
   project.write("packages/tool/test/index.test.ts", NODE_CALLS);
-  assert.deepEqual(findings(project.run(true).diagnostics), []);
+  assert.deepEqual(findings(project.run().diagnostics), []);
 });
 
 test("only the root configs sync writes are exempt: a hand-written package config with a synced name is reported like any other unlisted file (dms-marketing packages/<pkg>/knip.config.ts)", (t) => {
@@ -153,7 +153,7 @@ test("only the root configs sync writes are exempt: a hand-written package confi
   project.write("oxfmt.config.ts", "export default {};\n");
   project.write("packages/site/knip.config.ts", "export default {};\n");
   project.write("packages/site/oxfmt.config.ts", "export default {};\n");
-  assert.deepEqual(findings(project.run(true).diagnostics), [
+  assert.deepEqual(findings(project.run().diagnostics), [
     "packages/site/knip.config.ts:1 antelopejs(require-tsconfig-include)",
     "packages/site/oxfmt.config.ts:1 antelopejs(require-tsconfig-include)",
   ]);
@@ -172,7 +172,7 @@ test("an import the tsconfig cannot resolve is reported on its module specifier,
   t.after(project.remove);
   project.write("tsconfig.json", packageTsconfig());
   project.write("src/index.ts", UNRESOLVED_IMPORTS);
-  assert.deepEqual(findings(project.run(true).diagnostics), [
+  assert.deepEqual(findings(project.run().diagnostics), [
     "src/index.ts:1 antelopejs(require-tsconfig-include)",
     "src/index.ts:2 antelopejs(require-tsconfig-include)",
     "src/index.ts:3 antelopejs(require-tsconfig-include)",
@@ -203,7 +203,7 @@ test("an untyped package, an ambient module, a side-effect import, a component i
     }),
   );
   project.write("scripts/tool.mjs", 'export * from "#missing/thing";\n');
-  assert.deepEqual(findings(project.run(true).diagnostics), []);
+  assert.deepEqual(findings(project.run().diagnostics), []);
 });
 
 test("a Node built-in is unresolved under a tsconfig that loads no Node types, and resolved under one that does (fails if every built-in counts as resolved)", (t) => {
@@ -221,7 +221,7 @@ test("a Node built-in is unresolved under a tsconfig that loads no Node types, a
   );
   project.write("web/index.ts", source);
   assert.deepEqual(
-    findings(project.run(true).diagnostics).filter((finding) =>
+    findings(project.run().diagnostics).filter((finding) =>
       finding.includes("require-tsconfig-include"),
     ),
     ["web/index.ts:1 antelopejs(require-tsconfig-include)"],

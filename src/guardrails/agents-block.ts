@@ -1,7 +1,6 @@
 /** What the managed AGENTS.md block needs to know about the repository. */
 export interface AgentsBlockContext {
   profile: "full" | "template";
-  ratchet: boolean;
   /** Repository-relative path of the verification skill's SKILL.md, when one exists. */
   verificationSkill: string | undefined;
   /** Repository-relative path of GLOSSARY.md, when one exists. */

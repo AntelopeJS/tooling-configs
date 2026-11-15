@@ -1,95 +1,7 @@
 import assert from "node:assert/strict";
-import { join } from "node:path";
 import { test } from "node:test";
 
 import { lintProject } from "./helpers/lint-project.ts";
-
-test("recorded rules override all preset layers and test overrides; measurement restores debt", () => {
-  const project = lintProject();
-  try {
-    project.write(
-      "debt.test.ts",
-      `
-// Ordinary comment
-export function excessive(a, b, c, d, e, f) { return [a, b, c, d, e, f]; }
-export function untyped(value: object) { return value; }
-it("has no assertions", () => { excessive(1, 2, 3, 4, 5, 6); });
-it("restates a constant", () => { expect(MAX_ITEMS).toBe(5); });
-`,
-    );
-    project.write(
-      "guardrails.ratchet.json",
-      JSON.stringify({
-        rules: {
-          "eslint/max-params": 1,
-          "anti-slop/no-object-parameters": 1,
-          "antelopejs/no-comments": 1,
-          "antelopejs/no-constant-value-assertion": 1,
-          "antelopejs/require-assertion": 1,
-        },
-        oversizeFiles: {},
-      }),
-    );
-    const measured = project.run(true);
-    const codes = measured.diagnostics.map(
-      (diagnostic: { code: string }) => diagnostic.code,
-    );
-    for (const code of [
-      "eslint(max-params)",
-      "anti-slop(no-object-parameters)",
-      "antelopejs(no-comments)",
-      "antelopejs(no-constant-value-assertion)",
-      "antelopejs(require-assertion)",
-    ]) {
-      assert(codes.includes(code), JSON.stringify(measured));
-    }
-    assert.notEqual(measured.status, 0);
-    const normal = project.run();
-    assert.equal(normal.status, 0, JSON.stringify(normal));
-    assert.deepEqual(normal.diagnostics, []);
-    assert.equal(
-      project.run("").diagnostics.length,
-      measured.diagnostics.length,
-    );
-  } finally {
-    project.remove();
-  }
-});
-
-test("an oversize exemption turns off max-lines only for its recorded path", () => {
-  const project = lintProject();
-  try {
-    const source = Array.from(
-      { length: 505 },
-      (_, i) => `export const item${i} = ${i};`,
-    ).join("\n");
-    project.write("large[legacy].ts", source);
-    project.write("largel.ts", source);
-    project.write(
-      "guardrails.ratchet.json",
-      JSON.stringify({
-        rules: {},
-        oversizeFiles: { "large[legacy].ts": 40_000 },
-      }),
-    );
-    const normal = project.run();
-    const maxLines = normal.diagnostics.filter(
-      (diagnostic: { code: string }) => diagnostic.code === "eslint(max-lines)",
-    );
-    assert.equal(maxLines.length, 1, JSON.stringify(normal));
-    assert.equal(maxLines[0].filename, "largel.ts");
-    const measured = project.run(true);
-    assert.equal(
-      measured.diagnostics.filter(
-        (diagnostic: { code: string }) =>
-          diagnostic.code === "eslint(max-lines)",
-      ).length,
-      2,
-    );
-  } finally {
-    project.remove();
-  }
-});
 
 test("generated roots are ignored but authored build and output directories are linted", () => {
   const project = lintProject();
@@ -156,7 +68,7 @@ it("parameterized", () => {
 export function assertionHelper() { expect(1, "a Chai or Vitest message").to.equal(1); }
 `,
     );
-    const result = project.run(true);
+    const result = project.run();
     const missing = result.diagnostics.filter(
       (diagnostic: { code: string }) =>
         diagnostic.code === "antelopejs(require-assertion)",
@@ -199,7 +111,7 @@ test("antelopejs@b0c06d3:test/core/cli/git-operations.test.ts:9 has no assertion
     ]);
   });`,
     );
-    const result = project.run(true);
+    const result = project.run();
     assert.equal(
       result.diagnostics.filter(
         (diagnostic: { code: string }) =>
@@ -209,37 +121,6 @@ test("antelopejs@b0c06d3:test/core/cli/git-operations.test.ts:9 has no assertion
     );
   } finally {
     project.remove();
-  }
-});
-
-test("ceilings come from the nearest git ancestor, including worktrees, with cwd fallback", () => {
-  for (const marker of [".git/HEAD", ".git", "nested/.git", null]) {
-    const project = lintProject();
-    try {
-      if (marker !== null) project.write(marker, "gitdir: /unused\n");
-      if (marker === "nested/.git")
-        project.write(".git/HEAD", "ref: refs/heads/main\n");
-      project.write(
-        "nested/test/foo.ts",
-        "// ordinary comment\nexport const value = 1;",
-      );
-      project.write(
-        "guardrails.ratchet.json",
-        JSON.stringify({ rules: { "antelopejs/no-comments": 1 } }),
-      );
-      const result = project.run(false, join(project.root, "nested"));
-      const comments = result.diagnostics.filter(
-        (diagnostic: { code: string }) =>
-          diagnostic.code === "antelopejs(no-comments)",
-      );
-      assert.equal(
-        comments.length,
-        marker === null || marker === "nested/.git" ? 1 : 0,
-        JSON.stringify(result),
-      );
-    } finally {
-      project.remove();
-    }
   }
 });
 
@@ -256,7 +137,7 @@ test("fixture, helper and locale directories can read files while tests and ordi
       "source.ts",
     ])
       project.write(path, source);
-    const result = project.run(true);
+    const result = project.run();
     const reads = result.diagnostics.filter(
       (diagnostic: { code: string }) =>
         diagnostic.code === "antelopejs(no-fs-read-in-tests)",

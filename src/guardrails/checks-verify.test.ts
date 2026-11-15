@@ -6,12 +6,7 @@ import test, { type TestContext } from "node:test";
 import { skillFolder } from "../verify/kinds.ts";
 import { syncedFiles } from "../verify/skills.ts";
 import { PACKAGE_ROOT, bin, put, testRepo } from "./helpers/test-repo.ts";
-import {
-  NO_DEPENDENCIES,
-  folderStamp,
-  npmLock,
-  pnpmLock,
-} from "./helpers/lockfiles.ts";
+import { NO_DEPENDENCIES, folderStamp } from "./helpers/lockfiles.ts";
 
 const BASE_STEPS = [
   "typecheck",
@@ -27,14 +22,6 @@ const LAYER = skillFolder("interface");
 const CLEAN_SOURCE = "export const answer: number = 42;\n";
 const BROKEN_SOURCE = 'export const answer: number = "forty-two";\n';
 const LEFT_PAD = { "left-pad": "^1.3.0" };
-/** An environment in which every registry, proxy and package manager download is unreachable. */
-const OFFLINE = {
-  npm_config_registry: "http://127.0.0.1:9/",
-  NPM_CONFIG_REGISTRY: "http://127.0.0.1:9/",
-  HTTP_PROXY: "http://127.0.0.1:9",
-  HTTPS_PROXY: "http://127.0.0.1:9",
-  COREPACK_NPM_REGISTRY: "http://127.0.0.1:9/",
-};
 
 /** A repository whose checks pass, with the pack's `node_modules` as its own unless `installed` is false. */
 function checksRepo(t: TestContext, installed = true): string {
@@ -90,11 +77,6 @@ function layerRepo(t: TestContext, source: string, installed = true): string {
 
 function run(root: string, env: Record<string, string> = {}) {
   return bin(root, "checks", ["--no-services"], env);
-}
-
-/** Runs the checks with the layer type-check skipped, so the lockfile tests do not pay for a compiler run. */
-function lockfiles(root: string, env: Record<string, string> = {}) {
-  return run(root, { ...env, ANTELOPEJS_CHECKS_SKIP: "verify:types" });
 }
 
 test("a layer type error fails under verify:types with the compiler error, caught by an implementation that compiles nothing", (t) => {
@@ -250,62 +232,9 @@ test("a repository without a verify layer runs exactly the steps it did before, 
   assert.equal(result.stdout, "Checks: 9 passed, 0 failed, 1 skipped.\n");
 });
 
-test("ANTELOPEJS_CHECKS_SKIP names verify:types and verify:lockfiles, caught by an implementation that runs a skipped step", (t) => {
+test("ANTELOPEJS_CHECKS_SKIP names verify:types, caught by an implementation that runs a skipped step", (t) => {
   const root = layerRepo(t, BROKEN_SOURCE);
-  put(
-    root,
-    `${LAYER}/package.json`,
-    JSON.stringify({ ...NO_DEPENDENCIES, dependencies: LEFT_PAD }),
-  );
-  put(root, `${LAYER}/pnpm-lock.yaml`, pnpmLock({ ".": {} }));
-  const result = run(root, {
-    ANTELOPEJS_CHECKS_SKIP: "verify:types,verify:lockfiles",
-  });
+  const result = run(root, { ANTELOPEJS_CHECKS_SKIP: "verify:types" });
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 10 passed, 0 failed, 2 skipped.\n");
+  assert.equal(result.stdout, "Checks: 9 passed, 0 failed, 1 skipped.\n");
 });
-
-test("a stale layer lockfile fails under verify:lockfiles and names the dependency and the fix, caught by an implementation that never compares", (t) => {
-  const root = layerRepo(t, CLEAN_SOURCE);
-  put(
-    root,
-    `${LAYER}/package.json`,
-    JSON.stringify({ ...NO_DEPENDENCIES, dependencies: LEFT_PAD }),
-  );
-  put(root, `${LAYER}/pnpm-lock.yaml`, pnpmLock({ ".": {} }));
-  const result = lockfiles(root);
-  assert.equal(result.status, 1, result.stdout);
-  assert.match(
-    result.stdout,
-    /\[verify:lockfiles\]\n\.agents\/skills\/verify-interface\/pnpm-lock\.yaml does not match \.agents\/skills\/verify-interface\/package\.json: run `pnpm install --dir \.agents\/skills\/verify-interface --ignore-workspace --lockfile-only`\.\n {2}importer "\." "left-pad": package\.json asks for "\^1\.3\.0", the lockfile has none\.\n/,
-  );
-  assert.match(result.stdout, /Checks: 10 passed, 1 failed, 1 skipped\.\n$/);
-});
-
-for (const [manager, file, lock, passed] of [
-  ["pnpm", "pnpm-lock.yaml", pnpmLock({ ".": { dependencies: LEFT_PAD } }), 11],
-  ["npm", "package-lock.json", npmLock({ dependencies: LEFT_PAD }), 10],
-] as const)
-  test(`a matching ${manager} lockfile passes with every registry unreachable and leaves its folder untouched, caught by an implementation that runs ${manager} or rewrites the lockfile`, (t) => {
-    const root = layerRepo(t, CLEAN_SOURCE);
-    const folder = join(root, `${LAYER}/playground`);
-    put(
-      root,
-      `${LAYER}/playground/package.json`,
-      JSON.stringify({
-        ...NO_DEPENDENCIES,
-        packageManager: `${manager}@10.0.0`,
-        dependencies: LEFT_PAD,
-      }),
-    );
-    put(root, `${LAYER}/playground/${file}`, lock);
-    const before = folderStamp(folder, file);
-    const result = lockfiles(root, OFFLINE);
-    assert.equal(result.status, 0, result.stdout);
-    assert.equal(
-      result.stdout,
-      `Checks: ${passed} passed, 0 failed, 1 skipped.\n`,
-    );
-    assert.deepEqual(folderStamp(folder, file), before);
-    assert.equal(before.nodeModules, false);
-  });

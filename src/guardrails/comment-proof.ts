@@ -1,7 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { stampProof } from "./proof-stamp.ts";
 import { compareRevisions, revisionCounts } from "./revisions.ts";
 import {
   emitPackage,
@@ -86,11 +85,6 @@ export function commentProof(root: string, baseRef: string) {
     .join("");
   return {
     ...result,
-    output: stampProof(
-      root,
-      `antelopejs-comment-proof ${baseRef}`,
-      baseRef,
-      result.output + skips + revisionCounts(root, baseRef),
-    ),
+    output: result.output + skips + revisionCounts(root, baseRef),
   };
 }

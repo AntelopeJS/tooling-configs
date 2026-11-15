@@ -126,7 +126,6 @@ export class GardenContext {
   private readonly pulls = new Memo<PullRequest[]>();
   private readonly alertLists = new Memo<Alert[] | undefined>();
   private readonly packuments = new Memo<JsonValue | undefined>();
-  private readonly removals = new Memo<boolean>();
   private readonly searches = new Memo<Set<string>>();
   private readonly branchLists = new Memo<Branch[]>();
   private readonly closed = new Memo<PullRequest[]>();
@@ -405,35 +404,6 @@ export class GardenContext {
       if (error instanceof Error && isMissing(error)) return false;
       throw error;
     }
-  }
-
-  /** Whether a commit of the default branch history removed the file; looks at the 30 newest commits that touched it. */
-  removedInHistory(repo: GardenRepo, path: string): Promise<boolean> {
-    return this.removals.get(`${repo.name}:${path}`, async () => {
-      const commits = list(
-        await this.api.json(
-          `/repos/${ORG}/${repo.name}/commits?path=${path}&sha=${repo.defaultBranch}&per_page=30`,
-        ),
-        "commits",
-      );
-      for (const commit of commits) {
-        const detail = object(
-          await this.api.json(
-            `/repos/${ORG}/${repo.name}/commits/${str(object(commit, "commit"), "sha")}`,
-          ),
-          "commit",
-        );
-        if (
-          children(detail, "files").some(
-            (file) =>
-              str(file, "filename") === path &&
-              optStr(file, "status") === "removed",
-          )
-        )
-          return true;
-      }
-      return false;
-    });
   }
 
   packument(name: string): Promise<JsonValue | undefined> {

@@ -106,7 +106,7 @@ export const CACHE_DIR = join(
  * `operatorEnv()`, else the platform default, so a lease's own tmp never
  * holds a run.
  */
-export function operatorTmpdir(): string {
+function operatorTmpdir(): string {
   const { TMPDIR: tmp, TMP, TEMP } = operatorEnv();
   if (tmp) return tmp;
   if (process.platform === "win32") return tmpdir();

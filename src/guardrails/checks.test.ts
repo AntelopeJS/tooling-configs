@@ -6,15 +6,13 @@ import { bin, put, testRepo } from "./helpers/test-repo.ts";
 
 test("checks suppresses passing output, reports missing scripts, and continues after failures", (t) => {
   const root = testRepo(t);
-  put(root, "guardrails.ratchet.json", '{"rules":{},"oversizeFiles":{}}');
   const scripts = {
     typecheck: "node -e \"console.log('hidden success')\"",
     lint: "node -e \"console.error('lint broke');process.exit(2)\"",
     "format:check": "node -e \"console.log('hidden success')\"",
     knip: "node -e \"console.log('hidden success')\"",
     test: "node -e \"console.log('hidden success')\"",
-    ratchet: "node -e \"console.error('later failure');process.exit(1)\"",
-    "sync:check": "node -e \"console.log('hidden success')\"",
+    "sync:check": "node -e \"console.error('later failure');process.exit(1)\"",
   };
   put(
     root,
@@ -28,7 +26,7 @@ test("checks suppresses passing output, reports missing scripts, and continues a
   assert.match(result.stdout, /later failure/);
   assert.doesNotMatch(result.stdout, /hidden success/);
   assert.match(result.stdout, /Missing package.json script "suppressions"/);
-  assert.match(result.stdout, /Checks: 6 passed, 4 failed\./);
+  assert.match(result.stdout, /Checks: 5 passed, 4 failed\./);
   put(
     root,
     "package.json",
@@ -42,7 +40,6 @@ test("checks suppresses passing output, reports missing scripts, and continues a
           "knip",
           "test",
           "size",
-          "ratchet",
           "suppressions",
           "sync:check",
         ].map((name) => [name, "node -e \"console.log('hidden success')\""]),
@@ -51,29 +48,8 @@ test("checks suppresses passing output, reports missing scripts, and continues a
   );
   const passing = bin(root, "checks");
   assert.equal(passing.status, 0);
-  assert.equal(passing.stdout, "Checks: 10 passed, 0 failed.\n");
+  assert.equal(passing.stdout, "Checks: 9 passed, 0 failed.\n");
   assert.equal(passing.stderr, "");
-});
-
-test("checks skips ratchet by file absence even if a stale ratchet script fails", (t) => {
-  const root = testRepo(t);
-  const scripts = Object.fromEntries(
-    [
-      "typecheck",
-      "lint",
-      "format:check",
-      "knip",
-      "test",
-      "size",
-      "suppressions",
-      "sync:check",
-    ].map((name) => [name, 'node -e "process.exit(0)"']),
-  );
-  scripts.ratchet = 'node -e "process.exit(1)"';
-  put(root, "package.json", JSON.stringify({ packageManager: "npm", scripts }));
-  const result = bin(root, "checks");
-  assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 9 passed, 0 failed.\n");
 });
 
 const ALL_STEPS = [
@@ -83,14 +59,12 @@ const ALL_STEPS = [
   "knip",
   "test",
   "size",
-  "ratchet",
   "suppressions",
   "sync:check",
 ];
 
 function stepsRepo(t: Parameters<typeof testRepo>[0], failing: string[]) {
   const root = testRepo(t);
-  put(root, "guardrails.ratchet.json", '{"rules":{},"oversizeFiles":{}}');
   const scripts = Object.fromEntries(
     ALL_STEPS.map((name) => [
       name,
@@ -113,7 +87,7 @@ test("ANTELOPEJS_CHECKS_SKIP leaves the named steps unrun and reports them as sk
     ANTELOPEJS_CHECKS_SKIP: " test , size ",
   });
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 8 passed, 0 failed, 2 skipped.\n");
+  assert.equal(result.stdout, "Checks: 7 passed, 0 failed, 2 skipped.\n");
 });
 
 test("ANTELOPEJS_CHECKS_SKIP still runs the steps it does not name", (t) => {
@@ -122,7 +96,7 @@ test("ANTELOPEJS_CHECKS_SKIP still runs the steps it does not name", (t) => {
   assert.equal(result.status, 1);
   assert.match(result.stdout, /lint ran/);
   assert.doesNotMatch(result.stdout, /test ran/);
-  assert.match(result.stdout, /Checks: 8 passed, 1 failed, 1 skipped\./);
+  assert.match(result.stdout, /Checks: 7 passed, 1 failed, 1 skipped\./);
 });
 
 test("an unknown ANTELOPEJS_CHECKS_SKIP name fails and names the valid steps instead of skipping nothing", (t) => {
@@ -134,7 +108,7 @@ test("an unknown ANTELOPEJS_CHECKS_SKIP name fails and names the valid steps ins
   assert.match(result.stdout, /Unknown step "tset"/);
   assert.match(
     result.stdout,
-    /Valid steps: typecheck, lint, format:check, knip, test, size, ratchet, suppressions, sync:check, verify:types, verify:lockfiles, lockfile:singletons, dependency:ranges, git:identity, readme:version, published:types\./,
+    /Valid steps: typecheck, lint, format:check, knip, test, size, suppressions, sync:check, verify:types, lockfile:singletons, dependency:ranges, git:identity, readme:version, published:types\./,
   );
 });
 
@@ -148,7 +122,7 @@ test("a checks skip set in the test runner's own environment does not reach the 
   const root = stepsRepo(t, ["test"]);
   const result = bin(root, "checks");
   assert.equal(result.status, 1);
-  assert.match(result.stdout, /Checks: 9 passed, 1 failed\./);
+  assert.match(result.stdout, /Checks: 8 passed, 1 failed\./);
 });
 
 test("an unset, empty or blank ANTELOPEJS_CHECKS_SKIP runs every step", (t) => {
@@ -161,6 +135,6 @@ test("an unset, empty or blank ANTELOPEJS_CHECKS_SKIP runs every step", (t) => {
   for (const env of settings) {
     const result = bin(root, "checks", [], env);
     assert.equal(result.status, 1, JSON.stringify(env));
-    assert.match(result.stdout, /Checks: 9 passed, 1 failed\./);
+    assert.match(result.stdout, /Checks: 8 passed, 1 failed\./);
   }
 });

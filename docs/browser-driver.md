@@ -2,7 +2,7 @@
 
 The `verify-*` skills keep `playwright-core` as their browser driver. agent-browser is faster per command, but Playwright starts faster, uses less memory, and keeps several accounts in one browser.
 
-This page records the decision and the measurements behind it. It is an explanation, not a how-to. The reproduction steps are at the end.
+This page records the decision and the measurements behind it. It is an explanation, not a how-to.
 
 ## What was compared and why
 
@@ -115,28 +115,3 @@ The numbers come from an AMD Ryzen 7 5800X with 16 logical CPUs and 63 GiB of me
 The benchmark installs both packages with exact versions and `--ignore-scripts`, so nothing global changes. This repository keeps `playwright-core` as a dev dependency at `^1.56.1` and as an optional peer at `>=1.56.0`.
 
 Each scenario ran 7 measured rounds after 1 warm-up round, with all variants interleaved and the order rotated between rounds. Memory is sampled every 50 ms for RSS and every 100 ms for PSS, so a shorter peak can be missed. Every step checks its result, so a run that skipped work fails instead of looking fast.
-
-## Reproduce
-
-The benchmark is in `scripts/browser-bench/`. It needs Linux on x86-64 with a systemd user session, cgroup v2, `taskset` and `npm`. If Chrome lacks system libraries, it runs `apt-get download` and unpacks the packages locally. It never installs anything as root.
-
-From the repository root:
-
-```bash
-node scripts/browser-bench/run.mjs --verbose
-```
-
-The first run installs both packages and both browsers into the work directory, about 865 MiB, and later runs reuse them. The command prints failures only. `--verbose` adds one line per run, and `--print` prints the report. The exit code is 1 when a measured run fails.
-
-| Option             | Meaning                                                                                     |
-| ------------------ | ------------------------------------------------------------------------------------------- |
-| `--work-dir <dir>` | Where everything is installed and written. Defaults to `browser-bench` under `$TMPDIR`.     |
-| `--cpus <list>`    | The cores to pin to, for example `8-15`. Defaults to every core the process may use.        |
-| `--rounds <n>`     | Measured rounds after the warm-up round. Defaults to 7.                                     |
-| `--only <list>`    | Scenarios to run, from `cold`, `session`, `session-warm`, `accounts`, `idle` and `latency`. |
-| `--out <name>`     | Base name of the result files. Defaults to `browser-results`.                               |
-| `--no-sample`      | Skips the memory sampler.                                                                   |
-
-The run writes `<work-dir>/browser-results.json` with every run and `<work-dir>/browser-results.md` with the tables. Neither is part of the repository. A run of `--rounds 1 --only cold,latency,idle` took 67 seconds on the machine above.
-
-To compare with this page, pin to idle cores. The ratios between variants are stable. Absolute times are not.

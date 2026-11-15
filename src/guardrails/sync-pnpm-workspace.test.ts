@@ -17,11 +17,6 @@ function pinnedRepo(t: TestContext, packageManager: string): string {
     "package.json",
     `${JSON.stringify({ ...manifest, packageManager }, null, 2)}\n`,
   );
-  put(
-    root,
-    "guardrails.ratchet.json",
-    '{"rules":{"eslint/no-alert":1},"oversizeFiles":{}}\n',
-  );
   return root;
 }
 

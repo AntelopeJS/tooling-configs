@@ -3,14 +3,14 @@ import { execFileSync } from "node:child_process";
 import { renamedPaths } from "./renames.ts";
 
 /** One `--unified=0` hunk of a staged file: the lines it removes, and the staged lines it adds from `start`. */
-export interface StagedHunk {
+interface StagedHunk {
   removed: number;
   start: number;
   count: number;
 }
 
 /** A staged file's path at the compared revision and its hunks against it. */
-export interface StagedChanges {
+interface StagedChanges {
   previous: string;
   hunks: StagedHunk[];
 }
@@ -19,7 +19,7 @@ export interface StagedChanges {
  * Each staged file's path and hunks against `revision`, HEAD when omitted,
  * following renames.
  */
-export function stagedChanges(
+function stagedChanges(
   root: string,
   targets: string[],
   revision?: string,
@@ -74,18 +74,4 @@ export function stagedAdditions(
       hunks.map(({ start, count }) => ({ start, end: start + count - 1 })),
     ]),
   );
-}
-
-/** The line of the compared revision a staged line is unchanged from, or `undefined` when the staged change adds it. */
-export function previousLine(
-  hunks: StagedHunk[],
-  line: number,
-): number | undefined {
-  let shift = 0;
-  for (const { removed, start, count } of hunks) {
-    if (count > 0 && line >= start && line < start + count) return undefined;
-    if (count > 0 ? start + count <= line : start < line)
-      shift += removed - count;
-  }
-  return line + shift;
 }

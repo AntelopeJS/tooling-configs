@@ -182,11 +182,6 @@ test("the sync caller still needing the removed checks fails with a message that
 
 test("sync --check reports a repo still carrying the redundant checks job, and sync then removes it and --check passes", (t) => {
   const root = testRepo(t, false);
-  put(
-    root,
-    "guardrails.ratchet.json",
-    '{"rules":{"eslint/no-alert":1},"oversizeFiles":{}}\n',
-  );
   assert.equal(bin(root, "sync").status, 0);
   put(root, ".github/workflows/ci.yml", REDIS_CALLER);
   commit(root);

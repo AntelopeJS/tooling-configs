@@ -57,7 +57,7 @@ test("a tsconfig without compilerOptions.types, where tsc loads @types/node and 
     include: ["src"],
   });
   t.after(project.remove);
-  const diagnostics: Diagnostic[] = project.run(true).diagnostics;
+  const diagnostics: Diagnostic[] = project.run().diagnostics;
   assert.deepEqual(findings(diagnostics), [
     "src/index.ts:1 antelopejs(require-tsconfig-types)",
     "src/index.ts:2 typescript(no-unsafe-return)",
@@ -77,7 +77,7 @@ test("a tsconfig without compilerOptions.types in a package on TypeScript 7, who
     "7.0.2",
   );
   t.after(project.remove);
-  assert.deepEqual(findings(project.run(true).diagnostics), [
+  assert.deepEqual(findings(project.run().diagnostics), [
     "src/index.ts:2 typescript(no-unsafe-return)",
   ]);
 });
@@ -94,7 +94,7 @@ test("compilerOptions.types inherited through extends clears the report and type
       compilerOptions: { ...OPTIONS, typeRoots: [typeRoot], types: ["node"] },
     }),
   );
-  assert.deepEqual(findings(project.run(true).diagnostics), []);
+  assert.deepEqual(findings(project.run().diagnostics), []);
 });
 
 test("a tsconfig without compilerOptions.types is not reported when tsc would load no @types package either", (t) => {
@@ -105,5 +105,5 @@ test("a tsconfig without compilerOptions.types is not reported when tsc would lo
   t.after(project.remove);
   project.write("no-types/README.md", "");
   project.write("src/index.ts", "export const one: number = 1;\n");
-  assert.deepEqual(findings(project.run(true).diagnostics), []);
+  assert.deepEqual(findings(project.run().diagnostics), []);
 });

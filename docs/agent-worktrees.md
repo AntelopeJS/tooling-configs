@@ -70,7 +70,7 @@ Run each command from inside your worktree. Each step is one shell command, and 
 
    A process that listens on the api or web port without this lease's `ANTELOPEJS_LEASE` is not this lease's, even on its port: another user's lease, another registry that handed out the same port, or an unrelated server. `down --stop` leaves it running and fails, naming its pid. A process that cleared or rewrote its environment, as `env -i` or a supervisor with a fixed environment does, no longer holds the marker, and `down --stop` cannot find it. Stop it with its own stop command.
 
-   `antelopejs-verify` runs its setup commands, journeys, formal checks and their behaviour probes without the lease's variables, `ANTELOPEJS_LEASE` included, so `down --stop` does not reach them.
+   `antelopejs-verify` runs its setup commands, journeys and formal checks without the lease's variables, `ANTELOPEJS_LEASE` included, so `down --stop` does not reach them.
 
    `down --stop` runs on Linux and Windows. On macOS, `ps` shows the environment of a process only appended to its command line, with no boundary between the two, so `down --stop` refuses there. Stop your servers with their own stop command, as in step 5, then run `down`.
 

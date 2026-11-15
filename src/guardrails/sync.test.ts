@@ -1,17 +1,15 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, rmSync, statSync, symlinkSync } from "node:fs";
+import { chmodSync, existsSync, statSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
-import { recordedRelease } from "./adoption.ts";
 import {
   agentsBlock,
   AGENTS_BLOCK_END,
   AGENTS_BLOCK_START,
 } from "./agents-block.ts";
 import { ANTELOPE_STYLE } from "../oxc/fmt.ts";
-import { formatCeilings, readCeilings } from "./ceilings.ts";
 import { parseManifest, PREPARE_INSTALL, toolingVersions } from "./package.ts";
 import { isExecutable } from "./exec-bit.ts";
 import { MANAGED_ARTIFACTS, syncRepository } from "./sync.ts";
@@ -25,7 +23,7 @@ import {
   testRepo,
 } from "./helpers/test-repo.ts";
 
-test("full sync measures once, preserves handwritten text even behind a CLAUDE symlink, and does not rewrite on a second run", (t) => {
+test("full sync preserves handwritten text even behind a CLAUDE symlink, and does not rewrite on a second run", (t) => {
   const root = testRepo(t);
   linkOxlint(root);
   put(
@@ -33,7 +31,6 @@ test("full sync measures once, preserves handwritten text even behind a CLAUDE s
     "oxlint.config.ts",
     'import type {} from "@antelopejs/tooling-configs/oxc/lint";\nexport default { categories: { correctness: "off" }, rules: { "typescript/no-explicit-any": "error" } };\n',
   );
-  put(root, "sample.ts", "export let value: any;\n");
   put(
     root,
     "AGENTS.md",
@@ -64,13 +61,9 @@ test("full sync measures once, preserves handwritten text even behind a CLAUDE s
   const first = bin(root, "sync");
   assert.equal(first.status, 0, first.stderr);
   assert.match(first.stdout, /Run install/);
-  assert.deepEqual(readCeilings(root).rules, {
-    "typescript/no-explicit-any": 1,
-  });
-  assert.equal(readCeilings(root).pack, recordedRelease(undefined));
   assert.equal(
     read(root, "AGENTS.md"),
-    `Handwritten introduction.\n\n${agentsBlock({ profile: "full", ratchet: true, verificationSkill: ".agents/skills/verify-runtime/SKILL.md", glossary: "docs/GLOSSARY.md" }).trimEnd()}\n\nHandwritten footer.\n`,
+    `Handwritten introduction.\n\n${agentsBlock({ profile: "full", verificationSkill: ".agents/skills/verify-runtime/SKILL.md", glossary: "docs/GLOSSARY.md" }).trimEnd()}\n\nHandwritten footer.\n`,
   );
   assert.equal(read(root, "CLAUDE.md"), "@AGENTS.md\n");
   const packageText = read(root, "package.json");
@@ -90,8 +83,10 @@ test("full sync measures once, preserves handwritten text even behind a CLAUDE s
     read(root, "lefthook.yml"),
     /npm exec -- oxfmt --no-error-on-unmatched-pattern \{staged_files\}/,
   );
-  assert.match(read(root, "lefthook.yml"), /antelopejs-ratchet --staged\n/);
-  assert.doesNotMatch(read(root, "lefthook.yml"), /pre-push|antelopejs-size/);
+  assert.doesNotMatch(
+    read(root, "lefthook.yml"),
+    /pre-push|antelopejs-size|antelopejs-ratchet/,
+  );
   const mtimes = MANAGED_ARTIFACTS.map(
     ({ path }) => statSync(join(root, path)).mtimeMs,
   );
@@ -191,20 +186,14 @@ function clearExecutable(root: string, file: string): void {
     });
 }
 
-test("sync check reports every drift without writing or measuring counts, including setup permissions", (t) => {
+test("sync check reports every drift without writing, including setup permissions", (t) => {
   const root = testRepo(t);
-  put(
-    root,
-    "guardrails.ratchet.json",
-    formatCeilings({ rules: { "eslint/max-params": 123 }, oversizeFiles: {} }),
-  );
   put(root, ".agents/skills/verify-runtime/SKILL.md", "Verification skill.\n");
   const before = read(root, "package.json");
   const initial = bin(root, "sync", ["--check"]);
   assert.equal(initial.status, 1);
   for (const path of MANAGED_ARTIFACTS.filter(
-    ({ path }) =>
-      path !== "guardrails.ratchet.json" && path !== ".github/workflows/ci.yml",
+    ({ path }) => path !== ".github/workflows/ci.yml",
   ).map(({ path }) => path))
     assert.ok(
       initial.stdout.includes(`Drift: ${path}; run antelopejs-sync`),
@@ -297,31 +286,13 @@ test("template profile manages presets, .gitattributes, AGENTS, the suppression 
     read(root, "oxlint.config.ts"),
     /options: \{ typeAware: true \}/,
   );
-  for (const path of [
-    "CLAUDE.md",
-    "lefthook.yml",
-    ".nvmrc",
-    ".agents/setup",
-    "guardrails.ratchet.json",
-  ])
+  for (const path of ["CLAUDE.md", "lefthook.yml", ".nvmrc", ".agents/setup"])
     assert.equal(existsSync(join(root, path)), false, path);
   assert.equal(
     bin(root, "sync", ["--check", "--profile", "template"]).status,
     0,
   );
   assert.equal(bin(root, "sync", ["--profile", "invalid"]).status, 1);
-});
-
-test("initial full sync fails before writing when oxlint is absent rather than recording an empty baseline", (t) => {
-  const root = testRepo(t);
-  const result = bin(root, "sync");
-  assert.equal(result.status, 1);
-  assert.match(
-    result.stderr,
-    /oxlint is not installed.*Install dependencies first/,
-  );
-  assert.equal(existsSync(join(root, "guardrails.ratchet.json")), false);
-  assert.equal(existsSync(join(root, "oxlint.config.ts")), false);
 });
 
 test("sync keeps an oxfmt-formatted repository formatted, so formatting never reports sync drift", (t) => {
@@ -343,11 +314,6 @@ test("sync keeps an oxfmt-formatted repository formatted, so formatting never re
     )}\n`,
   );
   put(root, "AGENTS.md", "# Fixture\n\nHandwritten guidance.\n");
-  put(
-    root,
-    "guardrails.ratchet.json",
-    formatCeilings({ rules: {}, oversizeFiles: {} }),
-  );
   const sync = bin(root, "sync");
   assert.equal(sync.status, 0, sync.stderr);
   put(root, "house-style.json", JSON.stringify(ANTELOPE_STYLE));
@@ -367,43 +333,7 @@ test("sync keeps an oxfmt-formatted repository formatted, so formatting never re
   assert.equal(oxfmt.status, 0, oxfmt.stdout + oxfmt.stderr);
 });
 
-test("sync leaves retired files for ratchet:update, then removes ratchet wiring without measuring new debt", (t) => {
-  const root = testRepo(t);
-  put(
-    root,
-    "guardrails.ratchet.json",
-    formatCeilings({ rules: { "eslint/no-alert": 0 }, oversizeFiles: {} }),
-  );
-  const first = bin(root, "sync");
-  assert.equal(first.status, 0, first.stderr);
-  assert.match(first.stdout, /Note:.*ratchet:update/);
-  assert.equal(existsSync(join(root, "guardrails.ratchet.json")), true);
-  const check = bin(root, "sync", ["--check"]);
-  assert.equal(check.status, 1);
-  assert.match(check.stderr, /ratchet:update/);
-  rmSync(join(root, "guardrails.ratchet.json"));
-  const adopted = parseManifest(read(root, "package.json"));
-  assert.ok(adopted.scripts);
-  adopted.scripts["sync:check"] = "";
-  put(root, "package.json", JSON.stringify(adopted));
-  put(root, "new-debt.ts", "export let debt: any;\n");
-  const retired = bin(root, "sync");
-  assert.equal(retired.status, 0, retired.stderr);
-  assert.equal(existsSync(join(root, "guardrails.ratchet.json")), false);
-  assert.doesNotMatch(
-    read(root, "AGENTS.md"),
-    /### Debt|ratchet|Existing debt only shrinks/,
-  );
-  assert.doesNotMatch(read(root, "lefthook.yml"), /antelopejs-ratchet/);
-  const manifest = parseManifest(read(root, "package.json"));
-  assert.equal(manifest.scripts?.ratchet, undefined);
-  assert.equal(manifest.scripts?.["ratchet:update"], undefined);
-  assert.equal(bin(root, "sync", ["--check"]).status, 0);
-  assert.equal(bin(root, "sync").status, 0);
-  assert.equal(existsSync(join(root, "guardrails.ratchet.json")), false);
-});
-
-test("first adoption without debt writes no ratchet file, scripts or hook, but keeps a suppression budget at today's counts", (t) => {
+test("first adoption writes no ratchet script or hook, and keeps a suppression budget at today's counts", (t) => {
   const root = testRepo(t);
   linkOxlint(root);
   put(
@@ -413,7 +343,6 @@ test("first adoption without debt writes no ratchet file, scripts or hook, but k
   );
   const result = bin(root, "sync");
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(existsSync(join(root, "guardrails.ratchet.json")), false);
   assert.equal(
     parseManifest(read(root, "package.json")).scripts?.ratchet,
     undefined,
@@ -427,6 +356,38 @@ test("first adoption without debt writes no ratchet file, scripts or hook, but k
     config: { "category:correctness for *": 1 },
     agentFiles: true,
   });
+  assert.equal(bin(root, "sync", ["--check"]).status, 0);
+});
+
+test("sync removes the ratchet scripts and pre-commit hook a repository still carries, and keeps its other hooks", (t) => {
+  const root = testRepo(t);
+  linkOxlint(root);
+  put(
+    root,
+    "package.json",
+    JSON.stringify({
+      name: "fixture",
+      type: "module",
+      packageManager: "npm@11.0.0",
+      scripts: {
+        test: "node --test",
+        ratchet: "antelopejs-ratchet",
+        "ratchet:update": "antelopejs-ratchet --update",
+      },
+    }),
+  );
+  put(
+    root,
+    "lefthook.yml",
+    "pre-commit:\n  commands:\n    custom:\n      run: echo custom\n    antelopejs-ratchet:\n      run: antelopejs-ratchet --staged\n",
+  );
+  const result = bin(root, "sync");
+  assert.equal(result.status, 0, result.stderr);
+  const { scripts } = parseManifest(read(root, "package.json"));
+  assert.equal(scripts?.ratchet, undefined);
+  assert.equal(scripts?.["ratchet:update"], undefined);
+  assert.doesNotMatch(read(root, "lefthook.yml"), /antelopejs-ratchet/);
+  assert.match(read(root, "lefthook.yml"), /run: echo custom/);
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
 });
 
@@ -447,7 +408,6 @@ test("sync replaces the previous oxlint.config.ts template, whose preset ignores
 
 test("sync names each step of the replaced checks script that antelopejs-checks does not run (cloud-sdk)", (t) => {
   const root = testRepo(t);
-  put(root, "guardrails.ratchet.json", '{"rules":{},"oversizeFiles":{}}\n');
   put(
     root,
     "package.json",

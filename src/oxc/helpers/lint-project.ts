@@ -62,16 +62,9 @@ export default { extends: [preset]${typeAware ? ", options: { typeAware: true }"
     root,
     write,
     remove: () => rmSync(root, { recursive: true, force: true }),
-    run(
-      measure: boolean | string = false,
-      directory = root,
-      extraEnv: Record<string, string> = {},
-    ) {
+    run(directory = root, extraEnv: Record<string, string> = {}) {
       const env = { ...process.env, ...extraEnv };
-      delete env.ANTELOPEJS_RATCHET_MEASURE;
       env.OXLINT_TSGOLINT_PATH = TSGOLINT;
-      if (measure !== false)
-        env.ANTELOPEJS_RATCHET_MEASURE = measure === true ? "1" : measure;
       const result = spawnSync(process.execPath, [oxlint, "-f", "json"], {
         cwd: directory,
         env,

@@ -24,7 +24,6 @@ import { autoImportDiff } from "./auto-imports.ts";
 import { bundleDeclarations } from "./declaration-bundle.ts";
 import { collateDeclarations, labelHunks } from "./declaration-groups.ts";
 import { normalizeBundle } from "./declaration-order.ts";
-import { stampProof } from "./proof-stamp.ts";
 import {
   compareRevisions,
   DIRECTORY_LINK,
@@ -477,23 +476,18 @@ function declarationDiff(
   };
 }
 
-/** Compares declarations, built runtime exports and the auto-import surface of DMS frontend modules, with an optional behavioral probe captured before either build. Added entries whose subpath matches an `allowAdded` glob pass when their module is `@internal`. */
+/** Compares declarations, built runtime exports and the auto-import surface of DMS frontend modules. Added entries whose subpath matches an `allowAdded` glob pass when their module is `@internal`. */
 export function apiDiff(
   root: string,
   baseRef: string,
-  probeFile?: string,
   allowAdded: readonly string[] = [],
 ) {
   const policy = allowAdded.length ? createAddedPolicy(allowAdded) : undefined;
-  const probe =
-    probeFile === undefined
-      ? undefined
-      : readFileSync(resolve(root, probeFile));
   const results: { different: boolean; output: string }[] = [];
   const errors: string[] = [];
   for (const compare of [
     () => declarationDiff(root, baseRef, policy),
-    () => runtimeDiff(root, baseRef, probe, policy),
+    () => runtimeDiff(root, baseRef, policy),
     () => autoImportDiff(root, baseRef),
   ]) {
     try {
@@ -505,27 +499,15 @@ export function apiDiff(
       );
     }
   }
-  const command = [
-    `antelopejs-api-diff ${baseRef}`,
-    ...(probeFile === undefined ? [] : [`--probe ${probeFile}`]),
-    ...allowAdded.map((glob) => `--allow-added '${glob}'`),
-  ].join(" ");
   return {
     different:
       errors.length > 0 ||
       results.some((result) => result.different) ||
       (policy?.problems.size ?? 0) > 0,
-    output: stampProof(
-      root,
-      command,
-      baseRef,
+    output:
       results.map((result) => result.output).join("") +
-        (policy === undefined ? "" : describeAllowance(policy)) +
-        errors.join("") +
-        (probe === undefined
-          ? "No behavioural probe ran.\n"
-          : "Behavioural probe supplied.\n") +
-        revisionCounts(root, baseRef),
-    ),
+      (policy === undefined ? "" : describeAllowance(policy)) +
+      errors.join("") +
+      revisionCounts(root, baseRef),
   };
 }

@@ -202,28 +202,6 @@ async function checksStatus(
       ];
 }
 
-const GUARDRAILS_RATCHET = "guardrails.ratchet.json";
-
-async function cleanRatchet(
-  context: GardenContext,
-  repo: GardenRepo,
-): Promise<Finding[]> {
-  const tree = await context.tree(repo);
-  if (
-    !tree.includes(GUARDRAILS_RATCHET) ||
-    !(await context.removedInHistory(repo, GUARDRAILS_RATCHET))
-  )
-    return [];
-  return [
-    problem(
-      repo,
-      "ratchet",
-      `${GUARDRAILS_RATCHET} is back after the history deleted it.`,
-      `${GUARDRAILS_RATCHET} is deleted again.`,
-    ),
-  ];
-}
-
 const BRANCH_CLEANUP = "delete-branch-on-merge";
 
 async function branchCleanup(
@@ -281,7 +259,6 @@ async function scan(
     ...(await renovateConfig(context, repo)),
     ...(await toolingVersion(context, repo)),
     ...(await checksStatus(context, repo)),
-    ...(await cleanRatchet(context, repo)),
   ];
 }
 

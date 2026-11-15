@@ -4,16 +4,10 @@ import { chmodSync, existsSync, rmSync, statSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
-import { formatCeilings } from "./ceilings.ts";
-import { bin, put, testRepo } from "./helpers/test-repo.ts";
+import { bin, testRepo } from "./helpers/test-repo.ts";
 
 function syncedRepo(t: Parameters<typeof testRepo>[0]): string {
   const root = testRepo(t);
-  put(
-    root,
-    "guardrails.ratchet.json",
-    formatCeilings({ rules: { "eslint/max-params": 123 }, oversizeFiles: {} }),
-  );
   return root;
 }
 

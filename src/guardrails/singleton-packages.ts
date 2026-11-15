@@ -10,7 +10,7 @@ import {
   keys,
   mapping,
   scalar,
-} from "./verify-lockfiles.ts";
+} from "./lockfile-reading.ts";
 
 const PNPM_LOCK = "pnpm-lock.yaml";
 

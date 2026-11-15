@@ -42,10 +42,6 @@ const SIZE_EXCLUSIONS = [
   },
 ];
 
-/** A lint configuration file, which a measurement at an earlier revision keeps at its current content. */
-export const LINT_CONFIG =
-  /(?:^|\/)(?:oxlint\.config\.[cm]?[jt]s|\.oxlintrc\.jsonc?)$/u;
-
 export function trackedManifests(root: string): string[] {
   return execFileSync("git", ["ls-files", "-z"], {
     cwd: root,

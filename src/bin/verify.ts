@@ -7,7 +7,7 @@ import { runCliAsync } from "../guardrails/cli.ts";
 import { repositoryRoot } from "../guardrails/files.ts";
 import { doorLine, flaggedDoors, patchFiles } from "../verify/doors.ts";
 import {
-  formalGate,
+  formalOutcome,
   runFormalCheck,
   touchedFormalChecks,
 } from "../verify/formal.ts";
@@ -50,7 +50,7 @@ const USAGE = `Usage: antelopejs-verify <command>
                                      run the named features, each whole, in that order;
                                      --jobs runs up to n features at once, each in its own process,
                                      at most half the cores, never with services
-  formal <run> [--all]               run the formal checks that cover the diff and gate them on changed behaviour
+  formal <run> [--all]               run the formal checks that cover the diff and print HOLDS, VIOLATED or ERROR for each
   doors [patch] [--base <ref>]       print the One-way-door line for a patch, or for the diff
   clean <run>                        stop what the run started, keep only the evidence
   verdict <run> --pr <n> [--judgement <file>]
@@ -244,23 +244,13 @@ function runFormal(workspace: Workspace, dir: string, all: boolean): number {
   const checks = all ? (workspace.config.formal ?? []) : touched;
   let fails = false;
   for (const check of checks) {
-    const gates = touched.includes(check);
-    const result = runFormalCheck(
-      workspace,
-      state,
-      check,
-      gates
-        ? {
-            baseSha: plan.baseSha,
-            headSha: plan.headSha,
-            changed: plan.changed,
-          }
-        : null,
+    const { status, outcome } = formalOutcome(
+      runFormalCheck(workspace, state, check),
     );
-    const weight = formalGate(result);
-    fails ||= gates && weight.fails;
+    const gates = touched.includes(check);
+    fails ||= gates && status !== "HOLDS";
     print(
-      `${gates ? (weight.fails ? "FAIL" : "PASS") : "INFO"} ${check.name}: ${weight.outcome}`,
+      `${status} ${check.name}: ${outcome}${gates ? "" : ", informational: does not cover the diff"}`,
     );
   }
   if (checks.length === 0) print("no formal check covers the diff");

@@ -14,11 +14,6 @@ const HOOK_MARKER = "lefthook-installed-here";
 
 function syncedRepo(t: Parameters<typeof testRepo>[0]): string {
   const root = testRepo(t);
-  put(
-    root,
-    "guardrails.ratchet.json",
-    '{"rules":{"eslint/no-alert":1},"oversizeFiles":{}}\n',
-  );
   const result = bin(root, "sync");
   assert.equal(result.status, 0, result.stderr);
   commit(root);
