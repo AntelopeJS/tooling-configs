@@ -72,6 +72,7 @@
   "src/guardrails/checks.test.ts": 11.1,
   "src/guardrails/ci-workflow-aggregator.test.ts": 3.3,
   "src/guardrails/ci-workflow-needs.test.ts": 9.7,
+  "src/guardrails/ci-workflow-triggers.test.ts": 3.3,
   "src/guardrails/ci-workflow.test.ts": 7.6,
   "src/guardrails/comment-proof-links.test.ts": 5.7,
   "src/guardrails/comment-proof.test.ts": 46.3,
