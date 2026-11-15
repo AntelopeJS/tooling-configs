@@ -5,7 +5,6 @@ import {
   ApiError,
   type GardenApi,
   type RegistryFile,
-  type SecretSurface,
   type WriteMethod,
 } from "../api.ts";
 import { GardenContext } from "../context.ts";
@@ -42,7 +41,6 @@ function withoutQuery(path: string): string {
 export class FakeApi implements GardenApi {
   readonly writes: WriteCall[] = [];
   readonly requests: string[] = [];
-  secretSurface: SecretSurface = { variables: [], files: [] };
   registryDrift = false;
   private readonly routes = new Map<string, JsonValue | ApiError>();
   private readonly texts = new Map<string, string>();
@@ -233,10 +231,6 @@ export class FakeApi implements GardenApi {
 
   async registryDiffers(_files: RegistryFile[]): Promise<boolean> {
     return this.registryDrift;
-  }
-
-  secrets(): SecretSurface {
-    return this.secretSurface;
   }
 
   now(): Date {

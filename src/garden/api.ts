@@ -1,13 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import {
@@ -35,12 +28,6 @@ export class ApiError extends Error {
   }
 }
 
-/** What a scanning process can read besides the GitHub token: variable names and credential files. */
-export interface SecretSurface {
-  variables: string[];
-  files: string[];
-}
-
 export interface RegistryFile {
   path: string;
   content: string;
@@ -58,25 +45,11 @@ export interface GardenApi {
   npm(name: string): Promise<JsonValue | undefined>;
   contentLength(url: string): Promise<number | undefined>;
   registryDiffers(files: RegistryFile[]): Promise<boolean>;
-  secrets(): SecretSurface;
   now(): Date;
 }
 
 const GITHUB = "https://api.github.com";
 const NPM = "https://registry.npmjs.org";
-const CREDENTIAL_NAME =
-  /TOKEN|SECRET|PASSW|CREDENTIAL|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY/i;
-const MINTED_TOKENS = new Set(["GH_TOKEN", "GITHUB_TOKEN"]);
-const CREDENTIAL_FILES = [
-  ".aws/credentials",
-  ".netrc",
-  ".pypirc",
-  ".config/gcloud/application_default_credentials.json",
-  ".kube/config",
-  ".ssh/id_rsa",
-  ".ssh/id_ed25519",
-  ".ssh/id_ecdsa",
-];
 const MAX_ATTEMPTS = 4;
 
 export function ghToken(): string {
@@ -95,28 +68,6 @@ function withPaging(path: string): string {
   return path.includes("per_page=")
     ? path
     : `${path}${path.includes("?") ? "&" : "?"}per_page=100`;
-}
-
-function npmrcCarriesToken(home: string): boolean {
-  const path = join(home, ".npmrc");
-  return (
-    existsSync(path) && /_auth(?:Token)?\s*=/.test(readFileSync(path, "utf8"))
-  );
-}
-
-/** Reads variable names only, never values. */
-export function readSecretSurface(
-  names: string[],
-  home: string,
-): SecretSurface {
-  const files = CREDENTIAL_FILES.filter((file) => existsSync(join(home, file)));
-  if (npmrcCarriesToken(home)) files.push(".npmrc");
-  return {
-    variables: names
-      .filter((name) => CREDENTIAL_NAME.test(name) && !MINTED_TOKENS.has(name))
-      .sort(),
-    files: files.sort(),
-  };
 }
 
 /** Runs the released `antelopejs-registry --check` against committed manifests copied to a temporary directory. */
@@ -313,9 +264,6 @@ export function createApi(token: string): GardenApi {
     },
     async registryDiffers(files) {
       return registryCheck(files);
-    },
-    secrets() {
-      return readSecretSurface(Object.keys(process.env), homedir());
     },
     now() {
       return new Date();
