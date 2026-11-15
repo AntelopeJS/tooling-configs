@@ -132,11 +132,6 @@ test("a caller whose only input asked for Windows loses its with block rather th
 
 test("sync --check passes a repository with no next branch and fails a caller that still pushes on main", (t) => {
   const root = testRepo(t, false);
-  put(
-    root,
-    "guardrails.ratchet.json",
-    '{"rules":{"eslint/no-alert":1},"oversizeFiles":{}}\n',
-  );
   assert.equal(bin(root, "sync").status, 0);
   commit(root);
   const branches = bin(root, "sync", ["--check"]);
