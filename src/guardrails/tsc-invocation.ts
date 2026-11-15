@@ -1,9 +1,12 @@
 import { posix } from "node:path";
 
+import type { TscCommand } from "./script-steps.ts";
+
 export const ROOT_PROGRAM = "tsconfig.json";
 
 /** What one `tsc` command line checks. */
 export interface TscRun {
+  command: TscCommand;
   /** The tsconfig files it names: `-p`, or the positional projects of `-b`, `tsconfig.json` when none. */
   programs: string[];
   /** `-b`: the projects named and the ones they reference are built. */
@@ -25,7 +28,10 @@ function optionName(word: string): string | undefined {
     : undefined;
 }
 
-export function tscRun(args: readonly string[]): TscRun {
+/** Options TypeScript 7 adds that take their value as the next word, which `-b` would otherwise read as a project. */
+const VALUED = new Set(["builders", "checkers", "pprofdir"]);
+
+export function tscRun(command: TscCommand, args: readonly string[]): TscRun {
   const build = ["b", "build"].includes(optionName(args[0] ?? "") ?? "");
   const positional: string[] = [];
   let project: string | undefined;
@@ -33,12 +39,14 @@ export function tscRun(args: readonly string[]): TscRun {
   for (let index = build ? 1 : 0; index < args.length; index++) {
     const option = optionName(args[index]);
     if (option === "p" || option === "project") project = args[++index];
+    else if (option !== undefined && VALUED.has(option)) index++;
     else if (option === "skiplibcheck")
       skipsLibCheck = args[index + 1] !== "false";
     else if (option === undefined) positional.push(args[index]);
   }
   const named = build ? positional : project === undefined ? [] : [project];
   return {
+    command,
     programs: (named.length === 0 ? ["."] : named).map(normalizeProgram),
     build,
     skipsLibCheck,

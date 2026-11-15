@@ -324,7 +324,7 @@ Known blind spots, none of them read: `|| true` or a background `&` after a `typ
 
 ### TypeScript 7 for build and typecheck
 
-A repository keeps TypeScript 6 as its `typescript` package and can build and type-check with TypeScript 7, the native compiler. The pack carries TypeScript 7 as its own dependency, `typescript7` (`npm:typescript@~7.0.2`), and runs it as `antelopejs-tsc`, which passes its arguments to TypeScript 7's `tsc` unchanged. Installing the pack leaves the repository's `tsc` on TypeScript 6 under npm, pnpm, yarn and bun: no bin of the pack is named `tsc`, and npm, which links the first package in name order that ships a `tsc`, finds `typescript` before `typescript7`.
+A repository keeps TypeScript 6 as its `typescript` package and can build and type-check with TypeScript 7, the native compiler. The pack carries TypeScript 7 as its own dependency, `typescript7` (`npm:typescript@~7.0.2`), and runs it as `antelopejs-tsc`, which passes its arguments to TypeScript 7's `tsc` unchanged. Installing the pack leaves the repository's `tsc` on TypeScript 6 under npm, pnpm, yarn and bun. No bin of the pack is named `tsc`, and npm, which can link the `tsc` of the first package in name order that ships one, reaches a TypeScript 6 package before `typescript7`: `@typescript/old`, which the pack's `@typescript/typescript6` depends on, or the repository's `typescript`.
 
 To opt in, call `antelopejs-tsc` in place of `tsc` in `build` and `typecheck`, with the same arguments. To back out, call `tsc` again.
 

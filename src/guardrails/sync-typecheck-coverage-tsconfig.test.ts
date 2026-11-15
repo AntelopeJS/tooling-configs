@@ -199,7 +199,11 @@ test("a repository whose build and typecheck run antelopejs-tsc keeps every lib 
   });
   assert.match(
     uncovered.join("\n"),
-    /script "build" passes --skipLibCheck to tsc for tsconfig\.build\.json/,
+    /script "build" passes --skipLibCheck to antelopejs-tsc for tsconfig\.build\.json/,
+  );
+  assert.match(
+    uncovered.join("\n"),
+    /Make "typecheck" run `antelopejs-tsc --noEmit -p tsconfig\.build\.json`/,
   );
   const skipping = findingsFor(
     t,
@@ -219,6 +223,21 @@ test("a repository whose build and typecheck run antelopejs-tsc keeps every lib 
       build: "antelopejs-tsc --skipLibCheck",
       release: "pnpm run typecheck && pnpm run build && release-it",
     }),
+    [],
+  );
+});
+
+test("antelopejs-tsc -b reads the values of TypeScript 7's --builders, --checkers and --pprofDir as values, not projects; a check that takes each word after -b for a project reports 2/tsconfig.json as unchecked", (t) => {
+  assert.deepEqual(
+    findingsFor(
+      t,
+      {
+        build:
+          "antelopejs-tsc -b --builders 2 --checkers 4 --pprofDir prof tsconfig.build.json --skipLibCheck",
+        typecheck: "antelopejs-tsc -b tsconfig.build.json",
+      },
+      { "tsconfig.json": "{}", "tsconfig.build.json": "{}" },
+    ),
     [],
   );
 });
