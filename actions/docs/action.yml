@@ -1,5 +1,5 @@
 name: Check documentation
-description: Check local Markdown links, explicit compatibility and API contracts, @antelopejs version claims outside the generated compatibility block, typecheck every TypeScript fence, and run the Docs standard when the repository opts in with antelopeJs.docs.standard in package.json
+description: Check local Markdown links, explicit compatibility and API contracts, the generated compatibility block, typecheck every TypeScript fence, and run the Docs standard when the repository opts in with antelopeJs.docs.standard in package.json
 inputs:
   files:
     description: Newline-separated Markdown files or directories, relative to the consumer checkout (no globs)
