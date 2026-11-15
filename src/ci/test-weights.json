@@ -35,6 +35,7 @@
   "src/guardrails/adoption.test.ts": 0.2,
   "src/guardrails/agent-files-budget.test.ts": 9.2,
   "src/guardrails/agent-files-size.test.ts": 4.2,
+  "src/guardrails/agents-block.test.ts": 0.1,
   "src/guardrails/api-diff-added-failures.test.ts": 41.8,
   "src/guardrails/api-diff-added-tags.test.ts": 62.3,
   "src/guardrails/api-diff-added.test.ts": 40,
