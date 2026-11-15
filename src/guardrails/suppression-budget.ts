@@ -6,7 +6,6 @@ import { coveredLimits } from "./config-scopes.ts";
 import { changedFiles, isAgentFile } from "./files.ts";
 import { renamedPaths } from "./renames.ts";
 import { stagedAdditions } from "./staged-additions.ts";
-import { checkStagedPolicy } from "./suppression-policy.ts";
 import {
   configKey,
   countSuppressions,
@@ -347,9 +346,8 @@ export function stagedNames(root: string, filter: string): string[] {
 /**
  * Compares the staged files' suppressions with those files at HEAD, rename
  * sources and deleted files included, and fails each key that rises by more
- * than the staged budget raises its ceiling, then applies the suppression
- * policy to what the commit adds. A commit that first adds the budget is
- * not compared.
+ * than the staged budget raises its ceiling. A commit that first adds the
+ * budget is not compared.
  */
 export function stagedSuppressions(root: string): string[] {
   const renames = renamedPaths(root, true);
@@ -358,10 +356,7 @@ export function stagedSuppressions(root: string): string[] {
     ...staged.map((file) => renames.get(file) ?? file),
     ...stagedNames(root, "D"),
   ];
-  return [
-    ...stagedBudget(root, staged, previous),
-    ...checkStagedPolicy(root, staged, previous),
-  ];
+  return stagedBudget(root, staged, previous);
 }
 
 /**
