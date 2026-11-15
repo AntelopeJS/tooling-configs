@@ -24,6 +24,13 @@ import {
   CONSUMER_OPTIONS,
   entrySpecifiers,
 } from "./published-entries.ts";
+import {
+  type KnownFailure,
+  KNOWN_FAILURES_FILE,
+  describeEntry,
+  readKnownFailures,
+  splitDiagnostics,
+} from "./known-failures.ts";
 import { packTarball } from "./pack-tarball.ts";
 import { runCommand } from "./run-command.ts";
 
@@ -38,7 +45,7 @@ type Packed =
   | { failure: string }
   | { failure: ""; tarball: string; manifest: Manifest };
 
-/** One run of the check: the packages of the repository a consumer could install, by name, and each one packed so far. */
+/** One run of the check: the packages of the repository a consumer could install, by name, each one packed so far, the known failures the repository declares, and those an error matched so far. */
 interface Run {
   root: string;
   manager: "pnpm" | "npm";
@@ -46,6 +53,19 @@ interface Run {
   signal: AbortSignal | undefined;
   members: Map<string, string>;
   packs: Map<string, Packed>;
+  declared: KnownFailure[];
+  matched: Set<KnownFailure>;
+}
+
+/** What checking one package found: the errors that fail it, the declared ones, and whether tsc ran over it. */
+interface Checked {
+  failure: string;
+  known: string[];
+  compiled: boolean;
+}
+
+function unchecked(failure: string): Checked {
+  return { failure, known: [], compiled: false };
 }
 
 const DECLARATION_FILE = /\.d\.[cm]?ts$/;
@@ -276,14 +296,35 @@ async function typecheck(
     [join(typescript, bin?.tsc ?? "bin/tsc"), "-p", ".", "--pretty", "false"],
     { cwd: consumer, signal: run.signal, shell: false },
   );
-  return tsc.status === 0 ? "" : readable(tsc.output, consumer, typed.name);
+  if (tsc.status === 0) return { failure: "", known: [], compiled: true };
+  const { known, unknown } = splitDiagnostics(
+    tsc.output,
+    run.declared,
+    new Set(run.members.keys()),
+    run.matched,
+  );
+  const failure =
+    unknown.length || !known.length
+      ? readable(
+          unknown.length
+            ? `${unknown.join("\n")}\n`
+            : `tsc exited with status ${String(tsc.status)}.\n`,
+          consumer,
+          typed.name,
+        )
+      : "";
+  return { failure, known, compiled: true };
 }
 
-async function consumerErrors(run: Run, typed: TypedPackage, slot: number) {
+async function consumerErrors(
+  run: Run,
+  typed: TypedPackage,
+  slot: number,
+): Promise<Checked> {
   const packed = await pack(run, typed.name);
-  if (!("tarball" in packed)) return packed.failure;
+  if (!("tarball" in packed)) return unchecked(packed.failure);
   const siblings = await siblingTarballs(run, typed.name, packed.manifest);
-  if (siblings.failure) return siblings.failure;
+  if (siblings.failure) return unchecked(siblings.failure);
   const consumer = join(run.scratch, `consumer-${slot}`);
   mkdirSync(consumer);
   const overrides = {
@@ -307,7 +348,7 @@ async function consumerErrors(run: Run, typed: TypedPackage, slot: number) {
     { cwd: consumer, signal: run.signal },
   );
   if (install.status !== 0)
-    return `Installing the tarball failed:\n${install.output}`;
+    return unchecked(`Installing the tarball failed:\n${install.output}`);
   return typecheck(run, consumer, typed, packed.manifest);
 }
 
@@ -317,23 +358,46 @@ function packsWithPnpmOrNpm(
   return manager === "pnpm" || manager === "npm";
 }
 
+/** What one run of {@link checkPublishedTypes} found: what failed, empty when it passed, and the errors the repository declares as known. */
+interface PublishedTypesReport {
+  failure: string;
+  notes: string;
+}
+
+/** The line that fails each entry of `run` no error matched, once tsc ran over every package. */
+function staleEntries(run: Run): string {
+  return run.declared
+    .filter((entry) => !run.matched.has(entry))
+    .map(
+      (entry) =>
+        `${KNOWN_FAILURES_FILE}: ${describeEntry(entry)} no longer occurs. Remove the entry.\n`,
+    )
+    .join("");
+}
+
 /**
  * Packs each package `typedPackages` finds, running its `prepack`, and installs the tarball alone in a scratch
  * directory with its peers, optional ones included, `typescript` and `@types/node` at the latest version unless it
  * names them as peers, and the tarball of each package of the repository it depends on in place of the registry's.
  * Then runs `tsc` with `skipLibCheck` off over a consumer file importing each entry its `exports` names, or, without
- * `exports`, the package itself and every declaration file it ships. Returns what failed, each package's errors under
- * its `package.json`, empty when every package passed.
+ * `exports`, the package itself and every declaration file it ships. An error in a dependency's declarations that
+ * `guardrails.published-types.json` declares is reported under `notes` instead of failing; an entry no error matched
+ * fails once tsc ran over every package. Each package's errors are listed under its `package.json`.
  */
 export async function checkPublishedTypes(
   root: string,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<PublishedTypesReport> {
   const manager = packageManager(
     parseManifest(readFileSync(join(root, "package.json"), "utf8")),
   );
   if (!packsWithPnpmOrNpm(manager))
-    return `This check packs with pnpm or npm, not ${manager}.\n`;
+    return {
+      failure: `This check packs with pnpm or npm, not ${manager}.\n`,
+      notes: "",
+    };
+  const declared = readKnownFailures(root);
+  if (!("entries" in declared)) return { failure: declared.failure, notes: "" };
   const scratch = realpathSync.native(
     mkdtempSync(join(tmpdir(), "published-types-")),
   );
@@ -347,17 +411,25 @@ export async function checkPublishedTypes(
     signal,
     members,
     packs: new Map(),
+    declared: declared.entries,
+    matched: new Set(),
   };
-  let failures = "";
+  let failure = "";
+  let notes = "";
+  let complete = true;
   try {
     for (const [slot, typed] of typedPackages(root).entries()) {
       if (signal?.aborted) break;
-      const failure = await consumerErrors(run, typed, slot);
-      if (failure)
-        failures += `${join(typed.directory, "package.json")}: ${typed.name} as a consumer installs it, checked by tsc with skipLibCheck off:\n${failure}`;
+      const checked = await consumerErrors(run, typed, slot);
+      complete &&= checked.compiled;
+      const header = `${join(typed.directory, "package.json")}: ${typed.name} as a consumer installs it, checked by tsc with skipLibCheck off`;
+      if (checked.failure) failure += `${header}:\n${checked.failure}`;
+      if (checked.known.length)
+        notes += `${header}, errors ${KNOWN_FAILURES_FILE} declares as known:\n${checked.known.join("\n")}\n`;
     }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
-  return failures;
+  if (complete && !signal?.aborted) failure += staleEntries(run);
+  return { failure, notes };
 }
