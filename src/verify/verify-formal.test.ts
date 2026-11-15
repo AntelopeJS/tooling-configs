@@ -77,7 +77,10 @@ test("a check the diff does not cover runs only under --all and fails nothing; a
   assert.equal(touched.stdout, "no formal check covers the diff\n");
   const all = verify(root, tmp, ["formal", run, "--all"]);
   assert.equal(all.status, 0, all.stdout + all.stderr);
-  assert.equal(all.stdout, "VIOLATED formal-add: violated AddWorks (exit 1)\n");
+  assert.equal(
+    all.stdout,
+    "VIOLATED formal-add: violated AddWorks (exit 1), informational: does not cover the diff\n",
+  );
   assert.match(
     judged(root, tmp, run),
     /`formal-add` \(does not cover the diff, informational\): VIOLATED violated AddWorks \(exit 1\)\./,

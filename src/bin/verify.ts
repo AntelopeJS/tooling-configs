@@ -247,8 +247,11 @@ function runFormal(workspace: Workspace, dir: string, all: boolean): number {
     const { status, outcome } = formalOutcome(
       runFormalCheck(workspace, state, check),
     );
-    fails ||= touched.includes(check) && status !== "HOLDS";
-    print(`${status} ${check.name}: ${outcome}`);
+    const gates = touched.includes(check);
+    fails ||= gates && status !== "HOLDS";
+    print(
+      `${status} ${check.name}: ${outcome}${gates ? "" : ", informational: does not cover the diff"}`,
+    );
   }
   if (checks.length === 0) print("no formal check covers the diff");
   return fails ? 1 : 0;
