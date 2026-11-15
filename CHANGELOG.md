@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.7.3
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.7.2...v0.7.3)
+
+### 🚀 Enhancements
+
+- **published-types:** Declare known errors in a dependency's declarations ([#390](https://github.com/AntelopeJS/tooling-configs/pull/390))
+
+### 🩹 Fixes
+
+- **lint:** Parse a file once for every tsconfig program that reads it, whatever directory declares its paths ([#391](https://github.com/AntelopeJS/tooling-configs/pull/391))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli ([@Upd4ting](http://github.com/Upd4ting))
+
 ## v0.7.2
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.7.1...v0.7.2)
