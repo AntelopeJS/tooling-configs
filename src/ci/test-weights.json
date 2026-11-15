@@ -30,7 +30,7 @@
   "src/garden/sources.test.ts": 0,
   "src/garden/supply.test.ts": 0,
   "src/garden/templates.test.ts": 0,
-  "src/garden/windows.test.ts": 0,
+  "src/garden/line-endings.test.ts": 0,
   "src/garden/zip.test.ts": 0,
   "src/guardrails/adoption.test.ts": 0.2,
   "src/guardrails/agent-files-budget.test.ts": 9.2,

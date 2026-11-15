@@ -1,5 +1,6 @@
 import {
   isMap,
+  isNode,
   isScalar,
   Scalar,
   isPair,
@@ -29,16 +30,50 @@ export const CI_NODE_REF =
 export const CI_RENOVATE_SYNC_REF =
   "AntelopeJS/.github/.github/workflows/ci-renovate-sync.yml@v1";
 
+/** How a repository's caller departs from the shared triggers and inputs. */
+export interface CiProfile {
+  /** The branch whose pushes run the full set: `next`, or `develop` in cloud. */
+  integrationBranch: string;
+  /** Whether the caller may ask ci-node.yml for Windows on pull requests through its `windows` input. */
+  windowsOnPullRequests: boolean;
+}
+
+const DEFAULT_PROFILE: CiProfile = {
+  integrationBranch: "next",
+  windowsOnPullRequests: false,
+};
+
+const PROFILES = new Map<string, Partial<CiProfile>>([
+  ["@antelopejs/core", { windowsOnPullRequests: true }],
+  ["cloud-sdk-workspace", { windowsOnPullRequests: true }],
+  ["@antelopejs-private/cloud", { integrationBranch: "develop" }],
+]);
+
+/** The CI profile of the repository whose package.json is named `name`; the default for any other name. */
+export function ciProfile(name: string | undefined): CiProfile {
+  return { ...DEFAULT_PROFILE, ...PROFILES.get(name ?? "") };
+}
+
+/**
+ * The triggers of the three-tier CI: ci-node.yml picks the tier from the event, the target branch and the draft flag,
+ * so a caller only declares pull requests (draft to ready included), pushes to the integration branch, a nightly run
+ * and manual dispatch. A push to `main` runs nothing.
+ */
+export function ciTriggers(integrationBranch: string): string {
+  return `on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [${integrationBranch}]
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+`;
+}
+
 export const CI_CALLER = `name: ci
 
-on:
-  push:
-    branches:
-      - main
-      - next
-  pull_request:
-  workflow_dispatch:
-
+${ciTriggers(DEFAULT_PROFILE.integrationBranch)}
 permissions:
   contents: read
 
@@ -152,29 +187,32 @@ function renameNeedsExpressions(
   });
 }
 
-function hasDispatch(document: Document): boolean {
-  const trigger = document.get("on", true);
-  if (isMap(trigger)) return trigger.has("workflow_dispatch");
-  if (isSeq(trigger))
-    return trigger.items.some(
-      (entry) => isScalar(entry) && entry.value === "workflow_dispatch",
-    );
-  return isScalar(trigger) && trigger.value === "workflow_dispatch";
+function triggersOf(document: Document): string {
+  const node = document.get("on", true);
+  return JSON.stringify(isNode(node) ? node.toJS(document) : node);
 }
 
-function addDispatch(document: Document): void {
-  const trigger = document.get("on", true);
-  if (isMap(trigger)) trigger.set("workflow_dispatch", null);
-  else if (isSeq(trigger)) trigger.add("workflow_dispatch");
-  else
-    document.set(
-      "on",
-      document.createNode(
-        isScalar(trigger) && trigger.value
-          ? [String(trigger.value), "workflow_dispatch"]
-          : ["workflow_dispatch"],
-      ),
-    );
+function setTriggers(document: Document, profile: CiProfile): boolean {
+  const desired = parseDocument(ciTriggers(profile.integrationBranch));
+  if (triggersOf(document) === triggersOf(desired)) return false;
+  document.set("on", desired.get("on", true));
+  return true;
+}
+
+function dropWindows(
+  jobs: YAMLMap,
+  callers: readonly { id: string }[],
+  profile: CiProfile,
+): boolean {
+  if (profile.windowsOnPullRequests) return false;
+  let changed = false;
+  for (const { id } of callers) {
+    const inputs = jobs.getIn([id, "with"], true);
+    if (!isMap(inputs) || !inputs.delete("windows")) continue;
+    if (!inputs.items.length) jobs.deleteIn([id, "with"]);
+    changed = true;
+  }
+  return changed;
 }
 
 function grants(job: YAMLMap, expected: Record<string, string>): boolean {
@@ -265,7 +303,7 @@ function lines(text: string): string[] {
 }
 
 /** The `docs-files` lines sync computes, and how to tell whether a hand-listed path still exists. */
-export interface DocsFilesPlan {
+interface DocsFilesPlan {
   docsFiles: readonly string[];
   exists: (path: string) => boolean;
 }
@@ -376,6 +414,37 @@ function dropRedundantAggregator(
   return [LEGACY_AGGREGATOR_ID];
 }
 
+function renameCaller(
+  document: Document,
+  { key, value }: { key: unknown; value: YAMLMap },
+  caller: { id: string; named: boolean },
+): boolean {
+  if (caller.named) value.delete("name");
+  if (caller.id === CI_JOB_ID) return caller.named;
+  if (isScalar(key)) key.value = CI_JOB_ID;
+  renameNeeds(document, caller.id, CI_JOB_ID);
+  renameNeedsExpressions(document, caller.id, CI_JOB_ID);
+  return true;
+}
+
+/** What sync knows of the repository when it plans its caller. */
+export interface CiPlan {
+  docsFiles?: DocsFilesPlan;
+  placeholderTests?: boolean;
+  profile?: CiProfile;
+}
+
+/** What package.json tells the caller: whether its `test` script only stands in for tests, and the profile its name selects. */
+export function callerPlan(manifest: {
+  name?: string;
+  scripts?: Record<string, string>;
+}): CiPlan {
+  return {
+    placeholderTests: placeholderTestScript(manifest.scripts?.test),
+    profile: ciProfile(manifest.name),
+  };
+}
+
 /**
  * Keeps the shared CI caller on the job id `ci` with no `name`, so the shared workflow reports `ci / checks`,
  * dispatchable and read-only, with the Renovate sync it would otherwise run turned off. The write permissions the sync
@@ -387,6 +456,8 @@ function dropRedundantAggregator(
  * when the workflow has no other job besides the caller and the Renovate sync, since the shared workflow already
  * reports `ci / checks` and each `needs` hop adds to the critical path. A gate that also covers repository-specific
  * jobs is kept.
+ * The workflow declares exactly the triggers of the three-tier CI, with pushes to `profile.integrationBranch`, and no
+ * caller passes `windows` unless `profile.windowsOnPullRequests` lets the repository ask for Windows on pull requests.
  * No `uses:` ref is ever rewritten. A workflow with no caller job is repository-specific CI and is left as it is.
  * When `docsFiles` computes paths, every caller's `docs-files` input lists them first, then keeps its hand-listed paths
  * that still exist, so sync never drops coverage.
@@ -395,16 +466,16 @@ export function ciWorkflow(
   current: string | undefined,
   callers: { id: string; named: boolean }[],
   syncCallers: { id: string }[],
-  docsFiles?: DocsFilesPlan,
-  placeholderTests = false,
+  plan: CiPlan = {},
 ): string {
+  const { docsFiles, profile = DEFAULT_PROFILE } = plan;
+  const placeholderTests = plan.placeholderTests === true;
   if (current === undefined)
     return ciWorkflow(
       newCaller(placeholderTests),
       [{ id: CI_JOB_ID, named: false }],
       [{ id: RENOVATE_SYNC_JOB_ID }],
-      docsFiles,
-      placeholderTests,
+      plan,
     );
   if (!callers.length) return current;
   const document = parseDocument(current);
@@ -414,6 +485,7 @@ export function ciWorkflow(
     );
   const jobs = document.get("jobs", true);
   if (!isMap(jobs)) return current;
+  restoreEmptyValueComments(document, current);
   const caller = callers.find(({ id }) => id === CI_JOB_ID) ?? callers[0];
   assertNoClash(jobs, caller.id, syncCallers.length > 0);
   const pair = jobs.items.find(
@@ -421,30 +493,20 @@ export function ciWorkflow(
   );
   if (!pair || !isMap(pair.value)) return current;
   let changed = setCallersDocsFiles(document, jobs, callers, docsFiles);
-  if (caller.named) {
-    pair.value.delete("name");
-    changed = true;
-  }
-  if (caller.id !== CI_JOB_ID) {
-    if (isScalar(pair.key)) pair.key.value = CI_JOB_ID;
-    renameNeeds(document, caller.id, CI_JOB_ID);
-    renameNeedsExpressions(document, caller.id, CI_JOB_ID);
-    changed = true;
-  }
+  changed = dropWindows(jobs, callers, profile) || changed;
+  changed =
+    renameCaller(document, { key: pair.key, value: pair.value }, caller) ||
+    changed;
   changed = grant(document, pair.value, { contents: "read" }) || changed;
   changed = skipRenovateSync(document, pair.value) || changed;
   changed = setTestJob(document, pair.value, placeholderTests) || changed;
   changed = ensureSyncJob(document, jobs, syncCallers) || changed;
   const removed = dropRedundantAggregator(jobs, syncCallers);
   changed = removed.length > 0 || changed;
-  if (!hasDispatch(document)) {
-    addDispatch(document);
-    changed = true;
-  }
+  changed = setTriggers(document, profile) || changed;
   const stale = staleNeeds(document, CI_PATH, removed);
   if (stale.length) throw new Error(stale.join("\n"));
   if (!changed) return current;
-  restoreEmptyValueComments(document, current);
   blockOverflowingFlow(document);
   return document.toString({ lineWidth: 0, flowCollectionPadding: false });
 }

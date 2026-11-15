@@ -21,7 +21,7 @@ const MODULES = new Set([
 const FAMILIES = ["interface-", "file-storage-", "template-", "dms-"] as const;
 const RETIRED = new Set(["dms-builder"]);
 
-/** Whether a repository belongs to the framework and DMS stack, whose CI must run on Windows: the framework, its interfaces, modules and templates, and the DMS repositories. */
+/** Whether a repository belongs to the framework and DMS stack, whose clones must keep LF line endings: the framework, its interfaces, modules and templates, and the DMS repositories. */
 export function isStackRepo(name: string): boolean {
   if (RETIRED.has(name)) return false;
   return (
