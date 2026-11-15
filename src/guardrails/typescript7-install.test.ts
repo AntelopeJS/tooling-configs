@@ -50,11 +50,19 @@ function consumer(directory: string, tarball: string): void {
   );
 }
 
-function assertCompilers(directory: string): void {
-  const tsc = run(directory, "npx", ["--no-install", "tsc", "--version"]);
+/** The command that runs a bin the project installs: `npx`, except for bun on Windows, whose `.exe` and `.bunx` shims npx does not find. */
+function binRunner(manager: string): [string, ...string[]] {
+  return manager === "bun" && process.platform === "win32"
+    ? ["bun", "run"]
+    : ["npx", "--no-install"];
+}
+
+function assertCompilers(directory: string, manager: string): void {
+  const [runner, ...options] = binRunner(manager);
+  const tsc = run(directory, runner, [...options, "tsc", "--version"]);
   assert.match(tsc.output, /^Version 6\./, tsc.output);
-  const native = run(directory, "npx", [
-    "--no-install",
+  const native = run(directory, runner, [
+    ...options,
     "antelopejs-tsc",
     "--version",
   ]);
@@ -71,7 +79,7 @@ test("a project on TypeScript 6 keeps tsc at 6 after installing the packed pack,
       consumer(project, tarball);
       const installed = run(project, manager, install);
       assert.equal(installed.status, 0, installed.output);
-      assertCompilers(project);
+      assertCompilers(project, manager);
     });
   await t.test("npm workspace", () => {
     const root = join(scratch, "workspace");
@@ -83,6 +91,6 @@ test("a project on TypeScript 6 keeps tsc at 6 after installing the packed pack,
     consumer(join(root, "member"), tarball);
     const installed = run(root, "npm", commands.npm);
     assert.equal(installed.status, 0, installed.output);
-    assertCompilers(join(root, "member"));
+    assertCompilers(join(root, "member"), "npm");
   });
 });
