@@ -41,12 +41,11 @@ const CONFIG = `export default {
 };
 `;
 
-/** A module repository with a formal check over src/math.js; `head` is committed over `base`, and `removed` paths are deleted in the head commit. */
+/** A module repository with a formal check over src/math.js; `head` is committed over `base`. */
 export function formalRepo(
   t: TestContext,
   head: Record<string, string>,
   base: Record<string, string> = {},
-  removed: string[] = [],
 ) {
   const tmp = mkdtempSync(join(tmpdir(), "verify-runs-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -63,7 +62,6 @@ export function formalRepo(
     ...base,
   });
   for (const [path, content] of Object.entries(head)) put(root, path, content);
-  for (const path of removed) rmSync(join(root, path));
   commit(root);
   return { root, tmp, run: newRun(root, tmp) };
 }

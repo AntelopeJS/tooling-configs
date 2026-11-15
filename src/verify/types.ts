@@ -28,7 +28,7 @@ export interface FormalCheck {
   covers: string[];
   /** Globs of the check's own files (its model, its tests): a diff that changes one runs the check, even when no covered file changed. */
   files?: string[];
-  /** Runs from the repository root; exits 0 while every finding breaks as recorded. */
+  /** Runs from the repository root. A rule its output names through `violation` makes the check VIOLATED whatever the exit code, so a pattern for the `./formal` runner matches its `BROKEN` and `CHANGED` lines, not the `finding` lines of findings that match their record. */
   command: string[];
   /** The first capture group names a rule the output reports as broken. Without `violation`, a non-zero exit is the one rule `property` broken. */
   violation: RegExp | null;
