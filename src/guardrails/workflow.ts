@@ -17,7 +17,7 @@ const SHARED_USES =
   /^(\s*(?:-\s+)?uses:\s*["']?AntelopeJS\/\.github\/\.github\/workflows\/(?:ci-node|ci-renovate-sync|next-sync|release-npm-public|release-npm-private|stale)\.yml@)([^\s"'#]+)/gm;
 
 /** `text` with every call to a shared workflow the tag ships moved to the tag, its lines otherwise byte for byte. */
-export function pinSharedWorkflows(text: string): string {
+function pinSharedWorkflows(text: string): string {
   return text.replace(
     SHARED_USES,
     (_line, prefix: string) => `${prefix}${SHARED_WORKFLOWS_TAG}`,
