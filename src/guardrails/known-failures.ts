@@ -21,6 +21,7 @@ export interface KnownFailure {
 
 const ENTRY_KEYS = new Set(["dependency", "file", "code"]);
 const CODE = /^TS\d+$/;
+const INSIDE_PACKAGE = /^(?!\.\/|\/)[^\\]+$/;
 const PACKAGE_NAME = /^(?:@[^/\s]+\/)?[^/@\s][^/\s]*$/;
 
 /** The own field `key` of `source` when it holds a string. */
@@ -41,7 +42,7 @@ function parseEntry(
   const code = text(entry, "code") ?? "";
   if (!PACKAGE_NAME.test(dependency))
     return { problem: "needs dependency as a package name" };
-  if (!file || file.startsWith("/") || file.split("/").includes(".."))
+  if (!INSIDE_PACKAGE.test(file) || file.split("/").includes(".."))
     return { problem: "needs file as a path inside the package" };
   if (!CODE.test(code)) return { problem: "needs code such as TS2416" };
   return { problem: "", failure: { dependency, file, code } };
@@ -73,7 +74,14 @@ export function readKnownFailures(
   let problems = "";
   for (const [index, value] of list.entries()) {
     const parsedEntry = parseEntry(value);
-    if ("failure" in parsedEntry) entries.push(parsedEntry.failure);
+    const duplicate =
+      "failure" in parsedEntry &&
+      entries.some(
+        (entry) => describeEntry(entry) === describeEntry(parsedEntry.failure),
+      );
+    if (duplicate)
+      problems += `${KNOWN_FAILURES_FILE}: knownFailures[${index}] repeats an earlier entry.\n`;
+    else if ("failure" in parsedEntry) entries.push(parsedEntry.failure);
     else
       problems += `${KNOWN_FAILURES_FILE}: knownFailures[${index}] ${parsedEntry.problem}.\n`;
   }

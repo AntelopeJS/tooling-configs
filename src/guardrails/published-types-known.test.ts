@@ -117,7 +117,7 @@ test("an error in a dependency's file no entry names fails checks, caught by an 
   assert.doesNotMatch(result.stdout, /declares as known/);
 });
 
-test("readKnownFailures names each malformed entry, caught by an implementation that accepts an entry missing a field or with a code tsc never prints", (t) => {
+test("readKnownFailures names each malformed entry, caught by an implementation that accepts an entry missing a field, a path tsc never prints, a code tsc never prints or a repeated entry", (t) => {
   const root = testRepo(t);
   put(
     root,
@@ -129,6 +129,8 @@ test("readKnownFailures names each malformed entry, caught by an implementation 
         { ...VENDOR_ENTRY, code: "2304" },
         { ...VENDOR_ENTRY, file: "../index.d.ts" },
         { ...VENDOR_ENTRY, line: 1 },
+        { ...VENDOR_ENTRY, file: "./index.d.ts" },
+        VENDOR_ENTRY,
       ],
     }),
   );
@@ -138,6 +140,8 @@ test("readKnownFailures names each malformed entry, caught by an implementation 
       "knownFailures[2] needs code such as TS2416.",
       "knownFailures[3] needs file as a path inside the package.",
       "knownFailures[4] has unknown key line.",
+      "knownFailures[5] needs file as a path inside the package.",
+      "knownFailures[6] repeats an earlier entry.",
     ]
       .map((line) => `${KNOWN_FAILURES_FILE}: ${line}\n`)
       .join(""),
