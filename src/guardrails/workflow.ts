@@ -2,10 +2,53 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { isMap, isScalar, isSeq, parseDocument } from "yaml";
 
+import type { PlannedArtifact } from "./sync.ts";
+
+/** The tag of AntelopeJS/.github every workflow sync writes calls; a repository that has not synced keeps its own ref. */
+const SHARED_WORKFLOWS_TAG = "v2";
+
+/** The `uses:` ref of the shared workflow `file` at the tag sync writes. */
+export function sharedWorkflow(file: string): string {
+  return `AntelopeJS/.github/.github/workflows/${file}@${SHARED_WORKFLOWS_TAG}`;
+}
+
+/** A `uses:` line calling a shared workflow the tag ships; one it does not ship, such as the retired modules-update.yml, keeps its ref. */
+const SHARED_USES =
+  /^(\s*(?:-\s+)?uses:\s*["']?AntelopeJS\/\.github\/\.github\/workflows\/(?:ci-node|ci-renovate-sync|next-sync|release-npm-public|release-npm-private|stale)\.yml@)([^\s"'#]+)/gm;
+
+/** `text` with every call to a shared workflow the tag ships moved to the tag, its lines otherwise byte for byte. */
+function pinSharedWorkflows(text: string): string {
+  return text.replace(
+    SHARED_USES,
+    (_line, prefix: string) => `${prefix}${SHARED_WORKFLOWS_TAG}`,
+  );
+}
+
 const CI_NODE_PATTERN =
   /^AntelopeJS\/\.github\/\.github\/workflows\/ci-node\.yml@\S+$/;
 const CI_RENOVATE_SYNC_PATTERN =
   /^AntelopeJS\/\.github\/\.github\/workflows\/ci-renovate-sync\.yml@\S+$/;
+
+/** Moves the shared-workflow calls of each workflow file no other artifact of `planned` writes or removes to the tag. */
+export function sharedRefArtifacts(
+  root: string,
+  planned: ReadonlySet<string>,
+): PlannedArtifact[] {
+  const directory = join(root, ".github/workflows");
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory)
+    .filter((name) => /\.ya?ml$/.test(name))
+    .sort()
+    .map((name) => `.github/workflows/${name}`)
+    .filter((path) => !planned.has(path))
+    .map((path): PlannedArtifact => {
+      const current = readFileSync(join(root, path), "utf8");
+      const content = pinSharedWorkflows(current);
+      return content === current
+        ? { kind: "unchanged", path }
+        : { kind: "write", path, content, mode: undefined };
+    });
+}
 
 export const MISSING_CHECKS_WORKFLOW =
   "No workflow in .github/workflows runs pnpm run checks. Add a step running `pnpm run checks` (or `pnpm checks`), or a job using AntelopeJS/.github/.github/workflows/ci-node.yml@<ref>.";

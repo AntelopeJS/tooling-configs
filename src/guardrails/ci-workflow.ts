@@ -17,6 +17,7 @@ import {
   hasRedundantAggregator,
   LEGACY_AGGREGATOR_ID,
 } from "./ci-aggregator.ts";
+import { sharedWorkflow } from "./workflow.ts";
 import { staleNeeds } from "./workflow-needs.ts";
 import { restoreEmptyValueComments } from "./yaml-comments.ts";
 
@@ -25,10 +26,8 @@ export const CI_JOB_ID = "ci";
 /** The status context GitHub derives from the caller job id and the shared workflow's `checks` job. */
 export const CI_CONTEXT = `${CI_JOB_ID} / checks`;
 const RENOVATE_SYNC_JOB_ID = "renovate-sync";
-export const CI_NODE_REF =
-  "AntelopeJS/.github/.github/workflows/ci-node.yml@v1";
-export const CI_RENOVATE_SYNC_REF =
-  "AntelopeJS/.github/.github/workflows/ci-renovate-sync.yml@v1";
+export const CI_NODE_REF = sharedWorkflow("ci-node.yml");
+export const CI_RENOVATE_SYNC_REF = sharedWorkflow("ci-renovate-sync.yml");
 
 /** How a repository's caller departs from the shared triggers and inputs. */
 export interface CiProfile {
@@ -247,6 +246,33 @@ function grant(
   if (grants(job, expected)) return false;
   job.set("permissions", document.createNode(expected));
   return true;
+}
+
+function pinRefs(
+  jobs: YAMLMap,
+  callers: readonly { id: string }[],
+  ref: string,
+): boolean {
+  let changed = false;
+  for (const { id } of callers) {
+    const uses = jobs.getIn([id, "uses"], true);
+    if (!isScalar(uses) || uses.value === ref) continue;
+    uses.value = ref;
+    changed = true;
+  }
+  return changed;
+}
+
+/** Points every caller at the shared tag and drops the Windows inputs `profile` does not allow. */
+function pinCallerRefs(
+  jobs: YAMLMap,
+  callers: readonly { id: string }[],
+  syncCallers: readonly { id: string }[],
+  profile: CiProfile,
+): boolean {
+  const windows = dropWindows(jobs, callers, profile);
+  const node = pinRefs(jobs, callers, CI_NODE_REF);
+  return pinRefs(jobs, syncCallers, CI_RENOVATE_SYNC_REF) || node || windows;
 }
 
 function skipsRenovateSync(job: YAMLMap): boolean {
@@ -472,9 +498,9 @@ export function callerPlan(manifest: {
  * jobs is kept.
  * The workflow declares exactly the triggers of the three-tier CI, with pushes to `profile.integrationBranch`. Unless
  * `profile.windowsOnPullRequests` lets the repository ask for Windows on pull requests, no caller passes
- * `windows-pull-requests` or a `windows` other than the opt-out `false`. Sync writes neither input, since today's
- * ci-node.yml@v1 rejects `windows-pull-requests`.
- * No `uses:` ref is ever rewritten. A workflow with no caller job is repository-specific CI and is left as it is.
+ * `windows-pull-requests` or a `windows` other than the opt-out `false`. Sync writes neither input.
+ * Every job calling ci-node.yml or ci-renovate-sync.yml calls it at `CI_NODE_REF` or `CI_RENOVATE_SYNC_REF`, whatever
+ * ref it had. A workflow with no caller job is repository-specific CI and is left as it is.
  * When `docsFiles` computes paths, every caller's `docs-files` input lists them first, then keeps its hand-listed paths
  * that still exist, so sync never drops coverage.
  */
@@ -509,7 +535,7 @@ export function ciWorkflow(
   );
   if (!pair || !isMap(pair.value)) return current;
   let changed = setCallersDocsFiles(document, jobs, callers, docsFiles);
-  changed = dropWindows(jobs, callers, profile) || changed;
+  changed = pinCallerRefs(jobs, callers, syncCallers, profile) || changed;
   changed =
     renameCaller(document, { key: pair.key, value: pair.value }, caller) ||
     changed;

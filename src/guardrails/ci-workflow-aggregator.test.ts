@@ -5,6 +5,7 @@ import { parseDocument } from "yaml";
 import {
   CI_CALLER,
   CI_NODE_REF,
+  CI_RENOVATE_SYNC_REF,
   ciTriggers,
   ciWorkflow,
 } from "./ci-workflow.ts";
@@ -46,7 +47,7 @@ jobs:
     permissions:
       contents: write
       actions: write
-    uses: AntelopeJS/.github/.github/workflows/ci-renovate-sync.yml@v1
+    uses: ${CI_RENOVATE_SYNC_REF}
 `;
 
 const REDIS_CALLER = `${HEAD}${AGGREGATOR}`;
