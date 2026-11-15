@@ -47,7 +47,7 @@
   "src/guardrails/api-diff-declaration-scope.test.ts": 85.6,
   "src/guardrails/api-diff-errors.test.ts": 16.1,
   "src/guardrails/api-diff-exports.test.ts": 74.9,
-  "src/guardrails/api-diff-invalid-probe.test.ts": 22,
+  "src/guardrails/api-diff-load-failures.test.ts": 22,
   "src/guardrails/api-diff-order.test.ts": 17.1,
   "src/guardrails/api-diff-package-manager.test.ts": 11.8,
   "src/guardrails/api-diff-path-alias.test.ts": 36.1,

@@ -9,7 +9,7 @@ import {
   put,
 } from "./helpers/test-repo.ts";
 
-test("api-diff reports invalid probe JSON and a head-only load failure as execution errors, and skips an unbuilt package", (t) => {
+test("api-diff reports a head-only load failure as an execution error and skips an unbuilt package", (t) => {
   const root = apiRepo(t);
   put(
     root,
@@ -21,11 +21,6 @@ test("api-diff reports invalid probe JSON and a head-only load failure as execut
   );
   put(root, "src/index.ts", "export const value = 1;\n");
   commit(root);
-  put(root, "probe.cjs", 'process.stdout.write("not JSON");');
-  const invalid = bin(root, "api-diff", ["HEAD", "--probe", "probe.cjs"]);
-  assert.equal(invalid.status, 1, invalid.stdout + invalid.stderr);
-  assert.match(invalid.stdout, /Execution error:/);
-  assert.doesNotMatch(invalid.stdout, /Behavioural probe ran on both/);
   put(
     root,
     "src/index.ts",

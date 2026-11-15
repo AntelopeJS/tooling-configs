@@ -238,12 +238,6 @@ function formatJson(json: string): string {
   return `${JSON.stringify(JSON.parse(json), null, 2)}\n`;
 }
 
-function childJson(args: string[], cwd: string): string {
-  const result = runChild(args, cwd);
-  if (result.status !== 0) throw childFailure(result);
-  return formatJson(result.stdout);
-}
-
 /** Describes one built entry into `destination`, away from the entry's own stdout, with the exit code of an entry that ends with a non-zero code or exits while it loads; an uncaught error is a failure. */
 function describeEntry(
   describe: string,
@@ -414,11 +408,10 @@ function buildPackage(
   return { count: entries.length, entries, skipped };
 }
 
-/** Builds both committed revisions and compares published runtime metadata and one captured optional probe. */
+/** Builds both committed revisions and compares published runtime metadata. */
 export function runtimeDiff(
   root: string,
   baseRef: string,
-  probe: Buffer | undefined,
   policy?: AddedPolicy,
 ) {
   const errors: string[] = [];
@@ -492,14 +485,6 @@ export function runtimeDiff(
               force: true,
             },
           );
-      if (probe !== undefined) {
-        const script = join(scratch, "probe.cjs");
-        writeFileSync(script, probe);
-        writeFileSync(
-          join(output, "probe.json"),
-          childJson([script, worktree], worktree),
-        );
-      }
       return {
         packages: packages.map(({ directory }) => directory),
         entries,
