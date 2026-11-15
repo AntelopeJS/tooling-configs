@@ -26,6 +26,11 @@ export const CI_JOB_ID = "ci";
 /** The status context GitHub derives from the caller job id and the shared workflow's `checks` job. */
 export const CI_CONTEXT = `${CI_JOB_ID} / checks`;
 const RENOVATE_SYNC_JOB_ID = "renovate-sync";
+const RENOVATE_SYNC_GRANTS = {
+  contents: "write",
+  actions: "write",
+  statuses: "write",
+};
 export const CI_NODE_REF = sharedWorkflow("ci-node.yml");
 export const CI_RENOVATE_SYNC_REF = sharedWorkflow("ci-renovate-sync.yml");
 
@@ -92,6 +97,7 @@ jobs:
     permissions:
       contents: write
       actions: write
+      statuses: write
     uses: ${CI_RENOVATE_SYNC_REF}
 `;
 
@@ -415,9 +421,7 @@ function ensureSyncJob(
   for (const { id } of syncCallers) {
     const job = jobs.get(id, true);
     if (isMap(job))
-      changed =
-        grant(document, job, { contents: "write", actions: "write" }) ||
-        changed;
+      changed = grant(document, job, RENOVATE_SYNC_GRANTS) || changed;
   }
   return changed;
 }
