@@ -90,6 +90,16 @@ function timed(recent: number, usual: number): ReturnType<typeof run>[] {
   return runs;
 }
 
+test("on a repository without next, nightly runs are timed, so a check that reads only push runs finds no slowdown", async () => {
+  const nightly = timed(125, 100).map((entry) => ({
+    ...entry,
+    event: "schedule",
+  }));
+  assert.deepEqual(keys(await ciDuration.run(world(nightly).context())), [
+    "mongodb|ci-duration|main",
+  ]);
+});
+
 test("the median of the last 10 runs is judged against the 30-day baseline by +20% or +60 s, whichever trips first", async () => {
   assert.deepEqual(
     keys(await ciDuration.run(world(timed(125, 100)).context())),

@@ -100,7 +100,7 @@ function web(workflow: string, runs: ReturnType<typeof run>[]): FakeApi {
     .org([{ name: "antelope-web", tier: "N3" }])
     .repo("antelope-web", { ".github/workflows/build.yml": workflow })
     .route("/repos/AntelopeJS/antelope-web/actions/workflows/build.yml/runs", {
-      workflow_runs: runs,
+      workflow_runs: runs.map((entry) => ({ ...entry, event: "schedule" })),
     });
 }
 
