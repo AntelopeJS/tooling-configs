@@ -62,8 +62,16 @@ tester.run("anti-slop/no-unknown-parameters", noUnknownParametersRule, {
 		},
 		"const done = new Promise<void>((resolve, fail: (reason?: unknown) => void) => { fail(new Error()); });",
 		{
-			name: "dms-mailing src/services/send.ts:162 named error helper outside .catch, exempt because String takes any value",
-			code: "const describeError = (error: unknown): string => String(error);",
+			name: "a .catch handler declaring this: void: fails one that takes the this parameter for the rejection reason",
+			code: "export const done = work().catch(function (this: void, error: unknown) { log(error); });",
+		},
+		{
+			name: "a reject type declaring this: void: fails one that counts the this parameter toward its arity",
+			code: "export type Settle = { reject: (this: void, reason: unknown) => void };",
+		},
+		{
+			name: "a promise executor declaring this: void with a reject not named reject: fails one that takes resolve for the reject position",
+			code: "export const ready = new Promise<number>(function (this: void, resolve, fail: (reason: unknown) => void) { go(resolve, fail); });",
 		},
 	],
 	invalid: [
@@ -97,8 +105,8 @@ tester.run("anti-slop/no-unknown-parameters", noUnknownParametersRule, {
 			errors: [{ ...error, data: { parameter: "value" } }],
 		},
 		{
-			name: "a named error helper outside .catch with no return type: its name exempts nothing",
-			code: "const describeError = (error: unknown) => String(error);",
+			name: "a named error helper outside .catch: its name exempts nothing",
+			code: "const describeError = (error: unknown): string => String(error);",
 			errors: [{ ...error, data: { parameter: "error" } }],
 		},
 		{
