@@ -20,6 +20,14 @@ test("every tsc launcher is recognised in build and in typecheck; a check that k
     "pnpm tsc",
     "yarn tsc",
     "bunx tsc",
+    "antelopejs-tsc",
+    "npx antelopejs-tsc",
+    "npx --no-install antelopejs-tsc",
+    "pnpm exec antelopejs-tsc",
+    "pnpm antelopejs-tsc",
+    "yarn antelopejs-tsc",
+    "bunx antelopejs-tsc",
+    "node ./node_modules/.bin/antelopejs-tsc",
   ]) {
     assert.match(
       findingsFor(t, { build: `${tsc} --skipLibCheck` })[0],
@@ -182,4 +190,35 @@ test("a directory where a tsconfig or a release-it config is expected becomes a 
   assert.match(notes, /Note: could not read tsconfig\.json \(EISDIR\)/);
   assert.match(notes, /Note: could not read \.release-it\.json \(EISDIR\)/);
   assert.doesNotMatch(result.errors.join("\n"), /could not read/);
+});
+
+test("a repository whose build and typecheck run antelopejs-tsc keeps every lib check rule: a skipped program typecheck does not cover, a tsconfig that sets skipLibCheck, and a release without typecheck each fail; a check that knows only tsc passes the first two", (t) => {
+  const uncovered = findingsFor(t, {
+    build: "antelopejs-tsc --skipLibCheck -p tsconfig.build.json",
+    typecheck: "antelopejs-tsc --noEmit",
+  });
+  assert.match(
+    uncovered.join("\n"),
+    /script "build" passes --skipLibCheck to tsc for tsconfig\.build\.json/,
+  );
+  const skipping = findingsFor(
+    t,
+    { typecheck: "antelopejs-tsc --noEmit -p tsconfig.build.json" },
+    { "tsconfig.json": "{}", "tsconfig.build.json": SKIPS },
+  );
+  assert.match(skipping.join("\n"), /tsconfig\.build\.json/);
+  const release = findingsFor(t, {
+    typecheck: "antelopejs-tsc --noEmit",
+    build: "antelopejs-tsc",
+    release: "pnpm run build && release-it",
+  });
+  assert.match(release.join("\n"), /script "release" does not run "typecheck"/);
+  assert.deepEqual(
+    findingsFor(t, {
+      typecheck: "antelopejs-tsc --noEmit",
+      build: "antelopejs-tsc --skipLibCheck",
+      release: "pnpm run typecheck && pnpm run build && release-it",
+    }),
+    [],
+  );
 });

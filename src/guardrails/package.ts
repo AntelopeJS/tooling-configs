@@ -111,16 +111,6 @@ export function toolingRoot(): string {
   }
 }
 
-/** The range of `spec` when it is the npm alias `npm:<name>@<range>`. */
-function aliasedRange(spec: string, name: string): string {
-  const prefix = `npm:${name}@`;
-  if (!spec.startsWith(prefix))
-    throw new Error(
-      `tooling-configs must declare @typescript/native as ${prefix}<range>.`,
-    );
-  return spec.slice(prefix.length);
-}
-
 export function toolingVersions() {
   const manifest = parseManifest(
     readFileSync(join(toolingRoot(), "package.json"), "utf8"),
@@ -141,7 +131,7 @@ export function toolingVersions() {
     tsgolint: dev("oxlint-tsgolint"),
     oxlint: dev("oxlint"),
     oxfmt: dev("oxfmt"),
-    typescript: aliasedRange(dev("@typescript/native"), "typescript"),
+    typescript: dev("typescript"),
     nodeTypes: dev("@types/node"),
     capture: CAPTURE_PEERS.map((name): [CapturePeer, string] => [
       name,

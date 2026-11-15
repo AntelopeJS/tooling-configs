@@ -65,9 +65,6 @@ function isLayerCode(layer: string, file: string): boolean {
   );
 }
 
-/** The packages whose `tsc` a repository runs, in order: `typescript`, else `@typescript/native` when `typescript` is the TypeScript 6 API (`@typescript/typescript6`, whose only bin is `tsc6`) installed beside TypeScript 7 for tools that need that API. */
-const COMPILER_PACKAGES = ["typescript", "@typescript/native"];
-
 /**
  * The `package.json` of the package `name` in the nearest `node_modules` from `root` up, where a workspace may hoist it.
  * Node's resolution is not used: it falls back to `NODE_PATH`, where a package manager's bin shim lists the pack's own
@@ -81,9 +78,9 @@ function manifestOf(root: string, name: string): string | undefined {
   }
 }
 
-/** The `bin.tsc` entry of the package `name` that `root` installs, read from its `package.json`, a file every TypeScript version ships, because TypeScript 7 declares an `exports` map that leaves `typescript/bin/tsc` out. */
-function binTsc(root: string, name: string): string | undefined {
-  const manifestPath = manifestOf(root, name);
+/** The repository's own `tsc`, the `bin.tsc` entry of the `typescript` it installs, run with Node so no shell parses its path. It is read from `package.json`, a file every TypeScript version ships, because TypeScript 7 declares an `exports` map that leaves `typescript/bin/tsc` out. */
+function compilerOf(root: string): string | undefined {
+  const manifestPath = manifestOf(root, "typescript");
   if (manifestPath === undefined) return undefined;
   try {
     const tsc = parseManifest(readFileSync(manifestPath, "utf8")).bin?.tsc;
@@ -91,15 +88,6 @@ function binTsc(root: string, name: string): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-/** The repository's own `tsc` entry, run with Node so no shell parses its path. */
-function compilerOf(root: string): string | undefined {
-  for (const name of COMPILER_PACKAGES) {
-    const tsc = binTsc(root, name);
-    if (tsc !== undefined) return tsc;
-  }
-  return undefined;
 }
 
 async function typecheckLayer(

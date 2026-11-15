@@ -150,10 +150,10 @@ export function read(root: string, path: string): string {
 export const API_BUILD_SCRIPT =
   "tsc --noEmit false --composite false --declarationMap false";
 
-/** Makes `root`, an `apiRepo`, a repository whose `typescript`, and the `tsc` its build script runs from a POSIX shell or, on Windows, from cmd.exe, are the pack's `alias`: `typescript5`, TypeScript 5.9, or `@typescript/native`, TypeScript 7 without a compiler API. Every other package is the pack's own; without this call an `apiRepo` installs TypeScript 6's API as `typescript` beside TypeScript 7's `tsc`. */
+/** Makes `root`, an `apiRepo`, a repository whose `typescript`, and the `tsc` its build script runs from a POSIX shell or, on Windows, from cmd.exe, are the pack's `alias`: `typescript5`, TypeScript 5.9, or `typescript7`, TypeScript 7 without a compiler API. Every other package is the pack's own; without this call an `apiRepo` installs TypeScript 6's API as `typescript` beside TypeScript 7's `tsc`. */
 export function onTypeScript(
   root: string,
-  alias: "typescript5" | "@typescript/native",
+  alias: "typescript5" | "typescript7",
 ): void {
   const modules = join(root, "node_modules");
   const pack = join(PACKAGE_ROOT, "node_modules");

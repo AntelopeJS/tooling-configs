@@ -133,6 +133,8 @@
   "src/guardrails/sync-windows.test.ts": 6.5,
   "src/guardrails/sync.test.ts": 18,
   "src/guardrails/typecheck-writes.test.ts": 0.5,
+  "src/guardrails/typescript7-install.test.ts": 30,
+  "src/guardrails/typescript7.test.ts": 2.8,
   "src/guardrails/verify-layers.test.ts": 0.7,
   "src/guardrails/verify-skill.test.ts": 32.9,
   "src/guardrails/workspace-members.test.ts": 0,

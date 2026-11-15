@@ -24,6 +24,7 @@ export default {
     "./src/bin/verify.ts",
     "./src/bin/capture.ts",
     "./src/bin/readme-strip.ts",
+    "./src/bin/tsc.ts",
   ],
   outDir: "dist",
   format: ["esm"],

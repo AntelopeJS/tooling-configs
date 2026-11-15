@@ -87,7 +87,7 @@ test("typecheckLayers reports a TypeScript package without bin.tsc as not instal
   assert.match(output, new RegExp(NOT_INSTALLED));
 });
 
-test("typecheckLayers runs TypeScript 7's compiler from @typescript/native when typescript is the TypeScript 6 API, whose only bin is tsc6", async (t) => {
+test("typecheckLayers never runs a TypeScript 7 installed beside the repository's typescript, so verify:types stays on the TypeScript 6 the repository declares; an implementation that falls back to another package's tsc runs it", async (t) => {
   const root = repository(t);
   put(
     root,
@@ -98,7 +98,9 @@ test("typecheckLayers runs TypeScript 7's compiler from @typescript/native when 
       bin: { tsc6: "./bin/tsc6" },
     }),
   );
-  put(root, "node_modules/@typescript/native/package.json", TYPESCRIPT_7);
-  put(root, "node_modules/@typescript/native/bin/tsc", FAKE_TSC);
-  assert.equal(await typecheckLayers(root), "fake tsc ran\n");
+  for (const name of ["typescript7", "@typescript/native"]) {
+    put(root, `node_modules/${name}/package.json`, TYPESCRIPT_7);
+    put(root, `node_modules/${name}/bin/tsc`, FAKE_TSC);
+  }
+  assert.match(await typecheckLayers(root), new RegExp(NOT_INSTALLED));
 });

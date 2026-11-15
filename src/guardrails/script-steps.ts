@@ -1,6 +1,6 @@
 const SEPARATORS = /&&|\|\||[;|\n]|(?<![>&])&(?!&)/u;
 const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/u;
-const TSC_COMMAND = /(?:^|[\\/])tsc(?:\.js)?$/u;
+const TSC_COMMAND = /(?:^|[\\/])(?:antelopejs-)?tsc(?:\.js)?$/u;
 const MANAGERS = new Set(["pnpm", "npm", "yarn", "bun"]);
 const NPM_BUILTINS = new Set(["test", "start", "stop", "restart"]);
 const WRAPPERS = new Set(["cross-env", "cross-env-shell", "env", "corepack"]);
@@ -119,7 +119,7 @@ function isTsc(word: string): boolean {
   return TSC_COMMAND.test(word);
 }
 
-/** `tsc`, a path to it, or `node` running one. */
+/** `tsc` or the pack's `antelopejs-tsc`, which takes the same arguments, a path to either, or `node` running one. */
 function programSteps(line: readonly string[]): Step[] {
   const [head, ...rest] = line;
   if (head === undefined) return [];
