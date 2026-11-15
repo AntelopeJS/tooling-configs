@@ -44,7 +44,7 @@ function threeTier(branch: string): TriggersView {
   };
 }
 
-const WINDOWS_CALLER = `jobs:\n  ci:\n    uses: ${CI_NODE_REF}\n    with:\n      windows: true\n`;
+const WINDOWS_CALLER = `jobs:\n  ci:\n    uses: ${CI_NODE_REF}\n    with:\n      windows: true\n      windows-pull-requests: true\n`;
 
 test("a caller declares exactly the three-tier triggers whatever it had, so a rewrite that keeps a push to main or only adds dispatch fails", () => {
   const priors = [
@@ -85,23 +85,32 @@ test("the comments of replaced triggers go with them and a dedented comment unde
   assert.equal(rewrite(rewritten), rewritten);
 });
 
-test("sync drops a windows input outside antelopejs and cloud-sdk and never writes one, so a sync that keeps or requires windows: true fails", () => {
-  const dropped = rewrite(WINDOWS_CALLER);
-  assert.equal(Object.hasOwn(withInputs(dropped), "windows"), false);
-  assert.match(dropped, /renovate-sync: false/);
+test("outside antelopejs and cloud-sdk sync drops windows: true and windows-pull-requests and keeps the opt-out windows: false, so a sync that keeps an opt-in or erases an opt-out fails", () => {
+  const dropped = withInputs(rewrite(WINDOWS_CALLER));
+  assert.equal(Object.hasOwn(dropped, "windows"), false);
+  assert.equal(Object.hasOwn(dropped, "windows-pull-requests"), false);
+  assert.equal(dropped["renovate-sync"], false);
+  const optOut = WINDOWS_CALLER.replace(
+    "windows: true\n      windows-pull-requests: true",
+    "windows: false",
+  );
+  assert.equal(withInputs(rewrite(optOut)).windows, false);
+});
+
+test("antelopejs and cloud-sdk keep their Windows inputs and sync writes none, so a sync that drops them there or writes them for a new caller fails", () => {
   for (const name of ["@antelopejs/core", "cloud-sdk-workspace"]) {
     const profile = ciProfile(name);
-    assert.equal(withInputs(rewrite(WINDOWS_CALLER, profile)).windows, true);
-    assert.equal(
-      Object.hasOwn(withInputs(rewrite(CI_CALLER, profile)), "windows"),
-      false,
-      name,
-    );
+    const kept = withInputs(rewrite(WINDOWS_CALLER, profile));
+    assert.equal(kept.windows, true, name);
+    assert.equal(kept["windows-pull-requests"], true, name);
+    const written = withInputs(ciWorkflow(undefined, [], [], { profile }));
+    assert.equal(Object.hasOwn(written, "windows"), false, name);
+    assert.equal(Object.hasOwn(written, "windows-pull-requests"), false, name);
   }
 });
 
-test("a caller whose only input was windows loses its with block rather than keeping an empty one", () => {
-  const text = `on: push\njobs:\n  ci:\n    uses: ${CI_NODE_REF}\n    with:\n      windows: false\n  other:\n    uses: ${CI_NODE_REF}\n    with:\n      windows: true\n`;
+test("a caller whose only input asked for Windows loses its with block rather than keeping an empty one", () => {
+  const text = `on: push\njobs:\n  ci:\n    uses: ${CI_NODE_REF}\n  other:\n    uses: ${CI_NODE_REF}\n    with:\n      windows: true\n`;
   const rewritten = rewrite(text);
   assert.equal(parseDocument(rewritten).toJS().jobs.other.with, undefined);
 });

@@ -34,7 +34,7 @@ export const CI_RENOVATE_SYNC_REF =
 export interface CiProfile {
   /** The branch whose pushes run the full set: `next`, or `develop` in cloud. */
   integrationBranch: string;
-  /** Whether the caller may ask ci-node.yml for Windows on pull requests through its `windows` input. */
+  /** Whether the caller may keep the `windows: true` and `windows-pull-requests` inputs that ask ci-node.yml for Windows on pull requests. */
   windowsOnPullRequests: boolean;
 }
 
@@ -199,6 +199,14 @@ function setTriggers(document: Document, profile: CiProfile): boolean {
   return true;
 }
 
+/** Whether the caller asks for Windows beyond the default: any `windows` value but an opt-out `false`, or Windows on pull requests. */
+function asksForWindows(inputs: YAMLMap, key: string): boolean {
+  return (
+    key === "windows-pull-requests" ||
+    (key === "windows" && inputs.get("windows") !== false)
+  );
+}
+
 function dropWindows(
   jobs: YAMLMap,
   callers: readonly { id: string }[],
@@ -208,7 +216,13 @@ function dropWindows(
   let changed = false;
   for (const { id } of callers) {
     const inputs = jobs.getIn([id, "with"], true);
-    if (!isMap(inputs) || !inputs.delete("windows")) continue;
+    if (!isMap(inputs)) continue;
+    const before = inputs.items.length;
+    inputs.items = inputs.items.filter(
+      ({ key }) =>
+        !(isScalar(key) && asksForWindows(inputs, String(key.value))),
+    );
+    if (inputs.items.length === before) continue;
     if (!inputs.items.length) jobs.deleteIn([id, "with"]);
     changed = true;
   }
@@ -456,8 +470,10 @@ export function callerPlan(manifest: {
  * when the workflow has no other job besides the caller and the Renovate sync, since the shared workflow already
  * reports `ci / checks` and each `needs` hop adds to the critical path. A gate that also covers repository-specific
  * jobs is kept.
- * The workflow declares exactly the triggers of the three-tier CI, with pushes to `profile.integrationBranch`, and no
- * caller passes `windows` unless `profile.windowsOnPullRequests` lets the repository ask for Windows on pull requests.
+ * The workflow declares exactly the triggers of the three-tier CI, with pushes to `profile.integrationBranch`. Unless
+ * `profile.windowsOnPullRequests` lets the repository ask for Windows on pull requests, no caller passes
+ * `windows-pull-requests` or a `windows` other than the opt-out `false`. Sync writes neither input, since today's
+ * ci-node.yml@v1 rejects `windows-pull-requests`.
  * No `uses:` ref is ever rewritten. A workflow with no caller job is repository-specific CI and is left as it is.
  * When `docsFiles` computes paths, every caller's `docs-files` input lists them first, then keeps its hand-listed paths
  * that still exist, so sync never drops coverage.
