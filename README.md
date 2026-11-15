@@ -344,10 +344,10 @@ Only `build` and `typecheck` change. TypeScript 7.0 ships no compiler API, so ev
 Known differences between the two compilers' output:
 
 - JavaScript is the same, except for a class that names itself in one of its member decorators: TypeScript 7 emits a `<Name>_1` alias assigned in a `static {}` block where TypeScript 6 names the class.
-- Declarations describe the same types, but TypeScript 6 can order union members differently and print an alias where TypeScript 7 expands it. With `stableTypeOrdering: true` in the tsconfig, which TypeScript 7 accepts, TypeScript 6 prints the declarations TypeScript 7 does.
+- Declarations describe the same types. Without `stableTypeOrdering`, TypeScript 6 can print union members in another order. With `stableTypeOrdering: true` in the tsconfig, which TypeScript 7 accepts, the order matches, and what remains is a type one compiler prints through an alias and the other spells out, such as `value is string` for `value is TypeofTags["string"]`.
 - Source maps differ.
 
-`antelopejs-api-diff` emits both revisions' declarations with TypeScript 6 from the repository's tsconfig, so it reports any change to the API between them whichever compiler builds the package. It does not compare those declarations with the ones TypeScript 7 ships; set `stableTypeOrdering` to make the two print the same. Its runtime check runs the package's `build`, so it compares the JavaScript TypeScript 7 emits once the repository opted in.
+`antelopejs-api-diff` emits both revisions' declarations with TypeScript 6 from the repository's tsconfig, so it reports any change to the API between them whichever compiler builds the package. It does not compare those declarations with the ones TypeScript 7 ships; `stableTypeOrdering` brings the two to the same order. Its runtime check runs the package's `build`, so it compares the JavaScript TypeScript 7 emits once the repository opted in.
 
 ### Suppression budget
 
