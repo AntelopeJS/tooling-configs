@@ -95,6 +95,21 @@ test("outside antelopejs and cloud-sdk sync drops windows: true and windows-pull
     "windows: false",
   );
   assert.equal(withInputs(rewrite(optOut)).windows, false);
+  for (const input of [
+    'windows: "false"',
+    "windows: ${{ vars.WINDOWS }}",
+    "windows-pull-requests: false",
+  ]) {
+    const asked = WINDOWS_CALLER.replace(
+      "windows: true\n      windows-pull-requests: true",
+      input,
+    );
+    assert.deepEqual(
+      Object.keys(withInputs(rewrite(asked))),
+      ["renovate-sync", "test-job"],
+      input,
+    );
+  }
 });
 
 test("antelopejs and cloud-sdk keep their Windows inputs and sync writes none, so a sync that drops them there or writes them for a new caller fails", () => {
