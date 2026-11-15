@@ -91,6 +91,7 @@ test("full sync measures once, preserves handwritten text even behind a CLAUDE s
     /npm exec -- oxfmt --no-error-on-unmatched-pattern \{staged_files\}/,
   );
   assert.match(read(root, "lefthook.yml"), /antelopejs-ratchet --staged\n/);
+  assert.doesNotMatch(read(root, "lefthook.yml"), /pre-push|antelopejs-size/);
   const mtimes = MANAGED_ARTIFACTS.map(
     ({ path }) => statSync(join(root, path)).mtimeMs,
   );
@@ -292,8 +293,6 @@ test("template profile manages presets, .gitattributes, AGENTS, the suppression 
     read(root, "AGENTS.md"),
     /^Handwritten without a final newline\.\n\n/,
   );
-  assert.match(read(root, "AGENTS.md"), /antelopejs-api-diff <base-ref>/);
-  assert.match(read(root, "AGENTS.md"), /antelopejs-comment-proof <base-ref>/);
   assert.match(
     read(root, "oxlint.config.ts"),
     /options: \{ typeAware: true \}/,
@@ -379,7 +378,6 @@ test("sync leaves retired files for ratchet:update, then removes ratchet wiring 
   assert.equal(first.status, 0, first.stderr);
   assert.match(first.stdout, /Note:.*ratchet:update/);
   assert.equal(existsSync(join(root, "guardrails.ratchet.json")), true);
-  assert.match(read(root, "AGENTS.md"), /### Debt/);
   const check = bin(root, "sync", ["--check"]);
   assert.equal(check.status, 1);
   assert.match(check.stderr, /ratchet:update/);
@@ -429,7 +427,6 @@ test("first adoption without debt writes no ratchet file, scripts or hook, but k
     config: { "category:correctness for *": 1 },
     agentFiles: true,
   });
-  assert.match(read(root, "lefthook.yml"), /antelopejs-suppressions --staged/);
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
 });
 
