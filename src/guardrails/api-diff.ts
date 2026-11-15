@@ -476,18 +476,26 @@ function declarationDiff(
   };
 }
 
-/** Compares declarations, built runtime exports and the auto-import surface of DMS frontend modules. Added entries whose subpath matches an `allowAdded` glob pass when their module is `@internal`. */
+/** The globs `antelopejs-api-diff` matches published subpaths against. */
+export interface ApiDiffOptions {
+  /** Added entries whose subpath matches pass when their module is `@internal`. */
+  allowAdded?: readonly string[];
+  /** Entries whose subpath matches are not loaded by the runtime half, which reports each one it leaves out. */
+  skipRuntime?: readonly string[];
+}
+
+/** Compares declarations, built runtime exports and the auto-import surface of DMS frontend modules. */
 export function apiDiff(
   root: string,
   baseRef: string,
-  allowAdded: readonly string[] = [],
+  { allowAdded = [], skipRuntime = [] }: ApiDiffOptions = {},
 ) {
   const policy = allowAdded.length ? createAddedPolicy(allowAdded) : undefined;
   const results: { different: boolean; output: string }[] = [];
   const errors: string[] = [];
   for (const compare of [
     () => declarationDiff(root, baseRef, policy),
-    () => runtimeDiff(root, baseRef, policy),
+    () => runtimeDiff(root, baseRef, policy, skipRuntime),
     () => autoImportDiff(root, baseRef),
   ]) {
     try {
