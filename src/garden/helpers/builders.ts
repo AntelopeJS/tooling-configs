@@ -13,9 +13,10 @@ export function run(
   hoursAgo: number,
   seconds = 60,
   workflowSha?: string,
-): JsonValue {
+): JsonObject {
   const body: JsonObject = {
     id,
+    event: "push",
     conclusion,
     created_at: ago(hoursAgo),
     run_started_at: ago(hoursAgo),

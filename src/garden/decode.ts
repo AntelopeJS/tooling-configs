@@ -35,6 +35,8 @@ export interface WorkflowRun {
   updatedAt: number;
   url: string;
   headSha: string;
+  /** The event that started the run, such as `push` or `schedule`; empty when the payload lacks it. */
+  event: string;
   /** Empty when the run called no reusable workflow or the payload predates the field. */
   referencedWorkflows: ReferencedWorkflow[];
 }
@@ -117,6 +119,7 @@ export function workflowRun(value: JsonValue): WorkflowRun {
     updatedAt: time(source, "updated_at"),
     url: str(source, "html_url"),
     headSha: optStr(source, "head_sha") ?? "",
+    event: optStr(source, "event") ?? "",
     referencedWorkflows: (source.referenced_workflows === null
       ? []
       : children(source, "referenced_workflows")
