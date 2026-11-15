@@ -89,19 +89,22 @@ test("a declared error that no longer occurs fails checks and names the entry to
   );
 });
 
-test("an error in the package's own declarations fails checks even when an entry names the package, caught by an implementation that matches an entry against any package", (t) => {
+test("an error in the package's own declarations fails checks beside a declared one, caught by an implementation that matches an entry by file and code alone or passes once any error is declared", (t) => {
   const result = checksOf(
     t,
-    vendorTarball(t, SOUND),
-    [{ dependency: "@fixture/typed", file: "index.d.ts", code: "TS2304" }],
+    vendorTarball(t, BROKEN),
+    [VENDOR_ENTRY],
     "export declare const own: Missing;\n",
   );
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(
     result.stdout,
-    /@fixture\/typed\/index\.d\.ts\(2,\d+\): error TS2304: Cannot find name 'Missing'\./,
+    /declares as known:\nvendor-types\/index\.d\.ts\(1,\d+\): error TS2304: Cannot find name 'Missing'\.\n/,
   );
-  assert.doesNotMatch(result.stdout, /declares as known/);
+  assert.match(
+    result.stdout,
+    /checked by tsc with skipLibCheck off:\n@fixture\/typed\/index\.d\.ts\(2,\d+\): error TS2304: Cannot find name 'Missing'\.\n/,
+  );
 });
 
 test("an error in a dependency's file no entry names fails checks, caught by an implementation that matches an entry by dependency or code alone", (t) => {
@@ -117,7 +120,7 @@ test("an error in a dependency's file no entry names fails checks, caught by an 
   assert.doesNotMatch(result.stdout, /declares as known/);
 });
 
-test("readKnownFailures names each malformed entry, caught by an implementation that accepts an entry missing a field, a path tsc never prints, a code tsc never prints or a repeated entry", (t) => {
+test("readKnownFailures names each malformed entry, caught by an implementation that accepts an entry missing a field, a path tsc never prints, a code tsc never prints, a repeated entry or one naming the repository's own package", (t) => {
   const root = testRepo(t);
   put(
     root,
@@ -131,10 +134,11 @@ test("readKnownFailures names each malformed entry, caught by an implementation 
         { ...VENDOR_ENTRY, line: 1 },
         { ...VENDOR_ENTRY, file: "./index.d.ts" },
         VENDOR_ENTRY,
+        { ...VENDOR_ENTRY, dependency: "@fixture/typed" },
       ],
     }),
   );
-  assert.deepEqual(readKnownFailures(root), {
+  assert.deepEqual(readKnownFailures(root, new Set(["@fixture/typed"])), {
     failure: [
       "knownFailures[1] needs file as a path inside the package.",
       "knownFailures[2] needs code such as TS2416.",
@@ -142,8 +146,28 @@ test("readKnownFailures names each malformed entry, caught by an implementation 
       "knownFailures[4] has unknown key line.",
       "knownFailures[5] needs file as a path inside the package.",
       "knownFailures[6] repeats an earlier entry.",
+      "knownFailures[7] names @fixture/typed, a package of this repository. Fix its declarations instead.",
     ]
       .map((line) => `${KNOWN_FAILURES_FILE}: ${line}\n`)
       .join(""),
   });
+});
+
+test("readKnownFailures rejects a file that is not one knownFailures list, caught by an implementation that reads a missing or extra key as no entries", (t) => {
+  const root = testRepo(t);
+  const failures = ["{}", '{"knownFailures":[],"extra":1}', "[]", "{"].map(
+    (text) => {
+      put(root, KNOWN_FAILURES_FILE, text);
+      return readKnownFailures(root, new Set()).failure;
+    },
+  );
+  assert.deepEqual(failures.slice(0, 3), [
+    `${KNOWN_FAILURES_FILE}: expected { "knownFailures": [{ "dependency", "file", "code" }] }.\n`,
+    `${KNOWN_FAILURES_FILE}: expected { "knownFailures": [{ "dependency", "file", "code" }] }.\n`,
+    `${KNOWN_FAILURES_FILE}: expected { "knownFailures": [{ "dependency", "file", "code" }] }.\n`,
+  ]);
+  assert.match(
+    failures[3] ?? "",
+    /^guardrails\.published-types\.json: SyntaxError/,
+  );
 });

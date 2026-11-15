@@ -1,13 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import {
-  type JsonObject,
-  type JsonValue,
-  isObject,
-  isString,
-  parseJson,
-} from "../garden/json.ts";
+import { type JsonValue, isObject, optStr, parseJson } from "../garden/json.ts";
 
 /** The file at the repository root that declares the errors `published:types` reports in a dependency's own declarations. */
 export const KNOWN_FAILURES_FILE = "guardrails.published-types.json";
@@ -24,12 +18,6 @@ const CODE = /^TS\d+$/;
 const INSIDE_PACKAGE = /^(?!\.\/|\/)[^\\]+$/;
 const PACKAGE_NAME = /^(?:@[^/\s]+\/)?[^/@\s][^/\s]*$/;
 
-/** The own field `key` of `source` when it holds a string. */
-function text(source: JsonObject, key: string): string | undefined {
-  const value = Object.hasOwn(source, key) ? source[key] : undefined;
-  return value !== undefined && isString(value) ? value : undefined;
-}
-
 /** What is wrong with `entry`, or the {@link KnownFailure} it declares. */
 function parseEntry(
   entry: JsonValue,
@@ -37,9 +25,9 @@ function parseEntry(
   if (!isObject(entry)) return { problem: "is not an object" };
   const extra = Object.keys(entry).filter((key) => !ENTRY_KEYS.has(key));
   if (extra.length) return { problem: `has unknown key ${extra.join(", ")}` };
-  const dependency = text(entry, "dependency") ?? "";
-  const file = text(entry, "file") ?? "";
-  const code = text(entry, "code") ?? "";
+  const dependency = optStr(entry, "dependency") ?? "";
+  const file = optStr(entry, "file") ?? "";
+  const code = optStr(entry, "code") ?? "";
   if (!PACKAGE_NAME.test(dependency))
     return { problem: "needs dependency as a package name" };
   if (!INSIDE_PACKAGE.test(file) || file.split("/").includes(".."))
@@ -50,9 +38,10 @@ function parseEntry(
 
 const EXPECTED = `expected { "knownFailures": [{ "dependency", "file", "code" }] }`;
 
-/** The entries `KNOWN_FAILURES_FILE` declares at `root`, none when the file is missing, or what is wrong with it. */
+/** The entries `KNOWN_FAILURES_FILE` declares at `root`, none when the file is missing, or what is wrong with it. An entry may not name a package of `ownPackages`, the repository's own, whose declarations the repository fixes instead. */
 export function readKnownFailures(
   root: string,
+  ownPackages: ReadonlySet<string>,
 ): { failure: string } | { failure: ""; entries: KnownFailure[] } {
   const path = join(root, KNOWN_FAILURES_FILE);
   if (!existsSync(path)) return { failure: "", entries: [] };
@@ -81,6 +70,11 @@ export function readKnownFailures(
       );
     if (duplicate)
       problems += `${KNOWN_FAILURES_FILE}: knownFailures[${index}] repeats an earlier entry.\n`;
+    else if (
+      "failure" in parsedEntry &&
+      ownPackages.has(parsedEntry.failure.dependency)
+    )
+      problems += `${KNOWN_FAILURES_FILE}: knownFailures[${index}] names ${parsedEntry.failure.dependency}, a package of this repository. Fix its declarations instead.\n`;
     else if ("failure" in parsedEntry) entries.push(parsedEntry.failure);
     else
       problems += `${KNOWN_FAILURES_FILE}: knownFailures[${index}] ${parsedEntry.problem}.\n`;
@@ -100,7 +94,7 @@ function diagnosticBlocks(output: string): string[] {
   return blocks;
 }
 
-const LOCATED = /^(.*)\(\d+,\d+\): error (TS\d+): /;
+const LOCATED = /^(.*?)\(\d+,\d+\): error (TS\d+): /;
 const INSTALLED = /^((?:@[^/]+\/)?[^/]+)\/(.+)$/;
 const NODE_MODULES = "node_modules/";
 
@@ -132,29 +126,27 @@ export function describeEntry(entry: KnownFailure): string {
 
 /**
  * Splits tsc's `--pretty false` `output` into the diagnostics an entry of `entries` declares and the rest. A diagnostic
- * is declared when it lies in the installed declarations of a package `ownPackages` does not hold, and an entry names
- * that package, the file inside it and the code. Each entry that declares one is added to `matched`. A diagnostic in a
+ * is declared when it lies in a package's installed declarations and an entry names that package, the file inside it
+ * and the code. Each entry that declares one is added to `matched`. A diagnostic in a
  * file under `node_modules` names it as `<package>/<file>`.
  */
 export function splitDiagnostics(
   output: string,
   entries: readonly KnownFailure[],
-  ownPackages: ReadonlySet<string>,
   matched: Set<KnownFailure>,
 ) {
   const known: string[] = [];
   const unknown: string[] = [];
   for (const block of diagnosticBlocks(output)) {
     const diagnostic = installedDiagnostic(block);
-    const entry =
-      diagnostic && !ownPackages.has(diagnostic.dependency)
-        ? entries.find(
-            ({ dependency, file, code }) =>
-              dependency === diagnostic.dependency &&
-              file === diagnostic.file &&
-              code === diagnostic.code,
-          )
-        : undefined;
+    const entry = diagnostic
+      ? entries.find(
+          ({ dependency, file, code }) =>
+            dependency === diagnostic.dependency &&
+            file === diagnostic.file &&
+            code === diagnostic.code,
+        )
+      : undefined;
     if (entry && diagnostic) {
       matched.add(entry);
       known.push(diagnostic.text);

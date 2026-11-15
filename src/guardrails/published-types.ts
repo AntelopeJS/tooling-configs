@@ -300,7 +300,6 @@ async function typecheck(
   const { known, unknown } = splitDiagnostics(
     tsc.output,
     run.declared,
-    new Set(run.members.keys()),
     run.matched,
   );
   const failure =
@@ -396,13 +395,13 @@ export async function checkPublishedTypes(
       failure: `This check packs with pnpm or npm, not ${manager}.\n`,
       notes: "",
     };
-  const declared = readKnownFailures(root);
+  const members = new Map(
+    publicPackages(root).map(({ name, directory }) => [name, directory]),
+  );
+  const declared = readKnownFailures(root, new Set(members.keys()));
   if (!("entries" in declared)) return { failure: declared.failure, notes: "" };
   const scratch = realpathSync.native(
     mkdtempSync(join(tmpdir(), "published-types-")),
-  );
-  const members = new Map(
-    publicPackages(root).map(({ name, directory }) => [name, directory]),
   );
   const run: Run = {
     root,
