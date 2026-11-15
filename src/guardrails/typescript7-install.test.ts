@@ -69,13 +69,18 @@ function binRunner(manager: string): [string, ...string[]] {
     : ["npx", "--no-install"];
 }
 
-/** The version of the `typescript` the installed pack's own modules import, from the nearest `node_modules` that holds the pack, as a workspace may hoist it. */
+/** The version of the `typescript` the installed pack's own modules import, from the nearest `node_modules` that holds the pack, as a workspace may hoist it; Node runs without a shell, which on Windows would split the script. */
 function packTypeScript(directory: string): string {
-  return run(directory, process.execPath, [
-    "--input-type=module",
-    "-e",
-    'import { createRequire } from "node:module"; import { existsSync, realpathSync } from "node:fs"; import { dirname, join } from "node:path"; let folder = process.cwd(); while (!existsSync(join(folder, "node_modules/@antelopejs/tooling-configs"))) folder = dirname(folder); const pack = realpathSync(join(folder, "node_modules/@antelopejs/tooling-configs/package.json")); process.stdout.write(createRequire(pack)("typescript/package.json").version);',
-  ]).output;
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      'import { createRequire } from "node:module"; import { existsSync, realpathSync } from "node:fs"; import { dirname, join } from "node:path"; let folder = process.cwd(); while (!existsSync(join(folder, "node_modules/@antelopejs/tooling-configs"))) folder = dirname(folder); const pack = realpathSync(join(folder, "node_modules/@antelopejs/tooling-configs/package.json")); process.stdout.write(createRequire(pack)("typescript/package.json").version);',
+    ],
+    { cwd: directory, encoding: "utf8" },
+  );
+  return result.stdout + result.stderr;
 }
 
 function assertCompilers(
