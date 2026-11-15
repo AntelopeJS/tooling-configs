@@ -16,6 +16,11 @@ const programs = new Map<string, ts.Program>();
 /** The source files every program of the lint run shares, parsed once per text and per set of compiler options that change a parse. */
 const documents = ts.createDocumentRegistry(ts.sys.useCaseSensitiveFileNames);
 
+/** `options` without `pathsBasePath`, the directory of the config that declares `paths`, which TypeScript adds to the key of a parse in {@link documents} though it changes no parse. The programs of configs that keep `paths` in different directories, as the tsconfig Nuxt generates for each site does, then share the files they all read. */
+function registrySettings(options: ts.CompilerOptions): ts.CompilerOptions {
+  return { ...options, pathsBasePath: undefined };
+}
+
 function normalize(file: string): string {
   return resolve(file).replaceAll("\\", "/");
 }
@@ -83,6 +88,7 @@ function build(
     ? { ...parsed.options, allowNonTsExtensions: true }
     : parsed.options;
   const host = ts.createCompilerHost(options, true);
+  const settings = registrySettings(options);
   host.getSourceFile = (name, language) => {
     const content = normalize(name) === path ? view : readView(host, name);
     if (content === undefined) return undefined;
@@ -90,7 +96,7 @@ function build(
       ? tsxView(name, content.text, language)
       : documents.acquireDocument(
           name,
-          options,
+          settings,
           ts.ScriptSnapshot.fromString(content.text),
           content.text,
           undefined,
