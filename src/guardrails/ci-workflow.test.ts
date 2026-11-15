@@ -190,12 +190,12 @@ test("an old-shape caller with write grants is rewritten to the new shape and th
   assert.equal(rewrite(rewritten), rewritten);
 });
 
-test("rewriting keeps the other inputs, comments, other jobs and the pinned refs of the callers", () => {
+test("rewriting keeps the other inputs, comments and other jobs and moves a caller pinned to a branch to the shared tag, so a rewrite that keeps the branch ref fails", () => {
   const branch = "AntelopeJS/.github/.github/workflows/ci-node.yml@fix/branch";
   const text = `# keep me\nname: ci\non: [push, workflow_dispatch]\njobs:\n  ci:\n    uses: ${branch} # pinned\n    with:\n      docs-files: README.md\n      renovate-sync: true\n  deploy:\n    needs: ci\n    runs-on: ubuntu-latest\n    steps: []\n`;
   const rewritten = rewrite(text);
   const parsed = jobs(rewritten);
-  assert.equal(parsed.ci.uses, branch);
+  assert.equal(parsed.ci.uses, CI_NODE_REF);
   assert.deepEqual(parsed.ci.with, {
     "docs-files": "README.md",
     "renovate-sync": false,
@@ -228,13 +228,13 @@ test("a caller that sets test-job itself keeps its value, so a repository can op
   assert.equal(rewrite(optOut), optOut);
 });
 
-test("an existing renovate-sync caller keeps its ref, id and condition and only has its grants set", () => {
+test("an existing renovate-sync caller keeps its id and condition, moves to the shared tag and has its grants set, so a rewrite that keeps its branch ref fails", () => {
   const ref =
     "AntelopeJS/.github/.github/workflows/ci-renovate-sync.yml@fix/branch";
   const text = `name: ci\non: [workflow_dispatch]\njobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n  sync:\n    if: github.event_name == 'pull_request'\n    permissions: write-all\n    uses: ${ref}\n`;
   const parsed = jobs(rewrite(text));
   assert.deepEqual(Object.keys(parsed), ["ci", "sync"]);
-  assert.equal(parsed.sync.uses, ref);
+  assert.equal(parsed.sync.uses, CI_RENOVATE_SYNC_REF);
   assert.equal(parsed.sync.if, "github.event_name == 'pull_request'");
   assert.deepEqual(parsed.sync.permissions, {
     contents: "write",

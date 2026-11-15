@@ -264,7 +264,7 @@ test("missing checks CI is a note on sync and a failure on check; real run and r
   put(
     root,
     ".github/workflows/ci.yaml",
-    "jobs:\n  ci:\n    uses: AntelopeJS/.github/.github/workflows/ci-node.yml@v1\n",
+    "jobs:\n  ci:\n    uses: AntelopeJS/.github/.github/workflows/ci-node.yml@v2\n",
   );
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
 });
