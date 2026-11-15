@@ -354,3 +354,17 @@ test("a type argument written in a base variable's type is a changed function fo
     [".:Repo", ".:Repo.prototype.m"],
   );
 });
+
+test("a symbol-keyed member has the same surface path in every program, caught by building the path from the checker's per-program symbol id", () => {
+  const declaration = `export declare class Feed { [Symbol.asyncIterator](): AsyncIterator<number>; }\n`;
+  const alone = surfaceOf(TYPES_MANIFEST, [["index.d.ts", declaration]]);
+  const crowded = surfaceOf(TYPES_MANIFEST, [
+    [
+      "index.d.ts",
+      `export declare const tick: Iterator<string>;\nexport declare const rows: AsyncIterable<number>;\n${declaration}`,
+    ],
+  ]);
+  const path = ".:Feed.prototype.[Symbol.asyncIterator]";
+  assert.ok(path in alone, Object.keys(alone).join("\n"));
+  assert.equal(crowded[path], alone[path]);
+});
