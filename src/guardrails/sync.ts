@@ -44,6 +44,7 @@ import {
   ciRenovateSyncCallers,
   hasChecksWorkflow,
   MISSING_CHECKS_WORKFLOW,
+  sharedRefArtifacts,
 } from "./workflow.ts";
 import {
   CI_PATH,
@@ -465,7 +466,11 @@ export function syncRepository(
       (context.ci.profile ?? ciProfile(undefined)).integrationBranch,
     ),
   ];
-  const plan = [...planSync(current, executables, context), ...standalone];
+  const synced = [...planSync(current, executables, context), ...standalone];
+  const plan = [
+    ...synced,
+    ...sharedRefArtifacts(root, new Set(synced.map(({ path }) => path))),
+  ];
   const errors = plan
     .filter((artifact) => artifact.kind === "error")
     .map(({ message }) => message);

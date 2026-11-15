@@ -310,3 +310,25 @@ test("sync:check, on a repository without a next branch, fails a release caller 
   assert.equal(check.status, 1);
   assert.match(check.stdout, /Drift: \.github\/workflows\/next-sync\.yml/);
 });
+
+test("every other workflow's call to a shared workflow the tag ships moves to @v2 byte for byte, and a retired one keeps its ref, so a sync that leaves stale.yml on @v1 or rewrites modules-update.yml fails", (t) => {
+  const stale = `name: Stale issues\non:\n  schedule:\n    - cron: "30 1 * * *"\npermissions: {}\njobs:\n  stale:\n    permissions:\n      issues: write\n    uses: AntelopeJS/.github/.github/workflows/stale.yml@v1 # daily\n`;
+  const modules = `on: workflow_dispatch\njobs:\n  modules-update:\n    uses: AntelopeJS/.github/.github/workflows/modules-update.yml@v1\n`;
+  const root = repoWith(t, {
+    ".github/workflows/stale.yml": stale,
+    ".github/workflows/modules-update.yml": modules,
+  });
+  assert.equal(
+    syncRepository(root, { check: true }).paths.includes(
+      ".github/workflows/stale.yml",
+    ),
+    true,
+  );
+  syncRepository(root);
+  assert.equal(
+    read(root, ".github/workflows/stale.yml"),
+    stale.replace("stale.yml@v1", "stale.yml@v2"),
+  );
+  assert.equal(read(root, ".github/workflows/modules-update.yml"), modules);
+  assert.equal(syncRepository(root, { check: true }).paths.length, 0);
+});
