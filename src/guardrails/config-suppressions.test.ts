@@ -261,9 +261,11 @@ test("the full check fails a raised config ceiling against the base, and --updat
   const lowered = JSON.parse(read(root, "guardrails.suppressions.json")).config;
   assert.equal(lowered?.["typescript/unbound-method for src/test/**"], 1);
   assert.equal(
-    lowered?.["typescript/unbound-method for scripts/test-*.cjs"],
-    0,
+    Object.hasOwn(lowered, "typescript/unbound-method for scripts/test-*.cjs"),
+    false,
   );
+  const dropped = bin(root, "suppressions", ["--base", "HEAD"]);
+  assert.equal(dropped.status, 0, dropped.stderr);
   commit(root);
   put(
     root,
@@ -279,6 +281,19 @@ test("the full check fails a raised config ceiling against the base, and --updat
     raised.stderr,
     /raises lint config rule-off `typescript\/unbound-method for src\/test\/\*\*` from 1 on the base to 3\./,
   );
+  put(root, "guardrails.suppressions.json", LEGACY_BUDGET);
+  const uncapped = bin(root, "suppressions", ["--base", "HEAD"]);
+  assert.equal(uncapped.status, 1);
+  assert.match(uncapped.stderr, /drops config, which the base has\./);
+});
+
+test("a budget that drops a config the base holds empty still fails against the base", (t) => {
+  const root = budgetRepo(t, {}, {});
+  put(root, "oxlint.config.ts", cloudConfig(["src/**"]));
+  put(root, "guardrails.suppressions.json", LEGACY_BUDGET);
+  const uncapped = bin(root, "suppressions", ["--base", "HEAD"]);
+  assert.equal(uncapped.status, 1);
+  assert.match(uncapped.stderr, /drops config, which the base has\./);
 });
 
 test("sync adopts the config rule-offs into an existing budget at today's counts, so upgrading fails nothing", (t) => {
@@ -385,7 +400,10 @@ for (const [narrowing, globs] of NARROWINGS)
     const config = JSON.parse(
       read(root, "guardrails.suppressions.json"),
     ).config;
-    assert.equal(config["typescript/unbound-method for src/test/**"], 0);
+    assert.equal(
+      Object.hasOwn(config, "typescript/unbound-method for src/test/**"),
+      false,
+    );
     for (const glob of globs)
       assert.equal(config[`typescript/unbound-method for ${glob}`], 1);
     commit(root);
