@@ -123,9 +123,8 @@ function adoptableAgentCounts(
  * Fails each ceiling of the working-tree budget that is higher than on
  * `revision`, config rule-offs included once the base has their ceilings,
  * and a working tree that drops the `config` the base has; a key the working
- * tree drops is a ceiling of zero, so the ceiling check fails it while it
- * still suppresses something. A config ceiling may rise by what a containing
- * scope of its rule falls. The
+ * tree drops is a ceiling of zero, which the ceiling check holds it to. A
+ * config ceiling may rise by what a containing scope of its rule falls. The
  * safety ceiling may rise by what the SAFETY rule's own ceiling falls. A
  * base that does not record the agent directories' files lets the working
  * tree record them, each ceiling rising by no more than its count there; a

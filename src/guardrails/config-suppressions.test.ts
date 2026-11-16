@@ -287,6 +287,15 @@ test("the full check fails a raised config ceiling against the base, and --updat
   assert.match(uncapped.stderr, /drops config, which the base has\./);
 });
 
+test("a budget that drops a config the base holds empty still fails against the base", (t) => {
+  const root = budgetRepo(t, {}, {});
+  put(root, "oxlint.config.ts", cloudConfig(["src/**"]));
+  put(root, "guardrails.suppressions.json", LEGACY_BUDGET);
+  const uncapped = bin(root, "suppressions", ["--base", "HEAD"]);
+  assert.equal(uncapped.status, 1);
+  assert.match(uncapped.stderr, /drops config, which the base has\./);
+});
+
 test("sync adopts the config rule-offs into an existing budget at today's counts, so upgrading fails nothing", (t) => {
   const root = adoptedRepo(t, {
     "oxlint.config.ts": cloudConfig(["src/test/**"]),
