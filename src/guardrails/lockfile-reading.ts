@@ -15,13 +15,6 @@ const OTHER_LOCKS = [
   "bun.lockb",
 ] as const;
 
-/** The manifest fields both package managers record as a project's direct dependencies. */
-export const DIRECT_FIELDS = [
-  "dependencies",
-  "devDependencies",
-  "optionalDependencies",
-] as const;
-
 /** A JSON or YAML mapping, read with every scalar as its source text; `undefined` when absent or not a mapping. */
 export type Mapping = YAMLMap | undefined;
 
@@ -29,7 +22,7 @@ export type Mapping = YAMLMap | undefined;
 export class Unreadable extends Error {}
 
 /** Parses a JSON or YAML file whose top level is a mapping; throws `Unreadable` otherwise. */
-function readMapping(path: string): YAMLMap {
+export function readMapping(path: string): YAMLMap {
   const document = parseDocument(readFileSync(path, "utf8"), {
     schema: "failsafe",
     uniqueKeys: false,

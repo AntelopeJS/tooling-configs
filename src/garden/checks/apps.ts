@@ -13,13 +13,13 @@ interface AppBaseline {
 }
 
 const ORG_BASELINE: AppBaseline = {
-  all: ["amp-for-github", "claude", "chatgpt-codex-connector"],
+  all: ["claude", "chatgpt-codex-connector"],
   selectedOnly: [],
 };
 
 const ALTAB_BASELINE: AppBaseline = {
   all: ["claude", "chatgpt-codex-connector"],
-  selectedOnly: ["amp-for-github"],
+  selectedOnly: [],
 };
 
 interface Installation {
@@ -81,28 +81,5 @@ export const aiApps: Check = {
     for (const org of [ORG, ALTAB])
       findings.push(...drift(org, await installations(context.api, org)));
     return found(findings);
-  },
-};
-
-export const orbSecrets: Check = {
-  id: "orb-secrets",
-  async run(context) {
-    const surface = context.api.secrets();
-    return found([
-      ...surface.variables.map((name) =>
-        finding(
-          { repo: ORG, check: "orb-secrets", subject: `env:${name}` },
-          `The environment variable ${name} is set in the scanning process.`,
-          `${name} is removed from the scanner's environment.`,
-        ),
-      ),
-      ...surface.files.map((file) =>
-        finding(
-          { repo: ORG, check: "orb-secrets", subject: `file:${file}` },
-          `The credential file ~/${file} is readable by the scanning process.`,
-          `~/${file} is removed from the scanner's machine.`,
-        ),
-      ),
-    ]);
   },
 };

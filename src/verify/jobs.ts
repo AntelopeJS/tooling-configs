@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { availableParallelism, constants } from "node:os";
 
-import { killGroup } from "./record.ts";
+import { killGroup, PORT_LANE_ENV, portLane } from "./record.ts";
 import { commandRecords } from "./workspace.ts";
 
 /** One feature a `journey` call runs and the journey ids it names; no ids runs every journey the feature registers. */
@@ -10,11 +10,12 @@ export interface FeatureRun {
   ids: string[];
 }
 
-/** A feature of a `journey --jobs` call, the earlier features it waits for, its process while it runs, and its output once that process ended. */
+/** A feature of a `journey --jobs` call, the earlier features it waits for, its process and the port lane it holds while it runs, and its output once that process ended. */
 interface Slot {
   run: FeatureRun;
   after: number[];
   state: "waiting" | "running" | "ended";
+  lane?: number;
   child?: ChildProcess;
   stdout: Buffer[];
   stderr: Buffer[];
@@ -73,9 +74,10 @@ function dependencies(
  * collects what it prints into `slot`. Resolves once it exited. A process
  * that ended on a signal or could not start is named on its stderr.
  */
-function runProcess(slot: Slot, args: string[]): Promise<void> {
+function runProcess(slot: Slot, args: string[], ports: string): Promise<void> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, args, {
+      env: { ...process.env, [PORT_LANE_ENV]: ports },
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
     });
@@ -105,7 +107,9 @@ function runProcess(slot: Slot, args: string[]): Promise<void> {
  * as soon as it and every feature before it have ended. A process per
  * feature gives each one the `process.env`, verify.config.ts module state
  * and uncaught-error handler its own call would have, which features
- * sharing one process could not keep apart while running at once. A feature
+ * sharing one process could not keep apart while running at once. Each
+ * running process holds one of `jobs` lanes, a share of the ports
+ * `freePort` draws from that no other running process holds. A feature
  * whose process fails, ends on a signal or leaves an uncaught error does not
  * stop the others.
  *
@@ -157,6 +161,14 @@ export async function runConcurrently(
         )
       : undefined;
   const busy = () => slots.filter((slot) => slot.state === "running").length;
+  const freeLane = () => {
+    const held = new Set(
+      slots.flatMap((slot) => (slot.state === "running" ? [slot.lane] : [])),
+    );
+    let lane = 0;
+    while (held.has(lane)) lane++;
+    return lane;
+  };
   const kill = () => {
     for (const slot of slots) {
       const pid = slot.child?.pid;
@@ -185,8 +197,13 @@ export async function runConcurrently(
         slot = ready()
       ) {
         const started = slot;
+        started.lane = freeLane();
         started.state = "running";
-        void runProcess(started, argsOf(started.run)).then(() => {
+        void runProcess(
+          started,
+          argsOf(started.run),
+          portLane(started.lane, jobs),
+        ).then(() => {
           started.state = "ended";
           flush();
           fill();

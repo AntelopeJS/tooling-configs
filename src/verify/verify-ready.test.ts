@@ -3,8 +3,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
+import { pathToFileURL } from "node:url";
 
 import { put, read } from "../guardrails/helpers/test-repo.ts";
+import { claimPort, closeServer } from "../lease/ports.ts";
+import { runConcurrently } from "./jobs.ts";
 import { freePort } from "./record.ts";
 import {
   evidence,
@@ -98,4 +101,59 @@ test("after its first 3 s readiness falls back to one probe every 250 ms, so a s
 test("a free port for an app comes from below the kernel's ephemeral range and binds; a port the kernel picks comes from the range outgoing connections draw from", async () => {
   const port = await freePort();
   assert.ok(port >= 10_000 && port < 20_000, String(port));
+});
+
+test("free-port allocations before any app binds never repeat a port; a bind-close-return allocator repeats one within a few hundred draws", async () => {
+  const ports: number[] = [];
+  for (let index = 0; index < 400; index++) ports.push(await freePort());
+  assert.equal(new Set(ports).size, ports.length);
+  const parallel = await Promise.all(
+    Array.from({ length: 200 }, () => freePort()),
+  );
+  assert.equal(new Set([...ports, ...parallel]).size, 600);
+});
+
+test("free-port calls made at once while every random draw is taken each get a distinct kernel port, where a fallback that reserves port 0 makes all but one fail", async (t) => {
+  const taken = await claimPort(15_000, "127.0.0.1");
+  t.after(() => taken && closeServer(taken));
+  const random = Math.random;
+  Math.random = () => 0.5;
+  t.after(() => {
+    Math.random = random;
+  });
+  const ports = await Promise.all(Array.from({ length: 4 }, () => freePort()));
+  assert.equal(new Set(ports).size, 4, String(ports));
+  assert.ok(!ports.includes(15_000), String(ports));
+});
+
+const RECORD = pathToFileURL(join(import.meta.dirname, "record.ts")).href;
+
+/** A feature process whose `Math.random` always draws the same number, as two processes seeded alike do, and that writes the port `freePort` hands it to `<dir>/<feature>`. */
+function seeded(dir: string, feature: string): string[] {
+  return [
+    "--input-type=module",
+    "-e",
+    `import { writeFileSync } from "node:fs";
+Math.random = () => 0.6011;
+const { freePort } = await import(${JSON.stringify(RECORD)});
+writeFileSync(${JSON.stringify(join(dir, feature))}, String(await freePort()));`,
+  ];
+}
+
+test("two feature processes of one --jobs call, seeded alike, get different ports, where an allocator that dedupes within one process hands both the same port", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "verify-jobs-ports-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const code = await runConcurrently(
+    dir,
+    [
+      { feature: "a", ids: [] },
+      { feature: "b", ids: [] },
+    ],
+    2,
+    () => [],
+    ({ feature }) => seeded(dir, feature),
+  );
+  assert.equal(code, 0);
+  const ports = ["a", "b"].map((feature) => Number(read(dir, feature)));
+  assert.notEqual(ports[0], ports[1], `both got ${ports[0]}`);
 });

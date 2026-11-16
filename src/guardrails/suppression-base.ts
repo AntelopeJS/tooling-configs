@@ -69,15 +69,22 @@ export function suppressionBase(
   return verified(root, "refs/remotes/origin/HEAD");
 }
 
-function agentFilesDropped(
+function fieldsDropped(
   base: SuppressionCounts,
   current: SuppressionCounts,
 ): string[] {
-  return base.agentFiles && !current.agentFiles
-    ? [
-        `${SUPPRESSIONS_FILE}: drops agentFiles, which the base has. Keep it; the repository's own files under the agent directories stay counted.`,
-      ]
-    : [];
+  return [
+    ...(base.agentFiles && !current.agentFiles
+      ? [
+          `${SUPPRESSIONS_FILE}: drops agentFiles, which the base has. Keep it; the repository's own files under the agent directories stay counted.`,
+        ]
+      : []),
+    ...(base.config !== undefined && current.config === undefined
+      ? [
+          `${SUPPRESSIONS_FILE}: drops config, which the base has. Keep it; without it lint config rule-offs go uncapped.`,
+        ]
+      : []),
+  ];
 }
 
 /** How much each key's ceiling may rise by on adopting the agent directories' files. */
@@ -114,8 +121,9 @@ function adoptableAgentCounts(
 
 /**
  * Fails each ceiling of the working-tree budget that is higher than on
- * `revision`, and each rule that `revision` lists but the working tree
- * dropped, config rule-offs included once the base has their ceilings; a
+ * `revision`, config rule-offs included once the base has their ceilings,
+ * and a working tree that drops the `config` the base has; a key the working
+ * tree drops is a ceiling of zero, which the ceiling check holds it to. A
  * config ceiling may rise by what a containing scope of its rule falls. The
  * safety ceiling may rise by what the SAFETY rule's own ceiling falls. A
  * base that does not record the agent directories' files lets the working
@@ -139,53 +147,37 @@ export function raisedCeilings(root: string, revision: string): string[] {
     readFileSync(join(root, SUPPRESSIONS_FILE), "utf8"),
     SUPPRESSIONS_FILE,
   );
-  const failures: string[] = agentFilesDropped(base, current);
+  const failures: string[] = fieldsDropped(base, current);
   const room = adoptableAgentCounts(root, revision, base, current);
   const compare = (
     key: string,
     ceiling: number,
-    after: number | undefined,
+    after: number,
     adoptable = 0,
   ) => {
     const before = ceiling + adoptable;
-    if (after === undefined)
-      failures.push(
-        `${SUPPRESSIONS_FILE}: removes ${key}, which has ceiling ${before} on the base. Keep the key; lower it with suppressions:update.`,
-      );
-    else if (after > before)
+    if (after > before)
       failures.push(
         `${SUPPRESSIONS_FILE}: raises ${key} from ${ceiling} on the base to ${after}${adoptable ? `, above the ${before} that recording the agent files allows` : ""}.`,
       );
   };
-  for (const rule of new Set([
-    ...Object.keys(base.rules),
-    ...Object.keys(current.rules),
-  ]))
+  for (const rule of Object.keys(current.rules))
     compare(
       `lint rule \`${rule}\``,
       base.rules[rule] ?? 0,
-      Object.hasOwn(base.rules, rule)
-        ? current.rules[rule]
-        : (current.rules[rule] ?? 0),
+      current.rules[rule],
       room.rules[rule],
     );
-  const baseConfig = base.config ?? {};
-  const covered = coveredLimits(baseConfig, current.config ?? {});
-  for (const rule of new Set([
-    ...Object.keys(baseConfig),
-    ...Object.keys(current.config ?? {}),
-  ]))
-    if (base.config !== undefined)
+  if (base.config !== undefined && current.config !== undefined) {
+    const covered = coveredLimits(base.config, current.config);
+    for (const rule of Object.keys(current.config))
       compare(
         `lint config rule-off \`${rule}\``,
         covered[rule] ?? 0,
-        current.config === undefined ||
-          (Object.hasOwn(baseConfig, rule) &&
-            !Object.hasOwn(current.config, rule))
-          ? undefined
-          : (current.config[rule] ?? 0),
+        current.config[rule],
         room.config[rule],
       );
+  }
   compare(
     "`@ts-expect-error`",
     base.tsExpectError,

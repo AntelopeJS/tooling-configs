@@ -6,7 +6,14 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { formatBudget } from "./suppression-budget.ts";
-import { bin, commit, linkOxlint, put, testRepo } from "./helpers/test-repo.ts";
+import {
+  bin,
+  commit,
+  linkOxlint,
+  put,
+  read,
+  testRepo,
+} from "./helpers/test-repo.ts";
 
 const DIRECTIVE = "// oxlint-disable-next-line eslint/max-params\n";
 
@@ -23,7 +30,7 @@ function git(root: string, args: string[]): void {
   execFileSync("git", args, { cwd: root, stdio: "pipe" });
 }
 
-test("a ceiling raised or removed by hand fails against the base even within the budget, and a lowered one passes", (t) => {
+test("a ceiling raised by hand fails against the base even within the budget, a removed key that still suppresses fails, and one that suppresses nothing passes", (t) => {
   const root = testRepo(t);
   linkOxlint(root);
   put(root, "src/a.ts", DIRECTIVE.repeat(2));
@@ -40,17 +47,39 @@ test("a ceiling raised or removed by hand fails against the base even within the
     /raises lint rule `eslint\/max-params` from 2 on the base to 3\./,
   );
   assert.match(raised.stderr, /ruleset bypass/);
-  put(root, "src/a.ts", "export const clean = true;\n");
   put(root, "guardrails.suppressions.json", budget(undefined));
   commit(root);
+  const kept = bin(root, "suppressions", ["--base", "HEAD~2"]);
+  assert.equal(kept.status, 1);
   assert.match(
-    bin(root, "suppressions", ["--base", "HEAD~2"]).stderr,
-    /removes lint rule `eslint\/max-params`, which has ceiling 2 on the base/,
+    kept.stderr,
+    /lint rule `eslint\/max-params`: 3 exceeds ceiling 0\./,
   );
-  put(root, "guardrails.suppressions.json", budget(0));
+  put(root, "src/a.ts", "export const clean = true;\n");
   commit(root);
-  const lowered = bin(root, "suppressions", ["--base", "HEAD~3"]);
-  assert.equal(lowered.status, 0, lowered.stderr);
+  const removed = bin(root, "suppressions", ["--base", "HEAD~3"]);
+  assert.equal(removed.status, 0, removed.stderr);
+});
+
+test("--update drops a key that suppresses nothing, which the base comparison accepts, and keeps one that still does", (t) => {
+  const root = testRepo(t);
+  linkOxlint(root);
+  put(root, "src/a.ts", DIRECTIVE);
+  put(
+    root,
+    "guardrails.suppressions.json",
+    formatBudget({
+      rules: { "eslint/max-params": 1, "eslint/no-console": 0 },
+      tsExpectError: 0,
+      tsIgnore: 0,
+      safety: 0,
+    }),
+  );
+  commit(root);
+  assert.equal(bin(root, "suppressions", ["--update"]).status, 0);
+  assert.equal(read(root, "guardrails.suppressions.json"), budget(1));
+  const dropped = bin(root, "suppressions", ["--base", "HEAD"]);
+  assert.equal(dropped.status, 0, dropped.stderr);
 });
 
 test("a base without a budget, a first adoption, passes", (t) => {

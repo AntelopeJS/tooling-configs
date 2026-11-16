@@ -261,9 +261,11 @@ test("the full check fails a raised config ceiling against the base, and --updat
   const lowered = JSON.parse(read(root, "guardrails.suppressions.json")).config;
   assert.equal(lowered?.["typescript/unbound-method for src/test/**"], 1);
   assert.equal(
-    lowered?.["typescript/unbound-method for scripts/test-*.cjs"],
-    0,
+    Object.hasOwn(lowered, "typescript/unbound-method for scripts/test-*.cjs"),
+    false,
   );
+  const dropped = bin(root, "suppressions", ["--base", "HEAD"]);
+  assert.equal(dropped.status, 0, dropped.stderr);
   commit(root);
   put(
     root,
@@ -279,6 +281,19 @@ test("the full check fails a raised config ceiling against the base, and --updat
     raised.stderr,
     /raises lint config rule-off `typescript\/unbound-method for src\/test\/\*\*` from 1 on the base to 3\./,
   );
+  put(root, "guardrails.suppressions.json", LEGACY_BUDGET);
+  const uncapped = bin(root, "suppressions", ["--base", "HEAD"]);
+  assert.equal(uncapped.status, 1);
+  assert.match(uncapped.stderr, /drops config, which the base has\./);
+});
+
+test("a budget that drops a config the base holds empty still fails against the base", (t) => {
+  const root = budgetRepo(t, {}, {});
+  put(root, "oxlint.config.ts", cloudConfig(["src/**"]));
+  put(root, "guardrails.suppressions.json", LEGACY_BUDGET);
+  const uncapped = bin(root, "suppressions", ["--base", "HEAD"]);
+  assert.equal(uncapped.status, 1);
+  assert.match(uncapped.stderr, /drops config, which the base has\./);
 });
 
 test("sync adopts the config rule-offs into an existing budget at today's counts, so upgrading fails nothing", (t) => {
@@ -304,7 +319,7 @@ test("sync adopts the config rule-offs into an existing budget at today's counts
   assert.equal(syncRepository(root, { check: true }).paths.length, 0);
 });
 
-test("an ESLint composer's overrideRules counts like a rules block, and a config entry switching off a never-suppressed rule fails even under a raised ceiling", (t) => {
+test("an ESLint composer's overrideRules counts like a rules block", () => {
   assert.deepEqual(
     countSuppressions(
       suppressionsIn(
@@ -313,30 +328,6 @@ test("an ESLint composer's overrideRules counts like a rules block, and a config
       ),
     ).config,
     { "vue/no-v-html for *": 1 },
-  );
-  const root = budgetRepo(
-    t,
-    { "oxlint.config.ts": cloudConfig(["src/test/**"]) },
-    {
-      ...Object.fromEntries(
-        CLOUD_RULES.map((rule) => [`${rule} for src/test/**`, 1]),
-      ),
-      "antelopejs/require-assertion for src/test/**": 1,
-    },
-  );
-  put(
-    root,
-    "oxlint.config.ts",
-    cloudConfig(["src/test/**"]).replace(
-      '"eslint/complexity": "off",',
-      '"eslint/complexity": "off",\n  "antelopejs/require-assertion": "off",',
-    ),
-  );
-  const check = bin(root, "suppressions");
-  assert.equal(check.status, 1);
-  assert.match(
-    check.stderr,
-    /oxlint\.config\.ts:8: lint config rule-off `antelopejs\/require-assertion` for `src\/test\/\*\*`: this rule is never suppressed\. Fix: assert on the behaviour, or delete the test\./,
   );
 });
 
@@ -409,7 +400,10 @@ for (const [narrowing, globs] of NARROWINGS)
     const config = JSON.parse(
       read(root, "guardrails.suppressions.json"),
     ).config;
-    assert.equal(config["typescript/unbound-method for src/test/**"], 0);
+    assert.equal(
+      Object.hasOwn(config, "typescript/unbound-method for src/test/**"),
+      false,
+    );
     for (const glob of globs)
       assert.equal(config[`typescript/unbound-method for ${glob}`], 1);
     commit(root);

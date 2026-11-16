@@ -13,9 +13,8 @@ import { typescript } from "./parser.ts";
 
 /**
  * One suppression in an authored code file, at the line where its comment
- * starts, with the reason its comment gives, whitespace collapsed. A lint
- * directive yields one `rule` entry per rule it names, and one with rule `*`
- * when it names none; its reason is the text after ` -- `. A lint config
+ * starts. A lint directive yields one `rule` entry per rule it names, and one
+ * with rule `*` when it names none. A lint config
  * yields one `config` entry per rule it switches off or down to a warning,
  * for each glob it does so for, counted per rule and glob.
  */
@@ -24,7 +23,6 @@ export type Suppression =
       kind: "rule";
       rule: string;
       directive: string;
-      reason: string;
       file: string;
       line: number;
     }
@@ -37,18 +35,9 @@ export type Suppression =
     }
   | {
       kind: "tsExpectError" | "tsIgnore" | "safety";
-      reason: string;
       file: string;
       line: number;
     };
-
-/** A block `oxlint-disable` or `eslint-disable` that no later `-enable` closes for `rule` (`*` for a blanket block). */
-export interface OpenDisable {
-  rule: string;
-  directive: string;
-  file: string;
-  line: number;
-}
 
 /** Suppression totals: lint directives per named rule (`*` for none), each comment kind, then lint config rule-offs per rule; a budget adopted before config rule-offs were counted has no `config`, and one adopted before the repository's own files under the agent directories were counted lacks `agentFiles`. */
 export interface SuppressionCounts {
@@ -75,8 +64,6 @@ const DESCRIPTION = /\s-{2,}\s|\s-{2,}$/u;
 /** The comment `anti-slop/require-safety-comment-for-type-assertion` accepts as a justification. */
 const SAFETY_COMMENT = markerPattern(DEFAULT_SAFETY_MARKERS);
 const TS_DIRECTIVE = /^[/*\s]*@ts-(expect-error|ignore)(?![\w-])/u;
-const SAFETY_REASON = /SAFETY\s*:([\s\S]*)$/u;
-const ENABLE_DIRECTIVE = /^((?:oxlint|eslint)-enable)(?=\s|$)([\s\S]*)$/u;
 
 function scriptKind(lang: string): ts.ScriptKind {
   const kinds = typescript().ScriptKind;
@@ -151,36 +138,24 @@ function vueComments(text: string): CommentText[] {
   return comments;
 }
 
-/** Collapses whitespace and the leading `*` of block comment lines. */
-function normalized(text: string): string {
-  return text
-    .replaceAll(/\n\s*\*(?!\/)/gu, "\n")
-    .replaceAll(/\s+/gu, " ")
-    .trim();
-}
-
-/** The rules a directive's text names, `*` for none, and the reason after its ` -- `. */
-function directiveParts(rest: string) {
+/** The rules a directive's text names before its ` -- ` description, `*` for none. */
+function directiveRules(rest: string): string[] {
   const separator = DESCRIPTION.exec(rest);
   const rules = (separator === null ? rest : rest.slice(0, separator.index))
     .split(",")
     .map((rule) => rule.trim())
     .filter(Boolean);
-  return {
-    rules: rules.length ? rules : ["*"],
-    reason:
-      separator === null
-        ? ""
-        : normalized(rest.slice(separator.index + separator[0].length)),
-  };
+  return rules.length ? rules : ["*"];
 }
 
 function lintDirective(value: string) {
   const text = value.replace(/^\s*\*?\s*/u, "");
   const directive = LINT_DIRECTIVE.exec(text);
   if (directive === null) return [];
-  const { rules, reason } = directiveParts(directive[2]);
-  return rules.map((rule) => ({ directive: directive[1], rule, reason }));
+  return directiveRules(directive[2]).map((rule) => ({
+    directive: directive[1],
+    rule,
+  }));
 }
 
 /** TypeScript reads a directive from a line comment, or from the last line of a block comment. */
@@ -195,7 +170,6 @@ function tsDirective(comment: CommentText) {
       match[1] === "ignore"
         ? ("tsIgnore" as const)
         : ("tsExpectError" as const),
-    reason: normalized(text.slice(match[0].length)),
   };
 }
 
@@ -234,46 +208,15 @@ export function suppressionsIn(file: string, text: string): Suppression[] {
     return found;
   for (const comment of fileComments(file, text)) {
     const line = lineOf(text, comment.start);
-    for (const { directive, rule, reason } of lintDirective(comment.value))
-      found.push({ kind: "rule", rule, directive, reason, file, line });
+    for (const { directive, rule } of lintDirective(comment.value))
+      found.push({ kind: "rule", rule, directive, file, line });
     const typeDirective = tsDirective(comment);
     if (typeDirective !== undefined)
       found.push({ ...typeDirective, file, line });
     if (SAFETY_COMMENT.test(comment.value))
-      found.push({
-        kind: "safety",
-        reason: normalized(SAFETY_REASON.exec(comment.value)?.[1] ?? ""),
-        file,
-        line,
-      });
+      found.push({ kind: "safety", file, line });
   }
   return found;
-}
-
-/**
- * The block disables in one code file's text that are still open at its end.
- * An `-enable` naming rules closes those rules; one naming none closes every
- * open block.
- */
-export function openDisablesIn(file: string, text: string): OpenDisable[] {
-  if (!CODE_FILE.test(file) || !CANDIDATE.test(text)) return [];
-  const open = new Map<string, OpenDisable>();
-  for (const comment of fileComments(file, text)) {
-    const value = comment.value.replace(/^\s*\*?\s*/u, "");
-    const disable = LINT_DIRECTIVE.exec(value);
-    if (disable !== null && !disable[1].endsWith("line")) {
-      const line = lineOf(text, comment.start);
-      for (const rule of directiveParts(disable[2]).rules)
-        open.set(rule, { rule, directive: disable[1], file, line });
-      continue;
-    }
-    const enable = ENABLE_DIRECTIVE.exec(value);
-    if (enable === null) continue;
-    const { rules } = directiveParts(enable[2]);
-    if (rules[0] === "*") open.clear();
-    else for (const rule of rules) open.delete(rule);
-  }
-  return [...open.values()];
 }
 
 /** Each repository's generated-output test, remembered per path, since the base and the working tree list mostly the same files. */
@@ -356,7 +299,7 @@ function blobs(root: string, specs: string[]): (string | undefined)[] {
  * index when `revision` is the empty string. Without `files` every file of
  * that tree is read.
  */
-export function atRevision<T>(
+function atRevision<T>(
   root: string,
   revision: string,
   read: (file: string, text: string) => T[],

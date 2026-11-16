@@ -24,7 +24,6 @@ export const IGNORE_PATTERNS = [
 export const AGENT_IGNORE_PATTERNS = [
   ".agent/**",
   ".agents/**",
-  ".amp/**",
   ".claude/**",
   ".codex/**",
   ".cursor/**",

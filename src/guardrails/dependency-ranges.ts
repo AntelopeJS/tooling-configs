@@ -3,10 +3,12 @@
  * and from 1.0 alike, so a range open past the next minor of its floor lets an
  * install resolve a breaking release its dependent was never built against.
  * Every range on one stops below that minor: `>=0.4.0 <0.5.0` on 0.x,
- * `~1.2.0` from 1.0. A narrower range, such as an exact pin, fails too:
- * `@antelopejs/core` keeps one copy of each interface and refuses to start a
- * module whose range that copy falls outside, so a pin breaks startup at the
- * next patch release.
+ * `~1.2.0` from 1.0. A narrower range, such as an exact pin on a release,
+ * fails too: `@antelopejs/core` keeps one copy of each interface and refuses
+ * to start a module whose range that copy falls outside, so a pin breaks
+ * startup at the next patch release. An exact pin on a preview `next`
+ * publishes, `X.Y.Z-next.<count>.g<sha>`, passes: the release train turns it
+ * into the capped range on `X.Y.Z` at release.
  */
 
 const ANTELOPEJS_SCOPE = "@antelopejs/";
@@ -126,6 +128,30 @@ function cappedRange(floor: Version): string {
     : `~${formatVersion(floor)}`;
 }
 
+/** A preview `next` publishes ahead of release `X.Y.Z`: `X.Y.Z-next.<commit count>.g<short sha>`. */
+const PREVIEW = /^(\d+)\.(\d+)\.(\d+)-next\.\d+\.g[0-9a-f]+$/u;
+
+/**
+ * The release `version` previews, as `[major, minor, patch]`, when it is a preview `next` publishes; `undefined` for
+ * any other version or range. A repository tests another one's unreleased change by pinning its preview exactly, and the
+ * release train turns that pin into the capped range on the release at release time.
+ */
+function previewRelease(version: string): Version | undefined {
+  const match = PREVIEW.exec(version.trim());
+  return match ? toVersion(match) : undefined;
+}
+
+/** Whether `version` is a preview `next` publishes, such as `0.5.2-next.926.gdaa3203`. */
+export function isPreview(version: string): boolean {
+  return previewRelease(version) !== undefined;
+}
+
+/** `spec` as the release train publishes it: the capped range on the release an exact preview pin previews, else `spec`. */
+export function releasedSpec(spec: string): string {
+  const release = previewRelease(spec);
+  return release ? cappedRange(release) : spec;
+}
+
 function isCapped(
   bounds: Bounds | undefined,
   local: Version | undefined,
@@ -169,7 +195,9 @@ function publishedSpec(spec: string, local: Version): string {
 /**
  * The violation of one `@antelopejs/*` entry, if any. A `workspace:` spec is
  * judged as pnpm publishes it, and skipped in a private manifest, which is
- * never published, or when the sibling's version is not known.
+ * never published, or when the sibling's version is not known. An exact pin
+ * on a preview of a package outside the repository passes: the release train
+ * publishes it as a capped range.
  */
 function checkEntry(
   manifest: PackageManifest,
@@ -177,6 +205,7 @@ function checkEntry(
   [name, spec]: [string, string],
   local: string | undefined,
 ): RangeViolation | undefined {
+  if (local === undefined && isPreview(spec)) return undefined;
   const workspace = spec.startsWith(WORKSPACE_PREFIX);
   const localVersion = local === undefined ? undefined : readFloor(local);
   let published = spec;
@@ -290,5 +319,5 @@ export function describeViolation(violation: RangeViolation): string {
   const fix = expected
     ? `use "${expected}"`
     : "declare it as >=<floor> <next minor> on 0.x or ~<floor> from 1.0";
-  return `${field}["${name}"] is "${spec}": AntelopeJS packages ship breaking changes in minor releases, so it must stop below the next minor${holds}; ${fix}`;
+  return `${field}["${name}"] is "${spec}": AntelopeJS packages ship breaking changes in minor releases, so it must stop below the next minor${holds} or pin a preview exactly, such as "0.5.2-next.926.gdaa3203"; ${fix}`;
 }

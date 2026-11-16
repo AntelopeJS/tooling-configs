@@ -20,6 +20,7 @@ import {
   interfaceRanges,
   localVersions,
   type RangeViolation,
+  releasedSpec,
 } from "./dependency-ranges.ts";
 import { trackedManifests } from "./files.ts";
 import {
@@ -235,7 +236,8 @@ async function dmsReleases(
  * `local` implements its interface on, since a project loads the interface version that release is built against. An
  * interface no such release implements is held instead to the `latest` dist-tag of its package: one line when every
  * release the range admits sits below it, and only when every published DMS release could be read, since an unread one
- * may implement it. A line that gives the fix an earlier one gave is skipped. A package whose release cannot be read,
+ * may implement it. An exact pin on a preview is judged as the capped range on its release, the range the release train
+ * publishes in its place. A line that gives the fix an earlier one gave is skipped. A package whose release cannot be read,
  * or whose `latest` is a prerelease, is skipped, so a registry outage leaves only the cap rule deciding the step.
  */
 async function staleRanges(
@@ -251,15 +253,16 @@ async function staleRanges(
     dmsReleases(local),
   ]);
   return ranges.flatMap(({ path, field, name, spec }) => {
-    if (validRange(spec) === null) return [];
+    const released = releasedSpec(spec);
+    if (validRange(released) === null) return [];
     const implemented = implementations(name, releases);
     const findings = (
       implemented.length
         ? implemented.map((implementation) =>
-            outsideImplemented(spec, implementation),
+            outsideImplemented(released, implementation),
           )
         : complete
-          ? [belowNewest(spec, newest.get(name))]
+          ? [belowNewest(released, newest.get(name))]
           : []
     ).filter((finding) => finding !== undefined);
     return findings

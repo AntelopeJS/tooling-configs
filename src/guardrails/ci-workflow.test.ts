@@ -155,7 +155,7 @@ test("renaming the caller to ci also rewrites needs.<old-id> in if, env and run 
 });
 
 test("a conformant caller is returned byte for byte, comments and extra jobs included", () => {
-  const text = `# keep me\nname: ci\n${ciTriggers("next")}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: true\n      docs-files: README.md # docs\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n  deploy:\n    needs: ci\n    runs-on: ubuntu-latest\n    steps: []\n`;
+  const text = `# keep me\nname: ci\n${ciTriggers("next")}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: true\n      docs-files: README.md # docs\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n  deploy:\n    needs: ci\n    runs-on: ubuntu-latest\n    steps: []\n`;
   assert.equal(rewrite(text), text);
   assert.equal(rewrite(CI_CALLER), CI_CALLER);
 });
@@ -170,11 +170,24 @@ test("the canonical caller keeps the job ci read-only and gives only the renovat
   assert.deepEqual(parsed["renovate-sync"].permissions, {
     contents: "write",
     actions: "write",
+    statuses: "write",
   });
   assert.equal(parsed["renovate-sync"].uses, CI_RENOVATE_SYNC_REF);
   assert.deepEqual(ciRenovateSyncCallers(CI_CALLER), [
     { id: "renovate-sync", uses: CI_RENOVATE_SYNC_REF, named: false },
   ]);
+});
+
+test("a renovate-sync job granted only contents and actions gains statuses write, so a Renovate pull request can set ci / checks", () => {
+  const withoutStatuses = CI_CALLER.replace("      statuses: write\n", "");
+  assert.notEqual(withoutStatuses, CI_CALLER);
+  const rewritten = rewrite(withoutStatuses);
+  assert.deepEqual(jobs(rewritten)["renovate-sync"].permissions, {
+    contents: "write",
+    actions: "write",
+    statuses: "write",
+  });
+  assert.equal(rewrite(rewritten), rewritten);
 });
 
 test("an old-shape caller with write grants is rewritten to the new shape and the rewrite is idempotent", () => {
@@ -224,7 +237,7 @@ test("a caller without the test-job input gets test-job: true, with or without a
 });
 
 test("a caller that sets test-job itself keeps its value, so a repository can opt out", () => {
-  const optOut = `${ciTriggers("next")}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: false\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n`;
+  const optOut = `${ciTriggers("next")}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: false\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n`;
   assert.equal(rewrite(optOut), optOut);
 });
 
@@ -239,6 +252,7 @@ test("an existing renovate-sync caller keeps its id and condition, moves to the 
   assert.deepEqual(parsed.sync.permissions, {
     contents: "write",
     actions: "write",
+    statuses: "write",
   });
 });
 
@@ -350,6 +364,7 @@ test("sync --check reports an old-shape ci.yml with write grants as drift, sync 
   assert.deepEqual(jobs(synced)["renovate-sync"].permissions, {
     contents: "write",
     actions: "write",
+    statuses: "write",
   });
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
   put(root, ".github/workflows/ci.yml", CI_CALLER);

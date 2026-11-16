@@ -147,6 +147,15 @@ function isPublic(property: ts.Symbol): boolean {
   );
 }
 
+/** The name a member is addressed by in a surface path: a symbol-keyed member is written as its source expression, since the checker's own name for it embeds an id that differs from one program to the next. */
+function memberName(symbol: ts.Symbol): string {
+  const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0];
+  const name = declaration && ts.getNameOfDeclaration(declaration);
+  return name && ts.isComputedPropertyName(name)
+    ? `[${name.expression.getText()}]`
+    : symbol.name;
+}
+
 function recordMembers(
   walk: Walk,
   type: ts.Type,
@@ -161,7 +170,8 @@ function recordMembers(
       ...owners,
       property,
     ]);
-    if (text !== undefined) walk.surface.set(`${prefix}${property.name}`, text);
+    if (text !== undefined)
+      walk.surface.set(`${prefix}${memberName(property)}`, text);
   }
 }
 
@@ -217,11 +227,11 @@ function visit(
   if (depth >= MAX_DEPTH || !declaredHere(walk, symbol)) return;
   if (symbol.flags & ts.SymbolFlags.Module) {
     for (const member of walk.checker.getExportsOfModule(symbol)) {
-      visit(walk, member, `${path}.${member.name}`, next);
+      visit(walk, member, `${path}.${memberName(member)}`, next);
     }
   } else if (type && text === undefined && isObjectLiteralType(walk, type)) {
     for (const member of walk.checker.getPropertiesOfType(type)) {
-      visit(walk, member, `${path}.${member.name}`, next);
+      visit(walk, member, `${path}.${memberName(member)}`, next);
     }
   }
 }
