@@ -269,7 +269,10 @@ test("a repository with no release caller gets no release.yml, and every full-pr
   syncRepository(root);
   assert.equal(existsSync(join(root, RELEASE_PATH)), false);
   const nextSync = parseDocument(read(root, NEXT_SYNC_PATH)).toJS();
-  assert.deepEqual(nextSync.on, { push: { branches: ["main"] } });
+  assert.deepEqual(nextSync.on, {
+    push: { branches: ["main"] },
+    workflow_dispatch: null,
+  });
   assert.deepEqual(nextSync.permissions, {});
   assert.deepEqual(nextSync.jobs["next-sync"].permissions, { issues: "write" });
   assert.equal(

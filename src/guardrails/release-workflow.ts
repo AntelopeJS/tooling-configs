@@ -30,7 +30,7 @@ interface ReleaseCallers {
   errors: string[];
 }
 
-/** The caller of next-sync.yml, which merges `main` into `branch` after each push to `main`; next-sync.yml needs `issues: write`. */
+/** The caller of next-sync.yml, which merges `main` into `branch` after each push to `main` or a manual dispatch; next-sync.yml needs `issues: write`. */
 export function nextSyncCaller(branch: string): string {
   const inputs =
     branch === "next" ? "" : `    with:\n      branch: ${branch}\n`;
@@ -39,6 +39,7 @@ export function nextSyncCaller(branch: string): string {
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions: {}
 
