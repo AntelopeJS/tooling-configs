@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { major, minor, valid } from "semver";
+import { major, minor, prerelease, valid } from "semver";
 import { isMap, parseAllDocuments, type YAMLMap } from "yaml";
 
 import { isPreview } from "./dependency-ranges.ts";
@@ -127,12 +127,20 @@ function documentCopies(lockfile: YAMLMap): Copies {
   return copies;
 }
 
-const sameMinor = (a: string, b: string): boolean =>
-  valid(b) !== null && major(a) === major(b) && minor(a) === minor(b);
+/** Whether `other` is a release, not a prerelease, on the minor of `version`. */
+const releaseOnMinor = (version: string, other: string): boolean =>
+  valid(other) !== null &&
+  prerelease(other) === null &&
+  major(version) === major(other) &&
+  minor(version) === minor(other);
+
+const pulledByImporter = (by: ReadonlySet<string>): boolean =>
+  [...by].some((puller) => puller.startsWith(IMPORTER));
 
 /**
- * Whether the copy at `version` is a preview a manifest of the repository pins beside only releases on its minor: the
- * repository tests that preview ahead of its release, which the packages locking the older copy then admit.
+ * Whether the copy at `version` is a preview a manifest of the repository pins beside only releases on its minor that
+ * locked packages pull, never a manifest: the repository tests that preview ahead of its release, which the packages
+ * locking the older copy then admit.
  */
 function pinnedPreview(
   version: string,
@@ -141,10 +149,11 @@ function pinnedPreview(
 ): boolean {
   return (
     isPreview(version) &&
-    [...by].some((puller) => puller.startsWith(IMPORTER)) &&
-    [...versions.keys()].every(
-      (other) =>
-        other === version || (!isPreview(other) && sameMinor(version, other)),
+    pulledByImporter(by) &&
+    [...versions].every(
+      ([other, pullers]) =>
+        other === version ||
+        (releaseOnMinor(version, other) && !pulledByImporter(pullers)),
     )
   );
 }

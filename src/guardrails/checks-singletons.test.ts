@@ -337,6 +337,8 @@ test("a preview a manifest pins beside the release a dependency locks on its min
 test("a preview beside a release on another minor, or one no manifest pins, still fails, where a check that skips every preview copy hides two interface minors in one process", (t) => {
   for (const [direct, nested] of [
     ["0.5.2-next.926.gdaa3203", "0.4.3"],
+    ["0.5.2-next.926.gdaa3203", "0.5.1-rc.1"],
+    ["0.5.2-next.926.gdaa3203", "0.5.2-next.927.gbbb2222"],
     ["0.5.2-beta.1", "0.5.0"],
     ["0.5.0", "0.5.2-next.926.gdaa3203"],
   ] as const) {
@@ -348,4 +350,42 @@ test("a preview beside a release on another minor, or one no manifest pins, stil
       `${direct} beside ${nested}`,
     );
   }
+});
+
+test("a preview one manifest pins beside the release another manifest pins fails, where a check that exempts the preview whoever locks the release passes two copies the repository could align", (t) => {
+  const root = testRepo(t);
+  put(
+    root,
+    "pnpm-lock.yaml",
+    stringify({
+      lockfileVersion: "9.0",
+      importers: {
+        ".": {
+          dependencies: {
+            [BUILDER]: {
+              specifier: "0.5.2-next.926.gdaa3203",
+              version: "0.5.2-next.926.gdaa3203",
+            },
+          },
+        },
+        "packages/b": {
+          dependencies: {
+            [BUILDER]: { specifier: ">=0.5.0 <0.6.0", version: "0.5.0" },
+          },
+        },
+      },
+      packages: {
+        [`${BUILDER}@0.5.0`]: {},
+        [`${BUILDER}@0.5.2-next.926.gdaa3203`]: {},
+      },
+      snapshots: {
+        [`${BUILDER}@0.5.0`]: {},
+        [`${BUILDER}@0.5.2-next.926.gdaa3203`]: {},
+      },
+    }),
+  );
+  assert.match(
+    checkSingletonPackages(root),
+    /0\.5\.0, pulled by importer "packages\/b"/,
+  );
 });

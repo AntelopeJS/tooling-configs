@@ -55,6 +55,18 @@ describe("checkDependencyRanges", () => {
       assert.notEqual(expected(spec), undefined, spec);
   });
 
+  it("refuses a preview pin on a package in the same repository and moves it to the range on its version there, where a check that exempts every preview keeps a pin the sibling's release has left", () => {
+    const [violation] = checkDependencyRanges(
+      {
+        dependencies: {
+          "@antelopejs/interface-dms-builder": "0.5.2-next.1.gabc1234",
+        },
+      },
+      new Map([["@antelopejs/interface-dms-builder", "0.7.0"]]),
+    );
+    assert.equal(violation?.expected, ">=0.7.0 <0.8.0");
+  });
+
   it("reports a spec with no floor without suggesting one, where a check that skips what it cannot read passes `*` and `latest`", () => {
     assert.equal(expected("*"), null);
     assert.equal(expected("latest"), null);

@@ -194,7 +194,8 @@ function publishedSpec(spec: string, local: Version): string {
  * The violation of one `@antelopejs/*` entry, if any. A `workspace:` spec is
  * judged as pnpm publishes it, and skipped in a private manifest, which is
  * never published, or when the sibling's version is not known. An exact pin
- * on a preview passes: the release train publishes it as a capped range.
+ * on a preview of a package outside the repository passes: the release train
+ * publishes it as a capped range.
  */
 function checkEntry(
   manifest: PackageManifest,
@@ -202,7 +203,7 @@ function checkEntry(
   [name, spec]: [string, string],
   local: string | undefined,
 ): RangeViolation | undefined {
-  if (isPreview(spec)) return undefined;
+  if (local === undefined && isPreview(spec)) return undefined;
   const workspace = spec.startsWith(WORKSPACE_PREFIX);
   const localVersion = local === undefined ? undefined : readFloor(local);
   let published = spec;
