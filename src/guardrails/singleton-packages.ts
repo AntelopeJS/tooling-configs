@@ -6,7 +6,6 @@ import { isMap, parseAllDocuments, type YAMLMap } from "yaml";
 import { isPreview } from "./dependency-ranges.ts";
 import { gitFiles } from "./files.ts";
 import {
-  DIRECT_FIELDS,
   type Mapping,
   Unreadable,
   keys,
@@ -19,8 +18,14 @@ const PNPM_LOCK = "pnpm-lock.yaml";
 /** Packages one process must load once: every AntelopeJS interface package shares one runtime with its peers. */
 const SINGLETON = /^@antelopejs\/interface-/u;
 
-/** The fields of a lockfile package entry that point at the copy each dependency resolves to. */
-const PACKAGE_FIELDS = ["dependencies", "optionalDependencies"] as const;
+/** The fields of an importer or a lockfile package entry whose copies a production install reaches; pnpm records a resolved peer under `dependencies`. */
+const RUNTIME_FIELDS = ["dependencies", "optionalDependencies"] as const;
+
+/** The fields of an importer whose copies only development installs reach. */
+const DEV_FIELDS = ["devDependencies"] as const;
+
+/** A dependency's name and the version or `name@version` reference its lockfile entry resolves it to. */
+type Edge = readonly [name: string, version: string];
 
 /** How to move every importer onto one copy while pnpm keeps every other locked version, which `pnpm dedupe` does not. */
 const REPAIR =
@@ -64,22 +69,35 @@ function pull(
   copies.get(target.name)?.get(target.version)?.add(by);
 }
 
-function addPullers(
-  copies: Copies,
-  node: Mapping,
-  fields: readonly string[],
-  by: string,
-): void {
-  for (const field of fields) {
+/** The dependencies `fields` of an importer or a lockfile package entry list. */
+function edges(node: Mapping, fields: readonly string[]): Edge[] {
+  return fields.flatMap((field) => {
     const entries = mapping(node, field);
-    for (const name of keys(entries))
-      pull(
-        copies,
-        name,
-        scalar(entries, name) ?? scalar(mapping(entries, name), "version"),
-        by,
-      );
+    return keys(entries).flatMap((name): Edge[] => {
+      const version =
+        scalar(entries, name) ?? scalar(mapping(entries, name), "version");
+      return version === undefined ? [] : [[name, version]];
+    });
+  });
+}
+
+/** A lockfile entry key without the leading `/` of version 6. */
+const entryKey = (key: string): string => key.replace(/^\//u, "");
+
+/** The `name@version`, without peers, of each entry of `resolved` that a walk from `from` through runtime dependencies reaches. */
+function reached(resolved: Mapping, from: readonly Edge[]): Set<string> {
+  const entries = new Map(keys(resolved).map((key) => [entryKey(key), key]));
+  const seen = new Set<string>();
+  const queue = [...from];
+  for (const [name, version] of queue) {
+    const direct = `${name}@${version}`;
+    const key = entries.has(direct) ? direct : entryKey(version);
+    const original = entries.get(key);
+    if (original === undefined || seen.has(key)) continue;
+    seen.add(key);
+    queue.push(...edges(mapping(resolved, original), RUNTIME_FIELDS));
   }
+  return new Set([...seen].map(withoutPeers));
 }
 
 /** Each document of a lockfile: pnpm 11 writes its config dependencies, installed apart from the project, as a document before the project's. */
@@ -99,31 +117,52 @@ function lockfileDocuments(path: string): YAMLMap[] {
   });
 }
 
+/**
+ * The singleton copies of one lockfile document, with their runtime pullers. A copy that devDependencies reach and runtime
+ * dependencies do not never ships, so it and its pullers do not count; a copy no importer reaches still does.
+ */
 function documentCopies(lockfile: YAMLMap): Copies {
-  const copies: Copies = new Map();
   const packages = mapping(lockfile, "packages");
+  const resolved = mapping(lockfile, "snapshots") ?? packages;
+  const importers = mapping(lockfile, "importers");
+  const roots = (importers ? keys(importers) : ["."]).map(
+    (importer) =>
+      [
+        `${IMPORTER}"${importer}"`,
+        importers ? mapping(importers, importer) : lockfile,
+      ] as const,
+  );
+  const runtime = reached(
+    resolved,
+    roots.flatMap(([, node]) => edges(node, RUNTIME_FIELDS)),
+  );
+  const dev = reached(
+    resolved,
+    roots.flatMap(([, node]) => edges(node, DEV_FIELDS)),
+  );
+  const devOnly = (entry: string): boolean =>
+    !runtime.has(entry) && dev.has(entry);
+  const copies: Copies = new Map();
   for (const parsed of keys(packages).map(packageKey))
-    if (parsed && SINGLETON.test(parsed.name))
+    if (
+      parsed &&
+      SINGLETON.test(parsed.name) &&
+      !devOnly(`${parsed.name}@${parsed.version}`)
+    )
       copies.set(
         parsed.name,
         (copies.get(parsed.name) ?? new Map()).set(parsed.version, new Set()),
       );
-  const importers = mapping(lockfile, "importers");
-  for (const importer of importers ? keys(importers) : ["."])
-    addPullers(
-      copies,
-      importers ? mapping(importers, importer) : lockfile,
-      DIRECT_FIELDS,
-      `${IMPORTER}"${importer}"`,
-    );
-  const resolved = mapping(lockfile, "snapshots") ?? packages;
-  for (const key of keys(resolved))
-    addPullers(
-      copies,
-      mapping(resolved, key),
-      PACKAGE_FIELDS,
-      withoutPeers(key.replace(/^\//u, "")),
-    );
+  const pullers = [
+    ...roots,
+    ...keys(resolved).map(
+      (key) => [withoutPeers(entryKey(key)), mapping(resolved, key)] as const,
+    ),
+  ];
+  for (const [by, node] of pullers)
+    if (!devOnly(by))
+      for (const [name, version] of edges(node, RUNTIME_FIELDS))
+        pull(copies, name, version, by);
   return copies;
 }
 
@@ -195,8 +234,9 @@ export function pnpmLockfiles(root: string): string[] {
 /**
  * Fails when a `pnpm-lock.yaml` of the repository resolves an AntelopeJS interface package, any `@antelopejs/interface-*`,
  * at more than one version: each copy carries its own runtime, so two copies in one process break the contract between
- * modules, or throw on a runtime protocol mismatch. A preview a manifest of the repository pins beside only releases on
- * its minor does not count. Names, for each version, the importers and packages that pull it.
+ * modules, or throw on a runtime protocol mismatch. A copy only devDependencies reach does not count, nor does a preview a
+ * manifest of the repository pins beside only releases on its minor. Names, for each version, the importers and packages
+ * that pull it through runtime dependencies.
  * Reads the lockfiles only: it spawns no package manager, writes no file and fetches nothing. Returns what failed, empty
  * when every interface package resolves once.
  */

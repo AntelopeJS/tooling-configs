@@ -433,3 +433,93 @@ test("a pinned preview beside two releases on its minor reports the two releases
   );
   assert.doesNotMatch(report, /next\.926/);
 });
+
+const TOOLS = "@antelopejs/test-tools";
+
+/** A version 9 lockfile where `@antelopejs/core` locks interface-core 0.2.6 and the importer's `field` pulls a tool that locks 0.1.1. */
+function toolLock(field: "dependencies" | "devDependencies"): string {
+  return stringify({
+    lockfileVersion: "9.0",
+    importers: {
+      ".": {
+        dependencies: {
+          "@antelopejs/core": { specifier: "^1.17.0", version: "1.17.2" },
+        },
+        [field]: { [TOOLS]: { specifier: "^1.0.0", version: "1.0.0" } },
+      },
+    },
+    packages: {
+      "@antelopejs/core@1.17.2": {},
+      [`${TOOLS}@1.0.0`]: {},
+      "@antelopejs/interface-core@0.1.1": {},
+      "@antelopejs/interface-core@0.2.6": {},
+    },
+    snapshots: {
+      "@antelopejs/core@1.17.2": {
+        dependencies: { "@antelopejs/interface-core": "0.2.6" },
+      },
+      [`${TOOLS}@1.0.0`]: {
+        dependencies: { "@antelopejs/interface-core": "0.1.1" },
+      },
+      "@antelopejs/interface-core@0.1.1": {},
+      "@antelopejs/interface-core@0.2.6": {},
+    },
+  });
+}
+
+test("a second copy only a devDependency reaches passes and the same copy a dependency reaches fails, where a check that counts every locked copy fails a copy no production install ships", (t) => {
+  const root = testRepo(t);
+  put(root, "pnpm-lock.yaml", toolLock("devDependencies"));
+  assert.equal(checkSingletonPackages(root), "");
+  put(root, "pnpm-lock.yaml", toolLock("dependencies"));
+  assert.match(
+    checkSingletonPackages(root),
+    /at 2 versions, and an interface package must load once:\n {2}0\.1\.1, pulled by @antelopejs\/test-tools@1\.0\.0\n {2}0\.2\.6, pulled by @antelopejs\/core@1\.17\.2\n/,
+  );
+});
+
+test("a version 6 nested lockfile reports only the copies and pullers runtime dependencies reach, where a report that keeps devDependency pullers says 4 versions and names a dev tool", (t) => {
+  const root = testRepo(t);
+  put(
+    root,
+    "modules/api/pnpm-lock.yaml",
+    stringify({
+      lockfileVersion: "6.0",
+      dependencies: {
+        "@antelopejs/interface-core": { specifier: "^0.1.1", version: "0.1.1" },
+        "@antelopejs/core": { specifier: "^1.17.0", version: "1.17.2" },
+      },
+      devDependencies: {
+        [TOOLS]: { specifier: "^1.0.0", version: "1.0.0" },
+        "@antelopejs/interface-core-legacy": {
+          specifier: "npm:@antelopejs/interface-core@0.0.9",
+          version: "/@antelopejs/interface-core@0.0.9",
+        },
+      },
+      packages: {
+        "/@antelopejs/core@1.17.2": {
+          dependencies: { "@antelopejs/interface-core": "0.2.6" },
+        },
+        [`/${TOOLS}@1.0.0`]: {
+          dev: true,
+          dependencies: {
+            "@antelopejs/interface-core": "0.1.1",
+            "@antelopejs/interface-core-old":
+              "/@antelopejs/interface-core@0.0.8",
+          },
+        },
+        "/@antelopejs/interface-core@0.0.8": { dev: true },
+        "/@antelopejs/interface-core@0.0.9": { dev: true },
+        "/@antelopejs/interface-core@0.1.1": {},
+        "/@antelopejs/interface-core@0.2.6": {},
+      },
+    }),
+  );
+  assert.equal(
+    checkSingletonPackages(root),
+    'modules/api/pnpm-lock.yaml resolves "@antelopejs/interface-core" at 2 versions, and an interface package must load once:\n' +
+      '  0.1.1, pulled by importer "."\n' +
+      "  0.2.6, pulled by @antelopejs/core@1.17.2\n" +
+      "  Set the direct specifier that locks the older copy to the newer version, run `pnpm install --lockfile-only`, then restore the specifier.\n",
+  );
+});
