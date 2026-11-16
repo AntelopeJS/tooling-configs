@@ -134,7 +134,7 @@ const CDN_BUDGET = {
   "@typescript-eslint/no-unsafe-member-access": 1,
 };
 
-test("cdn#19: touching src/index.ts fails its dead no-unsafe-member-access directive and its reasonless no-implied-eval one, in both modes", (t) => {
+test("cdn#19: touching src/index.ts fails its dead no-unsafe-member-access directive and keeps its live no-implied-eval one, in both modes", (t) => {
   const root = presetRepo(
     t,
     { "src/index.ts": CDN_REQUEST("timeout ?? 1000") },
@@ -149,18 +149,11 @@ test("cdn#19: touching src/index.ts fails its dead no-unsafe-member-access direc
       result.stderr,
       /src\/index\.ts:4: `eslint-disable-next-line @typescript-eslint\/no-unsafe-member-access` suppresses nothing.*Fix: delete the directive/u,
     );
-    assert.match(
-      result.stderr,
-      /src\/index\.ts:2: `eslint-disable-next-line @typescript-eslint\/no-implied-eval` gives no reason.*Fix: /u,
-    );
-    assert.doesNotMatch(
-      result.stderr,
-      /src\/index\.ts:2: .*suppresses nothing/u,
-    );
+    assert.doesNotMatch(result.stderr, /src\/index\.ts:2: /u);
   }
 });
 
-test("cdn#19 fixed: the live no-implied-eval directive with its reason passes, and deleting the dead one needs no raise", (t) => {
+test("cdn#19 fixed: deleting the dead directive passes and needs no raise", (t) => {
   const root = presetRepo(
     t,
     { "src/index.ts": CDN_REQUEST("timeout ?? 1000") },

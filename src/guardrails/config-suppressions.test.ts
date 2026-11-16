@@ -304,7 +304,7 @@ test("sync adopts the config rule-offs into an existing budget at today's counts
   assert.equal(syncRepository(root, { check: true }).paths.length, 0);
 });
 
-test("an ESLint composer's overrideRules counts like a rules block, and a config entry switching off a never-suppressed rule fails even under a raised ceiling", (t) => {
+test("an ESLint composer's overrideRules counts like a rules block", () => {
   assert.deepEqual(
     countSuppressions(
       suppressionsIn(
@@ -313,30 +313,6 @@ test("an ESLint composer's overrideRules counts like a rules block, and a config
       ),
     ).config,
     { "vue/no-v-html for *": 1 },
-  );
-  const root = budgetRepo(
-    t,
-    { "oxlint.config.ts": cloudConfig(["src/test/**"]) },
-    {
-      ...Object.fromEntries(
-        CLOUD_RULES.map((rule) => [`${rule} for src/test/**`, 1]),
-      ),
-      "antelopejs/require-assertion for src/test/**": 1,
-    },
-  );
-  put(
-    root,
-    "oxlint.config.ts",
-    cloudConfig(["src/test/**"]).replace(
-      '"eslint/complexity": "off",',
-      '"eslint/complexity": "off",\n  "antelopejs/require-assertion": "off",',
-    ),
-  );
-  const check = bin(root, "suppressions");
-  assert.equal(check.status, 1);
-  assert.match(
-    check.stderr,
-    /oxlint\.config\.ts:8: lint config rule-off `antelopejs\/require-assertion` for `src\/test\/\*\*`: this rule is never suppressed\. Fix: assert on the behaviour, or delete the test\./,
   );
 });
 

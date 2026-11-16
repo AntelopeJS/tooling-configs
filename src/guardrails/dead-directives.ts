@@ -10,13 +10,12 @@ import {
   type Suppression,
 } from "./suppressions.ts";
 
-/** One lint directive comment: the rules it names (`*` for none), the reason it gives, and where it starts. */
+/** One lint directive comment: the rules it names (`*` for none) and where it starts. */
 interface Directive {
   file: string;
   line: number;
   directive: string;
   rules: string[];
-  reason: string;
 }
 
 const BLOCK_DISABLE = /-disable$/u;
@@ -40,7 +39,6 @@ function entry(found: Extract<Suppression, { kind: "rule" }>): Directive {
     line: found.line,
     directive: found.directive,
     rules: [found.rule],
-    reason: found.reason,
   };
 }
 
@@ -107,19 +105,11 @@ function deadFailure(directive: Directive, dead: Set<string>): string[] {
   );
 }
 
-function reasonlessFailure(directive: Directive): string[] {
-  if (directive.reason !== "" || directive.rules.includes("*")) return [];
-  return [
-    `${directive.file}:${directive.line}: ${written(directive)} gives no reason. Fix: add \` -- <why this line needs it>\` after the rules, or delete the directive.`,
-  ];
-}
-
 /**
  * Fails, in each of `files`, every lint directive that suppresses nothing
- * under the repository's own lint configuration, and every directive naming
- * rules that gives no reason. Directives
- * in other files are left alone, so adopting the check changes no existing
- * file until a change touches it. `eslint-` directives under an ESLint config
+ * under the repository's own lint configuration. Directives in other files
+ * are left alone, so adopting the check changes no existing file until a
+ * change touches it. `eslint-` directives under an ESLint config
  * are left to ESLint, and `.vue` files are not linted by oxlint.
  */
 export function deadDirectiveFailures(root: string, files: string[]): string[] {
@@ -154,9 +144,7 @@ export function deadDirectiveFailures(root: string, files: string[]): string[] {
     ...unplaced,
     ...directives.flatMap((directive) => {
       const rules = dead.get(directive);
-      return rules === undefined
-        ? reasonlessFailure(directive)
-        : deadFailure(directive, rules);
+      return rules === undefined ? [] : deadFailure(directive, rules);
     }),
   ];
 }

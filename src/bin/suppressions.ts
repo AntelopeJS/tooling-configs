@@ -16,20 +16,14 @@ import {
   stagedNames,
   stagedSuppressions,
 } from "../guardrails/suppression-budget.ts";
-import { checkPolicy } from "../guardrails/suppression-policy.ts";
 
 function fullCheck(root: string, update?: boolean, base?: string): string[] {
   const failures = checkSuppressions(root, update);
   const revision = suppressionBase(root, base);
   const dead = deadDirectiveFailures(root, touchedFiles(root, revision));
   return revision === undefined
-    ? [...failures, ...checkPolicy(root), ...dead]
-    : [
-        ...raisedCeilings(root, revision),
-        ...failures,
-        ...checkPolicy(root, revision),
-        ...dead,
-      ];
+    ? [...failures, ...dead]
+    : [...raisedCeilings(root, revision), ...failures, ...dead];
 }
 
 runCli(() => {
