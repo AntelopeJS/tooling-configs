@@ -65,6 +65,7 @@
   "src/guardrails/checks-prepare.test.ts": 13,
   "src/guardrails/checks-readme-version.test.ts": 15.8,
   "src/guardrails/checks-services.test.ts": 19.8,
+  "src/guardrails/checks-singletons-dev.test.ts": 0.9,
   "src/guardrails/checks-singletons.test.ts": 3.1,
   "src/guardrails/checks-verify.test.ts": 47.1,
   "src/guardrails/checks.test.ts": 12.4,
