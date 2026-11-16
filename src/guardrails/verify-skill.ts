@@ -32,6 +32,15 @@ export function isVerifyChoice(value: string): value is VerifyChoice {
   return value === "custom" || isVerifyKind(value);
 }
 
+/** What `antelopeJs.kind` in package.json accepts: the shared kind to sync, or `none` for a repository that keeps no verification skill. */
+const DECLARED_KINDS = ["interface", "module", "none"] as const;
+
+type DeclaredKind = (typeof DECLARED_KINDS)[number];
+
+function isDeclaredKind(value: unknown): value is DeclaredKind {
+  return DECLARED_KINDS.some((kind) => kind === value);
+}
+
 /** One change to the synced layer of a shared verification skill. */
 export type VerifyAction =
   | { kind: "write"; path: string; content: string }
@@ -40,7 +49,8 @@ export type VerifyAction =
 
 /** The resolved verification kind and the changes that bring the synced layer in line with it. */
 export interface VerifyPlan {
-  kind: VerifyChoice | undefined;
+  /** `none` when package.json opts out, `undefined` when nothing signals a kind. */
+  kind: VerifyChoice | "none" | undefined;
   /** The skill AGENTS.md points at, relative to the repository root. */
   verificationSkill: string | undefined;
   actions: VerifyAction[];
@@ -76,16 +86,14 @@ function ownVerificationSkill(root: string): string | undefined {
 }
 
 function inferKind(manifest: Manifest): VerifyKind | undefined {
-  const declared = manifest.antelopeJs;
-  if (declared?.kind === "interface" || declared?.kind === "module")
-    return declared.kind;
-  if (Array.isArray(declared?.implements) && declared.implements.length > 0)
-    return "module";
-  return undefined;
+  const implemented = manifest.antelopeJs?.implements;
+  return Array.isArray(implemented) && implemented.length > 0
+    ? "module"
+    : undefined;
 }
 
 interface VerifyResolution {
-  kind: VerifyChoice | undefined;
+  kind: VerifyPlan["kind"];
   errors: string[];
 }
 
@@ -96,11 +104,19 @@ function resolveKind(
   profile: AgentsBlockContext["profile"],
 ): VerifyResolution {
   const errors: string[] = [];
+  const raw = manifest.antelopeJs?.kind;
+  const declared = isDeclaredKind(raw) ? raw : undefined;
+  if (raw !== undefined && declared === undefined)
+    errors.push(
+      `antelopeJs.kind in package.json must be ${DECLARED_KINDS.join(", ")}; got ${JSON.stringify(raw)}.`,
+    );
   if (flag === "custom" && ownVerificationSkill(root) === undefined)
     errors.push(
       "--verify custom needs your own verification skill: write it under .agents/skills/verify-<repo>/ first.",
     );
   if (flag !== undefined) return { kind: flag, errors };
+  if (errors.length) return { kind: undefined, errors };
+  if (declared === "none") return { kind: "none", errors };
   const synced = VERIFY_KINDS.filter((kind) =>
     existsSync(join(root, skillPath(kind))),
   );
@@ -121,7 +137,7 @@ function resolveKind(
         : undefined,
       errors,
     };
-  return { kind: inferKind(manifest), errors };
+  return { kind: declared ?? inferKind(manifest), errors };
 }
 
 function readIfPresent(root: string, path: string): string | undefined {
@@ -240,8 +256,14 @@ export function planVerify(
     options.manifest,
     options.profile,
   );
-  const shared = kind !== undefined && kind !== "custom" ? kind : undefined;
-  const own = shared ? undefined : ownVerificationSkill(root);
+  const shared =
+    kind !== undefined && kind !== "custom" && kind !== "none"
+      ? kind
+      : undefined;
+  const own =
+    kind === "custom" || kind === undefined
+      ? ownVerificationSkill(root)
+      : undefined;
   const wanted = shared
     ? planSharedKind(root, shared)
     : kind === "custom"
