@@ -300,6 +300,40 @@ test("antelopeJs.implements infers module and antelopeJs.kind wins over it", (t)
   assert.doesNotMatch(second.stdout, /verify-(?:module|template)/);
 });
 
+test('antelopeJs.kind "none" in a module repo removes the synced verify-module layer, names no skill in AGENTS.md, and stays in sync', (t) => {
+  const root = testRepo(t);
+  linkOxlint(root);
+  withPackage(root, { antelopeJs: { implements: ["logging"] } });
+  assert.equal(bin(root, "sync", []).status, 0);
+  assert.equal(hasLayer(root, "module"), true);
+  assert.match(read(root, "AGENTS.md"), /verification skill/);
+  withPackage(root, { antelopeJs: { kind: "none", implements: ["logging"] } });
+  const sync = bin(root, "sync", []);
+  assert.equal(sync.status, 0, sync.stderr);
+  for (const kind of VERIFY_KINDS) assert.equal(hasLayer(root, kind), false);
+  assert.doesNotMatch(read(root, "AGENTS.md"), /verif/i);
+  const check = bin(root, "sync", ["--check"]);
+  assert.equal(check.status, 0, check.stderr);
+  assert.equal(check.stdout, IN_SYNC);
+});
+
+test("an antelopeJs.kind outside interface, module and none fails sync and --check and writes nothing", (t) => {
+  const root = testRepo(t);
+  withPackage(root, {
+    antelopeJs: { kind: "service", implements: ["logging"] },
+  });
+  for (const args of [[], ["--check"]]) {
+    const result = bin(root, "sync", args);
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /antelopeJs\.kind in package\.json must be interface, module, none; got "service"/,
+    );
+  }
+  assert.equal(existsSync(join(root, "AGENTS.md")), false);
+  for (const kind of VERIFY_KINDS) assert.equal(hasLayer(root, kind), false);
+});
+
 test("without a signal sync writes nothing and stays quiet, whatever the package name says", (t) => {
   const root = testRepo(t);
   withPackage(root, {

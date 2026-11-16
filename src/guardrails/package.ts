@@ -30,7 +30,7 @@ export interface Manifest {
   workspaces?: unknown;
   engines?: { node?: string };
   antelopeJs?: {
-    kind?: string;
+    kind?: unknown;
     implements?: string[];
     docs?: { standard?: boolean };
   };
