@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.2
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.1...v0.8.2)
+
+### 🚀 Enhancements
+
+- **guardrails:** Generate workflow_dispatch in the next-sync caller ([#416](https://github.com/AntelopeJS/tooling-configs/pull/416))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.8.1
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.0...v0.8.1)
