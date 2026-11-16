@@ -160,17 +160,16 @@ function pinnedPreview(
 
 function report(file: string, copies: Copies): string {
   return [...copies]
-    .filter(
-      ([, versions]) =>
-        [...versions].filter(
-          ([version, by]) => !pinnedPreview(version, by, versions),
-        ).length > 1,
-    )
+    .map(([name, versions]) => ({
+      name,
+      counted: [...versions].filter(
+        ([version, by]) => !pinnedPreview(version, by, versions),
+      ),
+    }))
+    .filter(({ counted }) => counted.length > 1)
     .map(
-      ([name, versions]) =>
-        `${file} resolves "${name}" at ${versions.size} versions, and an interface package must load once:\n${[
-          ...versions,
-        ]
+      ({ name, counted }) =>
+        `${file} resolves "${name}" at ${counted.length} versions, and an interface package must load once:\n${counted
           .map(
             ([version, by]) =>
               `  ${version}, pulled by ${[...by].join(", ") || "nothing"}\n`,

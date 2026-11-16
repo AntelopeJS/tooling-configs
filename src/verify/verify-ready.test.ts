@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
 import { put, read } from "../guardrails/helpers/test-repo.ts";
+import { claimPort, closeServer } from "../lease/ports.ts";
 import { freePort } from "./record.ts";
 import {
   evidence,
@@ -108,4 +109,17 @@ test("free-port allocations before any app binds never repeat a port; a bind-clo
     Array.from({ length: 200 }, () => freePort()),
   );
   assert.equal(new Set([...ports, ...parallel]).size, 600);
+});
+
+test("free-port calls made at once while every random draw is taken each get a distinct kernel port, where a fallback that reserves port 0 makes all but one fail", async (t) => {
+  const taken = await claimPort(15_000, "127.0.0.1");
+  t.after(() => taken && closeServer(taken));
+  const random = Math.random;
+  Math.random = () => 0.5;
+  t.after(() => {
+    Math.random = random;
+  });
+  const ports = await Promise.all(Array.from({ length: 4 }, () => freePort()));
+  assert.equal(new Set(ports).size, 4, String(ports));
+  assert.ok(!ports.includes(15_000), String(ports));
 });
