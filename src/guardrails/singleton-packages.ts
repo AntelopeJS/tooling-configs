@@ -1,7 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { major, minor, valid } from "semver";
 import { isMap, parseAllDocuments, type YAMLMap } from "yaml";
 
+import { isPreview } from "./dependency-ranges.ts";
 import { gitFiles } from "./files.ts";
 import {
   DIRECT_FIELDS,
@@ -23,6 +25,9 @@ const PACKAGE_FIELDS = ["dependencies", "optionalDependencies"] as const;
 /** How to move every importer onto one copy while pnpm keeps every other locked version, which `pnpm dedupe` does not. */
 const REPAIR =
   "  Set the direct specifier that locks the older copy to the newer version, run `pnpm install --lockfile-only`, then restore the specifier.\n";
+
+/** How a puller that is a manifest of the repository, not a locked package, is named. */
+const IMPORTER = "importer ";
 
 /** For each singleton package name, each version its lockfile resolves, with the importers and packages that pull it. */
 type Copies = Map<string, Map<string, Set<string>>>;
@@ -109,7 +114,7 @@ function documentCopies(lockfile: YAMLMap): Copies {
       copies,
       importers ? mapping(importers, importer) : lockfile,
       DIRECT_FIELDS,
-      `importer "${importer}"`,
+      `${IMPORTER}"${importer}"`,
     );
   const resolved = mapping(lockfile, "snapshots") ?? packages;
   for (const key of keys(resolved))
@@ -122,9 +127,36 @@ function documentCopies(lockfile: YAMLMap): Copies {
   return copies;
 }
 
+const sameMinor = (a: string, b: string): boolean =>
+  valid(b) !== null && major(a) === major(b) && minor(a) === minor(b);
+
+/**
+ * Whether the copy at `version` is a preview a manifest of the repository pins beside only releases on its minor: the
+ * repository tests that preview ahead of its release, which the packages locking the older copy then admit.
+ */
+function pinnedPreview(
+  version: string,
+  by: ReadonlySet<string>,
+  versions: ReadonlyMap<string, ReadonlySet<string>>,
+): boolean {
+  return (
+    isPreview(version) &&
+    [...by].some((puller) => puller.startsWith(IMPORTER)) &&
+    [...versions.keys()].every(
+      (other) =>
+        other === version || (!isPreview(other) && sameMinor(version, other)),
+    )
+  );
+}
+
 function report(file: string, copies: Copies): string {
   return [...copies]
-    .filter(([, versions]) => versions.size > 1)
+    .filter(
+      ([, versions]) =>
+        [...versions].filter(
+          ([version, by]) => !pinnedPreview(version, by, versions),
+        ).length > 1,
+    )
     .map(
       ([name, versions]) =>
         `${file} resolves "${name}" at ${versions.size} versions, and an interface package must load once:\n${[
@@ -155,7 +187,8 @@ export function pnpmLockfiles(root: string): string[] {
 /**
  * Fails when a `pnpm-lock.yaml` of the repository resolves an AntelopeJS interface package, any `@antelopejs/interface-*`,
  * at more than one version: each copy carries its own runtime, so two copies in one process break the contract between
- * modules, or throw on a runtime protocol mismatch. Names, for each version, the importers and packages that pull it.
+ * modules, or throw on a runtime protocol mismatch. A preview a manifest of the repository pins beside only releases on
+ * its minor does not count. Names, for each version, the importers and packages that pull it.
  * Reads the lockfiles only: it spawns no package manager, writes no file and fetches nothing. Returns what failed, empty
  * when every interface package resolves once.
  */

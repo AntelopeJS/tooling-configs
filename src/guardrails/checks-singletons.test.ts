@@ -295,3 +295,57 @@ test("a module lock under antelope-lock/ holding two copies passes while the sam
     /^playground\/pnpm-lock\.yaml resolves "@antelopejs\/interface-core" at 2 versions/,
   );
 });
+
+const BUILDER = "@antelopejs/interface-dms-builder";
+
+/** A lockfile where importer "." locks `direct` of the builder interface and `@antelopejs/dms` locks `nested`. */
+function previewLock(direct: string, nested: string): string {
+  return stringify({
+    lockfileVersion: "9.0",
+    importers: {
+      ".": {
+        dependencies: {
+          "@antelopejs/dms": {
+            specifier: ">=0.20.5 <0.21.0",
+            version: "0.20.5",
+          },
+          [BUILDER]: { specifier: direct, version: direct },
+        },
+      },
+    },
+    packages: {
+      "@antelopejs/dms@0.20.5": {},
+      [`${BUILDER}@${direct}`]: {},
+      [`${BUILDER}@${nested}`]: {},
+    },
+    snapshots: {
+      "@antelopejs/dms@0.20.5": {
+        dependencies: { [BUILDER]: nested },
+      },
+      [`${BUILDER}@${direct}`]: {},
+      [`${BUILDER}@${nested}`]: {},
+    },
+  });
+}
+
+test("a preview a manifest pins beside the release a dependency locks on its minor passes, where a check that counts every copy fails the pin a repository tests an unreleased interface with", (t) => {
+  const root = testRepo(t);
+  put(root, "pnpm-lock.yaml", previewLock("0.5.2-next.926.gdaa3203", "0.5.0"));
+  assert.equal(checkSingletonPackages(root), "");
+});
+
+test("a preview beside a release on another minor, or one no manifest pins, still fails, where a check that skips every preview copy hides two interface minors in one process", (t) => {
+  for (const [direct, nested] of [
+    ["0.5.2-next.926.gdaa3203", "0.4.3"],
+    ["0.5.2-beta.1", "0.5.0"],
+    ["0.5.0", "0.5.2-next.926.gdaa3203"],
+  ] as const) {
+    const root = testRepo(t);
+    put(root, "pnpm-lock.yaml", previewLock(direct, nested));
+    assert.match(
+      checkSingletonPackages(root),
+      /resolves "@antelopejs\/interface-dms-builder" at 2 versions/,
+      `${direct} beside ${nested}`,
+    );
+  }
+});
