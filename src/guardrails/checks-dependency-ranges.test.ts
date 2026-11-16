@@ -3,7 +3,7 @@ import test, { type TestContext } from "node:test";
 
 import { freePort } from "../verify/record.ts";
 import { stubRegistry } from "./helpers/registry.ts";
-import { binAsync, commit, put, testRepo } from "./helpers/test-repo.ts";
+import { binAsync, commit, put, read, testRepo } from "./helpers/test-repo.ts";
 
 const PASSING_STEPS = [
   "typecheck",
@@ -47,13 +47,43 @@ function repoWithRange(
   return root;
 }
 
-/** Runs checks against the registry at `url`, without blocking the event loop a stub registry answers from. */
-function checks(root: string, url: string) {
+/** Runs checks against the registry at `url` on CI `tier`, none when omitted, without blocking the event loop a stub registry answers from. */
+function checks(root: string, url: string, tier?: string) {
   return binAsync(root, "checks", [], {
     npm_config_registry: url,
     NPM_CONFIG_REGISTRY: url,
+    ANTELOPEJS_CI_TIER: tier,
   });
 }
+
+test("the draft and fast tiers skip dependency:ranges and published:types and the full and nightly tiers run them, where a step that ignores the tier calls the registry on every pull request and one that skips on any tier never runs", async (t) => {
+  const registry = await stubRegistry(t, {
+    "@antelopejs/interface-database": "1.2.0",
+  });
+  const root = repoWithRange(t, ">=0.3.0 <1.0.0");
+  const typed = repoWithRange(t, ">=0.3.0 <1.0.0");
+  put(
+    typed,
+    "package.json",
+    JSON.stringify({
+      ...JSON.parse(read(typed, "package.json")),
+      name: "typed",
+      types: "index.d.ts",
+    }),
+  );
+  put(typed, "index.d.ts", "export declare const value: number;\n");
+  commit(typed);
+  for (const tier of ["draft", "fast"]) {
+    const result = await checks(typed, registry, tier);
+    assert.equal(result.status, 0, `${tier}: ${result.stdout}`);
+    assert.match(result.stdout, /Checks: 9 passed, 0 failed, 2 skipped\./);
+  }
+  for (const tier of ["full", "nightly"]) {
+    const result = await checks(root, registry, tier);
+    assert.equal(result.status, 1, `${tier}: ${result.stdout}`);
+    assert.match(result.stdout, /\[dependency:ranges\]\n/);
+  }
+});
 
 test("an open 0.x range in a nested manifest fails checks with its fix, where a run without the dependency:ranges step passes the range that resolves a breaking minor", async (t) => {
   const result = await checks(

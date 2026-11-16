@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
 
-import { CHECKS_SKIP_ENV, runChecks } from "../guardrails/checks.ts";
+import {
+  CHECKS_SKIP_ENV,
+  CI_TIER_ENV,
+  runChecks,
+} from "../guardrails/checks.ts";
 import { runCliAsync } from "../guardrails/cli.ts";
 import { repositoryRoot } from "../guardrails/files.ts";
 
@@ -25,6 +29,7 @@ runCliAsync(async () => {
     });
   const result = await runChecks(repositoryRoot(), {
     skipSetting: process.env[CHECKS_SKIP_ENV],
+    tier: process.env[CI_TIER_ENV],
     services: !values["no-services"] && process.env.GITHUB_ACTIONS !== "true",
     signal: controller.signal,
   });

@@ -15,7 +15,7 @@ import type { TestContext } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ANTELOPE_STYLE } from "../../oxc/fmt.ts";
-import { CHECKS_SKIP_ENV } from "../checks.ts";
+import { CHECKS_SKIP_ENV, CI_TIER_ENV } from "../checks.ts";
 
 export const PACKAGE_ROOT = fileURLToPath(
   new URL("../../../", import.meta.url),
@@ -102,12 +102,13 @@ function binEnv(env: Record<string, string | undefined>) {
   const {
     GITHUB_BASE_REF: _base,
     [CHECKS_SKIP_ENV]: _skip,
+    [CI_TIER_ENV]: _tier,
     ...inherited
   } = process.env;
   return { ...inherited, CI: "1", ...env };
 }
 
-/** Runs a bin from source as CI would, without the caller's pull request base or checks skip, plus `env`, where an `undefined` value unsets the inherited variable. */
+/** Runs a bin from source as CI would, without the caller's pull request base, checks skip or CI tier, plus `env`, where an `undefined` value unsets the inherited variable. */
 export function bin(
   root: string,
   name: string,

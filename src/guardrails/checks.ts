@@ -160,6 +160,21 @@ function phases(root: string, steps: readonly string[]): string[][] {
 /** The environment variable naming, comma-separated, the steps `runChecks` leaves to another CI job. */
 export const CHECKS_SKIP_ENV = "ANTELOPEJS_CHECKS_SKIP";
 
+/** The environment variable holding the CI tier the shared workflow picked: `draft`, `fast`, `full` or `nightly`. */
+export const CI_TIER_ENV = "ANTELOPEJS_CI_TIER";
+
+/** The steps that read the npm registry, which the pull request tiers leave to the push to `next` and the nightly run. */
+const REGISTRY_STEPS = ["dependency:ranges", "published:types"];
+
+const TIER_SKIPS = new Map([
+  ["draft", REGISTRY_STEPS],
+  ["fast", REGISTRY_STEPS],
+]);
+
+function tierSkips(tier: string | undefined): string[] {
+  return TIER_SKIPS.get(tier ?? "") ?? [];
+}
+
 function skippedNames(setting: string): string[] {
   return setting
     .split(",")
@@ -167,9 +182,10 @@ function skippedNames(setting: string): string[] {
     .filter(Boolean);
 }
 
-/** Options of `runChecks`: the `ANTELOPEJS_CHECKS_SKIP` value, whether to manage the compose services, and an abort signal whose reason is the signal name that interrupted the run. */
+/** Options of `runChecks`: the `ANTELOPEJS_CHECKS_SKIP` value, the `ANTELOPEJS_CI_TIER` value, whether to manage the compose services, and an abort signal whose reason is the signal name that interrupted the run. */
 export interface ChecksOptions {
   skipSetting?: string;
+  tier?: string;
   services?: boolean;
   signal?: AbortSignal;
 }
@@ -262,14 +278,16 @@ function summary(
  * except `test` and `published:types` at the same time, then each of those alone, and reports only what failed, each step's
  * output buffered and listed in step order whichever step finishes first. `skipSetting` is the comma-separated value of
  * `ANTELOPEJS_CHECKS_SKIP`: the steps it names are not run and are counted as skipped, never as passed, and a name that
- * is not a step fails the run before any step starts so a typo cannot skip nothing. Unless `services` is false, the
+ * is not a step fails the run before any step starts so a typo cannot skip nothing. On the `draft` and `fast` tiers of
+ * `tier`, `dependency:ranges` and `published:types` are skipped the same way. Unless `services` is false, the
  * services of `.github/compose.yml` are started before the steps when `test` runs, and removed after them if the run created them, also when a step fails or
  * `signal` aborts the run; an aborted run stops every running step and reports `interrupted`.
  */
 export async function runChecks(root: string, options: ChecksOptions = {}) {
-  const { skipSetting = "", services = true, signal } = options;
+  const { skipSetting = "", tier, services = true, signal } = options;
   const requested = skippedNames(skipSetting);
   const unknown = requested.filter((name) => !CHECK_STEPS.includes(name));
+  requested.push(...tierSkips(tier));
   if (unknown.length)
     return {
       failed: 1,
