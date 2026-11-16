@@ -33,7 +33,7 @@ export function isVerifyChoice(value: string): value is VerifyChoice {
 }
 
 /** What `antelopeJs.kind` in package.json accepts: the shared kind to sync, or `none` for a repository that keeps no verification skill. */
-export const DECLARED_KINDS = ["interface", "module", "none"] as const;
+const DECLARED_KINDS = ["interface", "module", "none"] as const;
 
 type DeclaredKind = (typeof DECLARED_KINDS)[number];
 
