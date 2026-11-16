@@ -40,6 +40,33 @@ describe("checkDependencyRanges", () => {
     assert.equal(expected("^0.0.11"), ">=0.0.11 <0.1.0");
   });
 
+  it("accepts an exact pin on a preview `next` publishes and refuses any other prerelease or a range on a preview, where a check that reads no prerelease refuses the pin and one that skips every prerelease passes a beta", () => {
+    assert.equal(expected("0.5.2-next.926.gdaa3203"), undefined);
+    assert.equal(
+      expected("1.22.0-next.3.g0abc12f", "@antelopejs/core"),
+      undefined,
+    );
+    for (const spec of [
+      "0.5.2-beta.1",
+      "0.5.2-next.926",
+      "^0.5.2-next.926.gdaa3203",
+      ">=0.5.2-next.926.gdaa3203 <1.0.0",
+    ])
+      assert.notEqual(expected(spec), undefined, spec);
+  });
+
+  it("refuses a preview pin on a package in the same repository and moves it to the range on its version there, where a check that exempts every preview keeps a pin the sibling's release has left", () => {
+    const [violation] = checkDependencyRanges(
+      {
+        dependencies: {
+          "@antelopejs/interface-dms-builder": "0.5.2-next.1.gabc1234",
+        },
+      },
+      new Map([["@antelopejs/interface-dms-builder", "0.7.0"]]),
+    );
+    assert.equal(violation?.expected, ">=0.7.0 <0.8.0");
+  });
+
   it("reports a spec with no floor without suggesting one, where a check that skips what it cannot read passes `*` and `latest`", () => {
     assert.equal(expected("*"), null);
     assert.equal(expected("latest"), null);
@@ -127,7 +154,7 @@ describe("describeViolation", () => {
     assert.ok(violation);
     assert.equal(
       describeViolation(violation),
-      'peerDependencies["@antelopejs/interface-dms"] is "^0.11.0": AntelopeJS packages ship breaking changes in minor releases, so it must stop below the next minor and admit 0.12.3, the version in this repository; use ">=0.12.3 <0.13.0"',
+      'peerDependencies["@antelopejs/interface-dms"] is "^0.11.0": AntelopeJS packages ship breaking changes in minor releases, so it must stop below the next minor and admit 0.12.3, the version in this repository or pin a preview exactly, such as "0.5.2-next.926.gdaa3203"; use ">=0.12.3 <0.13.0"',
     );
   });
 });

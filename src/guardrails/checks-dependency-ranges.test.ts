@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
+import { stringify } from "yaml";
 
 import { freePort } from "../verify/record.ts";
 import { stubRegistry } from "./helpers/registry.ts";
@@ -432,4 +433,83 @@ test("a prerelease newest DMS release does not decide the range, where a step th
     ),
   );
   assert.equal(result.status, 0, result.stdout);
+});
+
+/** A consumer's lockfile holding the preview it pins beside the release `@antelopejs/dms-automation` locks on that minor. */
+const PREVIEW_LOCK = stringify({
+  lockfileVersion: "9.0",
+  importers: {
+    ".": {
+      dependencies: {
+        "@antelopejs/dms-automation": {
+          specifier: ">=0.11.1 <0.12.0",
+          version: "0.11.1",
+        },
+        [AUTOMATION]: {
+          specifier: "0.7.2-next.926.gdaa3203",
+          version: "0.7.2-next.926.gdaa3203",
+        },
+      },
+    },
+  },
+  packages: {
+    "@antelopejs/dms-automation@0.11.1": {},
+    [`${AUTOMATION}@0.7.1`]: {},
+    [`${AUTOMATION}@0.7.2-next.926.gdaa3203`]: {},
+  },
+  snapshots: {
+    "@antelopejs/dms-automation@0.11.1": {
+      dependencies: { [AUTOMATION]: "0.7.1" },
+    },
+    [`${AUTOMATION}@0.7.1`]: {},
+    [`${AUTOMATION}@0.7.2-next.926.gdaa3203`]: {},
+  },
+});
+
+test("an exact pin on a preview of the minor a DMS release implements passes checks, lockfile included, where a step that reads the preview as a range fails the pin a repository tests an unreleased change with", async (t) => {
+  for (const field of [
+    "dependencies",
+    "devDependencies",
+    "peerDependencies",
+    "optionalDependencies",
+  ]) {
+    const root = repoWithRange(t, "0.7.2-next.926.gdaa3203", field, AUTOMATION);
+    put(root, "pnpm-lock.yaml", PREVIEW_LOCK);
+    const result = await checks(
+      root,
+      await stubRegistry(
+        t,
+        { [AUTOMATION]: "0.7.1" },
+        {
+          "@antelopejs/dms-automation": implementing(
+            AUTOMATION,
+            "0.11.1",
+            ">=0.7.0 <0.8.0",
+          ),
+        },
+      ),
+      "full",
+    );
+    assert.equal(result.status, 0, `${field}: ${result.stdout}`);
+    assert.match(result.stdout, /Checks: 11 passed, 0 failed\./);
+  }
+});
+
+test("an exact pin on a preview behind the interface's newest minor fails checks with the range on that minor, where a step that skips every preview pin passes one no published release admits", async (t) => {
+  const root = repoWithRange(
+    t,
+    "0.6.2-next.4.gabc1234",
+    "dependencies",
+    AUTOMATION,
+  );
+  const result = await checks(
+    root,
+    await stubRegistry(t, { [AUTOMATION]: "0.7.0" }),
+    "full",
+  );
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(
+    result.stdout,
+    /dependencies\["@antelopejs\/interface-dms-automation"\] is "0\.6\.2-next\.4\.gabc1234", which stops below 0\.7\.0, its newest published version, .*; use ">=0\.7\.0 <0\.8\.0"\n/,
+  );
 });
