@@ -484,10 +484,9 @@ When the package sits in the same repository, as in a DMS monorepo, its range mu
 The [documentation action](./docs/documentation-checks.md) checks local Markdown
 links, explicitly labeled compatibility tables, and reference-page export
 coverage, and typechecks every TypeScript fence against the repository's own
-source; a fence opts out only with a `fragment` marker. Versions of
-`@antelopejs/*` packages belong only in the block `antelopejs-sync` generates:
-the action fails on version ranges and "requires … or later" claims in prose and
-checks the block against the package.json beside it. Pin
+source; a fence opts out only with a `fragment` marker. It checks the
+compatibility block `antelopejs-sync` generates against the package.json beside
+it. Pin
 `AntelopeJS/tooling-configs/actions/docs` to a full commit SHA; no npm release is
 required. The guide includes CI and local commands, marker syntax, and the
 checks that remain the author's responsibility.

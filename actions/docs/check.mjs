@@ -17,8 +17,8 @@ import { marked } from "marked";
 import { checkStandard, readStandard } from "./standard.mjs";
 import { checkTypescript } from "./typescript.mjs";
 import {
+  checkCompatBlocks,
   checkOwnVersions,
-  checkVersionClaims,
   plain,
   sameRange,
 } from "./versions.mjs";
@@ -318,7 +318,7 @@ export function checkDocs({
   for (const doc of documents) {
     links += checkLinks(doc, context);
     checkCompatibility(doc, localPath, fail);
-    blocks += checkVersionClaims(doc, context);
+    blocks += checkCompatBlocks(doc, context);
     for (const entry of doc.api) localPath(resolve(dirname(doc.path), entry));
   }
   checkOwnVersions(documents, context);
