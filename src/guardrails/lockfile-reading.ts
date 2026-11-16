@@ -22,7 +22,7 @@ export type Mapping = YAMLMap | undefined;
 export class Unreadable extends Error {}
 
 /** Parses a JSON or YAML file whose top level is a mapping; throws `Unreadable` otherwise. */
-function readMapping(path: string): YAMLMap {
+export function readMapping(path: string): YAMLMap {
   const document = parseDocument(readFileSync(path, "utf8"), {
     schema: "failsafe",
     uniqueKeys: false,
