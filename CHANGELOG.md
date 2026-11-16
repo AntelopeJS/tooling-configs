@@ -1,5 +1,50 @@
 # Changelog
 
+## v0.8.1
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.0...v0.8.1)
+
+### 🚀 Enhancements
+
+- **sync:** Let a repository opt out of the shared verify skill with antelopeJs.kind none (ANT-3314) ([#410](https://github.com/AntelopeJS/tooling-configs/pull/410))
+
+### 🔥 Performance
+
+- **guardrails:** Run dependency:ranges and published:types on the full and nightly tiers only (ANT-3296) ([#408](https://github.com/AntelopeJS/tooling-configs/pull/408))
+
+### 🩹 Fixes
+
+- **verify:** Never hand two parallel journeys the same port (ANT-3076) ([#401](https://github.com/AntelopeJS/tooling-configs/pull/401))
+- **guardrails:** Leave antelope-lock module locks out of lockfile:singletons (ANT-3077) ([#402](https://github.com/AntelopeJS/tooling-configs/pull/402))
+- **verify:** Address symbol-keyed members by their source name in surface paths (ANT-3075) ([#403](https://github.com/AntelopeJS/tooling-configs/pull/403))
+- **guardrails:** Let api-diff skip runtime entries and keep ./* scans inside the package ([#404](https://github.com/AntelopeJS/tooling-configs/pull/404))
+- **guardrails:** Grant statuses write to the renovate-sync job (ANT-3294) ([#405](https://github.com/AntelopeJS/tooling-configs/pull/405))
+- **checks:** Accept an exact preview pin in dependency:ranges and lockfile:singletons (ANT-3313) ([#409](https://github.com/AntelopeJS/tooling-configs/pull/409))
+- **verify:** Give each journey --jobs process its own share of ports (ANT-3076) ([#411](https://github.com/AntelopeJS/tooling-configs/pull/411))
+- **checks:** Count only runtime copies in lockfile:singletons (ANT-3379) ([#414](https://github.com/AntelopeJS/tooling-configs/pull/414))
+- **suppressions:** Drop a budget key that suppresses nothing on --update and accept its removal (ANT-3377) ([#415](https://github.com/AntelopeJS/tooling-configs/pull/415))
+
+### 💅 Refactors
+
+- **docs:** Drop the detector of @antelopejs versions in prose (ANT-3297) ([#406](https://github.com/AntelopeJS/tooling-configs/pull/406))
+- **guardrails:** Keep the suppression cap and drop the added-suppression policy (ANT-3295) ([#407](https://github.com/AntelopeJS/tooling-configs/pull/407))
+
+### 📖 Documentation
+
+- **sync:** List statuses write among the renovate-sync grants (ANT-3373) ([#413](https://github.com/AntelopeJS/tooling-configs/pull/413))
+
+### 🏡 Chore
+
+- Remove Amp and Orb leftovers ([#400](https://github.com/AntelopeJS/tooling-configs/pull/400))
+
+### ✅ Tests
+
+- **guardrails:** Fail when the managed AGENTS.md block names a removed command ([#398](https://github.com/AntelopeJS/tooling-configs/pull/398))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.8.0
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.7.4...v0.8.0)
