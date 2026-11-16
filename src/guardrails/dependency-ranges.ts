@@ -3,10 +3,12 @@
  * and from 1.0 alike, so a range open past the next minor of its floor lets an
  * install resolve a breaking release its dependent was never built against.
  * Every range on one stops below that minor: `>=0.4.0 <0.5.0` on 0.x,
- * `~1.2.0` from 1.0. A narrower range, such as an exact pin, fails too:
- * `@antelopejs/core` keeps one copy of each interface and refuses to start a
- * module whose range that copy falls outside, so a pin breaks startup at the
- * next patch release.
+ * `~1.2.0` from 1.0. A narrower range, such as an exact pin on a release,
+ * fails too: `@antelopejs/core` keeps one copy of each interface and refuses
+ * to start a module whose range that copy falls outside, so a pin breaks
+ * startup at the next patch release. An exact pin on a preview `next`
+ * publishes, `X.Y.Z-next.<count>.g<sha>`, passes: the release train turns it
+ * into the capped range on `X.Y.Z` at release.
  */
 
 const ANTELOPEJS_SCOPE = "@antelopejs/";

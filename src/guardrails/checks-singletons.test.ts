@@ -389,3 +389,47 @@ test("a preview one manifest pins beside the release another manifest pins fails
     /0\.5\.0, pulled by importer "packages\/b"/,
   );
 });
+
+test("a pinned preview beside two releases on its minor reports the two releases alone, where a report that counts the exempt preview says 3 versions and lists a copy the check accepts", (t) => {
+  const root = testRepo(t);
+  const preview = "0.5.2-next.926.gdaa3203";
+  put(
+    root,
+    "pnpm-lock.yaml",
+    stringify({
+      lockfileVersion: "9.0",
+      importers: {
+        ".": {
+          dependencies: {
+            "@antelopejs/dms": {
+              specifier: ">=0.20.5 <0.21.0",
+              version: "0.20.5",
+            },
+            "@antelopejs/other": { specifier: "^1.0.0", version: "1.0.0" },
+            [BUILDER]: { specifier: preview, version: preview },
+          },
+        },
+      },
+      packages: {
+        "@antelopejs/dms@0.20.5": {},
+        "@antelopejs/other@1.0.0": {},
+        [`${BUILDER}@${preview}`]: {},
+        [`${BUILDER}@0.5.0`]: {},
+        [`${BUILDER}@0.5.1`]: {},
+      },
+      snapshots: {
+        "@antelopejs/dms@0.20.5": { dependencies: { [BUILDER]: "0.5.0" } },
+        "@antelopejs/other@1.0.0": { dependencies: { [BUILDER]: "0.5.1" } },
+        [`${BUILDER}@${preview}`]: {},
+        [`${BUILDER}@0.5.0`]: {},
+        [`${BUILDER}@0.5.1`]: {},
+      },
+    }),
+  );
+  const report = checkSingletonPackages(root);
+  assert.match(
+    report,
+    /resolves "@antelopejs\/interface-dms-builder" at 2 versions/,
+  );
+  assert.doesNotMatch(report, /next\.926/);
+});

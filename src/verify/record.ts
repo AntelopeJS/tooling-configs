@@ -233,9 +233,43 @@ export function readOutput(folder: string): Output {
   };
 }
 
+/** The ports from `low` up to, and not including, `high`. */
+interface PortRange {
+  low: number;
+  high: number;
+}
+
 /** Where `freePort` looks first: below the kernel's ephemeral range, which outgoing connections keep drawing from, and below the 20000-29999 ports antelopejs-lease hands out. */
-const PORT_RANGE = { low: 10_000, high: 20_000 } as const;
+const PORT_RANGE: PortRange = { low: 10_000, high: 20_000 };
 const PORT_ATTEMPTS = 50;
+
+/** The variable through which `journey --jobs` gives each feature process its own share of {@link PORT_RANGE}, as `<low>-<high>`. */
+export const PORT_LANE_ENV = "ANTELOPEJS_VERIFY_PORTS";
+
+/** Share `lane` of `lanes` equal, disjoint shares of {@link PORT_RANGE}, as {@link PORT_LANE_ENV} carries it. */
+export function portLane(lane: number, lanes: number): string {
+  const size = Math.floor((PORT_RANGE.high - PORT_RANGE.low) / lanes);
+  const low = PORT_RANGE.low + lane * size;
+  return `${low}-${low + size}`;
+}
+
+/** The share of {@link PORT_RANGE} {@link PORT_LANE_ENV} gives this process, or undefined when it shares the whole range with no other process. */
+function lane(): PortRange | undefined {
+  const value = process.env[PORT_LANE_ENV];
+  if (value === undefined) return undefined;
+  const match = /^(\d+)-(\d+)$/.exec(value);
+  const range = match && { low: Number(match[1]), high: Number(match[2]) };
+  if (
+    !range ||
+    range.low < PORT_RANGE.low ||
+    range.high > PORT_RANGE.high ||
+    range.low >= range.high
+  )
+    throw new Error(
+      `${PORT_LANE_ENV}=${value} is not a range <low>-<high> within ${PORT_RANGE.low}-${PORT_RANGE.high}`,
+    );
+  return range;
+}
 
 function isAddressInfo(
   address: ReturnType<Server["address"]>,
@@ -258,19 +292,20 @@ function bindable(port: number): Promise<number | null> {
 /** Ports `freePort` already returned in this process, so concurrent callers never get the same one. */
 const handedOut = new Set<number>();
 
+/** Hands out `port` when this process has not and it binds, recorded before the bind so a concurrent call skips it. */
 async function claim(port: number): Promise<number | null> {
   if (handedOut.has(port)) return null;
   handedOut.add(port);
-  const bound = await bindable(port);
-  if (bound === null) {
-    handedOut.delete(port);
-    return null;
-  }
-  if (bound !== port) {
-    if (handedOut.has(bound)) return null;
-    handedOut.delete(port);
-    handedOut.add(bound);
-  }
+  if ((await bindable(port)) !== null) return port;
+  handedOut.delete(port);
+  return null;
+}
+
+/** Hands out the port the kernel binds next when this process has not handed it out yet. */
+async function claimKernelPort(): Promise<number | null> {
+  const bound = await bindable(0);
+  if (bound === null || handedOut.has(bound)) return null;
+  handedOut.add(bound);
   return bound;
 }
 
@@ -279,19 +314,31 @@ async function claim(port: number): Promise<number | null> {
  * next, never returned twice in this process, so parallel journeys cannot
  * share one. It tries random ports below the kernel's ephemeral range first,
  * where no outgoing connection on a busy host takes it between this check and
- * the app's own bind, and falls back to a port the kernel picks.
+ * the app's own bind. A process given a share of that range through
+ * {@link PORT_LANE_ENV} stays in it, trying each of its ports in turn after
+ * the random ones, so no other feature process of the same `journey --jobs`
+ * call is handed the same port. Any other process falls back to a port the
+ * kernel picks.
  */
 export async function freePort(): Promise<number> {
+  const own = lane();
+  const range = own ?? PORT_RANGE;
   for (let attempt = 0; attempt < PORT_ATTEMPTS; attempt++) {
     const port =
-      PORT_RANGE.low +
-      Math.floor(Math.random() * (PORT_RANGE.high - PORT_RANGE.low));
+      range.low + Math.floor(Math.random() * (range.high - range.low));
     const claimed = await claim(port);
     if (claimed !== null) return claimed;
   }
-  for (let attempt = 0; attempt < PORT_ATTEMPTS; attempt++) {
-    const claimed = await claim(0);
-    if (claimed !== null) return claimed;
+  if (own !== undefined) {
+    for (let port = own.low; port < own.high; port++) {
+      const claimed = await claim(port);
+      if (claimed !== null) return claimed;
+    }
+  } else {
+    for (let attempt = 0; attempt < PORT_ATTEMPTS; attempt++) {
+      const claimed = await claimKernelPort();
+      if (claimed !== null) return claimed;
+    }
   }
   throw new Error("no free loopback port");
 }
