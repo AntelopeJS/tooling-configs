@@ -116,7 +116,7 @@ export function parseBudget(text: string, source: string): SuppressionCounts {
   return budget;
 }
 
-/** Serializes a budget with sorted rules and config rule-offs, zero ceilings kept, so rewriting an unchanged budget is a no-op. */
+/** Serializes a budget with sorted rules and config rule-offs, so rewriting an unchanged budget is a no-op. */
 export function formatBudget(budget: SuppressionCounts): string {
   const sorted: SuppressionCounts = {
     ...budget,
@@ -226,16 +226,16 @@ function groupByKey(suppressions: Suppression[]): Map<string, Suppression[]> {
   return groups;
 }
 
-/** Each ceiling of `limits` lowered to its count in `current`, rules at zero kept. */
+/** Each ceiling of `limits` lowered to its count in `current`, a key that suppresses nothing dropped. */
 function lowerEach(
   limits: Record<string, number>,
   current: Record<string, number> = {},
 ): Record<string, number> {
   return Object.fromEntries(
-    Object.entries(limits).map(([rule, limit]) => [
-      rule,
-      Math.min(limit, Object.hasOwn(current, rule) ? current[rule] : 0),
-    ]),
+    Object.entries(limits).flatMap(([rule, limit]) => {
+      const count = Object.hasOwn(current, rule) ? current[rule] : 0;
+      return count > 0 ? [[rule, Math.min(limit, count)]] : [];
+    }),
   );
 }
 
@@ -263,7 +263,8 @@ function lowered(
  * listing the suppressions in the files this change touches (all of them when
  * it touches none). SAFETY comments may also use the room the
  * directives disabling the SAFETY rule leave below their ceiling. `update`
- * lowers every ceiling to its current count, moving that room to `safety`;
+ * lowers every ceiling to its current count, drops each rule and config key
+ * that suppresses nothing, and moves that room to `safety`;
  * no command ever raises the two together. A config rule-off may use the
  * room a containing scope of its rule gives up, and `update` moves that room
  * to the narrower key.
