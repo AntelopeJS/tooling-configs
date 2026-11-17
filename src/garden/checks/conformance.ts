@@ -8,6 +8,8 @@ import {
 import {
   ciNodeCallers,
   ciRenovateSyncCallers,
+  olderMajorCalls,
+  SHARED_WORKFLOWS_TAG,
 } from "../../guardrails/workflow.ts";
 import {
   RENOVATE_CONFIGS,
@@ -64,13 +66,16 @@ async function ciCaller(
       ),
     ];
   const findings: Finding[] = [];
-  const unpinned = callers.filter(({ uses }) => uses !== CI_NODE_REF);
-  if (unpinned.length === callers.length)
+  const older = new Set(olderMajorCalls(text));
+  const offRef = callers.filter(
+    ({ uses }) => uses !== CI_NODE_REF && !older.has(uses),
+  );
+  if (offRef.length && !callers.some(({ uses }) => uses === CI_NODE_REF))
     findings.push(
       problem(
         repo,
         "ci-caller",
-        `${CI_PATH} calls ${unpinned[0].uses}.`,
+        `${CI_PATH} calls ${offRef[0].uses}.`,
         `The caller uses ${CI_NODE_REF}.`,
       ),
     );
@@ -84,18 +89,56 @@ async function ciCaller(
       ),
     );
   const syncCallers = ciRenovateSyncCallers(text);
-  if (!syncCallers.some(({ uses }) => uses === CI_RENOVATE_SYNC_REF))
+  const syncOffRef = syncCallers.filter(({ uses }) => !older.has(uses));
+  if (
+    (syncOffRef.length || !syncCallers.length) &&
+    !syncCallers.some(({ uses }) => uses === CI_RENOVATE_SYNC_REF)
+  )
     findings.push(
       problem(
         repo,
         "ci-renovate-sync",
-        syncCallers.length
-          ? `${CI_PATH} calls ${syncCallers[0].uses}.`
+        syncOffRef.length
+          ? `${CI_PATH} calls ${syncOffRef[0].uses}.`
           : `${CI_PATH} has no job calling ci-renovate-sync.yml.`,
         `${CI_PATH} has a job calling ${CI_RENOVATE_SYNC_REF}.`,
       ),
     );
   return findings;
+}
+
+const WORKFLOW_FILE = /^\.github\/workflows\/[^/]+\.ya?ml$/;
+
+/**
+ * Calls to a shared workflow at a major older than the one sync writes, in any workflow file: the release train only moves preview pins
+ * and the sync caller only runs on a Renovate PR, so a repository whose range excludes the release that moved the tag stays on the old major.
+ */
+async function workflowMajor(
+  context: GardenContext,
+  repo: GardenRepo,
+): Promise<Finding[]> {
+  const lagging: string[] = [];
+  for (const path of (await context.tree(repo)).filter((candidate) =>
+    WORKFLOW_FILE.test(candidate),
+  )) {
+    const text = await context.file(repo, path);
+    if (text !== undefined)
+      lagging.push(
+        ...olderMajorCalls(text).map((call) => `${path} calls ${call}`),
+      );
+  }
+  if (!lagging.length) return [];
+  const range = (await context.packages(repo))
+    .map(({ tooling: declared }) => declared)
+    .find((declared) => declared !== undefined);
+  return [
+    problem(
+      repo,
+      "workflow-major",
+      `${lagging.join("; ")}. ${TOOLING_PACKAGE} is ${range ?? "not declared"}, and neither the release train nor a sync caller without a Renovate PR moves it.`,
+      `Every call to a shared workflow is at @${SHARED_WORKFLOWS_TAG}: ${TOOLING_PACKAGE} is bumped to a release that writes @${SHARED_WORKFLOWS_TAG} and antelopejs-sync has run.`,
+    ),
+  ];
 }
 
 async function renovateConfig(
@@ -256,6 +299,7 @@ async function scan(
 ): Promise<Finding[]> {
   return [
     ...(await ciCaller(context, repo)),
+    ...(await workflowMajor(context, repo)),
     ...(await renovateConfig(context, repo)),
     ...(await toolingVersion(context, repo)),
     ...(await checksStatus(context, repo)),
