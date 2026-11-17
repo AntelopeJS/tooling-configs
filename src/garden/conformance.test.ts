@@ -151,7 +151,7 @@ test("a release caller left on the old major of the shared workflows is a workfl
   assert.deepEqual(subjects(lagging), ["workflow-major"]);
   assert.match(
     lagging.kind === "findings" ? lagging.findings[0].evidence : "",
-    /^\.github\/workflows\/release\.yml calls AntelopeJS\/\.github\/\.github\/workflows\/release-npm-public\.yml@v1\. @antelopejs\/tooling-configs is \^0\.2\.7,/,
+    /^\.github\/workflows\/release\.yml calls AntelopeJS\/\.github\/\.github\/workflows\/release-npm-public\.yml@v1\. @antelopejs\/tooling-configs is \^0\.2\.7\.$/,
   );
   assert.deepEqual(
     subjects(await conformance.run(consumer("v2").context())),
@@ -171,6 +171,29 @@ test("a ci.yml whose callers are both on the old major is one workflow-major fin
   assert.match(
     result.kind === "findings" ? result.findings[0].evidence : "",
     /ci-node\.yml@v1; .*ci-renovate-sync\.yml@v1\./,
+  );
+});
+
+test("a branch ref beside an old-major caller is still its own finding, and a newer major is not an older one", async () => {
+  const withCaller = (workflow: string) =>
+    conformant(world()).repo("mongodb", {
+      ".github/workflows/ci.yml": workflow,
+      "renovate.json": RENOVATE,
+      "package.json": PACKAGE,
+      "pnpm-lock.yaml": LOCK("0.2.7"),
+    });
+  const mixed = CALLER.replace("ci-node.yml@v2", "ci-node.yml@v1").replace(
+    "ci-renovate-sync.yml@v2",
+    "ci-renovate-sync.yml@main",
+  );
+  assert.deepEqual(
+    subjects(await conformance.run(withCaller(mixed).context())),
+    ["ci-renovate-sync", "workflow-major"],
+  );
+  const newer = CALLER.replace("ci-node.yml@v2", "ci-node.yml@v3");
+  assert.deepEqual(
+    subjects(await conformance.run(withCaller(newer).context())),
+    ["ci-caller"],
   );
 });
 

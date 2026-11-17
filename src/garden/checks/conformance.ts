@@ -16,6 +16,7 @@ import {
   RENOVATE_PRESET,
 } from "../../guardrails/renovate.ts";
 import type { GardenApi } from "../api.ts";
+import type { PackageJson } from "../decode.ts";
 import { perRepo, type Check } from "../check.ts";
 import { GardenContext, ORG, type GardenRepo } from "../context.ts";
 import { TOOLING_PACKAGE, tooling } from "../npm.ts";
@@ -107,6 +108,15 @@ async function ciCaller(
   return findings;
 }
 
+/** The first tooling-configs range the repository's manifests declare. */
+function declaredTooling(
+  manifests: readonly PackageJson[],
+): string | undefined {
+  return manifests
+    .map(({ tooling: declared }) => declared)
+    .find((declared) => declared !== undefined);
+}
+
 const WORKFLOW_FILE = /^\.github\/workflows\/[^/]+\.ya?ml$/;
 
 /**
@@ -128,15 +138,13 @@ async function workflowMajor(
       );
   }
   if (!lagging.length) return [];
-  const range = (await context.packages(repo))
-    .map(({ tooling: declared }) => declared)
-    .find((declared) => declared !== undefined);
+  const range = declaredTooling(await context.packages(repo));
   return [
     problem(
       repo,
       "workflow-major",
-      `${lagging.join("; ")}. ${TOOLING_PACKAGE} is ${range ?? "not declared"}, and neither the release train nor a sync caller without a Renovate PR moves it.`,
-      `Every call to a shared workflow is at @${SHARED_WORKFLOWS_TAG}: ${TOOLING_PACKAGE} is bumped to a release that writes @${SHARED_WORKFLOWS_TAG} and antelopejs-sync has run.`,
+      `${lagging.join("; ")}. ${TOOLING_PACKAGE} is ${range ?? "not declared"}.`,
+      `No call to a shared workflow is on a major tag older than @${SHARED_WORKFLOWS_TAG}: ${TOOLING_PACKAGE} is bumped to a release that writes @${SHARED_WORKFLOWS_TAG} and antelopejs-sync has run.`,
     ),
   ];
 }
@@ -180,9 +188,7 @@ async function toolingVersion(
 ): Promise<Finding[]> {
   const manifests = await context.packages(repo);
   if (manifests.some(({ name }) => name === TOOLING_PACKAGE)) return [];
-  const range = manifests
-    .map(({ tooling: declared }) => declared)
-    .find((declared) => declared !== undefined);
+  const range = declaredTooling(manifests);
   const latest = await tooling(context);
   const done = `@antelopejs/tooling-configs is ${latest} or a Renovate PR bumping it is under 7 days old.`;
   if (range === undefined)
