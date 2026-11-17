@@ -11,7 +11,51 @@ import { createRequire } from "node:module";
 import { availableParallelism, freemem } from "node:os";
 import { basename, dirname, join } from "node:path";
 
+import ts from "../typescript6.ts";
 import { DIRECTORY_LINK } from "./revisions.ts";
+
+const AMBIENT_KINDS = new Set([
+  ts.SyntaxKind.ClassDeclaration,
+  ts.SyntaxKind.EnumDeclaration,
+  ts.SyntaxKind.FunctionDeclaration,
+  ts.SyntaxKind.ModuleDeclaration,
+  ts.SyntaxKind.VariableStatement,
+]);
+
+/** `text` with `declare` on each top-level statement that a `.mts` source needs it on: TypeScript emits a JavaScript module's declarations without it, valid in a `.d.mts` but a body-less function in a `.mts`. */
+function ambientText(file: string, text: string): string {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
+  let result = text;
+  for (const statement of [...source.statements].reverse()) {
+    if (!AMBIENT_KINDS.has(statement.kind) || !ts.canHaveModifiers(statement))
+      continue;
+    const modifiers = ts.getModifiers(statement) ?? [];
+    if (
+      modifiers.some(
+        ({ kind }) =>
+          kind === ts.SyntaxKind.DeclareKeyword ||
+          kind === ts.SyntaxKind.DefaultKeyword,
+      )
+    )
+      continue;
+    const exported = modifiers.find(
+      ({ kind }) => kind === ts.SyntaxKind.ExportKeyword,
+    );
+    result =
+      exported === undefined
+        ? `${result.slice(0, statement.getStart(source))}declare ${result.slice(statement.getStart(source))}`
+        : `${result.slice(0, exported.end)} declare${result.slice(exported.end)}`;
+  }
+  return result;
+}
+
+/** dts-bundle-generator 9 remaps a .d.mts/.d.cts root twice; a source-named copy preserves its declaration text, made ambient. */
+export function generatorEntry(file: string): string {
+  const alias = file.replace(/\.d\.([cm]ts)$/u, ".$1");
+  if (alias !== file)
+    writeFileSync(alias, ambientText(file, readFileSync(file, "utf8")));
+  return alias;
+}
 
 type Entries = Parameters<typeof generateDtsBundle>[0];
 type Options = Parameters<typeof generateDtsBundle>[1];

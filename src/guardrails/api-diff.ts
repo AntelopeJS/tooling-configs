@@ -21,7 +21,7 @@ import {
 import ts from "../typescript6.ts";
 
 import { autoImportDiff } from "./auto-imports.ts";
-import { bundleDeclarations } from "./declaration-bundle.ts";
+import { bundleDeclarations, generatorEntry } from "./declaration-bundle.ts";
 import { collateDeclarations, labelHunks } from "./declaration-groups.ts";
 import { normalizeBundle } from "./declaration-order.ts";
 import {
@@ -32,7 +32,7 @@ import {
 import { runtimeDiff } from "./runtime-diff.ts";
 import { testEntryNotice } from "./test-entries.ts";
 import {
-  emitPackage,
+  emitDeclarations,
   isTestSource,
   packagesAt,
   unpublishedAt,
@@ -196,7 +196,7 @@ function bundledDeclaration(
 function publishedEntries(
   directory: string,
   manifest: ProofManifest,
-  emitted: ReturnType<typeof emitPackage>,
+  emitted: ReturnType<typeof emitDeclarations>,
   scratch: string,
 ) {
   const outputRoot = resolve(directory, emitted.options.outDir ?? ".");
@@ -269,7 +269,7 @@ function bundleDependencies(directory: string, scratch: string): void {
 
 /** The emit mirrors its source root into `scratch`, so each `paths` target under that root is pointed at the emitted declarations rather than the worktree's sources, which lie outside the bundle's `rootDir`. */
 function emittedPaths(
-  emitted: ReturnType<typeof emitPackage>,
+  emitted: ReturnType<typeof emitDeclarations>,
   scratch: string,
 ): Record<string, string[]> | undefined {
   const [module] = emitted.modules;
@@ -294,18 +294,11 @@ function emittedPaths(
   );
 }
 
-/** dts-bundle-generator 9 remaps a .d.mts/.d.cts root twice; a source-named copy preserves its declaration text. */
-function generatorEntry(file: string): string {
-  const alias = file.replace(/\.d\.([cm]ts)$/u, ".$1");
-  if (alias !== file) copyFileSync(file, alias);
-  return alias;
-}
-
 /** The published entries, failing first on the declaration errors of the modules they reach, so a module whose declaration TypeScript withheld is reported by its own diagnostic. */
 function publishedDeclarationEntries(
   { directory, scratch }: PackagePaths,
   manifest: ProofManifest,
-  emitted: ReturnType<typeof emitPackage>,
+  emitted: ReturnType<typeof emitDeclarations>,
 ) {
   const published = publishedEntries(directory, manifest, emitted, scratch);
   const errors = emitted.declarationErrors(
@@ -325,7 +318,11 @@ function bundlePackage(
   policy?: AddedPolicy,
 ): BundledPackage {
   const { directory, output, scratch } = paths;
-  const emitted = emitPackage(directory, scratch, true);
+  const emitted = emitDeclarations(
+    directory,
+    scratch,
+    entryPatterns(manifest).map(({ target }) => resolve(directory, target)),
+  );
   const { entries, skipped } = publishedDeclarationEntries(
     paths,
     manifest,

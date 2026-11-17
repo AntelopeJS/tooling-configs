@@ -1,10 +1,19 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, matchesGlob, relative, resolve, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  matchesGlob,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import ts from "../typescript6.ts";
 
 import { declaresTypeScript, describePackage } from "./declared-typescript.ts";
 import { workspaceDirectories, workspacePatterns } from "./docs-compat.ts";
-import { trackedManifests } from "./files.ts";
+import { gitFiles, trackedManifests } from "./files.ts";
 import {
   installedCompilerDefaults,
   installedTypeScriptMajor,
@@ -172,22 +181,24 @@ function copyDeclarations(
 /** TS18002: `"files": []` without references. */
 const EMPTY_FILES_LIST = 18002;
 
-function readConfig(directory: string) {
-  const file = join(directory, "tsconfig.json");
+function readConfig(
+  directory: string,
+  file = join(directory, "tsconfig.json"),
+) {
   const config = ts.readConfigFile(file, ts.sys.readFile);
   if (config.error) failDiagnostics([config.error]);
   return ts.parseJsonConfigFileContent(
     config.config,
     ts.sys,
-    directory,
+    dirname(file),
     undefined,
     file,
   );
 }
 
-/** Parses `tsconfig.json` as the package's own `tsc -p` would from the package directory, failing on any configuration error. */
-function parseConfig(directory: string) {
-  const parsed = readConfig(directory);
+/** Parses `file`, by default the package's `tsconfig.json`, as the package's own `tsc -p` would, failing on any configuration error. */
+function parseConfig(directory: string, file?: string) {
+  const parsed = readConfig(directory, file);
   failDiagnostics(parsed.errors);
   const defaults = installedCompilerDefaults(
     parsed.options,
@@ -201,6 +212,25 @@ function parseConfig(directory: string) {
       ...ts.convertCompilerOptionsFromJson(defaults, directory).options,
     },
   };
+}
+
+/** The package's other configs that emit declarations, such as a `bin/tsconfig.types.json` only its build script names, each with its absolute `outDir`. */
+function declarationConfigs(
+  directory: string,
+): { config: string; outDir: string }[] {
+  const main = join(directory, "tsconfig.json");
+  return gitFiles(directory).flatMap((path) => {
+    const config = join(directory, path);
+    if (config === main || !/^tsconfig.*\.json$/u.test(basename(path)))
+      return [];
+    const { options } = readConfig(directory, config);
+    const emits =
+      options.noEmit !== true &&
+      (options.declaration === true || options.composite === true);
+    return emits && options.outDir !== undefined
+      ? [{ config, outDir: resolve(options.outDir) }]
+      : [];
+  });
 }
 
 /** Whether `tsconfig.json` has an empty `files` list, references nothing, and so parses to no inputs. */
@@ -290,13 +320,14 @@ function withheldDeclarations(
   return withheld;
 }
 
-/** Emits with the pack's TypeScript 6, reading the package's config as the TypeScript it installs does, and lays the output out under `rootDir`, else the common directory of its sources as TypeScript 5 does; test roots and outputs never enter either proof. `defaults` is what `installedCompilerDefaults` adds to the config. `modules` maps each emitted, copied or `withheld` file to its source module; `paths` is the configured `paths` with absolute targets. */
+/** Emits `config`, by default the package's `tsconfig.json`, with the pack's TypeScript 6, reading it as the TypeScript the package installs does, and lays the output out under `rootDir`, else the common directory of its sources as TypeScript 5 does; test roots and outputs never enter either proof. `defaults` is what `installedCompilerDefaults` adds to the config. `modules` maps each emitted, copied or `withheld` file to its source module; `paths` is the configured `paths` with absolute targets. */
 export function emitPackage(
   directory: string,
   output: string,
   declarations: boolean,
+  config?: string,
 ) {
-  const parsed = parseConfig(directory);
+  const parsed = parseConfig(directory, config);
   const configured: ts.CompilerOptions = {
     ...parsed.options,
     rootDir:
@@ -401,5 +432,47 @@ export function emitPackage(
         ),
       );
     },
+  };
+}
+
+/** The emit of `tsconfig.json`, joined by the emit of each other declaration config of the package whose `outDir` lies below the main output and holds one of the published `targets`, laid out at that place in `scratch`. */
+export function emitDeclarations(
+  directory: string,
+  scratch: string,
+  targets: readonly string[],
+) {
+  const main = emitPackage(directory, scratch, true);
+  const outputRoot = resolve(directory, main.options.outDir ?? ".");
+  const below = (root: string, path: string) => {
+    const inner = relative(root, path);
+    return (
+      inner !== "" &&
+      inner !== ".." &&
+      !inner.startsWith(`..${sep}`) &&
+      !isAbsolute(inner)
+    );
+  };
+  const others = declarationConfigs(directory)
+    .filter(
+      ({ outDir }) =>
+        below(outputRoot, outDir) &&
+        targets.some((target) => below(outDir, target)),
+    )
+    .map(({ config, outDir }) =>
+      emitPackage(
+        directory,
+        join(scratch, relative(outputRoot, outDir)),
+        true,
+        config,
+      ),
+    );
+  const emits = [main, ...others];
+  return {
+    ...main,
+    files: emits.flatMap(({ files }) => files),
+    withheld: emits.flatMap(({ withheld }) => withheld),
+    modules: new Map(emits.flatMap(({ modules }) => [...modules])),
+    declarationErrors: (sources: readonly string[]) =>
+      emits.map((emit) => emit.declarationErrors(sources)).join(""),
   };
 }
