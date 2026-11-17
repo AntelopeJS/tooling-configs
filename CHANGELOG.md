@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.4
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.3...v0.8.4)
+
+### 🩹 Fixes
+
+- **api-diff:** Compare declarations a second tsconfig of the package emits ([#424](https://github.com/AntelopeJS/tooling-configs/pull/424))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.8.3
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.2...v0.8.3)
