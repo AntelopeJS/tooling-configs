@@ -114,7 +114,7 @@ function supportedRanges(manifest, versions) {
         ranges.set(
           name,
           range.startsWith("workspace:") && published !== undefined
-            ? { text: published, exact: true }
+            ? { text: published, spec: range }
             : { text: range },
         );
       }
@@ -123,9 +123,11 @@ function supportedRanges(manifest, versions) {
   return ranges;
 }
 
-/** A `workspace:` spec is documented as the exact text `pnpm pack` writes; any other spec by an equivalent range. */
-function matches(documented, { text, exact }) {
-  return exact ? documented === text : sameRange(documented, text);
+/** A `workspace:` spec is documented as its own text or the exact text `pnpm pack` writes; any other spec by an equivalent range. */
+function matches(documented, { text, spec }) {
+  return spec === undefined
+    ? sameRange(documented, text)
+    : documented === spec || documented === text;
 }
 
 function checkBlock(inner, at, { file, manifestPath, versions, fail }) {
