@@ -16,9 +16,7 @@ import { DIRECTORY_LINK } from "./revisions.ts";
 
 const AMBIENT_KINDS = new Set([
   ts.SyntaxKind.ClassDeclaration,
-  ts.SyntaxKind.EnumDeclaration,
   ts.SyntaxKind.FunctionDeclaration,
-  ts.SyntaxKind.ModuleDeclaration,
   ts.SyntaxKind.VariableStatement,
 ]);
 

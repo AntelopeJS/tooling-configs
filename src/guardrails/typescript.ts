@@ -214,14 +214,18 @@ function parseConfig(directory: string, file?: string) {
   };
 }
 
-/** The package's other configs that emit declarations, such as a `bin/tsconfig.types.json` only its build script names, each with its absolute `outDir`. */
+/** The package's other readable configs that emit declarations, such as a `bin/tsconfig.types.json` only its build script names, each with its absolute `outDir`. */
 function declarationConfigs(
   directory: string,
 ): { config: string; outDir: string }[] {
   const main = join(directory, "tsconfig.json");
   return gitFiles(directory).flatMap((path) => {
     const config = join(directory, path);
-    if (config === main || !/^tsconfig.*\.json$/u.test(basename(path)))
+    if (
+      config === main ||
+      !/^tsconfig.*\.json$/u.test(basename(path)) ||
+      ts.readConfigFile(config, ts.sys.readFile).error !== undefined
+    )
       return [];
     const { options } = readConfig(directory, config);
     const emits =
@@ -435,14 +439,15 @@ export function emitPackage(
   };
 }
 
-/** The emit of `tsconfig.json`, joined by the emit of each other declaration config of the package whose `outDir` lies below the main output and holds one of the published `targets`, laid out at that place in `scratch`. */
+/** The emit of `tsconfig.json`; when it sets `outDir`, joined by the emit of each other declaration config of the package whose `outDir` lies below it and holds one of the published `targets`, laid out at that place in `scratch`. */
 export function emitDeclarations(
   directory: string,
   scratch: string,
   targets: readonly string[],
 ) {
   const main = emitPackage(directory, scratch, true);
-  const outputRoot = resolve(directory, main.options.outDir ?? ".");
+  if (main.options.outDir === undefined) return main;
+  const outputRoot = resolve(directory, main.options.outDir);
   const below = (root: string, path: string) => {
     const inner = relative(root, path);
     return (
@@ -469,7 +474,7 @@ export function emitDeclarations(
   const emits = [main, ...others];
   return {
     ...main,
-    files: emits.flatMap(({ files }) => files),
+    files: [...new Set(emits.flatMap(({ files }) => files))],
     withheld: emits.flatMap(({ withheld }) => withheld),
     modules: new Map(emits.flatMap(({ modules }) => [...modules])),
     declarationErrors: (sources: readonly string[]) =>
