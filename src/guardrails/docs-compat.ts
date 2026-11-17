@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { isMap, isScalar, isSeq, parseDocument, type Document } from "yaml";
 
+import { publishedRange } from "../../actions/docs/published-range.mjs";
 import { placeFrameworkModulesBlock } from "./docs-framework-modules.ts";
 import { placeModulesBlock } from "./docs-modules.ts";
 import { tableLines } from "./markdown-table.ts";
@@ -20,7 +21,6 @@ const DOCS_NODE_END = "<!-- antelopejs-docs-node:end -->";
 const LOCKFILE = "pnpm-lock.yaml";
 const REQUIREMENTS_HEADING = /^##\s+Requirements\s*$/i;
 const SCOPE = "@antelopejs/";
-const WORKSPACE = "workspace:";
 const UNRESOLVED = "—";
 const LEGACY_MARKER = /^<!--\s*docs-compat:\s*\.\/package\.json#\w+\s*-->\s*$/;
 const COMPATIBILITY_HEADING = /^##\s+Compatibility\s*$/i;
@@ -282,18 +282,6 @@ export function workspaceDirectories(root: string): string[] {
         found.add(directory);
   }
   return [...found].sort();
-}
-
-/** The range `pnpm pack` publishes for a `workspace:` spec, or undefined when the sibling's version is unknown. */
-function publishedRange(
-  spec: string,
-  version: string | undefined,
-): string | undefined {
-  if (!spec.startsWith(WORKSPACE)) return spec;
-  const rest = spec.slice(WORKSPACE.length);
-  if (rest === "^" || rest === "~") return version && `${rest}${version}`;
-  if (rest === "*") return version;
-  return /^[\d^~<>=]/.test(rest) ? rest : undefined;
 }
 
 function declaredRanges(

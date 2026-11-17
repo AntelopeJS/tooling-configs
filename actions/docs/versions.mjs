@@ -6,6 +6,8 @@ import { marked } from "marked";
 import semver from "semver";
 
 import { repoPath } from "./paths.mjs";
+import { publishedRange } from "./published-range.mjs";
+import { workspacePackages } from "./sources.mjs";
 
 const SCOPE = "@antelopejs/";
 const START = "<!-- antelopejs-docs-compat:start -->";
@@ -91,17 +93,42 @@ function maskCode(text, firstLine, code) {
 
 const lineAt = (text, offset) => text.slice(0, offset).split("\n").length - 1;
 
-function supportedRanges(manifest) {
+/** The version of every workspace package in the checkout, by name. */
+function workspaceVersions(root) {
+  const versions = new Map();
+  for (const directory of workspacePackages(root)) {
+    const path = join(directory, "package.json");
+    if (!existsSync(path)) continue;
+    const { name, version } = JSON.parse(readFileSync(path, "utf8"));
+    if (name && version) versions.set(name, version);
+  }
+  return versions;
+}
+
+function supportedRanges(manifest, versions) {
   const ranges = new Map();
   for (const field of SUPPORTED_FIELDS) {
     for (const [name, range] of Object.entries(manifest[field] ?? {})) {
-      if (name.startsWith(SCOPE)) ranges.set(name, range);
+      if (name.startsWith(SCOPE)) {
+        const published = publishedRange(range, versions.get(name));
+        ranges.set(
+          name,
+          range.startsWith("workspace:") && published !== undefined
+            ? { text: published, exact: true }
+            : { text: range },
+        );
+      }
     }
   }
   return ranges;
 }
 
-function checkBlock(inner, at, { file, manifestPath, fail }) {
+/** A `workspace:` spec is documented as the exact text `pnpm pack` writes; any other spec by an equivalent range. */
+function matches(documented, { text, exact }) {
+  return exact ? documented === text : sameRange(documented, text);
+}
+
+function checkBlock(inner, at, { file, manifestPath, versions, fail }) {
   if (!existsSync(manifestPath)) {
     fail(
       `${file}:${at}: the antelopejs-docs-compat block has no package.json beside it; ${SYNC} on the package README and delete this block`,
@@ -110,6 +137,7 @@ function checkBlock(inner, at, { file, manifestPath, fail }) {
   }
   const expected = supportedRanges(
     JSON.parse(readFileSync(manifestPath, "utf8")),
+    versions,
   );
   const table = marked.lexer(inner).find((token) => token.type === "table");
   const headings =
@@ -131,9 +159,9 @@ function checkBlock(inner, at, { file, manifestPath, fail }) {
       fail(
         `${file}:${line}: ${name} is not declared as an @antelopejs dependency in package.json; ${SYNC}`,
       );
-    } else if (!sameRange(documented, expected.get(name))) {
+    } else if (!matches(documented, expected.get(name))) {
       fail(
-        `${file}:${line}: Supported ${documented || "(empty)"} for ${name} differs from package.json ${expected.get(name)}; ${SYNC}`,
+        `${file}:${line}: Supported ${documented || "(empty)"} for ${name} differs from package.json ${expected.get(name).text}; ${SYNC}`,
       );
     }
     expected.delete(name);
@@ -154,6 +182,7 @@ export function checkCompatBlocks(doc, { root, fail }) {
   const context = {
     file: repoPath(root, doc.path),
     manifestPath: join(dirname(doc.path), "package.json"),
+    versions: workspaceVersions(root),
     fail,
   };
   const text = maskCode(doc.text, doc.firstLine, doc.code);
