@@ -82,6 +82,7 @@
   "src/guardrails/declaration-order.test.ts": 0.1,
   "src/guardrails/dependency-ranges.test.ts": 0,
   "src/guardrails/docs-compat.test.ts": 2.1,
+  "src/guardrails/docs-compat-workspace.test.ts": 0.5,
   "src/guardrails/docs-framework-modules.test.ts": 1,
   "src/guardrails/docs-modules.test.ts": 2.7,
   "src/guardrails/docs-node.test.ts": 12.3,

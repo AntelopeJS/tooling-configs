@@ -271,7 +271,7 @@ test("sync writes the block of every qualifying workspace package, lists every p
   assert.equal(
     read(root, "packages/a/README.md"),
     `# A\n\n## Compatibility\n\n${compatBlock([
-      { name: "@antelopejs/b", supported: "workspace:*", tested: "0.4.1" },
+      { name: "@antelopejs/b", supported: "0.4.1", tested: "0.4.1" },
       { name: "@antelopejs/core", supported: ">=1.17.0 <2", tested: "1.17.2" },
       {
         name: "@antelopejs/interface-core",
