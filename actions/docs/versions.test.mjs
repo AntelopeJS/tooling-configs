@@ -133,3 +133,48 @@ it("fails a config example whose version does not select the documented module's
     /version "\^0\.6\.0" of @antelopejs\/a does not select its package\.json version 0\.8\.1/,
   );
 });
+
+it("accepts the manifest text or the range pnpm pack writes for a workspace: spec and rejects any other row", (t) => {
+  const { root, write } = fixture(t, {
+    "pnpm-workspace.yaml": 'packages:\n  - "packages/*"\n',
+    "package.json": JSON.stringify({ name: "root", private: true }),
+    "packages/mailing/package.json": JSON.stringify({
+      name: "@antelopejs/interface-dms-mailing",
+      version: "0.11.1",
+    }),
+    "packages/app/package.json": "{}",
+  });
+  const run = (spec, supported) => {
+    write(
+      "packages/app/package.json",
+      JSON.stringify({
+        name: "@antelopejs/app",
+        dependencies: { "@antelopejs/interface-dms-mailing": spec },
+      }),
+    );
+    write(
+      "packages/app/README.md",
+      `# App\n\n${block(["@antelopejs/interface-dms-mailing", supported])}`,
+    );
+    return checkDocs({ root, files: ["packages/app/README.md"] }).failures;
+  };
+  for (const [spec, supported] of [
+    ["workspace:^", "^0.11.1"],
+    ["workspace:~", "~0.11.1"],
+    ["workspace:*", "0.11.1"],
+    ["workspace:^0.11.0", "^0.11.0"],
+    ["workspace:^", "workspace:^"],
+    ["workspace:~", "workspace:~"],
+  ]) {
+    assert.deepEqual(run(spec, supported), [], spec);
+  }
+  for (const [spec, supported] of [
+    ["workspace:^", "workspace:~"],
+    ["workspace:^", "^0.11.0"],
+    ["workspace:^", "~0.11.1"],
+    ["workspace:~", "^0.11.1"],
+    ["workspace:*", "^0.11.1"],
+  ]) {
+    assert.equal(run(spec, supported).length, 1, `${spec} vs ${supported}`);
+  }
+});

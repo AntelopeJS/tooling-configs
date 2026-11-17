@@ -63,11 +63,11 @@ test("a caller job not named ci is reported even though the file calls ci-node.y
   ]);
 });
 
-test("a caller pinned to another ref or missing is a ci-caller finding", async () => {
+test("a caller pinned to a branch or missing is a ci-caller finding", async () => {
   const pinned = conformant(world()).repo("mongodb", {
     ".github/workflows/ci.yml": CALLER.replace(
       "ci-node.yml@v2",
-      "ci-node.yml@v1",
+      "ci-node.yml@main",
     ),
     "renovate.json": RENOVATE,
     "package.json": PACKAGE,
@@ -115,7 +115,7 @@ test("tooling-configs runs its own CI jobs without a ci-caller finding", async (
   assert.deepEqual(subjects(await conformance.run(inline.context())), []);
 });
 
-test("a caller without a ci-renovate-sync job, or pinned to another ref, is a ci-renovate-sync finding", async () => {
+test("a caller without a ci-renovate-sync job, or pinned to a branch, is a ci-renovate-sync finding", async () => {
   const withCaller = (workflow: string) =>
     conformant(world()).repo("mongodb", {
       ".github/workflows/ci.yml": workflow,
@@ -130,11 +130,70 @@ test("a caller without a ci-renovate-sync job, or pinned to another ref, is a ci
   );
   const pinned = CALLER.replace(
     "ci-renovate-sync.yml@v2",
-    "ci-renovate-sync.yml@v1",
+    "ci-renovate-sync.yml@main",
   );
   assert.deepEqual(
     subjects(await conformance.run(withCaller(pinned).context())),
     ["ci-renovate-sync"],
+  );
+});
+
+test("a release caller left on the old major of the shared workflows is a workflow-major finding until it calls the current major", async () => {
+  const consumer = (release: string) =>
+    conformant(world()).repo("mongodb", {
+      ".github/workflows/ci.yml": CALLER,
+      ".github/workflows/release.yml": `name: Release\non: push\njobs:\n  release:\n    uses: AntelopeJS/.github/.github/workflows/release-npm-public.yml@${release}\n  update:\n    uses: AntelopeJS/.github/.github/workflows/modules-update.yml@v1\n`,
+      "renovate.json": RENOVATE,
+      "package.json": PACKAGE,
+      "pnpm-lock.yaml": LOCK("0.2.7"),
+    });
+  const lagging = await conformance.run(consumer("v1").context());
+  assert.deepEqual(subjects(lagging), ["workflow-major"]);
+  assert.match(
+    lagging.kind === "findings" ? lagging.findings[0].evidence : "",
+    /^\.github\/workflows\/release\.yml calls AntelopeJS\/\.github\/\.github\/workflows\/release-npm-public\.yml@v1\. @antelopejs\/tooling-configs is \^0\.2\.7\.$/,
+  );
+  assert.deepEqual(
+    subjects(await conformance.run(consumer("v2").context())),
+    [],
+  );
+});
+
+test("a ci.yml whose callers are both on the old major is one workflow-major finding, not a ci-caller and a ci-renovate-sync one", async () => {
+  const api = conformant(world()).repo("mongodb", {
+    ".github/workflows/ci.yml": CALLER.replaceAll(".yml@v2", ".yml@v1"),
+    "renovate.json": RENOVATE,
+    "package.json": PACKAGE,
+    "pnpm-lock.yaml": LOCK("0.2.7"),
+  });
+  const result = await conformance.run(api.context());
+  assert.deepEqual(subjects(result), ["workflow-major"]);
+  assert.match(
+    result.kind === "findings" ? result.findings[0].evidence : "",
+    /ci-node\.yml@v1; .*ci-renovate-sync\.yml@v1\./,
+  );
+});
+
+test("a branch ref beside an old-major caller is still its own finding, and a newer major is not an older one", async () => {
+  const withCaller = (workflow: string) =>
+    conformant(world()).repo("mongodb", {
+      ".github/workflows/ci.yml": workflow,
+      "renovate.json": RENOVATE,
+      "package.json": PACKAGE,
+      "pnpm-lock.yaml": LOCK("0.2.7"),
+    });
+  const mixed = CALLER.replace("ci-node.yml@v2", "ci-node.yml@v1").replace(
+    "ci-renovate-sync.yml@v2",
+    "ci-renovate-sync.yml@main",
+  );
+  assert.deepEqual(
+    subjects(await conformance.run(withCaller(mixed).context())),
+    ["ci-renovate-sync", "workflow-major"],
+  );
+  const newer = CALLER.replace("ci-node.yml@v2", "ci-node.yml@v3");
+  assert.deepEqual(
+    subjects(await conformance.run(withCaller(newer).context())),
+    ["ci-caller"],
   );
 });
 
