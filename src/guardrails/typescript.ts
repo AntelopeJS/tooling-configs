@@ -218,9 +218,9 @@ function parseConfig(directory: string, file?: string) {
 function declarationConfigs(
   directory: string,
 ): { config: string; outDir: string }[] {
-  const main = join(directory, "tsconfig.json");
+  const main = join(directory, "tsconfig.json").split("\\").join("/");
   return gitFiles(directory).flatMap((path) => {
-    const config = join(directory, path);
+    const config = join(directory, path).split("\\").join("/");
     if (
       config === main ||
       !/^tsconfig.*\.json$/u.test(basename(path)) ||
