@@ -57,7 +57,7 @@ function expand(root, patterns) {
 }
 
 /** The checkout root and every workspace package directory it declares. */
-function workspacePackages(root) {
+export function workspacePackages(root) {
   const patterns = workspacePatterns(
     root,
     readJson(join(root, "package.json")),
