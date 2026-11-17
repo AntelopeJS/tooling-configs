@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.8.3
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.2...v0.8.3)
+
+### 🚀 Enhancements
+
+- **garden:** Report a consumer left on an older major of the shared workflows ([#421](https://github.com/AntelopeJS/tooling-configs/pull/421))
+
+### 🩹 Fixes
+
+- **guardrails:** Show the pnpm pack range for workspace: specs in the docs-compat table ([#418](https://github.com/AntelopeJS/tooling-configs/pull/418))
+- **docs:** Compare a workspace: spec by the range pnpm pack writes in the docs action ([#419](https://github.com/AntelopeJS/tooling-configs/pull/419))
+- **docs:** Accept a row equal to the manifest's workspace: spec in the docs action ([#422](https://github.com/AntelopeJS/tooling-configs/pull/422))
+
+### 🤖 CI
+
+- Run ci on push to next ([#420](https://github.com/AntelopeJS/tooling-configs/pull/420))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.8.2
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.1...v0.8.2)
