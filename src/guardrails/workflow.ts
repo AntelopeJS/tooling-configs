@@ -4,8 +4,9 @@ import { isMap, isScalar, isSeq, parseDocument } from "yaml";
 
 import type { PlannedArtifact } from "./sync.ts";
 
-/** The tag of AntelopeJS/.github every workflow sync writes calls; a repository that has not synced keeps its own ref. */
-const SHARED_WORKFLOWS_TAG = "v2";
+/** The major of the AntelopeJS/.github tag every workflow sync writes calls; a repository that has not synced keeps its own ref. */
+const SHARED_WORKFLOWS_MAJOR = 2;
+export const SHARED_WORKFLOWS_TAG = `v${SHARED_WORKFLOWS_MAJOR}`;
 
 /** The `uses:` ref of the shared workflow `file` at the tag sync writes. */
 export function sharedWorkflow(file: string): string {
@@ -14,13 +15,29 @@ export function sharedWorkflow(file: string): string {
 
 /** A `uses:` line calling a shared workflow the tag ships; one it does not ship, such as the retired modules-update.yml, keeps its ref. */
 const SHARED_USES =
-  /^(\s*(?:-\s+)?uses:\s*["']?AntelopeJS\/\.github\/\.github\/workflows\/(?:ci-node|ci-renovate-sync|next-sync|release-npm-public|release-npm-private|stale)\.yml@)([^\s"'#]+)/gm;
+  /^(\s*(?:-\s+)?uses:\s*["']?)(AntelopeJS\/\.github\/\.github\/workflows\/(?:ci-node|ci-renovate-sync|next-sync|release-npm-public|release-npm-private|stale)\.yml@)([^\s"'#]+)/gm;
+
+const MAJOR_TAG = /^v(\d+)$/;
+
+/**
+ * Each `uses:` value in a workflow file that calls a shared workflow the tag ships at an older major tag, such as `ci-node.yml@v1`
+ * while sync writes `@v2`: the call only antelopejs-sync from a release at the tag moves.
+ */
+export function olderMajorCalls(text: string): string[] {
+  return [...text.matchAll(SHARED_USES)].flatMap(([, , call, ref]) => {
+    const major = MAJOR_TAG.exec(ref)?.[1];
+    return major !== undefined && Number(major) < SHARED_WORKFLOWS_MAJOR
+      ? [`${call}${ref}`]
+      : [];
+  });
+}
 
 /** `text` with every call to a shared workflow the tag ships moved to the tag, its lines otherwise byte for byte. */
 function pinSharedWorkflows(text: string): string {
   return text.replace(
     SHARED_USES,
-    (_line, prefix: string) => `${prefix}${SHARED_WORKFLOWS_TAG}`,
+    (_line, lead: string, call: string) =>
+      `${lead}${call}${SHARED_WORKFLOWS_TAG}`,
   );
 }
 
