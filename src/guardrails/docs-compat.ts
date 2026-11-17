@@ -20,6 +20,7 @@ const DOCS_NODE_END = "<!-- antelopejs-docs-node:end -->";
 const LOCKFILE = "pnpm-lock.yaml";
 const REQUIREMENTS_HEADING = /^##\s+Requirements\s*$/i;
 const SCOPE = "@antelopejs/";
+const WORKSPACE = "workspace:";
 const UNRESOLVED = "—";
 const LEGACY_MARKER = /^<!--\s*docs-compat:\s*\.\/package\.json#\w+\s*-->\s*$/;
 const COMPATIBILITY_HEADING = /^##\s+Compatibility\s*$/i;
@@ -283,7 +284,23 @@ export function workspaceDirectories(root: string): string[] {
   return [...found].sort();
 }
 
-function declaredRanges(manifest: Manifest): Map<string, string> {
+/** The range `pnpm pack` publishes for a `workspace:` spec, or undefined when the sibling's version is unknown. */
+function publishedRange(
+  spec: string,
+  version: string | undefined,
+): string | undefined {
+  if (!spec.startsWith(WORKSPACE)) return spec;
+  const rest = spec.slice(WORKSPACE.length);
+  if (rest === "^" || rest === "~") return version && `${rest}${version}`;
+  if (rest === "*") return version;
+  return /^[\d^~<>=]/.test(rest) ? rest : undefined;
+}
+
+function declaredRanges(
+  manifest: Manifest,
+  versions: ReadonlyMap<string, string>,
+  unresolved: string[],
+): Map<string, string> {
   const ranges = new Map<string, string>();
   for (const field of [
     manifest.optionalDependencies,
@@ -291,7 +308,11 @@ function declaredRanges(manifest: Manifest): Map<string, string> {
     manifest.peerDependencies,
   ])
     for (const [name, range] of Object.entries(field ?? {}))
-      if (name.startsWith(SCOPE)) ranges.set(name, range);
+      if (name.startsWith(SCOPE)) {
+        const published = publishedRange(range, versions.get(name));
+        if (published === undefined) unresolved.push(`${name}@${range}`);
+        else ranges.set(name, published);
+      }
   return ranges;
 }
 
@@ -443,8 +464,16 @@ function planPackage(
  */
 export function planDocs(root: string, manager: PackageManager): DocsPlan {
   const rootManifest = readManifest(root, "");
-  const packages = ["", ...workspaceDirectories(root)].map((directory) => {
-    const manifest = directory ? readManifest(root, directory) : rootManifest;
+  const directories = ["", ...workspaceDirectories(root)];
+  const manifests = directories.map((directory) =>
+    directory ? readManifest(root, directory) : rootManifest,
+  );
+  const versions = new Map<string, string>();
+  for (const { name, version } of manifests)
+    if (name && version) versions.set(name, version);
+  const unresolved: string[] = [];
+  const packages = directories.map((directory, index) => {
+    const manifest = manifests[index];
     return {
       directory,
       name: manifest.name,
@@ -452,7 +481,7 @@ export function planDocs(root: string, manager: PackageManager): DocsPlan {
       node: manifest.engines?.node,
       ranges: manifest.private
         ? new Map<string, string>()
-        : declaredRanges(manifest),
+        : declaredRanges(manifest, versions, unresolved),
     };
   });
   const qualifying = packages.filter(({ ranges }) => ranges.size > 0);
@@ -462,6 +491,10 @@ export function planDocs(root: string, manager: PackageManager): DocsPlan {
     errors: [],
     exists: (path) => existsSync(join(root, path)),
   };
+  for (const spec of new Set(unresolved))
+    plan.errors.push(
+      `${spec} names no workspace package version, so the docs-compat block cannot show the range pnpm pack writes.`,
+    );
   const shared = sharesLockfile(root);
   const documents = new Map<string, Document>();
   const locks = new Map(
