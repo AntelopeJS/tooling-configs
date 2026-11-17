@@ -134,7 +134,7 @@ it("fails a config example whose version does not select the documented module's
   );
 });
 
-it("accepts the range pnpm pack writes for a workspace: spec and rejects any other row", (t) => {
+it("accepts the manifest text or the range pnpm pack writes for a workspace: spec and rejects any other row", (t) => {
   const { root, write } = fixture(t, {
     "pnpm-workspace.yaml": 'packages:\n  - "packages/*"\n',
     "package.json": JSON.stringify({ name: "root", private: true }),
@@ -163,11 +163,13 @@ it("accepts the range pnpm pack writes for a workspace: spec and rejects any oth
     ["workspace:~", "~0.11.1"],
     ["workspace:*", "0.11.1"],
     ["workspace:^0.11.0", "^0.11.0"],
+    ["workspace:^", "workspace:^"],
+    ["workspace:~", "workspace:~"],
   ]) {
     assert.deepEqual(run(spec, supported), [], spec);
   }
   for (const [spec, supported] of [
-    ["workspace:^", "workspace:^"],
+    ["workspace:^", "workspace:~"],
     ["workspace:^", "^0.11.0"],
     ["workspace:^", "~0.11.1"],
     ["workspace:~", "^0.11.1"],
