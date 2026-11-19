@@ -40,6 +40,12 @@ const OWN_POLICY: ReadonlyMap<
   readonly (typeof REQUIRED_RULES)[number][]
 > = new Map([["k8s-gitops-infra", ["required_linear_history"]]]);
 
+/** Repositories whose default branch has no merge queue: `cloud` collects changes on `develop`, and `k8s-gitops-infra` merges only on a person's word. */
+const WITHOUT_MERGE_QUEUE: ReadonlySet<string> = new Set([
+  "cloud",
+  "k8s-gitops-infra",
+]);
+
 /** The packs that Required CI covers. */
 const CI_PACKS = ["full", "template"] as const;
 
@@ -77,6 +83,14 @@ const REQUIREMENTS: readonly Requirement[] = [
     need: `${CI_CONTEXT} from GitHub Actions as a required status check`,
     applies: (repo) => CI_PACKS.some((pack) => pack === repo.pack),
     met: requiresCi,
+  },
+  {
+    subject: "rule:merge_queue",
+    severity: "normal",
+    need: "a merge_queue rule",
+    applies: (repo) => !WITHOUT_MERGE_QUEUE.has(repo.name),
+    met: (rules) =>
+      rules.some((rule) => optStr(rule, "type") === "merge_queue"),
   },
 ];
 
