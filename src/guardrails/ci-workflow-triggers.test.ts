@@ -34,9 +34,16 @@ function withInputs(text: string): Record<string, string | boolean> {
   return parseDocument(text).toJS().jobs.ci.with ?? {};
 }
 
+const PULL_REQUEST_TYPES = [
+  "opened",
+  "synchronize",
+  "reopened",
+  "ready_for_review",
+];
+
 const TRUNK_TRIGGERS: TriggersView = {
   pull_request: {
-    types: ["opened", "synchronize", "reopened", "ready_for_review"],
+    types: [...PULL_REQUEST_TYPES, "labeled", "unlabeled"],
   },
   merge_group: null,
   push: { branches: ["main"] },
@@ -63,10 +70,21 @@ test("a caller declares exactly the trunk triggers whatever it had, so a rewrite
   assert.doesNotMatch(CI_CALLER, /\bnext\b|develop/);
 });
 
+test("a trunk caller from 0.8.5 gains label events and its ci job stays unconditional, so a sync that leaves ci:full without a run or skips the caller on other labels fails", () => {
+  const released = CI_CALLER.replace(
+    /types: \[[^\]]*\]/,
+    `types: [${PULL_REQUEST_TYPES.join(", ")}]`,
+  );
+  assert.notEqual(released, CI_CALLER);
+  const rewritten = rewrite(released);
+  assert.deepEqual(triggers(rewritten), TRUNK_TRIGGERS);
+  assert.equal(parseDocument(rewritten).toJS().jobs.ci.if, undefined);
+});
+
 test("cloud keeps its develop integration branch and gets no merge queue, so a sync that moves every package to trunk or drops the profile fails", () => {
   const cloud = ciProfile("@antelopejs-private/cloud");
   const develop: TriggersView = {
-    pull_request: TRUNK_TRIGGERS.pull_request,
+    pull_request: { types: PULL_REQUEST_TYPES },
     push: { branches: ["develop"] },
     schedule: TRUNK_TRIGGERS.schedule,
     workflow_dispatch: null,
