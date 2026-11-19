@@ -75,8 +75,6 @@ jobs:
     with:
       renovate-sync: false
       test-job: true
-    secrets:
-      NOTION_TOKEN: \${{ secrets.NOTION_TOKEN }}
   renovate-sync:
     permissions:
       contents: write

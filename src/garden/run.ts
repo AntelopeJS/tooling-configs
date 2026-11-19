@@ -2,6 +2,7 @@ import type { GardenApi } from "./api.ts";
 import { aiApps } from "./checks/apps.ts";
 import { linkRot } from "./checks/artifacts.ts";
 import { ciDuration, redBranch } from "./checks/ci-health.ts";
+import { flakyTests } from "./checks/flaky-tests.ts";
 import {
   applyPrunes,
   plannedPrunes,
@@ -53,6 +54,7 @@ const CHECKS: readonly Check[] = [
   captureScenes,
   lineEndings,
   staleBranches,
+  flakyTests,
 ];
 
 export interface Outcome {

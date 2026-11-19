@@ -37,6 +37,37 @@ export function run(
   return body;
 }
 
+/** A completed `merge_group` run of ci.yml whose check suite is `checkSuiteId`. */
+export function queueRun(
+  id: number,
+  checkSuiteId: number,
+  hoursAgo: number,
+): JsonObject {
+  return {
+    ...run(id, "success", hoursAgo),
+    event: "merge_group",
+    check_suite_id: checkSuiteId,
+  };
+}
+
+/** A check run annotation as GitHub lists it. */
+export function annotation(
+  level: string,
+  title: string,
+  message: string,
+): JsonObject {
+  return { annotation_level: level, title, message };
+}
+
+/** The warning ci-node.yml v2 writes for a test that passed only on its merge-queue retry. */
+export function flakyAnnotation(repo: string, test: string): JsonObject {
+  return annotation(
+    "warning",
+    "Flaky test",
+    `AntelopeJS/${repo}: ${test} passed only on its merge-queue retry.`,
+  );
+}
+
 export function checkRun(name: string, conclusion: string): JsonValue {
   return {
     id: 1,
