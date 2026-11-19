@@ -18,6 +18,12 @@ export interface WriteCall {
   body?: JsonValue;
 }
 
+/** A check run of a merge-queue check suite and the annotations it carries. */
+export interface QueueCheck {
+  id: number;
+  annotations: JsonValue[];
+}
+
 export interface RepoSpec {
   name: string;
   pack?: string;
@@ -128,6 +134,37 @@ export class FakeApi implements GardenApi {
       check_runs: checks,
     });
     return this.callerChanged(name, undefined);
+  }
+
+  /**
+   * Completed merge-queue runs of ci.yml, then for each check suite its check runs and for each check run its
+   * annotations. A check run's `annotations_count` is the length of its annotations. The listing shares its route with
+   * {@link FakeApi.ci}, which the later call replaces.
+   */
+  mergeQueue(
+    name: string,
+    runs: JsonValue[],
+    suites: { [checkSuiteId: number]: QueueCheck[] },
+  ): this {
+    this.route(`/repos/AntelopeJS/${name}/actions/workflows/ci.yml/runs`, {
+      workflow_runs: runs,
+    });
+    for (const [suite, checks] of Object.entries(suites)) {
+      this.route(`/repos/AntelopeJS/${name}/check-suites/${suite}/check-runs`, {
+        check_runs: checks.map((check) => ({
+          id: check.id,
+          name: `check ${check.id}`,
+          conclusion: "success",
+          output: { annotations_count: check.annotations.length },
+        })),
+      });
+      for (const check of checks)
+        this.route(
+          `/repos/AntelopeJS/${name}/check-runs/${check.id}/annotations`,
+          check.annotations,
+        );
+    }
+    return this;
   }
 
   /** The newest commit touching ci.yml on the branch was committed at the date; undefined means no commit touched it. */

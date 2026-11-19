@@ -1,8 +1,10 @@
 import { ApiError, type GardenApi } from "./api.ts";
 import {
   alert,
+  annotation,
   artifacts,
   branch,
+  checkRun,
   checkRuns,
   adminLogins,
   logins,
@@ -11,6 +13,7 @@ import {
   pullRequest,
   workflowRun,
   type Alert,
+  type Annotation,
   type Artifact,
   type Branch,
   type CheckRun,
@@ -121,6 +124,9 @@ export class GardenContext {
   private readonly manifests = new Memo<PackageJson[]>();
   private readonly runs = new Memo<WorkflowRun[] | undefined>();
   private readonly checks = new Memo<CheckRun[]>();
+  private readonly queueRuns = new Memo<WorkflowRun[] | undefined>();
+  private readonly suites = new Memo<CheckRun[]>();
+  private readonly annotationLists = new Memo<Annotation[]>();
   private readonly pulls = new Memo<PullRequest[]>();
   private readonly alertLists = new Memo<Alert[] | undefined>();
   private readonly packuments = new Memo<JsonValue | undefined>();
@@ -261,6 +267,54 @@ export class GardenContext {
           throw error;
         }
       },
+    );
+  }
+
+  /**
+   * Completed `merge_group` runs of a workflow created on or after the UTC day of `since`, in milliseconds, in one
+   * paged listing; undefined when the workflow does not exist.
+   */
+  mergeQueueRuns(
+    repo: GardenRepo,
+    workflow: string,
+    since: number,
+  ): Promise<WorkflowRun[] | undefined> {
+    const day = new Date(since).toISOString().slice(0, 10);
+    return this.queueRuns.get(`${repo.name}:${workflow}:${day}`, async () => {
+      try {
+        return (
+          await this.api.pages(
+            `/repos/${ORG}/${repo.name}/actions/workflows/${workflow}/runs?event=merge_group&status=completed&created=%3E%3D${day}`,
+            "workflow_runs",
+          )
+        ).map(workflowRun);
+      } catch (error) {
+        if (error instanceof Error && isMissing(error)) return undefined;
+        throw error;
+      }
+    });
+  }
+
+  /** Every check run of a check suite. */
+  suiteCheckRuns(repo: GardenRepo, checkSuiteId: number): Promise<CheckRun[]> {
+    return this.suites.get(`${repo.name}:${checkSuiteId}`, async () =>
+      (
+        await this.api.pages(
+          `/repos/${ORG}/${repo.name}/check-suites/${checkSuiteId}/check-runs`,
+          "check_runs",
+        )
+      ).map(checkRun),
+    );
+  }
+
+  /** Every annotation of a check run. */
+  annotations(repo: GardenRepo, checkRunId: number): Promise<Annotation[]> {
+    return this.annotationLists.get(`${repo.name}:${checkRunId}`, async () =>
+      (
+        await this.api.pages(
+          `/repos/${ORG}/${repo.name}/check-runs/${checkRunId}/annotations`,
+        )
+      ).map(annotation),
     );
   }
 

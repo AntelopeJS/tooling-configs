@@ -6,6 +6,7 @@ import {
   list,
   num,
   object,
+  optNum,
   optStr,
   optTime,
   str,
@@ -39,6 +40,8 @@ export interface WorkflowRun {
   event: string;
   /** Empty when the run called no reusable workflow or the payload predates the field. */
   referencedWorkflows: ReferencedWorkflow[];
+  /** The check suite the run belongs to; undefined when the payload lacks it. */
+  checkSuiteId: number | undefined;
 }
 
 export interface CheckRun {
@@ -47,6 +50,14 @@ export interface CheckRun {
   conclusion: string | undefined;
   url: string;
   summary: string;
+  /** How many annotations the check run carries; 0 when the payload lacks the count. */
+  annotations: number;
+}
+
+export interface Annotation {
+  level: string;
+  title: string;
+  message: string;
 }
 
 export interface PullRequest {
@@ -127,17 +138,34 @@ export function workflowRun(value: JsonValue): WorkflowRun {
       path: str(workflow, "path"),
       sha: optStr(workflow, "sha") ?? "",
     })),
+    checkSuiteId: optNum(source, "check_suite_id"),
   };
 }
 
-export function checkRuns(value: JsonValue): CheckRun[] {
-  return children(object(value, "check runs"), "check_runs").map((source) => ({
+export function checkRun(value: JsonValue): CheckRun {
+  const source = object(value, "check run");
+  const output = child(source, "output");
+  return {
     id: num(source, "id"),
     name: str(source, "name"),
     conclusion: optStr(source, "conclusion"),
     url: optStr(source, "html_url") ?? "",
-    summary: optStr(child(source, "output"), "summary") ?? "",
-  }));
+    summary: optStr(output, "summary") ?? "",
+    annotations: optNum(output, "annotations_count") ?? 0,
+  };
+}
+
+export function checkRuns(value: JsonValue): CheckRun[] {
+  return children(object(value, "check runs"), "check_runs").map(checkRun);
+}
+
+export function annotation(value: JsonValue): Annotation {
+  const source = object(value, "annotation");
+  return {
+    level: str(source, "annotation_level"),
+    title: optStr(source, "title") ?? "",
+    message: optStr(source, "message") ?? "",
+  };
 }
 
 export function pullRequest(value: JsonValue): PullRequest {
