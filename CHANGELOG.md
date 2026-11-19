@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.9.0
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.9...v0.9.0)
+
+### 💅 Refactors
+
+- Remove the antelopejs-verify harness and the shared verify skills ([#433](https://github.com/AntelopeJS/tooling-configs/pull/433))
+
+#### ⚠️ Breaking Changes
+
+- Remove the antelopejs-verify harness and the shared verify skills ([#433](https://github.com/AntelopeJS/tooling-configs/pull/433))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.8.9
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.8...v0.8.9)
