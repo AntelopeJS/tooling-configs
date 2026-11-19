@@ -2,14 +2,9 @@ import {
   isMap,
   isNode,
   isScalar,
-  Scalar,
-  isPair,
-  isSeq,
   parseDocument,
-  visit,
   type Document,
   type Node,
-  type YAMLSeq,
   type YAMLMap,
 } from "yaml";
 
@@ -17,9 +12,11 @@ import {
   hasRedundantAggregator,
   LEGACY_AGGREGATOR_ID,
 } from "./ci-aggregator.ts";
+import { setCallersDocsFiles, type DocsFilesPlan } from "./ci-docs-files.ts";
 import { sharedWorkflow } from "./workflow.ts";
-import { staleNeeds } from "./workflow-needs.ts";
+import { renameJobReferences, staleNeeds } from "./workflow-needs.ts";
 import { restoreEmptyValueComments } from "./yaml-comments.ts";
+import { blockOverflowingFlow } from "./yaml-flow.ts";
 
 export const CI_PATH = ".github/workflows/ci.yml";
 export const CI_JOB_ID = "ci";
@@ -33,6 +30,7 @@ const RENOVATE_SYNC_GRANTS = {
 };
 export const CI_NODE_REF = sharedWorkflow("ci-node.yml");
 export const CI_RENOVATE_SYNC_REF = sharedWorkflow("ci-renovate-sync.yml");
+const NOTION_TOKEN = "${{ secrets.NOTION_TOKEN }}";
 
 /** How a repository's caller departs from the shared triggers and inputs. */
 export interface CiProfile {
@@ -40,16 +38,23 @@ export interface CiProfile {
   integrationBranch?: string;
   /** Whether the caller may keep the `windows: true` and `windows-pull-requests` inputs that ask ci-node.yml for Windows on pull requests. */
   windowsOnPullRequests: boolean;
+  /** Whether ci-node.yml may run checks and tests in one job; `false` for a repository whose tests take minutes, so its caller passes `single-job: false`. */
+  singleJob: boolean;
 }
 
 const DEFAULT_PROFILE: CiProfile = {
   windowsOnPullRequests: false,
+  singleJob: true,
 };
 
 const PROFILES = new Map<string, Partial<CiProfile>>([
-  ["@antelopejs/core", { windowsOnPullRequests: true }],
+  ["@antelopejs/core", { windowsOnPullRequests: true, singleJob: false }],
   ["cloud-sdk-workspace", { windowsOnPullRequests: true }],
   ["@antelopejs-private/cloud", { integrationBranch: "develop" }],
+  ["dms-workspace", { singleJob: false }],
+  ["@antelopejs/dms-frontend", { singleJob: false }],
+  ["@antelopejs/mongodb", { singleJob: false }],
+  ["@antelopejs/dms-assistant", { singleJob: false }],
 ]);
 
 /** The CI profile of the repository whose package.json is named `name`; the default for any other name. */
@@ -106,6 +111,8 @@ jobs:
     with:
       renovate-sync: false
       test-job: true
+    secrets:
+      NOTION_TOKEN: ${NOTION_TOKEN}
   ${RENOVATE_SYNC_JOB_ID}:
     if: >-
       github.event_name == 'pull_request'
@@ -117,97 +124,6 @@ jobs:
       statuses: write
     uses: ${CI_RENOVATE_SYNC_REF}
 `;
-
-const PRINT_WIDTH = 80;
-
-function flatSequence(seq: YAMLSeq): string | undefined {
-  const items: string[] = [];
-  for (const item of seq.items) {
-    if (!isScalar(item)) return undefined;
-    items.push(String(item.source ?? item.value));
-  }
-  return `[${items.join(", ")}]`;
-}
-
-/**
- * oxfmt pads flow maps but not flow sequences and breaks a long flow sequence in a style YAML serializers cannot
- * produce, so a rewritten file is only left formatted by turning every non-empty flow map and every flow sequence that
- * would overflow the print width into block style.
- */
-function blockOverflowingFlow(document: Document): void {
-  visit(document, {
-    Map(_key, map) {
-      if (map.flow && map.items.length) map.flow = false;
-    },
-    Seq(_key, seq, path) {
-      if (!seq.flow) return;
-      const flat = flatSequence(seq);
-      const parent = path.at(-1);
-      const owner = isPair(parent) && isScalar(parent.key) ? parent.key : null;
-      const nesting = path.filter(
-        (ancestor) => isMap(ancestor) || isSeq(ancestor),
-      ).length;
-      const lead = owner === null ? 2 : String(owner.value).length + 2;
-      if (
-        flat === undefined ||
-        2 * Math.max(nesting - 1, 0) + lead + flat.length > PRINT_WIDTH
-      )
-        seq.flow = false;
-    },
-  });
-}
-
-function renameNeeds(document: Document, from: string, to: string): void {
-  const jobs = document.get("jobs", true);
-  if (!isMap(jobs)) return;
-  for (const { value: job } of jobs.items) {
-    if (!isMap(job)) continue;
-    const needs = job.get("needs", true);
-    if (isScalar(needs) && needs.value === from) needs.value = to;
-    if (isSeq(needs))
-      for (const entry of needs.items)
-        if (isScalar(entry) && entry.value === from) entry.value = to;
-  }
-}
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function renameNeedsReferences(text: string, from: string, to: string): string {
-  const id = escapeRegExp(from);
-  const reference = new RegExp(
-    `(?<![\\w.'"-])needs(?:\\.${id}(?![\\w-])|\\[\\s*(['"])${id}\\1\\s*\\])`,
-    "g",
-  );
-  return text.replace(reference, (_match, quote?: string) =>
-    quote === undefined ? `needs.${to}` : `needs[${quote}${to}${quote}]`,
-  );
-}
-
-function isText(value: unknown): value is string {
-  return String(value) === value;
-}
-
-function renameNeedsExpressions(
-  document: Document,
-  from: string,
-  to: string,
-): void {
-  visit(document, {
-    Scalar(key, node, path) {
-      if (key === "key" || !isText(node.value)) return;
-      const parent = path.at(-1);
-      const wholeExpression =
-        isPair(parent) && isScalar(parent.key) && parent.key.value === "if";
-      node.value = wholeExpression
-        ? renameNeedsReferences(node.value, from, to)
-        : node.value.replace(/\$\{\{[\s\S]*?\}\}/g, (expression) =>
-            renameNeedsReferences(expression, from, to),
-          );
-    },
-  });
-}
 
 function triggersOf(document: Document): string {
   const node = document.get("on", true);
@@ -337,6 +253,42 @@ function setTestJob(
   return true;
 }
 
+function setSingleJob(
+  document: Document,
+  job: YAMLMap,
+  profile: CiProfile,
+): boolean {
+  if (profile.singleJob) return false;
+  const inputs = job.get("with", true);
+  if (isMap(inputs)) {
+    if (inputs.get("single-job") === false) return false;
+    inputs.set("single-job", false);
+  } else job.set("with", document.createNode({ "single-job": false }));
+  return true;
+}
+
+/** Passes ci-node.yml the NOTION_TOKEN it files flaky-test tasks with; a caller with `secrets: inherit` already does. */
+function passNotionToken(document: Document, job: YAMLMap): boolean {
+  const secrets = job.get("secrets", true);
+  if (isScalar(secrets) && secrets.value === "inherit") return false;
+  if (isMap(secrets)) {
+    if (secrets.get("NOTION_TOKEN") === NOTION_TOKEN) return false;
+    secrets.set("NOTION_TOKEN", NOTION_TOKEN);
+  } else job.set("secrets", document.createNode({ NOTION_TOKEN }));
+  return true;
+}
+
+function setCallerInputs(
+  document: Document,
+  job: YAMLMap,
+  placeholderTests: boolean,
+  profile: CiProfile,
+): boolean {
+  const testJob = setTestJob(document, job, placeholderTests);
+  const singleJob = setSingleJob(document, job, profile);
+  return passNotionToken(document, job) || singleJob || testJob;
+}
+
 /** The caller sync writes into a repository without one, its test job off when the `test` script is a placeholder. */
 function newCaller(placeholderTests: boolean): string {
   return placeholderTests
@@ -363,64 +315,6 @@ export function placeholderTestScript(script: string | undefined): boolean {
       (command) => /^echo(\s|$)/.test(command) || /^exit\s+0$/.test(command),
     )
   );
-}
-
-function lines(text: string): string[] {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-/** The `docs-files` lines sync computes, and how to tell whether a hand-listed path still exists. */
-interface DocsFilesPlan {
-  docsFiles: readonly string[];
-  exists: (path: string) => boolean;
-}
-
-function normalizePath(path: string): string {
-  return path.replace(/^(?:\.\/)+/, "").replace(/\/+$/, "");
-}
-
-function mergedDocsFiles(current: string[], plan: DocsFilesPlan): string[] {
-  const computed = new Set(plan.docsFiles);
-  const kept = current
-    .map(normalizePath)
-    .filter((path) => path && !computed.has(path) && plan.exists(path));
-  return [...new Set([...plan.docsFiles, ...kept])];
-}
-
-function setDocsFiles(
-  document: Document,
-  job: YAMLMap,
-  plan: DocsFilesPlan,
-): boolean {
-  const inputs = job.get("with", true);
-  const current = isMap(inputs) ? inputs.get("docs-files", true) : undefined;
-  const existing = isScalar(current) ? lines(String(current.value)) : [];
-  const files = mergedDocsFiles(existing, plan);
-  if (isScalar(current) && existing.join("\n") === files.join("\n"))
-    return false;
-  const value = new Scalar(`${files.join("\n")}\n`);
-  value.type = Scalar.BLOCK_LITERAL;
-  if (isMap(inputs)) inputs.set("docs-files", value);
-  else job.set("with", document.createNode({ "docs-files": value }));
-  return true;
-}
-
-function setCallersDocsFiles(
-  document: Document,
-  jobs: YAMLMap,
-  callers: readonly { id: string }[],
-  plan: DocsFilesPlan | undefined,
-): boolean {
-  let changed = false;
-  if (!plan?.docsFiles.length) return false;
-  for (const { id } of callers) {
-    const job = jobs.get(id, true);
-    if (isMap(job)) changed = setDocsFiles(document, job, plan) || changed;
-  }
-  return changed;
 }
 
 function canonicalSyncJob(): Node {
@@ -490,8 +384,7 @@ function renameCaller(
   if (caller.named) value.delete("name");
   if (caller.id === CI_JOB_ID) return caller.named;
   if (isScalar(key)) key.value = CI_JOB_ID;
-  renameNeeds(document, caller.id, CI_JOB_ID);
-  renameNeedsExpressions(document, caller.id, CI_JOB_ID);
+  renameJobReferences(document, caller.id, CI_JOB_ID);
   return true;
 }
 
@@ -519,7 +412,8 @@ export function callerPlan(manifest: {
  * needs to push and dispatch the caller live on a separate job calling ci-renovate-sync.yml, which is added when missing.
  * A caller without a `test-job` input gets `test-job: true`, which runs the tests in their own job, or `false` when
  * `placeholderTests` says the `test` script only stands in for tests; that case also turns an existing `true` off. Any
- * other explicit value is left as the repository set it.
+ * other explicit value is left as the repository set it. The caller passes the `NOTION_TOKEN` secret, which ci-node.yml
+ * files a flaky-test task with, and `single-job: false` when `profile.singleJob` is off.
  * A `checks` job that only re-aggregates the caller (`needs: [ci]`, steps that `exit` on `needs` results) is removed
  * when the workflow has no other job besides the caller and the Renovate sync, since the shared workflow already
  * reports `ci / checks` and each `needs` hop adds to the critical path. A gate that also covers repository-specific
@@ -570,7 +464,8 @@ export function ciWorkflow(
     changed;
   changed = grant(document, pair.value, { contents: "read" }) || changed;
   changed = skipRenovateSync(document, pair.value) || changed;
-  changed = setTestJob(document, pair.value, placeholderTests) || changed;
+  changed =
+    setCallerInputs(document, pair.value, placeholderTests, profile) || changed;
   changed = ensureSyncJob(document, jobs, syncCallers) || changed;
   const removed = dropRedundantAggregator(jobs, syncCallers);
   changed = removed.length > 0 || changed;

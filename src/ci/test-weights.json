@@ -70,6 +70,7 @@
   "src/guardrails/checks-singletons.test.ts": 3.1,
   "src/guardrails/checks-verify.test.ts": 47.1,
   "src/guardrails/checks.test.ts": 12.4,
+  "src/guardrails/ci-workflow-caller-inputs.test.ts": 0.1,
   "src/guardrails/ci-workflow-aggregator.test.ts": 5.5,
   "src/guardrails/ci-workflow-needs.test.ts": 7,
   "src/guardrails/ci-workflow-triggers.test.ts": 3.3,
