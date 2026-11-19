@@ -160,15 +160,20 @@ function phases(root: string, steps: readonly string[]): string[][] {
 /** The environment variable naming, comma-separated, the steps `runChecks` leaves to another CI job. */
 export const CHECKS_SKIP_ENV = "ANTELOPEJS_CHECKS_SKIP";
 
-/** The environment variable holding the CI tier the shared workflow picked: `draft`, `fast`, `full` or `nightly`. */
+/** The environment variable holding the CI tier the shared workflow picked: `fast`, `full`, `queue` or `nightly`, or the legacy `draft`. */
 export const CI_TIER_ENV = "ANTELOPEJS_CI_TIER";
 
-/** The steps that read the npm registry, which the pull request tiers leave to the push to `next` and the nightly run. */
-const REGISTRY_STEPS = ["dependency:ranges", "published:types"];
+/** The steps that read the npm registry, which the pull request tiers leave to the merge queue and the nightly run. */
+const REGISTRY_STEPS = [
+  "dependency:ranges",
+  "readme:version",
+  "published:types",
+];
 
 const TIER_SKIPS = new Map([
   ["draft", REGISTRY_STEPS],
   ["fast", REGISTRY_STEPS],
+  ["full", REGISTRY_STEPS],
 ]);
 
 function tierSkips(tier: string | undefined): string[] {
@@ -278,8 +283,9 @@ function summary(
  * except `test` and `published:types` at the same time, then each of those alone, and reports only what failed, each step's
  * output buffered and listed in step order whichever step finishes first. `skipSetting` is the comma-separated value of
  * `ANTELOPEJS_CHECKS_SKIP`: the steps it names are not run and are counted as skipped, never as passed, and a name that
- * is not a step fails the run before any step starts so a typo cannot skip nothing. On the `draft` and `fast` tiers of
- * `tier`, `dependency:ranges` and `published:types` are skipped the same way. Unless `services` is false, the
+ * is not a step fails the run before any step starts so a typo cannot skip nothing. On the `draft`, `fast` and `full` tiers of
+ * `tier`, the steps that read the npm registry, `dependency:ranges`, `readme:version` and `published:types`, are skipped the same way;
+ * the `queue` and `nightly` tiers, and no tier, run them. Unless `services` is false, the
  * services of `.github/compose.yml` are started before the steps when `test` runs, and removed after them if the run created them, also when a step fails or
  * `signal` aborts the run; an aborted run stops every running step and reports `interrupted`.
  */
