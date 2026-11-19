@@ -37,7 +37,6 @@ const CHECKS: readonly Check[] = [
   deleteBranchOnMerge,
   redBranch,
   ciDuration,
-  flakyTests,
   advisories,
   stuckRenovate,
   governanceDrift,
@@ -55,6 +54,7 @@ const CHECKS: readonly Check[] = [
   captureScenes,
   lineEndings,
   staleBranches,
+  flakyTests,
 ];
 
 export interface Outcome {

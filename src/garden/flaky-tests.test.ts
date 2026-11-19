@@ -22,7 +22,7 @@ function runUrl(id: number): string {
   return `https://github.com/AntelopeJS/x/actions/runs/${id}`;
 }
 
-test("a test flaky in several merge-queue runs is one finding per repository and test, counting each run once, so a check that files one finding per annotation or run fails", async () => {
+test("a test flaky in several merge-queue runs, twice in one check run and on two check runs of one run, is one finding per repository and test counting each run once, so a check that files one finding per annotation, check run or run fails", async () => {
   const api = new FakeApi()
     .org([{ name: "antelopejs" }, { name: "mongodb" }])
     .mergeQueue(
@@ -39,7 +39,10 @@ test("a test flaky in several merge-queue runs is one finding per repository and
           },
           {
             id: 102,
-            annotations: [flakyAnnotation("mongodb", "pnpm run test")],
+            annotations: [
+              flakyAnnotation("mongodb", "src/a.test.ts > retries"),
+              flakyAnnotation("mongodb", "pnpm run test"),
+            ],
           },
         ],
         12: [
@@ -74,7 +77,7 @@ test("a test flaky in several merge-queue runs is one finding per repository and
   const [, , retries] = result;
   assert.equal(
     retries.evidence,
-    `src/a.test.ts > retries passed only on its merge-queue retry in 2 ci.yml run(s) over the last 14 days: ${runUrl(1)}, ${runUrl(2)}`,
+    `src/a.test.ts > retries passed only on its merge-queue retry in 2 ci.yml run(s) over the last 14 days, the newest: ${runUrl(1)}, ${runUrl(2)}`,
   );
   assert.equal(
     retries.doneMeans,
@@ -83,22 +86,28 @@ test("a test flaky in several merge-queue runs is one finding per repository and
   assert.match(result[1].evidence, /in 1 ci\.yml run\(s\)/);
 });
 
-test("a message that is not the Flaky test wording keeps its whole text as the test, so a check that strips whatever it finds or drops the annotation fails", async () => {
+test("a message without both the repository prefix and the retry suffix around a test keeps its whole text, so a check that strips each part on its own, strips to an empty test or drops the annotation fails", async () => {
+  const messages = [
+    "the suite retried itself",
+    "AntelopeJS/mongodb: src/a.test.ts",
+    "src/b.test.ts passed only on its merge-queue retry.",
+    "AntelopeJS/mongodb:  passed only on its merge-queue retry.",
+  ];
   const api = new FakeApi()
     .org([{ name: "mongodb" }])
     .mergeQueue("mongodb", [queueRun(1, 11, 5)], {
       11: [
         {
           id: 101,
-          annotations: [
-            annotation("warning", "Flaky test", "the suite retried itself"),
-          ],
+          annotations: messages.map((message) =>
+            annotation("warning", "Flaky test", message),
+          ),
         },
       ],
     });
   assert.deepEqual(
-    findings(await flakyTests.run(api.context())).map(({ key }) => key),
-    ["mongodb|flaky-tests|the suite retried itself"],
+    findings(await flakyTests.run(api.context())).map(({ subject }) => subject),
+    [...messages].sort(),
   );
 });
 
@@ -120,15 +129,6 @@ test("only a warning titled exactly Flaky test is a finding, so a check that mat
           ],
         },
       ],
-    });
-  assert.deepEqual(findings(await flakyTests.run(api.context())), []);
-});
-
-test("a repository whose merge-queue runs carry no annotation has no finding", async () => {
-  const api = new FakeApi()
-    .org([{ name: "mongodb" }])
-    .mergeQueue("mongodb", [queueRun(1, 11, 5)], {
-      11: [{ id: 101, annotations: [] }],
     });
   assert.deepEqual(findings(await flakyTests.run(api.context())), []);
 });
@@ -175,7 +175,7 @@ test("the listing asks for completed merge_group runs created in the last 14 day
   );
 });
 
-test("a repository without ci.yml is skipped quietly", async () => {
+test("a repository without ci.yml is skipped quietly, so a check that lets the listing 404 fail the check fails", async () => {
   const api = new FakeApi().org([{ name: "mongodb" }]);
   assert.deepEqual(findings(await flakyTests.run(api.context())), []);
 });
@@ -193,4 +193,33 @@ test("a run listed by the day-granular created filter but older than 14 days is 
     });
   assert.deepEqual(findings(await flakyTests.run(api.context())), []);
   assert.ok(api.requests.every((path) => !path.includes("check-suites")));
+});
+
+test("the evidence lists only the 10 newest runs beside the full count and reads every attempt of a run, so a check that lists every URL or reads only the latest attempt fails", async () => {
+  const runs = Array.from({ length: 12 }, (_, index) =>
+    queueRun(index + 1, 100 + index, 5 + index),
+  );
+  const suites = Object.fromEntries(
+    runs.map((_, index) => [
+      100 + index,
+      [
+        {
+          id: 1000 + index,
+          annotations: [flakyAnnotation("mongodb", "src/a.test.ts")],
+        },
+      ],
+    ]),
+  );
+  const api = new FakeApi()
+    .org([{ name: "mongodb" }])
+    .mergeQueue("mongodb", runs, suites);
+  const [only] = findings(await flakyTests.run(api.context()));
+  assert.match(only.evidence, /in 12 ci\.yml run\(s\)/);
+  assert.ok(only.evidence.includes(runUrl(10)));
+  assert.ok(!only.evidence.includes(runUrl(11)));
+  assert.ok(
+    api.requests.some((path) =>
+      path.endsWith("/check-suites/100/check-runs?filter=all"),
+    ),
+  );
 });

@@ -162,7 +162,7 @@ export function checkRuns(value: JsonValue): CheckRun[] {
 export function annotation(value: JsonValue): Annotation {
   const source = object(value, "annotation");
   return {
-    level: str(source, "annotation_level"),
+    level: optStr(source, "annotation_level") ?? "",
     title: optStr(source, "title") ?? "",
     message: optStr(source, "message") ?? "",
   };

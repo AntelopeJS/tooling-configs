@@ -295,12 +295,12 @@ export class GardenContext {
     });
   }
 
-  /** Every check run of a check suite. */
+  /** Every check run of a check suite, those of earlier attempts included. */
   suiteCheckRuns(repo: GardenRepo, checkSuiteId: number): Promise<CheckRun[]> {
     return this.suites.get(`${repo.name}:${checkSuiteId}`, async () =>
       (
         await this.api.pages(
-          `/repos/${ORG}/${repo.name}/check-suites/${checkSuiteId}/check-runs`,
+          `/repos/${ORG}/${repo.name}/check-suites/${checkSuiteId}/check-runs?filter=all`,
           "check_runs",
         )
       ).map(checkRun),
