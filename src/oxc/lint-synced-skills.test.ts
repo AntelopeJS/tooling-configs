@@ -13,7 +13,10 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import { PRESET_CONFIGS } from "../guardrails/templates.ts";
-import { applyVerifyActions, planVerify } from "../guardrails/verify-skill.ts";
+import {
+  applyDocsSkillActions,
+  planDocsSkills,
+} from "../guardrails/docs-skills.ts";
 import { TSGOLINT } from "./helpers/tsgolint.ts";
 
 const source = fileURLToPath(new URL("..", import.meta.url));
@@ -24,47 +27,13 @@ const nodeTypes = fileURLToPath(
   new URL("..", import.meta.resolve("@types/node/package.json")),
 );
 
-/** interface-payment#11 `.agents/skills/verify-interface/verify.config.ts:128` and interface-auth#30 `:251`, reduced. */
-const VERIFY_CONFIG = `import type { InterfaceCall } from "@antelopejs/tooling-configs/verify";
-
-import type * as AuthInterface from "../../../src/index.ts";
-
-interface SuiteReport {
-  stats: { passes: number };
-}
-
-export function summarize(stdout: string): number {
-  const report: SuiteReport = JSON.parse(stdout);
-  return report.stats.passes;
-}
-
-export const signServerResponse: InterfaceCall<typeof AuthInterface> = {
-  call: async (api) => {
-    // SAFETY: SignServerResponse only reads the response it returns.
-    const res = {} as never;
-    const returned = await api.SignServerResponse(res);
-    return { same: returned === res };
-  },
-  expect: { same: true },
-};
-`;
-
 /** dms `.agents/probes/*.cjs`: repository-authored code beside the skills, not written by sync. */
 const PROBE = `export function probe(): void {
   debugger;
 }
 `;
 
-/** tooling-configs#93: Node API calls in a skill folder, as in redis `.agents/skills/verify-module` and template-blank-typescript `verify.config.ts`. */
-const NODE_CALLS = `import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
-export function readManifest(): string {
-  return readFileSync(join(process.cwd(), "package.json"), "utf8");
-}
-`;
-
-/** A consumer as `antelopejs-sync` leaves it: its root `oxlint.config.ts`, a root `tsconfig.json` that sets no `types` (as every AntelopeJS repository's does) beside `@types/node` and TypeScript 5 installed, the verify-interface synced layer and `.claude/skills` link, and the pack resolved by name. */
+/** A consumer as `antelopejs-sync` leaves it: its root `oxlint.config.ts`, a root `tsconfig.json` that sets no `types` (as every AntelopeJS repository's does) beside `@types/node` and TypeScript 5 installed, the writing skills' synced layer and `.claude/skills` links, and the pack resolved by name. */
 function syncedConsumer() {
   const root = mkdtempSync(join(tmpdir(), "antelope-synced-skills-"));
   const write = (path: string, content: string) => {
@@ -81,7 +50,6 @@ function syncedConsumer() {
         "./oxc/lint": "./src/oxc/lint.ts",
         "./oxc/anti-slop": "./src/oxc/anti-slop/index.ts",
         "./oxc/guardrails": "./src/oxc/guardrails/index.ts",
-        "./verify": "./src/verify/index.ts",
       },
     }),
   );
@@ -96,13 +64,7 @@ function syncedConsumer() {
     JSON.stringify({ name: "typescript", version: "5.9.3" }),
   );
   spawnSync("git", ["init", "-q"], { cwd: root });
-  write(
-    "package.json",
-    JSON.stringify({
-      name: "@antelopejs/interface-auth",
-      antelopeJs: { kind: "interface" },
-    }),
-  );
+  write("package.json", JSON.stringify({ name: "@antelopejs/interface-auth" }));
   write(
     "tsconfig.json",
     JSON.stringify({
@@ -120,13 +82,7 @@ function syncedConsumer() {
     "src/index.ts",
     'import type { ServerResponse } from "node:http";\n\nexport async function SignServerResponse(res: ServerResponse): Promise<ServerResponse> {\n  return res;\n}\n',
   );
-  const plan = planVerify(root, {
-    flag: "interface",
-    manifest: { antelopeJs: { kind: "interface" } },
-    profile: "full",
-  });
-  applyVerifyActions(root, plan.actions);
-  write(".agents/skills/verify-interface/verify.config.ts", VERIFY_CONFIG);
+  applyDocsSkillActions(root, planDocsSkills(root).actions);
   write(".agents/probes/probe.ts", PROBE);
   return root;
 }
@@ -164,26 +120,12 @@ function lint(root: string): string[] {
     .sort();
 }
 
-test("the synced oxlint.config.ts skips the pack's .claude/skills link, lints the repository's own verify.config.ts with resolved types (interface-auth#30, interface-payment#11), and reports the repository's files outside every tsconfig, and those under a tsconfig that lists no types, but not the root configs sync writes", (t) => {
+test("the synced oxlint.config.ts skips the pack's .claude/skills links, and reports the repository's files outside every tsconfig, and those under a tsconfig that lists no types, but not the root configs sync writes", (t) => {
   const root = syncedConsumer();
   t.after(() => rmSync(root, { recursive: true, force: true }));
   assert.deepEqual(lint(root), [
     ".agents/probes/probe.ts:1 antelopejs(require-tsconfig-include)",
     ".agents/probes/probe.ts:2 eslint(no-debugger)",
-    ".agents/skills/verify-interface/verify.config.ts:10 typescript(no-unsafe-assignment)",
     "src/index.ts:1 antelopejs(require-tsconfig-types)",
   ]);
-});
-
-test("a skill folder calling Node APIs lints clean: the synced skill tsconfig resolves Node types without the root tsconfig setting them (tooling-configs#93)", (t) => {
-  const root = syncedConsumer();
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  writeFileSync(
-    join(root, ".agents/skills/verify-interface/node-calls.ts"),
-    NODE_CALLS,
-  );
-  assert.deepEqual(
-    lint(root).filter((finding) => finding.includes("node-calls.ts")),
-    [],
-  );
 });

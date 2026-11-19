@@ -1,15 +1,21 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import type { AgentsBlockContext } from "./agents-block.ts";
-import { planDocsSkills } from "./docs-skills.ts";
-import type { planVerify } from "./verify-skill.ts";
+import { docsSkillFolders, planDocsSkills } from "./docs-skills.ts";
 
-/** The folders a project scaffolded from a template does not get, as `ajs project init` excludes them. */
-const SCAFFOLD_EXCLUDED_PATHS = [".agents/", ".claude/skills/"];
-
-/** Whether a scaffold lacks `path`, so a template's AGENTS.md, which every scaffold keeps, must not link it. */
-export function inScaffoldExcludedPath(path: string | undefined): boolean {
+/**
+ * Whether the repository is the template source: a template-profile repository that holds the folder of a writing skill
+ * this pack syncs. `ajs project init` excludes `.agents/` from a scaffold, and no other tool names a skill folder like these,
+ * so a scaffold whose `.agents/skills/` gains other skills is never taken for the source.
+ */
+export function isTemplateSource(
+  root: string,
+  profile: AgentsBlockContext["profile"],
+): boolean {
   return (
-    path !== undefined &&
-    SCAFFOLD_EXCLUDED_PATHS.some((folder) => path.startsWith(folder))
+    profile === "template" &&
+    docsSkillFolders().some((folder) => existsSync(join(root, folder)))
   );
 }
 
@@ -17,9 +23,8 @@ export function inScaffoldExcludedPath(path: string | undefined): boolean {
 export function planWritingSkills(
   root: string,
   profile: AgentsBlockContext["profile"],
-  kind: ReturnType<typeof planVerify>["kind"],
 ): ReturnType<typeof planDocsSkills> {
-  if (profile === "template" && kind !== "template")
+  if (profile === "template" && !isTemplateSource(root, profile))
     return { actions: [], errors: [] };
   return planDocsSkills(root);
 }

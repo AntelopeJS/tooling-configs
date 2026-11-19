@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { LeaseId, LeaseRecord } from "./protocol.ts";
 
 /** The variable whose presence marks a command as running under `antelopejs-lease run`; `down --stop` finds a lease's processes by it. */
-export const LEASE_MARKER = "ANTELOPEJS_LEASE";
+const LEASE_MARKER = "ANTELOPEJS_LEASE";
 
 /** A lease record and the directory that holds its data, logs and tmp. */
 export interface Lease {
@@ -37,7 +37,7 @@ export function isServerRole(value: string): value is ServerRole {
 }
 
 /** The variables `run` exports for a DMS dev stack, besides the `ANTELOPEJS_LEASE*` ones. */
-export const DEV_STACK_VARIABLES = [
+const DEV_STACK_VARIABLES = [
   "DMS_BACK_PORT",
   "DMS_FRONT_PORT",
   "DMS_INSPECT_PORT",
@@ -54,13 +54,13 @@ export const DEV_STACK_VARIABLES = [
 type DevStackVariable = (typeof DEV_STACK_VARIABLES)[number];
 
 /** The variable that carries the lease's directory; a command is under a lease only when this and `LEASE_MARKER` are both non-empty. */
-export const LEASE_DIR = "ANTELOPEJS_LEASE_DIR";
+const LEASE_DIR = "ANTELOPEJS_LEASE_DIR";
 
 /** The variable that carries the caller's own `TMPDIR` past the lease's override; empty when the caller had none, absent from a lease an older pack opened. */
-export const PARENT_TMPDIR = "ANTELOPEJS_LEASE_PARENT_TMPDIR";
+const PARENT_TMPDIR = "ANTELOPEJS_LEASE_PARENT_TMPDIR";
 
 /** The lease's own tmp folder, which `run` exports as `TMPDIR`. */
-export function leaseTmpDir(dir: string): string {
+function leaseTmpDir(dir: string): string {
   return join(dir, "tmp");
 }
 

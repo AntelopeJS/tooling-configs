@@ -10,9 +10,7 @@ const probe = (extra = 0) => "x".repeat(MAX_FILE_BYTES + 1 + extra);
 function agentRepo(t: Parameters<typeof testRepo>[0]): string {
   const root = testRepo(t);
   put(root, ".agents/probes/backend-boundaries.cjs", probe());
-  put(root, ".agents/skills/verify-module/SKILL.md", probe());
-  put(root, ".agents/skills/verify-module/package.json", probe());
-  put(root, ".agents/skills/verify-module/tsconfig.json", probe());
+  put(root, ".agents/skills/unslop/SKILL.md", probe());
   put(root, ".agents/probes/fixtures/large.ts", probe());
   commit(root);
   return root;
@@ -26,5 +24,5 @@ test("dms .agents/probes: the size guard fails an oversize repository-authored a
     result.stderr,
     /^\.agents\/probes\/backend-boundaries\.cjs: 20001 bytes, 1 bytes over the 20000-byte ceiling\./mu,
   );
-  assert.doesNotMatch(result.stderr, /verify-module|fixtures/u);
+  assert.doesNotMatch(result.stderr, /unslop|fixtures/u);
 });

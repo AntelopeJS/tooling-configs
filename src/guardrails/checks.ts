@@ -18,7 +18,6 @@ import {
 } from "./services.ts";
 import { checkSingletonPackages, pnpmLockfiles } from "./singleton-packages.ts";
 import { typecheckWrites } from "./typecheck-writes.ts";
-import { typecheckLayers, verifyLayers } from "./verify-layers.ts";
 
 const CHECK_STEPS = [
   "typecheck",
@@ -29,7 +28,6 @@ const CHECK_STEPS = [
   "size",
   "suppressions",
   "sync:check",
-  "verify:types",
   "lockfile:singletons",
   "dependency:ranges",
   "git:identity",
@@ -59,7 +57,6 @@ function failureOnly(
 
 /** Steps `antelopejs-checks` runs itself, no package.json script behind them. */
 const OWN_STEPS = new Map<string, OwnStep>([
-  ["verify:types", failureOnly(typecheckLayers)],
   [
     "lockfile:singletons",
     failureOnly((root) => Promise.resolve(checkSingletonPackages(root))),
@@ -71,7 +68,6 @@ const OWN_STEPS = new Map<string, OwnStep>([
 ]);
 
 function hasWork(root: string, step: string): boolean {
-  if (step === "verify:types") return verifyLayers(root).length > 0;
   if (step === "lockfile:singletons") return pnpmLockfiles(root).length > 0;
   if (step === "dependency:ranges")
     return isGitCheckout(root) && hasDependencyRanges(root);

@@ -1,7 +1,5 @@
-import type { ChildProcess } from "node:child_process";
+import { spawnSync, type ChildProcess } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
-
-import { killTree } from "../verify/launch.ts";
 
 const POLL_MS = 50;
 
@@ -21,6 +19,15 @@ function groupAlive(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+/** Kills the process `pid` and everything it started, since Windows has no process groups to signal; whether it found the process. */
+function killTree(pid: number): boolean {
+  return (
+    spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"], {
+      stdio: "ignore",
+    }).status === 0
+  );
 }
 
 function signalGroup(

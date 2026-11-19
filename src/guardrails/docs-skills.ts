@@ -1,10 +1,17 @@
-import { existsSync, lstatSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 
 import { TECHNICAL_WRITING_SKILL } from "../docs/technical-writing-skill.ts";
 import { UNSLOP_SKILL } from "../docs/unslop-skill.ts";
 import { linkPointsAt } from "./links.ts";
-import type { VerifyAction } from "./verify-skill.ts";
 
 /** The writing skills `antelopejs-sync` installs in every managed repository, by folder name. */
 const DOCS_SKILLS = [
@@ -12,9 +19,19 @@ const DOCS_SKILLS = [
   { name: "unslop", text: UNSLOP_SKILL },
 ] as const;
 
+/** The folder of a writing skill, relative to the repository root. */
+function docsSkillFolder(name: string): string {
+  return `.agents/skills/${name}`;
+}
+
+/** The folder of each writing skill, relative to the repository root. */
+export function docsSkillFolders(): string[] {
+  return DOCS_SKILLS.map(({ name }) => docsSkillFolder(name));
+}
+
 /** The file of a writing skill, relative to the repository root. */
 function docsSkillPath(name: string): string {
-  return `.agents/skills/${name}/SKILL.md`;
+  return `${docsSkillFolder(name)}/SKILL.md`;
 }
 
 /** The `.claude/skills` link that exposes a writing skill to Claude Code. */
@@ -30,15 +47,20 @@ export function docsSkillPaths(): string[] {
   ]);
 }
 
+/** One change to the synced writing skills. */
+export type DocsSkillAction =
+  | { kind: "write"; path: string; content: string }
+  | { kind: "link"; path: string; target: string };
+
 /** What sync changes for the writing skills, and the paths it refuses to overwrite. */
 interface DocsSkillsPlan {
-  actions: VerifyAction[];
+  actions: DocsSkillAction[];
   errors: string[];
 }
 
 /** The changes that bring the vendored writing skills and their Claude links in line with this pack. */
 export function planDocsSkills(root: string): DocsSkillsPlan {
-  const actions: VerifyAction[] = [];
+  const actions: DocsSkillAction[] = [];
   const errors: string[] = [];
   for (const { name, text } of DOCS_SKILLS) {
     const path = docsSkillPath(name);
@@ -61,4 +83,19 @@ export function planDocsSkills(root: string): DocsSkillsPlan {
       actions.push({ kind: "link", path: link, target });
   }
   return { actions, errors };
+}
+
+/** Applies planned changes; a replaced symlink is unlinked first so a write never goes through it. */
+export function applyDocsSkillActions(
+  root: string,
+  actions: readonly DocsSkillAction[],
+): void {
+  for (const action of actions) {
+    const path = join(root, action.path);
+    mkdirSync(dirname(path), { recursive: true });
+    if (lstatSync(path, { throwIfNoEntry: false }) !== undefined)
+      unlinkSync(path);
+    if (action.kind === "write") writeFileSync(path, action.content);
+    else symlinkSync(action.target, path);
+  }
 }

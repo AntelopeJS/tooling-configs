@@ -20,7 +20,6 @@ import { shimInvocation } from "./run-command.ts";
 import { runPnpm } from "./run-pnpm.ts";
 import { syncRepository } from "./sync.ts";
 import { PRESET_CONFIGS, presetConfig } from "./templates.ts";
-import type { VerifyChoice } from "./verify-skill.ts";
 import { alignWorkspaceMembers } from "./workspace-members.ts";
 
 /** The `gh` arguments that turn `delete_branch_on_merge` on; `gh` fills `{owner}/{repo}` from the git remote. */
@@ -302,10 +301,7 @@ function bootstrap(root: string): Bootstrap {
  * second oxfmt pass over what sync wrote, and `delete_branch_on_merge` on GitHub, which runs whatever the file steps
  * did. Every step is idempotent, so a second run changes nothing.
  */
-export function initRepository(
-  root: string,
-  options: { verify?: VerifyChoice } = {},
-): InitResult {
+export function initRepository(root: string): InitResult {
   const { paths, removed, failure: installed } = bootstrap(root);
   const format = () => {
     const formatted = formatRepository(root);
@@ -325,10 +321,7 @@ export function initRepository(
       branchCleanup: ensureBranchCleanup(root),
       untypedDocs: [],
     };
-  const sync = syncRepository(root, {
-    profile: "full",
-    verify: options.verify,
-  });
+  const sync = syncRepository(root, { profile: "full" });
   let failure: string | undefined;
   if (!sync.errors.length) {
     failure = sync.dependenciesAdded ? install(root) : undefined;

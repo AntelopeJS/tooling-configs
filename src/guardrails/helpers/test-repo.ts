@@ -26,6 +26,11 @@ export function put(root: string, path: string, content: string): void {
   writeFileSync(join(root, path), content);
 }
 
+/** Marks `root` as the template source: the folder of a writing skill the pack syncs, which a scaffold lacks. */
+export function markTemplateSource(root: string): void {
+  mkdirSync(join(root, ".agents/skills/unslop"), { recursive: true });
+}
+
 export function commit(root: string): void {
   execFileSync("git", ["add", "."], { cwd: root });
   execFileSync(

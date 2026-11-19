@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { generatedOutput } from "./files.ts";
 import { syncRepository } from "./sync.ts";
-import { syncedAgentPaths } from "../verify/kinds.ts";
+import { docsSkillPaths } from "./docs-skills.ts";
 import {
   bin,
   commit,
@@ -25,7 +25,7 @@ function start(host, port, root, logs, env, cwd) {
 module.exports = { start };
 `;
 
-/** Reduced from dms `.agents/skills/verify-dms/journeys/settings-roles.mjs`, a journey the repository wrote under a skill folder. */
+/** Reduced from dms `.agents/skills/dms-roles/journeys/settings-roles.mjs`, a journey the repository wrote under a skill folder. */
 const DMS_JOURNEY = `export async function journey(page) {
   // oxlint-disable-next-line eslint/no-debugger -- the journey pauses here for a headed run
   debugger;
@@ -34,7 +34,7 @@ const DMS_JOURNEY = `export async function journey(page) {
 `;
 
 const SYNCED_SKILL = `---
-name: verify-module
+name: unslop
 ---
 
 // oxlint-disable-next-line eslint/max-params -- an example the skill shows
@@ -59,7 +59,7 @@ function git(root: string, args: string[]): string {
 function agentRepo(t: Parameters<typeof testRepo>[0], budget: string): string {
   const root = testRepo(t);
   put(root, ".agents/probes/dms-dev.cjs", DMS_PROBE);
-  put(root, ".agents/skills/verify-module/journeys/roles.mjs", DMS_JOURNEY);
+  put(root, ".agents/skills/dms-roles/journeys/roles.mjs", DMS_JOURNEY);
   put(
     root,
     "package.json",
@@ -83,24 +83,24 @@ test("dms .agents/probes: a directive in a repository-authored agent file counts
   );
   assert.match(
     result.stderr,
-    /lint rule `eslint\/no-debugger`: 1 exceeds ceiling 0\.\n {2}\.agents\/skills\/verify-module\/journeys\/roles\.mjs:2/,
+    /lint rule `eslint\/no-debugger`: 1 exceeds ceiling 0\.\n {2}\.agents\/skills\/dms-roles\/journeys\/roles\.mjs:2/,
   );
 });
 
 test("a directive in a file sync writes under .agents stays uncounted, and generatedOutput skips exactly the files sync writes", (t) => {
   const root = testRepo(t);
-  put(root, ".agents/skills/verify-module/SKILL.md", SYNCED_SKILL);
+  put(root, ".agents/skills/unslop/SKILL.md", SYNCED_SKILL);
   put(root, "guardrails.suppressions.json", LEGACY_BUDGET);
   commit(root);
   assert.equal(bin(root, "suppressions").status, 0);
   const skipped = generatedOutput(root);
   assert.deepEqual(
-    syncedAgentPaths().filter((path) => !skipped(path)),
+    docsSkillPaths().filter((path) => !skipped(path)),
     [],
   );
-  assert.equal(skipped(".agents/skills/verify-module/verify.config.ts"), false);
+  assert.equal(skipped(".agents/skills/unslop/extra.ts"), false);
   assert.equal(skipped(".agents/probes/dms-dev.cjs"), false);
-  assert.equal(skipped(".claude/skills/verify-dms/journey.mjs"), false);
+  assert.equal(skipped(".claude/skills/dms-roles/journey.mjs"), false);
 });
 
 test("sync adopts the agent files' directives into an existing budget at today's counts, so upgrading fails nothing and only additions fail", (t) => {

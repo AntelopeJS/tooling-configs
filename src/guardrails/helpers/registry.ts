@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import type { TestContext } from "node:test";
 
-import { freePort } from "../../verify/record.ts";
+import { freePort } from "./free-port.ts";
 
 const RELEASE_SUFFIX = "/latest";
 

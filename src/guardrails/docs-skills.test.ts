@@ -3,10 +3,17 @@ import { lstatSync, readlinkSync, realpathSync, rmSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import test from "node:test";
 
-import { bin, linkOxlint, put, read, testRepo } from "./helpers/test-repo.ts";
+import {
+  bin,
+  linkOxlint,
+  markTemplateSource,
+  put,
+  read,
+  testRepo,
+} from "./helpers/test-repo.ts";
 
 const SKILLS = ["technical-writing", "unslop"] as const;
-const TEMPLATE_SOURCE = ["--profile", "template", "--verify", "template"];
+const TEMPLATE_SOURCE = ["--profile", "template"];
 const PROFILES = [[], TEMPLATE_SOURCE] as const;
 
 function skillPath(name: string): string {
@@ -29,7 +36,7 @@ for (const profile of PROFILES) {
         "oxlint.config.ts",
         'import type {} from "@antelopejs/tooling-configs/oxc/lint";\nexport default {};\n',
       );
-    }
+    } else markTemplateSource(root);
     const result = bin(root, "sync", [...profile]);
     assert.equal(result.status, 0, result.stderr);
     for (const name of SKILLS) {
@@ -58,6 +65,7 @@ for (const profile of PROFILES) {
 
 test("--check names each missing skill file and link as drift and writes nothing", (t) => {
   const root = testRepo(t);
+  markTemplateSource(root);
   const check = bin(root, "sync", [...TEMPLATE_SOURCE, "--check"]);
   assert.equal(check.status, 1);
   for (const name of SKILLS) {
@@ -68,14 +76,19 @@ test("--check names each missing skill file and link as drift and writes nothing
       check.stdout.includes(`Drift: ${linkPath(name)}; run antelopejs-sync\n`),
     );
   }
-  assert.equal(
-    lstatSync(join(root, ".agents/skills"), { throwIfNoEntry: false }),
-    undefined,
-  );
+  for (const path of SKILLS.flatMap((name) => [
+    skillPath(name),
+    linkPath(name),
+  ]))
+    assert.equal(
+      lstatSync(join(root, path), { throwIfNoEntry: false }),
+      undefined,
+    );
 });
 
 test("an edited skill is drift under --check, and sync restores the vendored text", (t) => {
   const root = testRepo(t);
+  markTemplateSource(root);
   assert.equal(bin(root, "sync", TEMPLATE_SOURCE).status, 0);
   const vendored = read(root, skillPath("unslop"));
   put(root, skillPath("unslop"), "edited\n");
@@ -91,6 +104,7 @@ test("an edited skill is drift under --check, and sync restores the vendored tex
 
 test("a deleted link is drift under --check, and a real folder in its place is refused", (t) => {
   const root = testRepo(t);
+  markTemplateSource(root);
   assert.equal(bin(root, "sync", TEMPLATE_SOURCE).status, 0);
   rmSync(join(root, linkPath("unslop")));
   const check = bin(root, "sync", [...TEMPLATE_SOURCE, "--check"]);
@@ -107,6 +121,7 @@ test("a deleted link is drift under --check, and a real folder in its place is r
 
 test("a check after sync is silent with the skills in place", (t) => {
   const root = testRepo(t);
+  markTemplateSource(root);
   assert.equal(bin(root, "sync", TEMPLATE_SOURCE).status, 0);
   assert.match(read(root, skillPath("unslop")), /^---\nname: unslop\n/);
   const again = bin(root, "sync", [...TEMPLATE_SOURCE, "--check"]);

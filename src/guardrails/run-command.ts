@@ -22,7 +22,7 @@ function stopGroup(child: ChildProcess, signal: NodeJS.Signals): void {
 const PLAIN_ARGUMENT = /^[\w./:\\@=+~,-]+$/u;
 
 /** `argument` as cmd.exe passes it on whole: as it is when plain, else in double quotes, with a trailing backslash doubled so it does not escape the closing quote. Throws for a `"`, `%`, CR or LF, which cmd.exe would expand or split however it is quoted. */
-export function windowsArgument(argument: string): string {
+function windowsArgument(argument: string): string {
   if (PLAIN_ARGUMENT.test(argument)) return argument;
   if (/["%\r\n]/u.test(argument))
     throw new Error(
