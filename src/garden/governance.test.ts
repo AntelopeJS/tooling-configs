@@ -56,6 +56,7 @@ const PROTECTED = [
   rule("non_fast_forward", 1),
   rule("required_linear_history", 1),
   rule("pull_request", 1),
+  rule("merge_queue", 1),
   ciRule(),
 ];
 
@@ -101,12 +102,13 @@ test("a repository with no rules on its default branch lacks the four rules urge
     "main:rule:required_linear_history:urgent",
     "main:rule:pull_request:urgent",
     "main:checks:normal",
+    "main:rule:merge_queue:normal",
   ]);
 });
 
 test("a required check from another app does not count as GitHub Actions", async () => {
   const foreign = ciRule([{ context: "ci / checks", integration_id: 1 }]);
-  const api = repoWorld([...PROTECTED.slice(0, 4), foreign], ORG_SETS);
+  const api = repoWorld([...PROTECTED.slice(0, 5), foreign], ORG_SETS);
   assert.deepEqual(subjects(await branchGovernance.run(api.context())), [
     "main:checks:normal",
   ]);
@@ -173,7 +175,25 @@ test("a repository outside the Required CI packs still needs the four rules, not
     "main:rule:non_fast_forward:urgent",
     "main:rule:required_linear_history:urgent",
     "main:rule:pull_request:urgent",
+    "main:rule:merge_queue:normal",
   ]);
+});
+
+test("a default branch with every rule but the merge queue is a normal finding, except in cloud, which has no queue", async () => {
+  const rules = PROTECTED.filter((entry) => entry.type !== "merge_queue");
+  assert.deepEqual(
+    subjects(await branchGovernance.run(repoWorld(rules, ORG_SETS).context())),
+    ["main:rule:merge_queue:normal"],
+  );
+  const cloud = new FakeApi()
+    .org([{ name: "cloud" }])
+    .route("/repos/AntelopeJS/cloud/rules/branches/main", rules)
+    .route(
+      "/repos/AntelopeJS/cloud/rulesets/1",
+      ruleset(1, "Default branch protection"),
+    )
+    .route("/repos/AntelopeJS/cloud/rulesets/2", ruleset(2, "Required CI"));
+  assert.deepEqual(subjects(await branchGovernance.run(cloud.context())), []);
 });
 
 test("k8s-gitops-infra under its own ruleset needs every rule but linear history", async () => {
