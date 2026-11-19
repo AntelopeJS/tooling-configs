@@ -44,7 +44,8 @@ the default branch.
 ## Releases
 
 Maintainers publish from GitHub Actions. Stable releases (`latest`) come from
-the default branch and prereleases (`next`) come from a branch named `next`.
+the default branch, and so do prereleases (`next` dist-tag), which publish on
+each push to it after the merge queue passes.
 See the organization-wide
 [release channels](https://github.com/AntelopeJS/.github/blob/main/CONTRIBUTING.md#release-channels)
 guide for the full workflow.
