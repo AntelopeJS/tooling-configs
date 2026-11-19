@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.9.2
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.9.1...v0.9.2)
+
+### 🩹 Fixes
+
+- **sync:** Write label events for an integration-branch caller ([#436](https://github.com/AntelopeJS/tooling-configs/pull/436))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.9.1
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.9.0...v0.9.1)
