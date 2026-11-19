@@ -232,7 +232,7 @@ function releaseJob(release: ReleasePackage, several: boolean): string {
     `  ${jobId(release, several)}:`,
     ...(several
       ? [
-          `    if: github.event_name == 'push' || ${dispatched(release.directory)}`,
+          `    if: github.event_name != 'workflow_dispatch' || ${dispatched(release.directory)}`,
         ]
       : []),
     `    uses: ${sharedWorkflow(`release-npm-${release.registry}.yml`)}`,
@@ -260,10 +260,11 @@ function releaseJob(release: ReleasePackage, several: boolean): string {
 }
 
 /**
- * The release.yml that publishes `packages`: a preview of each on every push to `branch`, and the stable version the
- * release train dispatches on the default branch with `release-version`, `release-commit`, `dependency-ranges` and, when a package is
- * not at the root, `package-directory`. With several packages, each has its own job, which a dispatch runs only for
- * the `package-directory` it names.
+ * The release.yml that publishes `packages`: a preview of each on every push to `branch`, a pull request preview on each
+ * label, push or reopen of a pull request that carries the `preview` label, and the stable version the release train
+ * dispatches on the default branch with `release-version`, `release-commit`, `dependency-ranges` and, when a package is
+ * not at the root, `package-directory`. The shared workflow skips a pull request without the `preview` label. With several
+ * packages, each has its own job, which a dispatch runs only for the `package-directory` it names.
  */
 function releaseCaller(
   packages: readonly ReleasePackage[],
@@ -286,6 +287,8 @@ function releaseCaller(
 on:
   push:
     branches: [${branch}]
+  pull_request:
+    types: [labeled, synchronize, reopened]
   workflow_dispatch:
     inputs:
       release-version:
