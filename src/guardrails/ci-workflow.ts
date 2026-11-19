@@ -60,11 +60,13 @@ export function ciProfile(name: string | undefined): CiProfile {
 /**
  * The triggers of the trunk-based CI: ci-node.yml picks the tier from the event, so a caller declares pull requests
  * (draft to ready included), the merge queue's `merge_group` run that gates every merge into `main`, pushes to `main`,
- * a nightly run and manual dispatch.
+ * a nightly run and manual dispatch. Adding or removing any label runs the pull request again, so setting `ci:full`
+ * starts the full tier and removing it starts the fast one; every label run selects its tier like any other pull
+ * request run on that head, so it reports that head's result.
  */
 export const ciTriggers = `on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   merge_group:
   push:
     branches: [main]
