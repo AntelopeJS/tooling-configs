@@ -40,10 +40,16 @@ const OWN_POLICY: ReadonlyMap<
   readonly (typeof REQUIRED_RULES)[number][]
 > = new Map([["k8s-gitops-infra", ["required_linear_history"]]]);
 
-/** Repositories whose default branch has no merge queue: `cloud` collects changes on `develop`, and `k8s-gitops-infra` merges only on a person's word. */
-const WITHOUT_MERGE_QUEUE: ReadonlySet<string> = new Set([
-  "cloud",
-  "k8s-gitops-infra",
+/** Repositories whose default branch has no merge queue, each with the reason. */
+const WITHOUT_MERGE_QUEUE: ReadonlyMap<string, string> = new Map([
+  ["cloud", "it collects changes on develop"],
+  ["k8s-gitops-infra", "only a person merges there"],
+  ["antelope-compliance", "an infra repository where only a person merges"],
+  ["antelope-hardening", "an infra repository where only a person merges"],
+  [
+    "antelope-web",
+    "argocd-image-updater pushes image-bump commits straight to main, which a merge queue would block",
+  ],
 ]);
 
 /** The packs that Required CI covers. */
