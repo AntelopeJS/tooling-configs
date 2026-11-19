@@ -60,7 +60,7 @@ test("link rot is skipped until the artifact exists, then reports one Finding pe
 
 function scenes(conclusion: string, notes: string[]): FakeApi {
   return new FakeApi()
-    .org([{ name: "dms", tier: "N2", branch: "main" }])
+    .org([{ name: "dms", tier: "N2" }])
     .route("/repos/AntelopeJS/dms/actions/workflows/docs-captures.yml/runs", {
       workflow_runs: [run(4, conclusion, 3)],
     })

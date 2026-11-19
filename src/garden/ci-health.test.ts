@@ -38,7 +38,7 @@ test("a streak red for more than 24 hours is a finding, a shorter one or one bro
   assert.deepEqual(keys(await redBranch.run(mended.context())), []);
 });
 
-test("on a repository without next, a nightly red for more than 24 hours is a finding and a pull request run neither starts nor ends the streak, so a check that reads only push runs fails", async () => {
+test("a nightly red for more than 24 hours is a finding and a pull request run neither starts nor ends the streak, so a check that reads only push runs fails", async () => {
   const nightly = world([
     { ...run(4, "success", 1), event: "pull_request" },
     { ...run(3, "failure", 2), event: "schedule" },
@@ -50,14 +50,16 @@ test("on a repository without next, a nightly red for more than 24 hours is a fi
   ]);
 });
 
-test("cloud is judged on develop, its integration branch, so a check that only looks for next judges main", async () => {
-  const api = world([run(2, "failure", 2), run(1, "failure", 30)]).route(
-    "/repos/AntelopeJS/mongodb/branches/develop",
-    {},
-  );
+test("a leftover next or develop branch does not move the judgement off main, so a check that prefers an integration branch reads the wrong runs", async () => {
+  const api = world([run(2, "failure", 2), run(1, "failure", 30)])
+    .route("/repos/AntelopeJS/mongodb/branches/next", {})
+    .route("/repos/AntelopeJS/mongodb/branches/develop", {});
   assert.deepEqual(keys(await redBranch.run(api.context())), [
-    "mongodb|red-branch|develop",
+    "mongodb|red-branch|main",
   ]);
+  assert.ok(
+    api.requests.every((path) => !/branches\/(?:next|develop)$/.test(path)),
+  );
 });
 
 test("a cancelled run neither starts nor ends a red streak", async () => {
@@ -90,7 +92,7 @@ function timed(recent: number, usual: number): ReturnType<typeof run>[] {
   return runs;
 }
 
-test("on a repository without next, nightly runs are timed, so a check that reads only push runs finds no slowdown", async () => {
+test("nightly runs are timed, so a check that reads only push runs finds no slowdown", async () => {
   const nightly = timed(125, 100).map((entry) => ({
     ...entry,
     event: "schedule",

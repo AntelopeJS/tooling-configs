@@ -24,7 +24,6 @@ export interface RepoSpec {
   tier?: string;
   language?: string;
   archived?: boolean;
-  branch?: string;
 }
 
 export function fixture(name: string): JsonValue {
@@ -102,9 +101,6 @@ export class FakeApi implements GardenApi {
         ],
       })),
     );
-    for (const repo of repos)
-      if (repo.branch === "next")
-        this.route(`/repos/AntelopeJS/${repo.name}/branches/next`, {});
     return this;
   }
 
@@ -131,9 +127,7 @@ export class FakeApi implements GardenApi {
     this.route(`/repos/AntelopeJS/${name}/commits/main/check-runs`, {
       check_runs: checks,
     });
-    for (const branch of ["main", "next"])
-      this.callerChanged(name, undefined, branch);
-    return this;
+    return this.callerChanged(name, undefined);
   }
 
   /** The newest commit touching ci.yml on the branch was committed at the date; undefined means no commit touched it. */

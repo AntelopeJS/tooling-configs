@@ -34,7 +34,6 @@ import {
 
 export const ORG = "AntelopeJS";
 const PACKS = ["full", "template", "none"] as const;
-const INTEGRATION_BRANCHES = ["next", "develop"] as const;
 const TIERS = ["N1", "N2", "N3", "N4"] as const;
 
 type Pack = (typeof PACKS)[number];
@@ -117,7 +116,6 @@ function propertyValues(entries: JsonValue[]): Map<string, JsonObject> {
 export class GardenContext {
   readonly api: GardenApi;
   private readonly listing = new Memo<GardenRepo[]>();
-  private readonly branches = new Memo<string>();
   private readonly trees = new Memo<string[]>();
   private readonly files = new Memo<string | undefined>();
   private readonly manifests = new Memo<PackageJson[]>();
@@ -177,28 +175,10 @@ export class GardenContext {
     return (await this.repos()).filter(isInScope);
   }
 
-  /** The branch whose CI judges the repository: `next`, else `develop`, the cloud's integration branch, else the default branch. */
-  async targetBranch(repo: GardenRepo): Promise<string> {
-    return this.branches.get(repo.name, async () => {
-      for (const branch of INTEGRATION_BRANCHES)
-        if (await this.hasBranch(repo, branch)) return branch;
-      return repo.defaultBranch;
-    });
-  }
-
-  private async hasBranch(repo: GardenRepo, branch: string): Promise<boolean> {
-    try {
-      await this.api.json(`/repos/${ORG}/${repo.name}/branches/${branch}`);
-      return true;
-    } catch (error) {
-      if (error instanceof Error && isMissing(error)) return false;
-      throw error;
-    }
-  }
-
   /**
    * Completed runs of a workflow that judge a branch, newest first: its pushes, and the nightly schedule, which runs on
-   * the default branch since a push there no longer runs CI. Undefined when the workflow does not exist.
+   * the default branch. The merge queue's `merge_group` runs are on temporary branches and are not listed.
+   * Undefined when the workflow does not exist.
    */
   async branchRuns(
     repo: GardenRepo,

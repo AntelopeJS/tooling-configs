@@ -39,12 +39,11 @@ function hasOpenPull(facts: BranchFacts): boolean {
   );
 }
 
-/** Decides one branch: the default, `next`, protected and open-PR branches always stay. */
+/** Decides one branch: the default, protected and open-PR branches always stay. */
 async function classify(facts: BranchFacts): Promise<Verdict> {
   const { branch, defaultBranch, closed, now } = facts;
-  if (branch.name === defaultBranch || branch.name === "next")
+  if (branch.name === defaultBranch || branch.protected || hasOpenPull(facts))
     return { kind: "keep" };
-  if (branch.protected || hasOpenPull(facts)) return { kind: "keep" };
   const done = (await closed()).find((pull) => pull.headSha === branch.sha);
   if (done !== undefined)
     return {
@@ -93,7 +92,7 @@ function report(repo: GardenRepo, prunes: readonly Prune[]): Finding[] {
     finding(
       { repo: repo.name, check: CHECK, subject: SUBJECT },
       prunes.map(({ branch, reason }) => `${branch} (${reason})`).join(", "),
-      `No branch other than the default, next and protected ones is the head of a merged or closed PR, or has no open PR and no commit for ${INACTIVE_DAYS} days.`,
+      `No branch other than the default and protected ones is the head of a merged or closed PR, or has no open PR and no commit for ${INACTIVE_DAYS} days.`,
     ),
   ];
 }

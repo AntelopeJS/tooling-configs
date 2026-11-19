@@ -44,7 +44,7 @@ async function red(
   context: GardenContext,
   repo: GardenRepo,
 ): Promise<Finding[]> {
-  const branch = await context.targetBranch(repo);
+  const branch = repo.defaultBranch;
   const runs = await context.branchRuns(repo, WORKFLOW, branch);
   const since = runs === undefined ? undefined : redSince(runs);
   if (
@@ -125,7 +125,7 @@ async function slow(
   context: GardenContext,
   repo: GardenRepo,
 ): Promise<Finding[]> {
-  const branch = await context.targetBranch(repo);
+  const branch = repo.defaultBranch;
   const runs = await context.branchRuns(repo, WORKFLOW, branch);
   if (runs === undefined) return [];
   const passed = runs.filter((run) => run.conclusion === "success");

@@ -277,7 +277,7 @@ test("a red ci / checks on the newest push and a repository still reporting the 
   ]);
 });
 
-test("on a repository without next, the newest nightly run's checks are judged, so a check that reads only push runs falls back to the branch head", async () => {
+test("the newest nightly run's checks are judged, so a check that reads only push runs falls back to the branch head", async () => {
   const nightly = conformant(world())
     .ci(
       "mongodb",
