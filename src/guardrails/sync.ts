@@ -48,7 +48,7 @@ import {
   sharedRefArtifacts,
 } from "./workflow.ts";
 import { CI_PATH, callerPlan, ciWorkflow, type CiPlan } from "./ci-workflow.ts";
-import { releaseArtifacts } from "./release-workflow.ts";
+import { nextSyncArtifacts, releaseArtifacts } from "./release-workflow.ts";
 import { backendBoundaryArtifacts } from "./backend-boundary.ts";
 import { checkEntryOnlyConfiguration } from "./entry-only.ts";
 import { planDocs, type DocsPlan } from "./docs-compat.ts";
@@ -434,6 +434,7 @@ export function syncRepository(
     profile,
     verify.verificationSkill,
   );
+  const { integrationBranch } = context.ci.profile ?? {};
   const standalone = [
     ...backendBoundaryArtifacts(root),
     ...renovateArtifacts(
@@ -442,8 +443,9 @@ export function syncRepository(
       profile === "full" || verify.kind === "template",
     ),
     ...pnpmWorkspaceArtifacts(root, manifest, profile),
-    ...releaseArtifacts(root),
-    ...retiredWorkflowArtifacts(root),
+    ...releaseArtifacts(root, integrationBranch ?? "main"),
+    ...(profile === "full" ? nextSyncArtifacts(root, integrationBranch) : []),
+    ...retiredWorkflowArtifacts(root, integrationBranch !== undefined),
   ];
   const synced = [...planSync(current, executables, context), ...standalone];
   const plan = [

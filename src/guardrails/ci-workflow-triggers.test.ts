@@ -63,12 +63,22 @@ test("a caller declares exactly the trunk triggers whatever it had, so a rewrite
   assert.doesNotMatch(CI_CALLER, /\bnext\b|develop/);
 });
 
-test("cloud gets the trunk triggers of every other package, so a profile that still sends cloud to develop fails", () => {
+test("cloud keeps its develop integration branch and gets no merge queue, so a sync that moves every package to trunk or drops the profile fails", () => {
   const cloud = ciProfile("@antelopejs-private/cloud");
-  assert.deepEqual(triggers(rewrite(CI_CALLER, cloud)), TRUNK_TRIGGERS);
-  const fresh = ciWorkflow(undefined, [], [], { profile: cloud });
-  assert.deepEqual(triggers(fresh), TRUNK_TRIGGERS);
-  assert.doesNotMatch(fresh, /\bnext\b|develop/);
+  const develop: TriggersView = {
+    pull_request: TRUNK_TRIGGERS.pull_request,
+    push: { branches: ["develop"] },
+    schedule: TRUNK_TRIGGERS.schedule,
+    workflow_dispatch: null,
+  };
+  const rewritten = rewrite(CI_CALLER, cloud);
+  assert.deepEqual(triggers(rewritten), develop);
+  assert.equal(rewrite(rewritten, cloud), rewritten);
+  assert.deepEqual(
+    triggers(ciWorkflow(undefined, [], [], { profile: cloud })),
+    develop,
+  );
+  assert.deepEqual(triggers(rewrite(CI_CALLER)), TRUNK_TRIGGERS);
 });
 
 test("a second rewrite of the trunk triggers changes nothing, so a merge_group with a null value that does not round-trip fails", () => {

@@ -63,14 +63,6 @@ function requiresCi(rules: readonly JsonObject[]): boolean {
   );
 }
 
-function queuesBySquash(rules: readonly JsonObject[]): boolean {
-  return rules.some(
-    (rule) =>
-      optStr(rule, "type") === "merge_queue" &&
-      optStr(child(rule, "parameters"), "merge_method") === "SQUASH",
-  );
-}
-
 const REQUIREMENTS: readonly Requirement[] = [
   ...REQUIRED_RULES.map((type): Requirement => ({
     subject: `rule:${type}`,
@@ -85,13 +77,6 @@ const REQUIREMENTS: readonly Requirement[] = [
     need: `${CI_CONTEXT} from GitHub Actions as a required status check`,
     applies: (repo) => CI_PACKS.some((pack) => pack === repo.pack),
     met: requiresCi,
-  },
-  {
-    subject: "merge-queue",
-    severity: "normal",
-    need: "a merge queue that squashes",
-    applies: (repo) => CI_PACKS.some((pack) => pack === repo.pack),
-    met: queuesBySquash,
   },
 ];
 

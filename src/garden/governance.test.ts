@@ -51,17 +51,12 @@ function ciRule(checks: JsonValue[] = CI_CHECKS): JsonObject {
   });
 }
 
-function queueRule(mergeMethod: string): JsonObject {
-  return rule("merge_queue", 2, "Organization", { merge_method: mergeMethod });
-}
-
 const PROTECTED = [
   rule("deletion", 1),
   rule("non_fast_forward", 1),
   rule("required_linear_history", 1),
   rule("pull_request", 1),
   ciRule(),
-  queueRule("SQUASH"),
 ];
 
 function ruleset(
@@ -98,7 +93,7 @@ test("a default branch under both organization rulesets raises nothing", async (
   assert.deepEqual(subjects(await branchGovernance.run(api.context())), []);
 });
 
-test("a repository with no rules on its default branch lacks the four rules urgently, the check and the merge queue normally", async () => {
+test("a repository with no rules on its default branch lacks the four rules urgently and the check normally", async () => {
   const api = repoWorld([]);
   assert.deepEqual(subjects(await branchGovernance.run(api.context())), [
     "main:rule:deletion:urgent",
@@ -106,36 +101,12 @@ test("a repository with no rules on its default branch lacks the four rules urge
     "main:rule:required_linear_history:urgent",
     "main:rule:pull_request:urgent",
     "main:checks:normal",
-    "main:merge-queue:normal",
-  ]);
-});
-
-test("a merge queue that merges or rebases instead of squashing is not the queue the org wants, and a squash queue is, so a check that only looks for the rule type fails", async () => {
-  for (const method of ["MERGE", "REBASE"]) {
-    const api = repoWorld(
-      [...PROTECTED.slice(0, 5), queueRule(method)],
-      ORG_SETS,
-    );
-    assert.deepEqual(
-      subjects(await branchGovernance.run(api.context())),
-      ["main:merge-queue:normal"],
-      method,
-    );
-  }
-  const bare = rule("merge_queue", 2);
-  delete bare.parameters;
-  const absent = repoWorld([...PROTECTED.slice(0, 5), bare], ORG_SETS);
-  assert.deepEqual(subjects(await branchGovernance.run(absent.context())), [
-    "main:merge-queue:normal",
   ]);
 });
 
 test("a required check from another app does not count as GitHub Actions", async () => {
   const foreign = ciRule([{ context: "ci / checks", integration_id: 1 }]);
-  const api = repoWorld(
-    [...PROTECTED.slice(0, 4), foreign, queueRule("SQUASH")],
-    ORG_SETS,
-  );
+  const api = repoWorld([...PROTECTED.slice(0, 4), foreign], ORG_SETS);
   assert.deepEqual(subjects(await branchGovernance.run(api.context())), [
     "main:checks:normal",
   ]);

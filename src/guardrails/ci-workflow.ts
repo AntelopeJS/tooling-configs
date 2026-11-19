@@ -36,6 +36,8 @@ export const CI_RENOVATE_SYNC_REF = sharedWorkflow("ci-renovate-sync.yml");
 
 /** How a repository's caller departs from the shared triggers and inputs. */
 export interface CiProfile {
+  /** The branch that collects changes before `main` and whose pushes run the full set, `develop` in cloud; absent on trunk, where the merge queue gates `main`. */
+  integrationBranch?: string;
   /** Whether the caller may keep the `windows: true` and `windows-pull-requests` inputs that ask ci-node.yml for Windows on pull requests. */
   windowsOnPullRequests: boolean;
 }
@@ -47,6 +49,7 @@ const DEFAULT_PROFILE: CiProfile = {
 const PROFILES = new Map<string, Partial<CiProfile>>([
   ["@antelopejs/core", { windowsOnPullRequests: true }],
   ["cloud-sdk-workspace", { windowsOnPullRequests: true }],
+  ["@antelopejs-private/cloud", { integrationBranch: "develop" }],
 ]);
 
 /** The CI profile of the repository whose package.json is named `name`; the default for any other name. */
@@ -57,7 +60,7 @@ export function ciProfile(name: string | undefined): CiProfile {
 /**
  * The triggers of the trunk-based CI: ci-node.yml picks the tier from the event, so a caller declares pull requests
  * (draft to ready included), the merge queue's `merge_group` run that gates every merge into `main`, pushes to `main`,
- * a nightly run and manual dispatch. There is no integration branch.
+ * a nightly run and manual dispatch.
  */
 export const ciTriggers = `on:
   pull_request:
@@ -69,6 +72,25 @@ export const ciTriggers = `on:
     - cron: "17 2 * * *"
   workflow_dispatch:
 `;
+
+/** The triggers of a repository with an integration branch: pull requests, pushes to `branch`, a nightly run and manual dispatch; a push to `main` runs nothing. */
+function integrationTriggers(branch: string): string {
+  return `on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [${branch}]
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+`;
+}
+
+function triggersFor({ integrationBranch }: CiProfile): string {
+  return integrationBranch === undefined
+    ? ciTriggers
+    : integrationTriggers(integrationBranch);
+}
 
 export const CI_CALLER = `name: ci
 
@@ -192,8 +214,8 @@ function triggersOf(document: Document): string {
   return JSON.stringify(isNode(node) ? node.toJS(document) : node);
 }
 
-function setTriggers(document: Document): boolean {
-  const desired = parseDocument(ciTriggers);
+function setTriggers(document: Document, profile: CiProfile): boolean {
+  const desired = parseDocument(triggersFor(profile));
   if (triggersOf(document) === triggersOf(desired)) return false;
   document.set("on", desired.get("on", true));
   const root = document.contents;
@@ -502,7 +524,8 @@ export function callerPlan(manifest: {
  * when the workflow has no other job besides the caller and the Renovate sync, since the shared workflow already
  * reports `ci / checks` and each `needs` hop adds to the critical path. A gate that also covers repository-specific
  * jobs is kept.
- * The workflow declares exactly the `ciTriggers` of the trunk-based CI: pull requests, the merge queue, pushes to `main`, the nightly run and dispatch. Unless
+ * The workflow declares exactly the `ciTriggers` of the trunk-based CI: pull requests, the merge queue, pushes to `main`, the nightly run and dispatch;
+ * a profile with an `integrationBranch` pushes on that branch instead and has no merge queue. Unless
  * `profile.windowsOnPullRequests` lets the repository ask for Windows on pull requests, no caller passes
  * `windows-pull-requests` or a `windows` other than the opt-out `false`. Sync writes neither input.
  * Every job calling ci-node.yml or ci-renovate-sync.yml calls it at `CI_NODE_REF` or `CI_RENOVATE_SYNC_REF`, whatever
@@ -551,7 +574,7 @@ export function ciWorkflow(
   changed = ensureSyncJob(document, jobs, syncCallers) || changed;
   const removed = dropRedundantAggregator(jobs, syncCallers);
   changed = removed.length > 0 || changed;
-  changed = setTriggers(document) || changed;
+  changed = setTriggers(document, profile) || changed;
   const stale = staleNeeds(document, CI_PATH, removed);
   if (stale.length) throw new Error(stale.join("\n"));
   if (!changed) return current;

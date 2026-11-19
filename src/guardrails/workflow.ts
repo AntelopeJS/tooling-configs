@@ -49,31 +49,41 @@ const CI_RENOVATE_SYNC_PATTERN =
 /** The shared workflows the trunk-based flow retires: a caller file whose jobs all call them is deleted, a file with any other job only stops being pinned. */
 const RETIRED_SHARED_WORKFLOWS = ["next-sync.yml", "stale.yml"] as const;
 
-const RETIRED_CALL = new RegExp(
-  `^AntelopeJS/\\.github/\\.github/workflows/(?:${RETIRED_SHARED_WORKFLOWS.map((file) => file.replace(".", "\\.")).join("|")})@\\S+$`,
-);
+type RetiredWorkflow = (typeof RETIRED_SHARED_WORKFLOWS)[number];
 
-function callsOnlyRetiredWorkflows(text: string): boolean {
+function retiredCall(retired: readonly RetiredWorkflow[]): RegExp {
+  return new RegExp(
+    `^AntelopeJS/\\.github/\\.github/workflows/(?:${retired.map((file) => file.replace(".", "\\.")).join("|")})@\\S+$`,
+  );
+}
+
+function callsOnly(text: string, call: RegExp): boolean {
   const document = parseDocument(text);
   const jobs = document.errors.length ? undefined : document.get("jobs", true);
   if (!isMap(jobs) || !jobs.items.length) return false;
   return jobs.items.every(({ value: job }) => {
     const uses = isMap(job) ? job.get("uses", true) : undefined;
-    return isScalar(uses) && RETIRED_CALL.test(String(uses.value));
+    return isScalar(uses) && call.test(String(uses.value));
   });
 }
 
-/** A `remove` for every workflow file whose jobs all call a retired shared workflow, at any ref. */
-export function retiredWorkflowArtifacts(root: string): PlannedArtifact[] {
+/** A `remove` for every workflow file whose jobs all call a retired shared workflow, at any ref; `keepNextSync` leaves the next-sync callers of a repository with an integration branch. */
+export function retiredWorkflowArtifacts(
+  root: string,
+  keepNextSync: boolean,
+): PlannedArtifact[] {
   const directory = join(root, ".github/workflows");
   if (!existsSync(directory)) return [];
+  const call = retiredCall(
+    RETIRED_SHARED_WORKFLOWS.filter(
+      (file) => !(keepNextSync && file === "next-sync.yml"),
+    ),
+  );
   return readdirSync(directory)
     .filter((name) => /\.ya?ml$/.test(name))
     .sort()
     .map((name) => `.github/workflows/${name}`)
-    .filter((path) =>
-      callsOnlyRetiredWorkflows(readFileSync(join(root, path), "utf8")),
-    )
+    .filter((path) => callsOnly(readFileSync(join(root, path), "utf8"), call))
     .map((path): PlannedArtifact => ({ kind: "remove", path }));
 }
 

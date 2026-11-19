@@ -5,10 +5,10 @@ import test from "node:test";
 import { parseDocument } from "yaml";
 
 import { bin, formatCheck, put, read, testRepo } from "./helpers/test-repo.ts";
-import { RELEASE_PATH } from "./release-workflow.ts";
+import { NEXT_SYNC_PATH, RELEASE_PATH } from "./release-workflow.ts";
 import { syncRepository } from "./sync.ts";
 
-const NEXT_SYNC = ".github/workflows/next-sync.yml";
+const NEXT_SYNC = NEXT_SYNC_PATH;
 
 const OLD_DISPATCH = `on:
   workflow_dispatch:
@@ -273,15 +273,29 @@ test("a repository with no release caller gets no release.yml and no next-sync c
   assert.equal(existsSync(join(root, NEXT_SYNC)), false);
 });
 
-test("cloud's release preview pushes on main like every other package, so a sync that sends it to develop fails", (t) => {
+test("cloud keeps develop: its next-sync caller merges main into develop and its preview pushes on develop, and a second sync changes nothing, so a sync that moves cloud to trunk or retires its next-sync fails", (t) => {
   const root = repoWith(
     t,
     { [RELEASE_PATH]: MONGODB },
     "@antelopejs-private/cloud",
   );
-  syncRepository(root);
-  assert.deepEqual(release(root).on.push, { branches: ["main"] });
-  assert.doesNotMatch(read(root, RELEASE_PATH), /\bnext\b|develop/);
+  const result = syncRepository(root);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.removed, []);
+  const nextSync = parseDocument(read(root, NEXT_SYNC)).toJS();
+  assert.deepEqual(nextSync.on, {
+    push: { branches: ["main"] },
+    workflow_dispatch: null,
+  });
+  assert.deepEqual(nextSync.jobs["next-sync"].permissions, { issues: "write" });
+  assert.equal(
+    nextSync.jobs["next-sync"].uses,
+    "AntelopeJS/.github/.github/workflows/next-sync.yml@v2",
+  );
+  assert.deepEqual(nextSync.jobs["next-sync"].with, { branch: "develop" });
+  assert.deepEqual(release(root).on.push, { branches: ["develop"] });
+  assert.equal(formatCheck(root, [NEXT_SYNC]).status, 0);
+  assert.equal(syncRepository(root, { check: true }).paths.length, 0);
 });
 
 test("a scaffold synced under the template profile gets no next-sync caller", (t) => {

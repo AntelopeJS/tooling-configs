@@ -7,6 +7,7 @@ import { sharedWorkflow } from "./workflow.ts";
 
 const WORKFLOWS = ".github/workflows";
 export const RELEASE_PATH = `${WORKFLOWS}/release.yml`;
+export const NEXT_SYNC_PATH = `${WORKFLOWS}/next-sync.yml`;
 
 const RELEASE_CALLER =
   /^AntelopeJS\/\.github\/\.github\/workflows\/release-npm-(public|private)\.yml@\S+$/;
@@ -27,6 +28,43 @@ interface ReleaseCallers {
   files: Map<string, string>;
   dropped: string[];
   errors: string[];
+}
+
+/** The caller of next-sync.yml, which merges `main` into `branch` after each push to `main` or a manual dispatch; next-sync.yml needs `issues: write`. */
+function nextSyncCaller(branch: string): string {
+  return `name: Next sync
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  next-sync:
+    permissions:
+      issues: write
+    uses: ${sharedWorkflow("next-sync.yml")}
+    with:
+      branch: ${branch}
+    secrets:
+      RELEASE_GITHUB_TOKEN: \${{ secrets.RELEASE_GITHUB_TOKEN }}
+      NOTION_TOKEN: \${{ secrets.NOTION_TOKEN }}
+`;
+}
+
+/** The next-sync.yml of a repository with an integration branch, which keeps that branch level with `main`; a trunk repository has none. */
+export function nextSyncArtifacts(
+  root: string,
+  integrationBranch: string | undefined,
+): PlannedArtifact[] {
+  if (integrationBranch === undefined) return [];
+  const content = nextSyncCaller(integrationBranch);
+  const path = join(root, NEXT_SYNC_PATH);
+  return existsSync(path) && readFileSync(path, "utf8") === content
+    ? [{ kind: "unchanged", path: NEXT_SYNC_PATH }]
+    : [{ kind: "write", path: NEXT_SYNC_PATH, content, mode: undefined }];
 }
 
 function normalizeDirectory(path: string): string {
@@ -222,12 +260,15 @@ function releaseJob(release: ReleasePackage, several: boolean): string {
 }
 
 /**
- * The release.yml that publishes `packages`: a preview of each on every push to `main`, and the stable version the
+ * The release.yml that publishes `packages`: a preview of each on every push to `branch`, and the stable version the
  * release train dispatches on the default branch with `release-version`, `release-commit`, `dependency-ranges` and, when a package is
  * not at the root, `package-directory`. With several packages, each has its own job, which a dispatch runs only for
  * the `package-directory` it names.
  */
-function releaseCaller(packages: readonly ReleasePackage[]): string {
+function releaseCaller(
+  packages: readonly ReleasePackage[],
+  branch: string,
+): string {
   const several = packages.length > 1;
   const nested = packages.some(({ directory }) => directory !== ".");
   const directoryInput = nested
@@ -244,7 +285,7 @@ function releaseCaller(packages: readonly ReleasePackage[]): string {
 
 on:
   push:
-    branches: [main]
+    branches: [${branch}]
   workflow_dispatch:
     inputs:
       release-version:
@@ -275,7 +316,10 @@ ${packages.map((release) => releaseJob(release, several)).join("\n")}`;
  * `services-compose-file`) and jobs besides the callers, such as a metadata `validate` job, are dropped and named in
  * a note. A repository with no release caller publishes nothing, and nothing is written.
  */
-export function releaseArtifacts(root: string): PlannedArtifact[] {
+export function releaseArtifacts(
+  root: string,
+  branch: string,
+): PlannedArtifact[] {
   const found = releaseCallers(root);
   if (found.errors.length)
     return found.errors.map((message) => ({
@@ -284,7 +328,7 @@ export function releaseArtifacts(root: string): PlannedArtifact[] {
       message,
     }));
   if (!found.packages.length) return [];
-  const content = releaseCaller(found.packages);
+  const content = releaseCaller(found.packages, branch);
   const removed = [...found.files.keys()].filter(
     (file) => file !== RELEASE_PATH,
   );
