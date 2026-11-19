@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.5
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.4...v0.8.5)
+
+### 🚀 Enhancements
+
+- **sync:** Trunk-based CI with merge queue, retire next ([#426](https://github.com/AntelopeJS/tooling-configs/pull/426))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.8.4
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.3...v0.8.4)
