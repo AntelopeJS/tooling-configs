@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.8
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.7...v0.8.8)
+
+### 🩹 Fixes
+
+- **oxc:** Support oxlint 1.94 and oxfmt 0.79 ([#430](https://github.com/AntelopeJS/tooling-configs/pull/430))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.8.7
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.6...v0.8.7)
