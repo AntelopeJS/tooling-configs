@@ -1,8 +1,6 @@
 /** What the managed AGENTS.md block needs to know about the repository. */
 export interface AgentsBlockContext {
   profile: "full" | "template";
-  /** Repository-relative path of the verification skill's SKILL.md, when one exists. */
-  verificationSkill: string | undefined;
   /** Repository-relative path of GLOSSARY.md, when one exists. */
   glossary: string | undefined;
 }
@@ -38,11 +36,6 @@ const SUPPRESSIONS = `### Suppressions
 
 function pointers(context: AgentsBlockContext): string[] {
   const lines: string[] = [];
-  if (context.verificationSkill !== undefined) {
-    lines.push(
-      `Prove a change works with the verification skill in [\`${context.verificationSkill}\`](${context.verificationSkill}) before you call it done.`,
-    );
-  }
   if (context.glossary !== undefined) {
     lines.push(
       `Name things with the terms in [\`${context.glossary}\`](${context.glossary}).`,

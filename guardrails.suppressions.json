@@ -1,7 +1,5 @@
 {
-  "rules": {
-    "anti-slop/no-runtime-typeof": 0
-  },
+  "rules": {},
   "tsExpectError": 0,
   "tsIgnore": 0,
   "safety": 10,

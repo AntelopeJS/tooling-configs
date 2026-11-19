@@ -8,12 +8,11 @@ import type { AgentsBlockContext } from "./agents-block.ts";
 import { packageManager, usesCaptures, type Manifest } from "./package.ts";
 import { pnpmLockfiles } from "./singleton-packages.ts";
 import type { PlannedArtifact } from "./sync.ts";
-import { verifyLayers } from "./verify-layers.ts";
 import { installsWithPnpm, inWorkspace } from "./lockfile-reading.ts";
 
 const PATH = "pnpm-workspace.yaml";
 
-/** The folder a repository's playground lives in, which verify installs as a project of its own. */
+/** The folder a repository's playground lives in. */
 const PLAYGROUND = "playground";
 
 /** The first pnpm that keeps `pnpm --dir <nested> install` in the nested project when the root `pnpm-workspace.yaml` has no `packages`. Earlier pnpm installs the root instead. */
@@ -31,7 +30,7 @@ const FRESH_RELEASES = "@antelopejs/interface-*";
 
 /**
  * A folder pnpm installs as its own workspace root, and so the folder whose `pnpm-workspace.yaml` pnpm reads there: the
- * repository root, a nested folder with its own `pnpm-lock.yaml`, or a playground verify installs on its own; a nested one
+ * repository root, a nested folder with its own `pnpm-lock.yaml`, or a playground installed on its own; a nested one
  * never reads the root's file.
  * `builds` are the dependency builds sync decides in it.
  */
@@ -64,22 +63,18 @@ function skippedBuilds(captures: boolean): string[] {
 }
 
 /**
- * The root `playground` and each verify layer's, when it has a `package.json` and no workspace above lists it: verify installs
- * each as a project of its own, so its first lockfile comes from an install that reads only its own `pnpm-workspace.yaml`.
+ * The root `playground`, when it has a `package.json` and no workspace above lists it: it is installed as a project of its own,
+ * so its first lockfile comes from an install that reads only its own `pnpm-workspace.yaml`.
  */
 function playgrounds(root: string): string[] {
-  return [
-    PLAYGROUND,
-    ...verifyLayers(root).map((layer) => `${layer}/${PLAYGROUND}`),
-  ].filter(
-    (folder) =>
-      existsSync(join(root, folder, "package.json")) &&
-      !inWorkspace(root, folder),
-  );
+  return existsSync(join(root, PLAYGROUND, "package.json")) &&
+    !inWorkspace(root, PLAYGROUND)
+    ? [PLAYGROUND]
+    : [];
 }
 
 /**
- * Each folder whose tracked `pnpm-lock.yaml` `lockfile:singletons` reads and each playground verify installs on its own,
+ * Each folder whose tracked `pnpm-lock.yaml` `lockfile:singletons` reads and the playground installed on its own,
  * and in a pnpm repository the root, deciding the builds of the full profile's hooks and captures. In a repository whose
  * root another package manager installs, only the nested folders pnpm installs. A root that pins no package manager is
  * pnpm's unless it holds another package manager's lockfile.
@@ -250,7 +245,7 @@ function installRootArtifact(
 
 /**
  * The `pnpm-workspace.yaml` of each folder pnpm installs as its own workspace root: the root of a pnpm repository and each
- * nested folder with its own `pnpm-lock.yaml` or that verify installs with pnpm on its own. Each lists `@antelopejs/interface-*` under `minimumReleaseAgeExclude`,
+ * nested folder with its own `pnpm-lock.yaml` or that is installed with pnpm on its own. Each lists `@antelopejs/interface-*` under `minimumReleaseAgeExclude`,
  * so pnpm 11 and later lock one copy of an interface released less than a day ago. A full-profile root also decides the
  * builds sync declares, so pnpm 11 installs them without `ERR_PNPM_IGNORED_BUILDS`.
  */

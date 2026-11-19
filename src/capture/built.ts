@@ -1,9 +1,13 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 
 import { isObject, isString, type JsonValue } from "../garden/json.ts";
 import { publishedPackages } from "./demo.ts";
-import { relativeSlashed } from "../verify/slash.ts";
+
+/** The path from `from` to `to`, spelled with `/` on every platform. */
+function relativeSlashed(from: string, to: string): string {
+  return relative(from, to).split(sep).join("/");
+}
 
 const ENTRY_FIELDS = ["main", "module", "types", "typings", "bin", "exports"];
 

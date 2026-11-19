@@ -37,7 +37,6 @@ test("full sync preserves handwritten text even behind a CLAUDE symlink, and doe
     `Handwritten introduction.\n\n${AGENTS_BLOCK_START}\nstale content\n${AGENTS_BLOCK_END}\n\nHandwritten footer.\n`,
   );
   symlinkSync("AGENTS.md", join(root, "CLAUDE.md"));
-  put(root, ".agents/skills/verify-runtime/SKILL.md", "Verification skill.\n");
   put(root, "docs/GLOSSARY.md", "Glossary.\n");
   put(
     root,
@@ -63,7 +62,7 @@ test("full sync preserves handwritten text even behind a CLAUDE symlink, and doe
   assert.match(first.stdout, /Run install/);
   assert.equal(
     read(root, "AGENTS.md"),
-    `Handwritten introduction.\n\n${agentsBlock({ profile: "full", verificationSkill: ".agents/skills/verify-runtime/SKILL.md", glossary: "docs/GLOSSARY.md" }).trimEnd()}\n\nHandwritten footer.\n`,
+    `Handwritten introduction.\n\n${agentsBlock({ profile: "full", glossary: "docs/GLOSSARY.md" }).trimEnd()}\n\nHandwritten footer.\n`,
   );
   assert.equal(read(root, "CLAUDE.md"), "@AGENTS.md\n");
   const packageText = read(root, "package.json");
@@ -188,7 +187,6 @@ function clearExecutable(root: string, file: string): void {
 
 test("sync check reports every drift without writing, including setup permissions", (t) => {
   const root = testRepo(t);
-  put(root, ".agents/skills/verify-runtime/SKILL.md", "Verification skill.\n");
   const before = read(root, "package.json");
   const initial = bin(root, "sync", ["--check"]);
   assert.equal(initial.status, 1);

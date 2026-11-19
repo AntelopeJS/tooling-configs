@@ -32,8 +32,7 @@
     "antelopejs-suppressions": "./dist/bin/suppressions.mjs",
     "antelopejs-sync": "./dist/bin/sync.mjs",
     "antelopejs-triage": "./dist/bin/triage.mjs",
-    "antelopejs-tsc": "./dist/bin/tsc.mjs",
-    "antelopejs-verify": "./dist/bin/verify.mjs"
+    "antelopejs-tsc": "./dist/bin/tsc.mjs"
   },
   "files": [
     "assets",
@@ -47,7 +46,6 @@
     "./oxc/guardrails": "./dist/oxc/guardrails/index.mjs",
     "./knip": "./dist/knip.mjs",
     "./eslint": "./dist/eslint.mjs",
-    "./verify": "./dist/verify/index.mjs",
     "./formal": "./dist/formal/index.mjs",
     "./capture": "./dist/capture/index.mjs"
   },

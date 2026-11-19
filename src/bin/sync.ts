@@ -10,10 +10,6 @@ import {
   type RangeMoves,
 } from "../guardrails/dependency-ranges-sync.ts";
 import { syncRepository } from "../guardrails/sync.ts";
-import {
-  isVerifyChoice,
-  type VerifyChoice,
-} from "../guardrails/verify-skill.ts";
 
 type SyncResult = ReturnType<typeof syncRepository>;
 
@@ -29,7 +25,6 @@ function withRangeMoves(
       removed: [],
       errors: ranges.errors,
       notes: ranges.notes,
-      verifyNotes: [],
       advisories: [],
       dependenciesAdded: false,
     };
@@ -50,8 +45,6 @@ function printSync(
     process.stdout.write(
       `Note: ${check || result.errors.length ? "Planned migration. " : ""}${note}\n`,
     );
-  for (const note of result.verifyNotes)
-    process.stdout.write(`Note: ${note}\n`);
   for (const advisory of result.advisories)
     process.stdout.write(`${advisory}\n`);
   for (const error of result.errors) process.stderr.write(`${error}\n`);
@@ -70,8 +63,8 @@ function printSync(
   return check && result.paths.length ? 1 : 0;
 }
 
-function init(verify: VerifyChoice | undefined): number {
-  const result = initRepository(repositoryRoot(), { verify });
+function init(): number {
+  const result = initRepository(repositoryRoot());
   const reportedBySync =
     result.sync && !result.sync.errors.length ? result.sync.paths : [];
   for (const path of result.paths)
@@ -111,28 +104,21 @@ runCli(() => {
       check: { type: "boolean" },
       init: { type: "boolean" },
       profile: { type: "string", default: "full" },
-      verify: { type: "string" },
     },
   });
   if (values.profile !== "full" && values.profile !== "template")
     throw new Error("--profile must be full or template.");
-  if (values.verify !== undefined && !isVerifyChoice(values.verify))
-    throw new Error("--verify must be interface, module, template, or custom.");
   if (values.init && (values.check || values.profile === "template"))
     throw new Error(
       "--init sets up a full-profile repository; it cannot be combined with --check or --profile template.",
     );
-  if (values.init) return init(values.verify);
+  if (values.init) return init();
   const root = repositoryRoot();
   const check = Boolean(values.check);
   const ranges = moveDependencyRanges(root, check);
   const result = ranges.errors.length
     ? undefined
-    : syncRepository(root, {
-        check,
-        profile: values.profile,
-        verify: values.verify,
-      });
+    : syncRepository(root, { check, profile: values.profile });
   return printSync(withRangeMoves(ranges, result), {
     check,
     installed: false,

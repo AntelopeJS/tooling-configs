@@ -4,7 +4,14 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { syncRepository } from "./sync.ts";
-import { bin, linkOxlint, put, read, testRepo } from "./helpers/test-repo.ts";
+import {
+  bin,
+  linkOxlint,
+  markTemplateSource,
+  put,
+  read,
+  testRepo,
+} from "./helpers/test-repo.ts";
 
 /** Renovate's config lookup order, kept literal so a path dropped from the pack's list fails here. */
 const RENOVATE_CONFIGS = [
@@ -23,11 +30,11 @@ const RENOVATE_CONFIGS = [
   ".renovaterc.json5",
 ];
 const PRESET = "github>AntelopeJS/.github:renovate.json5";
-const TEMPLATE_SOURCE = { profile: "template", verify: "template" } as const;
+const TEMPLATE_SOURCE = { profile: "template" } as const;
 
 const PROFILES: [string, string[]][] = [
   ["a full-profile repository", []],
-  ["a template source", ["--profile", "template", "--verify", "template"]],
+  ["a template source", ["--profile", "template"]],
 ];
 
 for (const [label, args] of PROFILES)
@@ -39,6 +46,7 @@ for (const [label, args] of PROFILES)
       "oxlint.config.ts",
       'import type {} from "@antelopejs/tooling-configs/oxc/lint";\nexport default {};\n',
     );
+    if (args.length) markTemplateSource(root);
     const before = bin(root, "sync", [...args, "--check"]);
     assert.equal(before.status, 1, before.stderr);
     assert.match(
@@ -62,6 +70,7 @@ test("a project scaffolded from a template neither gets nor needs a renovate.jso
 
 test("sync keeps a hand-tuned renovate.json on the preset byte for byte", (t) => {
   const root = testRepo(t);
+  markTemplateSource(root);
   const tuned = `{ "extends": ["${PRESET}"], "schedule": ["before 6am"] }\n`;
   put(root, "renovate.json", tuned);
   const result = syncRepository(root, TEMPLATE_SOURCE);
@@ -73,6 +82,7 @@ test("sync keeps a hand-tuned renovate.json on the preset byte for byte", (t) =>
 for (const path of RENOVATE_CONFIGS)
   test(`sync and --check fail a ${path} off the AntelopeJS preset and leave it as it is`, (t) => {
     const root = testRepo(t);
+    markTemplateSource(root);
     const own = '{ "extends": ["config:recommended"] }\n';
     put(root, path, own);
     for (const check of [true, false]) {
@@ -89,6 +99,7 @@ for (const path of RENOVATE_CONFIGS)
 for (const path of RENOVATE_CONFIGS.slice(1))
   test(`sync writes no renovate.json beside a preset config at ${path}, which Renovate would read second`, (t) => {
     const root = testRepo(t);
+    markTemplateSource(root);
     put(root, path, `{ extends: ["${PRESET}"] }\n`);
     const result = syncRepository(root, TEMPLATE_SOURCE);
     assert.deepEqual(result.errors, []);
@@ -98,6 +109,7 @@ for (const path of RENOVATE_CONFIGS.slice(1))
 
 test("a renovate key in package.json counts as the config", (t) => {
   const root = testRepo(t);
+  markTemplateSource(root);
   put(
     root,
     "package.json",
@@ -112,6 +124,7 @@ test("a renovate key in package.json counts as the config", (t) => {
 
 test("a falsy renovate key in package.json counts as no config, as Renovate reads it", (t) => {
   const root = testRepo(t);
+  markTemplateSource(root);
   put(
     root,
     "package.json",

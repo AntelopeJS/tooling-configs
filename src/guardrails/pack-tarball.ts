@@ -12,7 +12,7 @@ const IGNORE_SCRIPTS: Record<"pnpm" | "npm", string> = {
  * since `pnpm pack` runs them through cmd.exe on Windows whatever the script shell, so a POSIX `prepare` fails there.
  * Stop at the first that fails.
  */
-export function packSteps(
+function packSteps(
   manager: "pnpm" | "npm",
   destination: string,
 ): readonly [prepack: string[], pack: string[]] {

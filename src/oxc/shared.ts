@@ -1,4 +1,4 @@
-import { syncedAgentPaths } from "../verify/kinds.ts";
+import { docsSkillPaths } from "../guardrails/docs-skills.ts";
 
 /**
  * Paths every AntelopeJS project generates or vendors, and that no linter should read.
@@ -33,7 +33,7 @@ export const AGENT_IGNORE_PATTERNS = [
 ];
 
 /** What `antelopejs-sync` writes under the agent directories, from the list it syncs; the repository's own files there stay linted. */
-export const SYNCED_AGENT_PATTERNS = syncedAgentPaths().flatMap((path) => [
+export const SYNCED_AGENT_PATTERNS = docsSkillPaths().flatMap((path) => [
   path,
   `${path}/**`,
 ]);

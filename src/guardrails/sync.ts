@@ -52,16 +52,9 @@ import { nextSyncArtifacts, releaseArtifacts } from "./release-workflow.ts";
 import { backendBoundaryArtifacts } from "./backend-boundary.ts";
 import { checkEntryOnlyConfiguration } from "./entry-only.ts";
 import { planDocs, type DocsPlan } from "./docs-compat.ts";
-import {
-  inScaffoldExcludedPath,
-  planWritingSkills,
-} from "./template-agent-layer.ts";
+import { isTemplateSource, planWritingSkills } from "./template-agent-layer.ts";
+import { applyDocsSkillActions } from "./docs-skills.ts";
 import { checkTypecheckCoverage } from "./typecheck-coverage.ts";
-import {
-  applyVerifyActions,
-  planVerify,
-  type VerifyChoice,
-} from "./verify-skill.ts";
 
 export interface RepoContext extends AgentsBlockContext {
   manager: PackageManager;
@@ -343,7 +336,6 @@ function repositoryContext(
   root: string,
   current: ReadonlyMap<string, string>,
   profile: AgentsBlockContext["profile"],
-  verificationSkill: string | undefined,
 ): RepoContext {
   const manifest = parseManifest(current.get("package.json") ?? "{}");
   const lint = PRESET_CONFIGS[0];
@@ -359,10 +351,6 @@ function repositoryContext(
     claude: profile === "full" ? claudeProse(root, current) : "",
     suppressionBudget: adoptedBudget(root, current.get(SUPPRESSIONS_FILE)),
     managesCi: current.has(CI_PATH) || !hasChecksWorkflow(root),
-    verificationSkill:
-      profile === "template" && inScaffoldExcludedPath(verificationSkill)
-        ? undefined
-        : verificationSkill,
     glossary: ["GLOSSARY.md", "docs/GLOSSARY.md"].find((file) =>
       existsSync(join(root, file)),
     ),
@@ -406,41 +394,29 @@ function repositoryNotices(root: string, context: RepoContext): string[] {
 }
 
 /**
- * Under the template profile the agent layer, `verify-template` and the writing skills, is synced only in the template source,
- * marked by its `.agents/skills/verify-template` folder or chosen with `--verify template`, because a scaffold ships without it,
- * and the AGENTS.md block, which a scaffold keeps, links no skill under it.
+ * Under the template profile the agent layer, the writing skills, is synced only in the template source,
+ * marked by an `.agents/` folder at its root, because a scaffold ships without it.
  */
 export function syncRepository(
   root: string,
   options: {
     check?: boolean;
     profile?: AgentsBlockContext["profile"];
-    verify?: VerifyChoice;
   } = {},
 ) {
   const profile = options.profile ?? "full";
   const { current, executables } = repositorySnapshot(root);
   const manifest = parseManifest(current.get("package.json") ?? "{}");
-  const verify = planVerify(root, {
-    flag: options.verify,
-    manifest,
-    profile,
-  });
-  const writing = planWritingSkills(root, profile, verify.kind);
-  const actions = [...verify.actions, ...writing.actions];
-  const context = repositoryContext(
-    root,
-    current,
-    profile,
-    verify.verificationSkill,
-  );
+  const writing = planWritingSkills(root, profile);
+  const actions = writing.actions;
+  const context = repositoryContext(root, current, profile);
   const { integrationBranch } = context.ci.profile ?? {};
   const standalone = [
     ...backendBoundaryArtifacts(root),
     ...renovateArtifacts(
       root,
       manifest,
-      profile === "full" || verify.kind === "template",
+      profile === "full" || isTemplateSource(root, profile),
     ),
     ...pnpmWorkspaceArtifacts(root, manifest, profile),
     ...releaseArtifacts(root, integrationBranch ?? "main"),
@@ -457,7 +433,7 @@ export function syncRepository(
     .map(({ message }) => message);
   const entryOnly = checkEntryOnlyConfiguration(root);
   const coverage = checkTypecheckCoverage(root, Boolean(options.check));
-  errors.push(...entryOnly.errors, ...verify.errors, ...writing.errors);
+  errors.push(...entryOnly.errors, ...writing.errors);
   errors.push(...coverage.errors);
   const notes = plan.flatMap((artifact) =>
     artifact.kind === "migrated" ? artifact.notes : [],
@@ -472,7 +448,7 @@ export function syncRepository(
   if (!options.check && !errors.length) {
     writeArtifacts(root, writes);
     removeArtifacts(root, removals);
-    applyVerifyActions(root, actions);
+    applyDocsSkillActions(root, actions);
   }
   const templateDependencies = ["knip"];
   if (context.typeAware) templateDependencies.push("oxlint-tsgolint");
@@ -489,15 +465,9 @@ export function syncRepository(
           ...removals,
           ...actions.map(({ path }) => path),
         ],
-    removed: [
-      ...removals,
-      ...actions
-        .filter((action) => action.kind === "remove")
-        .map(({ path }) => path),
-    ],
+    removed: removals,
     errors,
     notes,
-    verifyNotes: options.check || errors.length ? [] : verify.notes,
     advisories: [...entryOnly.advisories, ...coverage.advisories],
     dependenciesAdded,
   };
