@@ -370,7 +370,7 @@ function repositoryContext(
       profile === "full" && current.has("package.json")
         ? planDocs(root, manager)
         : undefined,
-    ci: callerPlan(manifest),
+    ci: callerPlan(root, manifest),
     captures: usesCaptures(root),
   };
 }
