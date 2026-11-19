@@ -367,7 +367,14 @@ test("sync --check reports an old-shape ci.yml with write grants as drift, sync 
     statuses: "write",
   });
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
-  put(root, ".github/workflows/ci.yml", CI_CALLER);
+  put(
+    root,
+    ".github/workflows/ci.yml",
+    CI_CALLER.replace(
+      "test-job: true\n",
+      "test-job: true\n      affected-tests: true\n",
+    ),
+  );
   commit(root);
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
 });

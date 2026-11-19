@@ -193,7 +193,13 @@ test("sync --check reports a repo still carrying the redundant checks job, and s
   assert.equal(check.status, 1, check.stdout);
   assert.match(`${check.stdout}${check.stderr}`, /ci\.yml/);
   assert.equal(bin(root, "sync").status, 0);
-  assert.equal(read(root, ".github/workflows/ci.yml"), HEAD);
+  assert.equal(
+    read(root, ".github/workflows/ci.yml"),
+    HEAD.replace(
+      "test-job: true\n",
+      "test-job: true\n      affected-tests: true\n",
+    ),
+  );
   commit(root);
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
 });

@@ -8,6 +8,7 @@ import {
   type YAMLMap,
 } from "yaml";
 
+import { affectedTestsFit } from "./affected-tests.ts";
 import {
   hasRedundantAggregator,
   LEGACY_AGGREGATOR_ID,
@@ -253,17 +254,17 @@ function setTestJob(
   return true;
 }
 
-function setSingleJob(
+function setInput(
   document: Document,
   job: YAMLMap,
-  profile: CiProfile,
+  key: string,
+  value: boolean,
 ): boolean {
-  if (profile.singleJob) return false;
   const inputs = job.get("with", true);
   if (isMap(inputs)) {
-    if (inputs.get("single-job") === false) return false;
-    inputs.set("single-job", false);
-  } else job.set("with", document.createNode({ "single-job": false }));
+    if (inputs.get(key) === value) return false;
+    inputs.set(key, value);
+  } else job.set("with", document.createNode({ [key]: value }));
   return true;
 }
 
@@ -282,11 +283,14 @@ function setCallerInputs(
   document: Document,
   job: YAMLMap,
   placeholderTests: boolean,
-  profile: CiProfile,
+  { profile = DEFAULT_PROFILE, affectedTests }: CiPlan,
 ): boolean {
   const testJob = setTestJob(document, job, placeholderTests);
-  const singleJob = setSingleJob(document, job, profile);
-  return passNotionToken(document, job) || singleJob || testJob;
+  const singleJob =
+    !profile.singleJob && setInput(document, job, "single-job", false);
+  const affected =
+    affectedTests === true && setInput(document, job, "affected-tests", true);
+  return passNotionToken(document, job) || singleJob || affected || testJob;
 }
 
 /** The caller sync writes into a repository without one, its test job off when the `test` script is a placeholder. */
@@ -393,16 +397,19 @@ export interface CiPlan {
   docsFiles?: DocsFilesPlan;
   placeholderTests?: boolean;
   profile?: CiProfile;
+  /** Whether the caller passes `affected-tests: true`, so ci-node.yml runs only the affected tests on a pull request. */
+  affectedTests?: boolean;
 }
 
-/** What package.json tells the caller: whether its `test` script only stands in for tests, and the profile its name selects. */
-export function callerPlan(manifest: {
-  name?: string;
-  scripts?: Record<string, string>;
-}): CiPlan {
+/** What the repository at `root` tells the caller: whether its `test` script only stands in for tests, the profile its name selects, and whether its affected tests fit. */
+export function callerPlan(
+  root: string,
+  manifest: { name?: string; scripts?: Record<string, string> },
+): CiPlan {
   return {
     placeholderTests: placeholderTestScript(manifest.scripts?.test),
     profile: ciProfile(manifest.name),
+    affectedTests: affectedTestsFit(root),
   };
 }
 
@@ -413,7 +420,8 @@ export function callerPlan(manifest: {
  * A caller without a `test-job` input gets `test-job: true`, which ci-node.yml v2 accepts and ignores, or `false` when
  * `placeholderTests` says the `test` script only stands in for tests; that case also turns an existing `true` off. Any
  * other explicit value is left as the repository set it. The caller passes the `NOTION_TOKEN` secret, which ci-node.yml
- * files a flaky-test task with, and `single-job: false` when `profile.singleJob` is off.
+ * files a flaky-test task with, `single-job: false` when `profile.singleJob` is off, and `affected-tests: true` when
+ * `affectedTests` is on. Either input the repository set is kept.
  * A `checks` job that only re-aggregates the caller (`needs: [ci]`, steps that `exit` on `needs` results) is removed
  * when the workflow has no other job besides the caller and the Renovate sync, since the shared workflow already
  * reports `ci / checks` and each `needs` hop adds to the critical path. A gate that also covers repository-specific
@@ -465,7 +473,7 @@ export function ciWorkflow(
   changed = grant(document, pair.value, { contents: "read" }) || changed;
   changed = skipRenovateSync(document, pair.value) || changed;
   changed =
-    setCallerInputs(document, pair.value, placeholderTests, profile) || changed;
+    setCallerInputs(document, pair.value, placeholderTests, plan) || changed;
   changed = ensureSyncJob(document, jobs, syncCallers) || changed;
   const removed = dropRedundantAggregator(jobs, syncCallers);
   changed = removed.length > 0 || changed;

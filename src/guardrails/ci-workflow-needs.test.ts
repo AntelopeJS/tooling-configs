@@ -164,7 +164,14 @@ test("the canonical caller and a caller with repository-specific gate jobs pass 
 
 test("sync --check passes a caller with repository-specific gate jobs", (t) => {
   const root = adoptedRepo(t);
-  put(root, ".github/workflows/ci.yml", EXTRA_JOBS);
+  put(
+    root,
+    ".github/workflows/ci.yml",
+    EXTRA_JOBS.replace(
+      "test-job: true\n",
+      "test-job: true\n      affected-tests: true\n",
+    ),
+  );
   commit(root);
   const check = bin(root, "sync", ["--check"]);
   assert.equal(check.status, 0, check.stdout);
