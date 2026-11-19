@@ -82,20 +82,20 @@ The verify skills drive a browser with `playwright-core`. [Browser driver for th
 Node.js 24, or at least 22.18: oxlint reads `oxlint.config.ts` and loads JS plugins by executing TypeScript.
 
 ```bash
-pnpm add -D @antelopejs/tooling-configs oxlint@1.81.0 oxfmt
+pnpm add -D @antelopejs/tooling-configs oxlint@1.94.0 oxfmt
 ```
 
 The tools are optional peer dependencies, so add only the ones a repository uses:
 
 | Tool                    | Packages to add                                                                  |
 | ----------------------- | -------------------------------------------------------------------------------- |
-| oxlint                  | `oxlint@1.81.0`, plus `oxlint-tsgolint` for the type-aware rules (on by default) |
-| oxfmt                   | `oxfmt@^0.77.0`                                                                  |
+| oxlint                  | `oxlint@1.94.0`, plus `oxlint-tsgolint` for the type-aware rules (on by default) |
+| oxfmt                   | `oxfmt@^0.79.0`                                                                  |
 | ESLint                  | `@nuxt/eslint-config`                                                            |
 | Knip                    | `knip@>=6`                                                                       |
 | Import sorting (opt-in) | `eslint-plugin-perfectionist`                                                    |
 
-Pin `oxlint` to the exact version this package uses for `@oxlint/plugins` (currently **1.81.0**): the JS plugin API is still alpha and the two must move together.
+Pin `oxlint` to an exact version its peer range lists (**1.94.0** or 1.81.0): the JS plugin API is still alpha, so each listed version is checked against the `@oxlint/plugins` this package depends on.
 
 ## oxlint
 
