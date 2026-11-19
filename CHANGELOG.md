@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.7
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.6...v0.8.7)
+
+### 🚀 Enhancements
+
+- **sync:** Pass NOTION_TOKEN to ci-node.yml and keep slow-test repositories off single-job ([#428](https://github.com/AntelopeJS/tooling-configs/pull/428))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.8.6
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.5...v0.8.6)
