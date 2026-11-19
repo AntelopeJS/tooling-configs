@@ -80,6 +80,13 @@ test("a second rewrite of the trunk triggers changes nothing, so a merge_group w
   assert.equal(rewrite(CI_CALLER), CI_CALLER);
 });
 
+test("rewritten triggers keep the blank line before the next key, so a rewrite that glues permissions to workflow_dispatch fails", () => {
+  const rewritten = rewrite(
+    `on:\n  push:\n    branches: [next]\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\njobs:\n  ci:\n    uses: ${CI_NODE_REF}\n`,
+  );
+  assert.match(rewritten, /workflow_dispatch:\n\npermissions:/);
+});
+
 test("the comments of replaced triggers go with them and a dedented comment under the last trigger stays above permissions, which a rewrite that replaces on before restoring empty-value comments drops", () => {
   const rewritten = rewrite(
     `on:\n  push:\n    branches: [main]\n  # No branch filter\n  pull_request:\n\n  # only pull requests\n\n# least privilege\npermissions:\n  contents: read\njobs:\n  ci:\n    uses: ${CI_NODE_REF}\n`,

@@ -196,6 +196,13 @@ function setTriggers(document: Document): boolean {
   const desired = parseDocument(ciTriggers);
   if (triggersOf(document) === triggersOf(desired)) return false;
   document.set("on", desired.get("on", true));
+  const root = document.contents;
+  if (!isMap(root)) return true;
+  const at = root.items.findIndex(
+    ({ key }) => isScalar(key) && key.value === "on",
+  );
+  const after = root.items[at + 1]?.key;
+  if (isNode(after)) after.spaceBefore = true;
   return true;
 }
 
