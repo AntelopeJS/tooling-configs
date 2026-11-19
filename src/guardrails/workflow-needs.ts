@@ -84,3 +84,61 @@ export function staleNeeds(
   }
   return problems;
 }
+
+function renameNeeds(document: Document, from: string, to: string): void {
+  const jobs = document.get("jobs", true);
+  if (!isMap(jobs)) return;
+  for (const { value: job } of jobs.items) {
+    if (!isMap(job)) continue;
+    const needs = job.get("needs", true);
+    if (isScalar(needs) && needs.value === from) needs.value = to;
+    if (isSeq(needs))
+      for (const entry of needs.items)
+        if (isScalar(entry) && entry.value === from) entry.value = to;
+  }
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function renameNeedsReferences(text: string, from: string, to: string): string {
+  const id = escapeRegExp(from);
+  const reference = new RegExp(
+    `(?<![\\w.'"-])needs(?:\\.${id}(?![\\w-])|\\[\\s*(['"])${id}\\1\\s*\\])`,
+    "g",
+  );
+  return text.replace(reference, (_match, quote?: string) =>
+    quote === undefined ? `needs.${to}` : `needs[${quote}${to}${quote}]`,
+  );
+}
+
+function renameNeedsExpressions(
+  document: Document,
+  from: string,
+  to: string,
+): void {
+  visit(document, {
+    Scalar(key, node, path) {
+      if (key === "key" || !isText(node.value)) return;
+      const parent = path.at(-1);
+      const wholeExpression =
+        isPair(parent) && isScalar(parent.key) && parent.key.value === "if";
+      node.value = wholeExpression
+        ? renameNeedsReferences(node.value, from, to)
+        : node.value.replace(/\$\{\{[\s\S]*?\}\}/g, (expression) =>
+            renameNeedsReferences(expression, from, to),
+          );
+    },
+  });
+}
+
+/** Renames the job `from` to `to` in every `needs` list and every `needs.<id>` or `needs['<id>']` expression of `document`. */
+export function renameJobReferences(
+  document: Document,
+  from: string,
+  to: string,
+): void {
+  renameNeeds(document, from, to);
+  renameNeedsExpressions(document, from, to);
+}

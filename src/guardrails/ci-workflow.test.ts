@@ -155,7 +155,7 @@ test("renaming the caller to ci also rewrites needs.<old-id> in if, env and run 
 });
 
 test("a conformant caller is returned byte for byte, comments and extra jobs included", () => {
-  const text = `# keep me\nname: ci\n${ciTriggers}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: true\n      docs-files: README.md # docs\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n  deploy:\n    needs: ci\n    runs-on: ubuntu-latest\n    steps: []\n`;
+  const text = `# keep me\nname: ci\n${ciTriggers}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: true\n      docs-files: README.md # docs\n    secrets:\n      NOTION_TOKEN: \${{ secrets.NOTION_TOKEN }}\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n  deploy:\n    needs: ci\n    runs-on: ubuntu-latest\n    steps: []\n`;
   assert.equal(rewrite(text), text);
   assert.equal(rewrite(CI_CALLER), CI_CALLER);
 });
@@ -237,7 +237,7 @@ test("a caller without the test-job input gets test-job: true, with or without a
 });
 
 test("a caller that sets test-job itself keeps its value, so a repository can opt out", () => {
-  const optOut = `${ciTriggers}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: false\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n`;
+  const optOut = `${ciTriggers}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: false\n    secrets:\n      NOTION_TOKEN: \${{ secrets.NOTION_TOKEN }}\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n`;
   assert.equal(rewrite(optOut), optOut);
 });
 
