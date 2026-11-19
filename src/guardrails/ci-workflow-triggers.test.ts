@@ -81,10 +81,10 @@ test("a trunk caller from 0.8.5 gains label events and its ci job stays uncondit
   assert.equal(parseDocument(rewritten).toJS().jobs.ci.if, undefined);
 });
 
-test("cloud keeps its develop integration branch and gets no merge queue, so a sync that moves every package to trunk or drops the profile fails", () => {
+test("cloud keeps its develop integration branch and gets no merge queue, and its pull requests rerun on label events so ci:full applies, so a sync that moves every package to trunk, drops the profile or omits labeled and unlabeled fails", () => {
   const cloud = ciProfile("@antelopejs-private/cloud");
   const develop: TriggersView = {
-    pull_request: { types: PULL_REQUEST_TYPES },
+    pull_request: { types: [...PULL_REQUEST_TYPES, "labeled", "unlabeled"] },
     push: { branches: ["develop"] },
     schedule: TRUNK_TRIGGERS.schedule,
     workflow_dispatch: null,
