@@ -7,7 +7,6 @@ import { sharedWorkflow } from "./workflow.ts";
 
 const WORKFLOWS = ".github/workflows";
 export const RELEASE_PATH = `${WORKFLOWS}/release.yml`;
-export const NEXT_SYNC_PATH = `${WORKFLOWS}/next-sync.yml`;
 
 const RELEASE_CALLER =
   /^AntelopeJS\/\.github\/\.github\/workflows\/release-npm-(public|private)\.yml@\S+$/;
@@ -28,30 +27,6 @@ interface ReleaseCallers {
   files: Map<string, string>;
   dropped: string[];
   errors: string[];
-}
-
-/** The caller of next-sync.yml, which merges `main` into `branch` after each push to `main` or a manual dispatch; next-sync.yml needs `issues: write`. */
-export function nextSyncCaller(branch: string): string {
-  const inputs =
-    branch === "next" ? "" : `    with:\n      branch: ${branch}\n`;
-  return `name: Next sync
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-permissions: {}
-
-jobs:
-  next-sync:
-    permissions:
-      issues: write
-    uses: ${sharedWorkflow("next-sync.yml")}
-${inputs}    secrets:
-      RELEASE_GITHUB_TOKEN: \${{ secrets.RELEASE_GITHUB_TOKEN }}
-      NOTION_TOKEN: \${{ secrets.NOTION_TOKEN }}
-`;
 }
 
 function normalizeDirectory(path: string): string {
@@ -247,15 +222,12 @@ function releaseJob(release: ReleasePackage, several: boolean): string {
 }
 
 /**
- * The release.yml that publishes `packages`: a preview of each on every push to `branch`, and the stable version the
+ * The release.yml that publishes `packages`: a preview of each on every push to `main`, and the stable version the
  * release train dispatches on the default branch with `release-version`, `release-commit`, `dependency-ranges` and, when a package is
  * not at the root, `package-directory`. With several packages, each has its own job, which a dispatch runs only for
  * the `package-directory` it names.
  */
-function releaseCaller(
-  packages: readonly ReleasePackage[],
-  branch: string,
-): string {
+function releaseCaller(packages: readonly ReleasePackage[]): string {
   const several = packages.length > 1;
   const nested = packages.some(({ directory }) => directory !== ".");
   const directoryInput = nested
@@ -272,7 +244,7 @@ function releaseCaller(
 
 on:
   push:
-    branches: [${branch}]
+    branches: [main]
   workflow_dispatch:
     inputs:
       release-version:
@@ -303,10 +275,7 @@ ${packages.map((release) => releaseJob(release, several)).join("\n")}`;
  * `services-compose-file`) and jobs besides the callers, such as a metadata `validate` job, are dropped and named in
  * a note. A repository with no release caller publishes nothing, and nothing is written.
  */
-export function releaseArtifacts(
-  root: string,
-  branch: string,
-): PlannedArtifact[] {
+export function releaseArtifacts(root: string): PlannedArtifact[] {
   const found = releaseCallers(root);
   if (found.errors.length)
     return found.errors.map((message) => ({
@@ -315,7 +284,7 @@ export function releaseArtifacts(
       message,
     }));
   if (!found.packages.length) return [];
-  const content = releaseCaller(found.packages, branch);
+  const content = releaseCaller(found.packages);
   const removed = [...found.files.keys()].filter(
     (file) => file !== RELEASE_PATH,
   );

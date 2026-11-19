@@ -20,6 +20,7 @@ function rewrite(text: string, profile?: CiProfile): string {
 
 interface TriggersView {
   pull_request?: { types?: string[] };
+  merge_group?: null;
   push?: { branches?: string[] };
   schedule?: { cron: string }[];
   workflow_dispatch?: null;
@@ -33,20 +34,19 @@ function withInputs(text: string): Record<string, string | boolean> {
   return parseDocument(text).toJS().jobs.ci.with ?? {};
 }
 
-function threeTier(branch: string): TriggersView {
-  return {
-    pull_request: {
-      types: ["opened", "synchronize", "reopened", "ready_for_review"],
-    },
-    push: { branches: [branch] },
-    schedule: [{ cron: "17 2 * * *" }],
-    workflow_dispatch: null,
-  };
-}
+const TRUNK_TRIGGERS: TriggersView = {
+  pull_request: {
+    types: ["opened", "synchronize", "reopened", "ready_for_review"],
+  },
+  merge_group: null,
+  push: { branches: ["main"] },
+  schedule: [{ cron: "17 2 * * *" }],
+  workflow_dispatch: null,
+};
 
 const WINDOWS_CALLER = `jobs:\n  ci:\n    uses: ${CI_NODE_REF}\n    with:\n      windows: true\n      windows-pull-requests: true\n`;
 
-test("a caller declares exactly the three-tier triggers whatever it had, so a rewrite that keeps a push to main or only adds dispatch fails", () => {
+test("a caller declares exactly the trunk triggers whatever it had, so a rewrite that keeps a push to next, drops merge_group or only adds dispatch fails", () => {
   const priors = [
     "on: push",
     "on: [push, pull_request]",
@@ -56,21 +56,28 @@ test("a caller declares exactly the three-tier triggers whatever it had, so a re
   for (const prior of priors)
     assert.deepEqual(
       triggers(rewrite(`${prior}\njobs:\n  ci:\n    uses: ${CI_NODE_REF}\n`)),
-      threeTier("next"),
+      TRUNK_TRIGGERS,
       prior,
     );
-  assert.deepEqual(triggers(CI_CALLER), threeTier("next"));
+  assert.deepEqual(triggers(CI_CALLER), TRUNK_TRIGGERS);
+  assert.doesNotMatch(CI_CALLER, /\bnext\b|develop/);
 });
 
-test("cloud pushes on develop and every other package on next, so a profile table that ignores the package name fails", () => {
+test("cloud gets the trunk triggers of every other package, so a profile that still sends cloud to develop fails", () => {
   const cloud = ciProfile("@antelopejs-private/cloud");
-  assert.deepEqual(triggers(rewrite(CI_CALLER, cloud)), threeTier("develop"));
-  assert.deepEqual(
-    triggers(ciWorkflow(undefined, [], [], { profile: cloud })),
-    threeTier("develop"),
+  assert.deepEqual(triggers(rewrite(CI_CALLER, cloud)), TRUNK_TRIGGERS);
+  const fresh = ciWorkflow(undefined, [], [], { profile: cloud });
+  assert.deepEqual(triggers(fresh), TRUNK_TRIGGERS);
+  assert.doesNotMatch(fresh, /\bnext\b|develop/);
+});
+
+test("a second rewrite of the trunk triggers changes nothing, so a merge_group with a null value that does not round-trip fails", () => {
+  const once = rewrite(
+    "on: push\njobs:\n  ci:\n    uses: " + CI_NODE_REF + "\n",
   );
-  for (const name of ["@antelopejs/mongodb", "toString", undefined])
-    assert.equal(ciProfile(name).integrationBranch, "next", name);
+  assert.match(once, /\n {2}merge_group:\n/);
+  assert.equal(rewrite(once), once);
+  assert.equal(rewrite(CI_CALLER), CI_CALLER);
 });
 
 test("the comments of replaced triggers go with them and a dedented comment under the last trigger stays above permissions, which a rewrite that replaces on before restoring empty-value comments drops", () => {
@@ -130,17 +137,19 @@ test("a caller whose only input asked for Windows loses its with block rather th
   assert.equal(parseDocument(rewritten).toJS().jobs.other.with, undefined);
 });
 
-test("sync --check passes a repository with no next branch and fails a caller that still pushes on main", (t) => {
+test("a synced ci.yml triggers on the merge queue and pushes only to main, and sync --check fails a caller that still pushes on next", (t) => {
   const root = testRepo(t, false);
   assert.equal(bin(root, "sync").status, 0);
   commit(root);
   const branches = bin(root, "sync", ["--check"]);
   assert.equal(branches.status, 0, branches.stdout);
   const synced = read(root, ".github/workflows/ci.yml");
+  assert.deepEqual(triggers(synced), TRUNK_TRIGGERS);
+  assert.doesNotMatch(synced, /\bnext\b/);
   put(
     root,
     ".github/workflows/ci.yml",
-    synced.replace("branches: [next]", "branches: [main, next]"),
+    synced.replace("branches: [main]", "branches: [main, next]"),
   );
   commit(root);
   const drift = bin(root, "sync", ["--check"]);

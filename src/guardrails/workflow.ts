@@ -15,7 +15,7 @@ export function sharedWorkflow(file: string): string {
 
 /** A `uses:` line calling a shared workflow the tag ships; one it does not ship, such as the retired modules-update.yml, keeps its ref. */
 const SHARED_USES =
-  /^(\s*(?:-\s+)?uses:\s*["']?)(AntelopeJS\/\.github\/\.github\/workflows\/(?:ci-node|ci-renovate-sync|next-sync|release-npm-public|release-npm-private|stale)\.yml@)([^\s"'#]+)/gm;
+  /^(\s*(?:-\s+)?uses:\s*["']?)(AntelopeJS\/\.github\/\.github\/workflows\/(?:ci-node|ci-renovate-sync|release-npm-public|release-npm-private)\.yml@)([^\s"'#]+)/gm;
 
 const MAJOR_TAG = /^v(\d+)$/;
 
@@ -45,6 +45,37 @@ const CI_NODE_PATTERN =
   /^AntelopeJS\/\.github\/\.github\/workflows\/ci-node\.yml@\S+$/;
 const CI_RENOVATE_SYNC_PATTERN =
   /^AntelopeJS\/\.github\/\.github\/workflows\/ci-renovate-sync\.yml@\S+$/;
+
+/** The shared workflows the trunk-based flow retires: a caller file whose jobs all call them is deleted, a file with any other job only stops being pinned. */
+const RETIRED_SHARED_WORKFLOWS = ["next-sync.yml", "stale.yml"] as const;
+
+const RETIRED_CALL = new RegExp(
+  `^AntelopeJS/\\.github/\\.github/workflows/(?:${RETIRED_SHARED_WORKFLOWS.map((file) => file.replace(".", "\\.")).join("|")})@\\S+$`,
+);
+
+function callsOnlyRetiredWorkflows(text: string): boolean {
+  const document = parseDocument(text);
+  const jobs = document.errors.length ? undefined : document.get("jobs", true);
+  if (!isMap(jobs) || !jobs.items.length) return false;
+  return jobs.items.every(({ value: job }) => {
+    const uses = isMap(job) ? job.get("uses", true) : undefined;
+    return isScalar(uses) && RETIRED_CALL.test(String(uses.value));
+  });
+}
+
+/** A `remove` for every workflow file whose jobs all call a retired shared workflow, at any ref. */
+export function retiredWorkflowArtifacts(root: string): PlannedArtifact[] {
+  const directory = join(root, ".github/workflows");
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory)
+    .filter((name) => /\.ya?ml$/.test(name))
+    .sort()
+    .map((name) => `.github/workflows/${name}`)
+    .filter((path) =>
+      callsOnlyRetiredWorkflows(readFileSync(join(root, path), "utf8")),
+    )
+    .map((path): PlannedArtifact => ({ kind: "remove", path }));
+}
 
 /** Moves the shared-workflow calls of each workflow file no other artifact of `planned` writes or removes to the tag. */
 export function sharedRefArtifacts(

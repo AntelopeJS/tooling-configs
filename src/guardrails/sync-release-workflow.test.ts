@@ -5,8 +5,10 @@ import test from "node:test";
 import { parseDocument } from "yaml";
 
 import { bin, formatCheck, put, read, testRepo } from "./helpers/test-repo.ts";
-import { NEXT_SYNC_PATH, RELEASE_PATH } from "./release-workflow.ts";
+import { RELEASE_PATH } from "./release-workflow.ts";
 import { syncRepository } from "./sync.ts";
+
+const NEXT_SYNC = ".github/workflows/next-sync.yml";
 
 const OLD_DISPATCH = `on:
   workflow_dispatch:
@@ -144,7 +146,7 @@ test("a public caller on the channel interface becomes the release-train caller 
   const result = syncRepository(root);
   assert.deepEqual(result.errors, []);
   const synced = release(root);
-  assert.deepEqual(synced.on.push, { branches: ["next"] });
+  assert.deepEqual(synced.on.push, { branches: ["main"] });
   assert.deepEqual(Object.keys(synced.on.workflow_dispatch.inputs), [
     "release-version",
     "release-commit",
@@ -264,44 +266,81 @@ test("a caller whose package-directory reads a choice input releases each choice
   );
 });
 
-test("a repository with no release caller gets no release.yml, and every full-profile repository gets the next-sync caller with issues: write at @v2", (t) => {
+test("a repository with no release caller gets no release.yml and no next-sync caller, so a sync that still writes the retired caller fails", (t) => {
   const root = repoWith(t, {});
   syncRepository(root);
   assert.equal(existsSync(join(root, RELEASE_PATH)), false);
-  const nextSync = parseDocument(read(root, NEXT_SYNC_PATH)).toJS();
-  assert.deepEqual(nextSync.on, {
-    push: { branches: ["main"] },
-    workflow_dispatch: null,
-  });
-  assert.deepEqual(nextSync.permissions, {});
-  assert.deepEqual(nextSync.jobs["next-sync"].permissions, { issues: "write" });
-  assert.equal(
-    nextSync.jobs["next-sync"].uses,
-    "AntelopeJS/.github/.github/workflows/next-sync.yml@v2",
-  );
-  assert.equal(nextSync.jobs["next-sync"].with, undefined);
-  assert.equal(formatCheck(root, [NEXT_SYNC_PATH]).status, 0);
+  assert.equal(existsSync(join(root, NEXT_SYNC)), false);
 });
 
-test("cloud syncs develop into the next-sync input and the preview trigger, so a sync that hard-codes next fails", (t) => {
+test("cloud's release preview pushes on main like every other package, so a sync that sends it to develop fails", (t) => {
   const root = repoWith(
     t,
     { [RELEASE_PATH]: MONGODB },
     "@antelopejs-private/cloud",
   );
   syncRepository(root);
-  const nextSync = parseDocument(read(root, NEXT_SYNC_PATH)).toJS();
-  assert.deepEqual(nextSync.jobs["next-sync"].with, { branch: "develop" });
-  assert.deepEqual(release(root).on.push, { branches: ["develop"] });
+  assert.deepEqual(release(root).on.push, { branches: ["main"] });
+  assert.doesNotMatch(read(root, RELEASE_PATH), /\bnext\b|develop/);
 });
 
-test("a scaffold synced under the template profile gets no next-sync caller, since a project made from it has no next branch", (t) => {
+test("a scaffold synced under the template profile gets no next-sync caller", (t) => {
   const root = repoWith(t, {});
   syncRepository(root, { profile: "template" });
-  assert.equal(existsSync(join(root, NEXT_SYNC_PATH)), false);
+  assert.equal(existsSync(join(root, NEXT_SYNC)), false);
 });
 
-test("sync:check, on a repository without a next branch, fails a release caller or next-sync caller on another ref and passes once synced", (t) => {
+const NEXT_SYNC_CALLER = (ref: string) =>
+  `name: Next sync\non:\n  push:\n    branches: [main]\n  workflow_dispatch:\npermissions: {}\njobs:\n  next-sync:\n    permissions:\n      issues: write\n    uses: AntelopeJS/.github/.github/workflows/next-sync.yml@${ref}\n    secrets:\n      RELEASE_GITHUB_TOKEN: \${{ secrets.RELEASE_GITHUB_TOKEN }}\n`;
+const STALE_CALLER = (ref: string) =>
+  `name: Stale issues\non:\n  schedule:\n    - cron: "30 1 * * *"\npermissions: {}\njobs:\n  stale:\n    permissions:\n      issues: write\n    uses: AntelopeJS/.github/.github/workflows/stale.yml@${ref}\n`;
+const STALE = ".github/workflows/stale.yml";
+
+test("sync deletes a next-sync.yml and a stale.yml that only call the shared workflows, at any ref, and a second sync has nothing left to remove, so a sync that keeps them or fails to converge fails", (t) => {
+  const root = repoWith(t, {
+    [NEXT_SYNC]: NEXT_SYNC_CALLER("v1"),
+    [STALE]: STALE_CALLER("v2"),
+    ".github/workflows/old-name.yaml": STALE_CALLER("abc123"),
+  });
+  const result = syncRepository(root);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(
+    result.removed.sort(),
+    [NEXT_SYNC, ".github/workflows/old-name.yaml", STALE].sort(),
+  );
+  for (const path of result.removed)
+    assert.equal(existsSync(join(root, path)), false, path);
+  const again = syncRepository(root);
+  assert.deepEqual(again.removed, []);
+  assert.equal(syncRepository(root, { check: true }).paths.length, 0);
+});
+
+test("a workflow that calls a retired shared workflow beside another job is kept and no longer pinned, so a sync that deletes the whole file or re-pins it fails", (t) => {
+  const mixed = `${STALE_CALLER("v1")}  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo lint\n`;
+  const root = repoWith(t, { [STALE]: mixed });
+  const result = syncRepository(root);
+  assert.deepEqual(result.removed, []);
+  assert.equal(read(root, STALE), mixed);
+});
+
+test("sync --check reports a leftover next-sync caller and stale caller as drift and passes once they are gone, so a check that ignores retired callers fails", (t) => {
+  const root = repoWith(t, {
+    [NEXT_SYNC]: NEXT_SYNC_CALLER("v2"),
+    [STALE]: STALE_CALLER("v2"),
+  });
+  assert.equal(bin(root, "sync").status, 0);
+  put(root, NEXT_SYNC, NEXT_SYNC_CALLER("v2"));
+  put(root, STALE, STALE_CALLER("v1"));
+  const check = bin(root, "sync", ["--check"]);
+  assert.equal(check.status, 1);
+  assert.match(check.stdout, /Drift: \.github\/workflows\/next-sync\.yml/);
+  assert.match(check.stdout, /Drift: \.github\/workflows\/stale\.yml/);
+  assert.equal(existsSync(join(root, NEXT_SYNC)), true);
+  assert.equal(bin(root, "sync").status, 0);
+  assert.equal(bin(root, "sync", ["--check"]).status, 0);
+});
+
+test("sync:check fails a release caller on an older ref and passes once synced", (t) => {
   const root = repoWith(t, {
     [RELEASE_PATH]: MONGODB,
     ".github/workflows/ci.yml":
@@ -310,29 +349,29 @@ test("sync:check, on a repository without a next branch, fails a release caller 
   assert.equal(bin(root, "sync").status, 0);
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
   assert.match(read(root, ".github/workflows/ci.yml"), /ci-node\.yml@v2\n/);
-  put(root, NEXT_SYNC_PATH, read(root, NEXT_SYNC_PATH).replace("@v2", "@v1"));
+  put(root, RELEASE_PATH, read(root, RELEASE_PATH).replace("@v2", "@v1"));
   const check = bin(root, "sync", ["--check"]);
   assert.equal(check.status, 1);
-  assert.match(check.stdout, /Drift: \.github\/workflows\/next-sync\.yml/);
+  assert.match(check.stdout, /Drift: \.github\/workflows\/release\.yml/);
 });
 
-test("every other workflow's call to a shared workflow the tag ships moves to @v2 byte for byte, and a retired one keeps its ref, so a sync that leaves stale.yml on @v1 or rewrites modules-update.yml fails", (t) => {
-  const stale = `name: Stale issues\non:\n  schedule:\n    - cron: "30 1 * * *"\npermissions: {}\njobs:\n  stale:\n    permissions:\n      issues: write\n    uses: AntelopeJS/.github/.github/workflows/stale.yml@v1 # daily\n`;
+test("every other workflow's call to a shared workflow the tag ships moves to @v2 byte for byte, and a retired one keeps its ref, so a sync that leaves ci-renovate-sync.yml on @v1 or rewrites modules-update.yml fails", (t) => {
+  const renovate = `name: Renovate sync\non:\n  schedule:\n    - cron: "30 1 * * *"\npermissions: {}\njobs:\n  sync:\n    permissions:\n      contents: write\n    uses: AntelopeJS/.github/.github/workflows/ci-renovate-sync.yml@v1 # daily\n`;
   const modules = `on: workflow_dispatch\njobs:\n  modules-update:\n    uses: AntelopeJS/.github/.github/workflows/modules-update.yml@v1\n`;
   const root = repoWith(t, {
-    ".github/workflows/stale.yml": stale,
+    ".github/workflows/renovate-sync.yml": renovate,
     ".github/workflows/modules-update.yml": modules,
   });
   assert.equal(
     syncRepository(root, { check: true }).paths.includes(
-      ".github/workflows/stale.yml",
+      ".github/workflows/renovate-sync.yml",
     ),
     true,
   );
   syncRepository(root);
   assert.equal(
-    read(root, ".github/workflows/stale.yml"),
-    stale.replace("stale.yml@v1", "stale.yml@v2"),
+    read(root, ".github/workflows/renovate-sync.yml"),
+    renovate.replace("ci-renovate-sync.yml@v1", "ci-renovate-sync.yml@v2"),
   );
   assert.equal(read(root, ".github/workflows/modules-update.yml"), modules);
   assert.equal(syncRepository(root, { check: true }).paths.length, 0);

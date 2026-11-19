@@ -36,21 +36,17 @@ export const CI_RENOVATE_SYNC_REF = sharedWorkflow("ci-renovate-sync.yml");
 
 /** How a repository's caller departs from the shared triggers and inputs. */
 export interface CiProfile {
-  /** The branch whose pushes run the full set: `next`, or `develop` in cloud. */
-  integrationBranch: string;
   /** Whether the caller may keep the `windows: true` and `windows-pull-requests` inputs that ask ci-node.yml for Windows on pull requests. */
   windowsOnPullRequests: boolean;
 }
 
 const DEFAULT_PROFILE: CiProfile = {
-  integrationBranch: "next",
   windowsOnPullRequests: false,
 };
 
 const PROFILES = new Map<string, Partial<CiProfile>>([
   ["@antelopejs/core", { windowsOnPullRequests: true }],
   ["cloud-sdk-workspace", { windowsOnPullRequests: true }],
-  ["@antelopejs-private/cloud", { integrationBranch: "develop" }],
 ]);
 
 /** The CI profile of the repository whose package.json is named `name`; the default for any other name. */
@@ -59,25 +55,24 @@ export function ciProfile(name: string | undefined): CiProfile {
 }
 
 /**
- * The triggers of the three-tier CI: ci-node.yml picks the tier from the event, the target branch and the draft flag,
- * so a caller only declares pull requests (draft to ready included), pushes to the integration branch, a nightly run
- * and manual dispatch. A push to `main` runs nothing.
+ * The triggers of the trunk-based CI: ci-node.yml picks the tier from the event, so a caller declares pull requests
+ * (draft to ready included), the merge queue's `merge_group` run that gates every merge into `main`, pushes to `main`,
+ * a nightly run and manual dispatch. There is no integration branch.
  */
-export function ciTriggers(integrationBranch: string): string {
-  return `on:
+export const ciTriggers = `on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
   push:
-    branches: [${integrationBranch}]
+    branches: [main]
   schedule:
     - cron: "17 2 * * *"
   workflow_dispatch:
 `;
-}
 
 export const CI_CALLER = `name: ci
 
-${ciTriggers(DEFAULT_PROFILE.integrationBranch)}
+${ciTriggers}
 permissions:
   contents: read
 
@@ -197,8 +192,8 @@ function triggersOf(document: Document): string {
   return JSON.stringify(isNode(node) ? node.toJS(document) : node);
 }
 
-function setTriggers(document: Document, profile: CiProfile): boolean {
-  const desired = parseDocument(ciTriggers(profile.integrationBranch));
+function setTriggers(document: Document): boolean {
+  const desired = parseDocument(ciTriggers);
   if (triggersOf(document) === triggersOf(desired)) return false;
   document.set("on", desired.get("on", true));
   return true;
@@ -500,7 +495,7 @@ export function callerPlan(manifest: {
  * when the workflow has no other job besides the caller and the Renovate sync, since the shared workflow already
  * reports `ci / checks` and each `needs` hop adds to the critical path. A gate that also covers repository-specific
  * jobs is kept.
- * The workflow declares exactly the triggers of the three-tier CI, with pushes to `profile.integrationBranch`. Unless
+ * The workflow declares exactly the `ciTriggers` of the trunk-based CI: pull requests, the merge queue, pushes to `main`, the nightly run and dispatch. Unless
  * `profile.windowsOnPullRequests` lets the repository ask for Windows on pull requests, no caller passes
  * `windows-pull-requests` or a `windows` other than the opt-out `false`. Sync writes neither input.
  * Every job calling ci-node.yml or ci-renovate-sync.yml calls it at `CI_NODE_REF` or `CI_RENOVATE_SYNC_REF`, whatever
@@ -549,7 +544,7 @@ export function ciWorkflow(
   changed = ensureSyncJob(document, jobs, syncCallers) || changed;
   const removed = dropRedundantAggregator(jobs, syncCallers);
   changed = removed.length > 0 || changed;
-  changed = setTriggers(document, profile) || changed;
+  changed = setTriggers(document) || changed;
   const stale = staleNeeds(document, CI_PATH, removed);
   if (stale.length) throw new Error(stale.join("\n"));
   if (!changed) return current;
