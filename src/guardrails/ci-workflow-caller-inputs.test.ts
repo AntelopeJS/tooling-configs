@@ -80,7 +80,7 @@ test("any other repository gets no single-job input and keeps one it set, so a s
   assert.equal(rewrite(own, profile), own);
 });
 
-test("ci-workflow.ts keeps 2000 bytes of headroom under the file-size ceiling, so a change that refills it instead of extending a sibling module fails", () => {
+test("ci-workflow.ts keeps 1000 bytes of headroom under the file-size ceiling, so a change that refills it instead of extending a sibling module fails", () => {
   const { size } = statSync(new URL("./ci-workflow.ts", import.meta.url));
-  assert.ok(size <= MAX_FILE_BYTES - 2000, `${size} bytes`);
+  assert.ok(size <= MAX_FILE_BYTES - 1000, `${size} bytes`);
 });

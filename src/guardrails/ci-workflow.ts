@@ -410,7 +410,7 @@ export function callerPlan(manifest: {
  * Keeps the shared CI caller on the job id `ci` with no `name`, so the shared workflow reports `ci / checks`,
  * dispatchable and read-only, with the Renovate sync it would otherwise run turned off. The write permissions the sync
  * needs to push and dispatch the caller live on a separate job calling ci-renovate-sync.yml, which is added when missing.
- * A caller without a `test-job` input gets `test-job: true`, which runs the tests in their own job, or `false` when
+ * A caller without a `test-job` input gets `test-job: true`, which ci-node.yml v2 accepts and ignores, or `false` when
  * `placeholderTests` says the `test` script only stands in for tests; that case also turns an existing `true` off. Any
  * other explicit value is left as the repository set it. The caller passes the `NOTION_TOKEN` secret, which ci-node.yml
  * files a flaky-test task with, and `single-job: false` when `profile.singleJob` is off.
