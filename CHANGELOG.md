@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.6
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.5...v0.8.6)
+
+### 🚀 Enhancements
+
+- **sync:** Run pull request CI on label changes so ci:full starts the full tier ([#427](https://github.com/AntelopeJS/tooling-configs/pull/427))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.8.5
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.4...v0.8.5)
