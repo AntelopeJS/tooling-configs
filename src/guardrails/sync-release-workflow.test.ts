@@ -112,6 +112,7 @@ jobs:
 interface ReleaseView {
   on: {
     push: { branches: string[] };
+    pull_request: { types: string[] };
     workflow_dispatch: { inputs: Record<string, { default?: string }> };
   };
   permissions: Record<string, string>;
@@ -171,6 +172,28 @@ test("a public caller on the channel interface becomes the release-train caller 
   });
   assert.ok(result.notes.some((note) => note.includes("input channel")));
   assert.equal(syncRepository(root, { check: true }).paths.length, 0);
+});
+
+test("a labelled pull request republishes its preview on each push: release.yml runs on labeled, synchronize and reopened, and every job of a workspace admits it, so a caller with no pull_request trigger or a push-only gate leaves the preview label without effect", (t) => {
+  const single = repoWith(t, { [RELEASE_PATH]: BREVO_PRIVATE });
+  syncRepository(single);
+  const workspace = repoWith(t, {
+    [RELEASE_PATH]: MONGODB,
+    ".github/workflows/release-sub.yml": VALIDATED(
+      "release-npm-public.yml",
+      "packages/sub",
+    ),
+  });
+  syncRepository(workspace);
+  for (const root of [single, workspace])
+    assert.deepEqual(release(root).on.pull_request, {
+      types: ["labeled", "synchronize", "reopened"],
+    });
+  for (const job of Object.values(release(workspace).jobs))
+    assert.match(
+      job.if ?? "",
+      /^github\.event_name != 'workflow_dispatch' \|\| /,
+    );
 });
 
 test("a DMS caller drops its validate job and its SHA pin, and names the job in a note, so a sync that leaves a job reading inputs.channel fails", (t) => {
@@ -237,11 +260,11 @@ test("a workspace with an interface caller in another file gets one release.yml 
     ),
     {
       "release-packages-dms-mailing": [
-        "github.event_name == 'push' || inputs.package-directory == 'packages/dms-mailing'",
+        "github.event_name != 'workflow_dispatch' || inputs.package-directory == 'packages/dms-mailing'",
         "packages/dms-mailing",
       ],
       "release-packages-interface-dms-mailing": [
-        "github.event_name == 'push' || inputs.package-directory == 'packages/interface-dms-mailing'",
+        "github.event_name != 'workflow_dispatch' || inputs.package-directory == 'packages/interface-dms-mailing'",
         "packages/interface-dms-mailing",
       ],
     },
@@ -422,7 +445,7 @@ test("a root package beside a nested one runs on a train dispatch that leaves pa
   syncRepository(root);
   assert.equal(
     release(root).jobs["release-root"].if,
-    "github.event_name == 'push' || inputs.package-directory == '' || inputs.package-directory == '.'",
+    "github.event_name != 'workflow_dispatch' || inputs.package-directory == '' || inputs.package-directory == '.'",
   );
 });
 
