@@ -224,7 +224,7 @@ async function checksStatus(
   context: GardenContext,
   repo: GardenRepo,
 ): Promise<Finding[]> {
-  const branch = await context.targetBranch(repo);
+  const branch = repo.defaultBranch;
   const [latest] = (await context.branchRuns(repo, "ci.yml", branch)) ?? [];
   const runs = (
     await context.checkRuns(repo, latest?.headSha || branch)

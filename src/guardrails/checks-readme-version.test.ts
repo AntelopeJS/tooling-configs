@@ -121,9 +121,10 @@ function registry(t: TestContext, latest: string): Promise<string> {
   return stubRegistry(t, { "@antelopejs/mongodb": latest });
 }
 
-function checksWith(root: string, registryUrl: string) {
+function checksWith(root: string, registryUrl: string, tier?: string) {
   return binAsync(root, "checks", ["--no-services"], {
     ANTELOPEJS_CHECKS_SKIP: OTHER_STEPS,
+    ANTELOPEJS_CI_TIER: tier,
     npm_config_registry: registryUrl,
     NPM_CONFIG_REGISTRY: registryUrl,
   });
@@ -155,6 +156,25 @@ test("an example of another @antelopejs package with a tilde on its newest minor
   const result = await checksWith(root, await registry(t, "1.4.2"));
   assert.equal(result.status, 0, result.stdout);
   assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 9 skipped.\n");
+});
+
+test("the draft, fast and full tiers skip readme:version because it reads the registry's latest, and the queue and nightly tiers and no tier run it, caught by an implementation that leaves it out of the registry steps or skips it on the merge queue", async (t) => {
+  const root = moduleRepo(t, "0.0.9", example("~1.3.0", "@antelopejs/mongodb"));
+  const url = await registry(t, "1.4.2");
+  for (const tier of ["draft", "fast", "full"]) {
+    const result = await checksWith(root, url, tier);
+    assert.equal(result.status, 0, `${tier}: ${result.stdout}`);
+    assert.equal(
+      result.stdout,
+      "Checks: 0 passed, 0 failed, 10 skipped.\n",
+      tier,
+    );
+  }
+  for (const tier of ["queue", "nightly", undefined]) {
+    const result = await checksWith(root, url, tier);
+    assert.equal(result.status, 1, `${tier}: ${result.stdout}`);
+    assert.match(result.stdout, /\[readme:version\]\n/);
+  }
 });
 
 test("an example of an @antelopejs package the registry does not list fails and names the registry, caught by an implementation that passes a range it could not check", async (t) => {

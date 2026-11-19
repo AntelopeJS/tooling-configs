@@ -31,7 +31,7 @@ const AGGREGATOR = `  checks:
 `;
 
 const HEAD = `name: ci
-${ciTriggers("next")}permissions:
+${ciTriggers}permissions:
   contents: read
 jobs:
   ci:

@@ -31,9 +31,7 @@ interface ReleaseCallers {
 }
 
 /** The caller of next-sync.yml, which merges `main` into `branch` after each push to `main` or a manual dispatch; next-sync.yml needs `issues: write`. */
-export function nextSyncCaller(branch: string): string {
-  const inputs =
-    branch === "next" ? "" : `    with:\n      branch: ${branch}\n`;
+function nextSyncCaller(branch: string): string {
   return `name: Next sync
 
 on:
@@ -48,10 +46,25 @@ jobs:
     permissions:
       issues: write
     uses: ${sharedWorkflow("next-sync.yml")}
-${inputs}    secrets:
+    with:
+      branch: ${branch}
+    secrets:
       RELEASE_GITHUB_TOKEN: \${{ secrets.RELEASE_GITHUB_TOKEN }}
       NOTION_TOKEN: \${{ secrets.NOTION_TOKEN }}
 `;
+}
+
+/** The next-sync.yml of a repository with an integration branch, which keeps that branch level with `main`; a trunk repository has none. */
+export function nextSyncArtifacts(
+  root: string,
+  integrationBranch: string | undefined,
+): PlannedArtifact[] {
+  if (integrationBranch === undefined) return [];
+  const content = nextSyncCaller(integrationBranch);
+  const path = join(root, NEXT_SYNC_PATH);
+  return existsSync(path) && readFileSync(path, "utf8") === content
+    ? [{ kind: "unchanged", path: NEXT_SYNC_PATH }]
+    : [{ kind: "write", path: NEXT_SYNC_PATH, content, mode: undefined }];
 }
 
 function normalizeDirectory(path: string): string {

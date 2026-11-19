@@ -57,7 +57,7 @@ function checks(root: string, url: string, tier?: string) {
   });
 }
 
-test("the draft and fast tiers skip dependency:ranges and published:types and the full and nightly tiers run them, where a step that ignores the tier calls the registry on every pull request and one that skips on any tier never runs", async (t) => {
+test("the draft, fast and full tiers skip dependency:ranges and published:types and the queue and nightly tiers run them, where a step that ignores the tier calls the registry on every pull request and one that skips on any tier, the merge queue included, never runs", async (t) => {
   const registry = await stubRegistry(t, {
     "@antelopejs/interface-database": "1.2.0",
   });
@@ -74,12 +74,12 @@ test("the draft and fast tiers skip dependency:ranges and published:types and th
   );
   put(typed, "index.d.ts", "export declare const value: number;\n");
   commit(typed);
-  for (const tier of ["draft", "fast"]) {
+  for (const tier of ["draft", "fast", "full"]) {
     const result = await checks(typed, registry, tier);
     assert.equal(result.status, 0, `${tier}: ${result.stdout}`);
     assert.match(result.stdout, /Checks: 9 passed, 0 failed, 2 skipped\./);
   }
-  for (const tier of ["full", "nightly"]) {
+  for (const tier of ["queue", "nightly"]) {
     const result = await checks(root, registry, tier);
     assert.equal(result.status, 1, `${tier}: ${result.stdout}`);
     assert.match(result.stdout, /\[dependency:ranges\]\n/);
@@ -488,7 +488,7 @@ test("an exact pin on a preview of the minor a DMS release implements passes che
           ),
         },
       ),
-      "full",
+      "queue",
     );
     assert.equal(result.status, 0, `${field}: ${result.stdout}`);
     assert.match(result.stdout, /Checks: 11 passed, 0 failed\./);
@@ -505,7 +505,7 @@ test("an exact pin on a preview behind the interface's newest minor fails checks
   const result = await checks(
     root,
     await stubRegistry(t, { [AUTOMATION]: "0.7.0" }),
-    "full",
+    "queue",
   );
   assert.equal(result.status, 1, result.stdout);
   assert.match(

@@ -37,7 +37,7 @@ function adoptedRepo(t: TestContext): string {
 }
 
 const DMS_22ED5906_GATE = `name: ci
-${ciTriggers("next")}permissions:
+${ciTriggers}permissions:
   contents: read
 jobs:
   checks:
@@ -65,7 +65,7 @@ jobs:
 `;
 
 const EXTRA_JOBS = `name: ci
-${ciTriggers("next")}permissions:
+${ciTriggers}permissions:
   contents: read
 jobs:
   ci:

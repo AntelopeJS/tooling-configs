@@ -111,10 +111,11 @@ test("a branch with no PR is pruned at 30 days without a commit and kept at 29",
   assert.deepEqual(await prunes(api), ["old: no commit since 2026-09-28"]);
 });
 
-test("the default branch, next and protected branches stay however old they are", async () => {
+test("the default branch, next, develop and protected branches stay however old they are", async () => {
   const api = world([
     { name: "main", days: 400 },
     { name: "next", days: 400 },
+    { name: "develop", days: 400 },
     { name: "release", days: 400, protected: true },
   ]);
   closed(api, "release", [{ number: 3, head: "release", merged: true }]);
