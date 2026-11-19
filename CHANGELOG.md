@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.9.1
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.9.0...v0.9.1)
+
+### 🚀 Enhancements
+
+- **garden:** Require the merge_queue rule in branch governance ([#434](https://github.com/AntelopeJS/tooling-configs/pull/434))
+- **garden:** Report flaky merge-queue tests and stop passing NOTION_TOKEN ([#435](https://github.com/AntelopeJS/tooling-configs/pull/435))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.9.0
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.9...v0.9.0)
