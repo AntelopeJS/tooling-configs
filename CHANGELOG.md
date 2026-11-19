@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.8.9
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.8...v0.8.9)
+
+### 🚀 Enhancements
+
+- **sync:** Pass affected-tests to callers whose package test scripts make up the suite ([#431](https://github.com/AntelopeJS/tooling-configs/pull/431))
+- **sync:** Publish a pull request preview from release.yml while the PR carries the preview label ([#432](https://github.com/AntelopeJS/tooling-configs/pull/432))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.8.8
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.8.7...v0.8.8)
