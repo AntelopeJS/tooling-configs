@@ -78,11 +78,11 @@ export const ciTriggers = `on:
   workflow_dispatch:
 `;
 
-/** The triggers of a repository with an integration branch: pull requests, pushes to `branch`, a nightly run and manual dispatch; a push to `main` runs nothing. */
+/** The triggers of a repository with an integration branch: pull requests (label changes included, so `ci:full` applies), pushes to `branch`, a nightly run and manual dispatch; a push to `main` runs nothing. */
 function integrationTriggers(branch: string): string {
   return `on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   push:
     branches: [${branch}]
   schedule:
