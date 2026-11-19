@@ -41,8 +41,6 @@ jobs:
     with:
       renovate-sync: false
       test-job: true
-    secrets:
-      NOTION_TOKEN: \${{ secrets.NOTION_TOKEN }}
   renovate-sync:
     if: >-
       github.event_name == 'pull_request' && startsWith(github.head_ref, 'renovate/') && github.event.pull_request.head.repo.full_name == github.repository

@@ -31,7 +31,6 @@ const RENOVATE_SYNC_GRANTS = {
 };
 export const CI_NODE_REF = sharedWorkflow("ci-node.yml");
 export const CI_RENOVATE_SYNC_REF = sharedWorkflow("ci-renovate-sync.yml");
-const NOTION_TOKEN = "${{ secrets.NOTION_TOKEN }}";
 
 /** How a repository's caller departs from the shared triggers and inputs. */
 export interface CiProfile {
@@ -112,8 +111,6 @@ jobs:
     with:
       renovate-sync: false
       test-job: true
-    secrets:
-      NOTION_TOKEN: ${NOTION_TOKEN}
   ${RENOVATE_SYNC_JOB_ID}:
     if: >-
       github.event_name == 'pull_request'
@@ -268,14 +265,11 @@ function setInput(
   return true;
 }
 
-/** Passes ci-node.yml the NOTION_TOKEN it files flaky-test tasks with; a caller with `secrets: inherit` already does. */
-function passNotionToken(document: Document, job: YAMLMap): boolean {
+/** Stops the caller passing the `NOTION_TOKEN` ci-node.yml ignores, whatever its value, and drops a `secrets` map that is left empty; `secrets: inherit` stays. */
+function dropNotionToken(job: YAMLMap): boolean {
   const secrets = job.get("secrets", true);
-  if (isScalar(secrets) && secrets.value === "inherit") return false;
-  if (isMap(secrets)) {
-    if (secrets.get("NOTION_TOKEN") === NOTION_TOKEN) return false;
-    secrets.set("NOTION_TOKEN", NOTION_TOKEN);
-  } else job.set("secrets", document.createNode({ NOTION_TOKEN }));
+  if (!isMap(secrets) || !secrets.delete("NOTION_TOKEN")) return false;
+  if (secrets.items.length === 0) job.delete("secrets");
   return true;
 }
 
@@ -290,7 +284,7 @@ function setCallerInputs(
     !profile.singleJob && setInput(document, job, "single-job", false);
   const affected =
     affectedTests === true && setInput(document, job, "affected-tests", true);
-  return passNotionToken(document, job) || singleJob || affected || testJob;
+  return dropNotionToken(job) || singleJob || affected || testJob;
 }
 
 /** The caller sync writes into a repository without one, its test job off when the `test` script is a placeholder. */
@@ -419,8 +413,8 @@ export function callerPlan(
  * needs to push and dispatch the caller live on a separate job calling ci-renovate-sync.yml, which is added when missing.
  * A caller without a `test-job` input gets `test-job: true`, which ci-node.yml v2 accepts and ignores, or `false` when
  * `placeholderTests` says the `test` script only stands in for tests; that case also turns an existing `true` off. Any
- * other explicit value is left as the repository set it. The caller passes the `NOTION_TOKEN` secret, which ci-node.yml
- * files a flaky-test task with, `single-job: false` when `profile.singleJob` is off, and `affected-tests: true` when
+ * other explicit value is left as the repository set it. A caller that passes the `NOTION_TOKEN` secret, which ci-node.yml v2
+ * ignores, no longer passes it, and `secrets: inherit` stays. The caller passes `single-job: false` when `profile.singleJob` is off, and `affected-tests: true` when
  * `affectedTests` is on. Where sync writes neither, a value the repository set stays.
  * A `checks` job that only re-aggregates the caller (`needs: [ci]`, steps that `exit` on `needs` results) is removed
  * when the workflow has no other job besides the caller and the Renovate sync, since the shared workflow already

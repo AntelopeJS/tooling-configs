@@ -38,20 +38,30 @@ function caller(text: string): CallerView {
   return parseDocument(text).toJS().jobs.ci;
 }
 
-test("every caller passes NOTION_TOKEN to ci-node.yml and keeps its other secrets, so a sync that leaves the merge queue unable to file a flaky-test task or drops a secret the repository passes fails", () => {
-  assert.deepEqual(caller(CI_CALLER).secrets, { NOTION_TOKEN });
+test("a new caller passes no secrets, so a sync that still writes NOTION_TOKEN into it fails", () => {
+  assert.equal(caller(CI_CALLER).secrets, undefined);
   const bare = `jobs:\n  ci:\n    uses: ${CI_NODE_REF}\n`;
-  assert.deepEqual(caller(rewrite(bare)).secrets, { NOTION_TOKEN });
-  const own = `jobs:\n  ci:\n    uses: ${CI_NODE_REF}\n    secrets:\n      NPM_TOKEN: \${{ secrets.NPM_TOKEN }}\n      NOTION_TOKEN: \${{ secrets.OTHER }}\n`;
-  assert.deepEqual(caller(rewrite(own)).secrets, {
-    NPM_TOKEN: "${{ secrets.NPM_TOKEN }}",
-    NOTION_TOKEN,
-  });
-  const once = rewrite(bare);
+  assert.equal(caller(rewrite(bare)).secrets, undefined);
+  assert.equal(caller(ciWorkflow(undefined, [], [])).secrets, undefined);
+});
+
+test("a caller that passed NOTION_TOKEN alone loses the secrets map and a rerun changes nothing, so a sync that keeps the token, leaves an empty map or rewrites on every run fails", () => {
+  const alone = `jobs:\n  ci:\n    uses: ${CI_NODE_REF}\n    secrets:\n      NOTION_TOKEN: \${{ secrets.OTHER }}\n`;
+  const once = rewrite(alone);
+  assert.equal(caller(once).secrets, undefined);
   assert.equal(rewrite(once), once);
 });
 
-test("a caller with secrets: inherit keeps it, since it already passes NOTION_TOKEN, so a sync that replaces it with one secret fails", () => {
+test("a caller that passed NOTION_TOKEN beside NPM_TOKEN keeps NPM_TOKEN only, so a sync that keeps the token or drops the other secret fails", () => {
+  const own = `jobs:\n  ci:\n    uses: ${CI_NODE_REF}\n    secrets:\n      NPM_TOKEN: \${{ secrets.NPM_TOKEN }}\n      NOTION_TOKEN: ${NOTION_TOKEN}\n`;
+  const once = rewrite(own);
+  assert.deepEqual(caller(once).secrets, {
+    NPM_TOKEN: "${{ secrets.NPM_TOKEN }}",
+  });
+  assert.equal(rewrite(once), once);
+});
+
+test("a caller with secrets: inherit keeps it, so a sync that removes it or replaces it with a map fails", () => {
   const inherit = `jobs:\n  ci:\n    uses: ${CI_NODE_REF}\n    secrets: inherit\n`;
   assert.equal(caller(rewrite(inherit)).secrets, "inherit");
 });
