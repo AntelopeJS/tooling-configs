@@ -76,10 +76,14 @@ test("--check names each missing skill file and link as drift and writes nothing
       check.stdout.includes(`Drift: ${linkPath(name)}; run antelopejs-sync\n`),
     );
   }
-  assert.equal(
-    lstatSync(join(root, ".agents/skills"), { throwIfNoEntry: false }),
-    undefined,
-  );
+  for (const path of SKILLS.flatMap((name) => [
+    skillPath(name),
+    linkPath(name),
+  ]))
+    assert.equal(
+      lstatSync(join(root, path), { throwIfNoEntry: false }),
+      undefined,
+    );
 });
 
 test("an edited skill is drift under --check, and sync restores the vendored text", (t) => {

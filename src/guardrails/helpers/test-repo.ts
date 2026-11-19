@@ -26,9 +26,9 @@ export function put(root: string, path: string, content: string): void {
   writeFileSync(join(root, path), content);
 }
 
-/** Marks `root` as the template source: the `.agents/` folder at its root, which a scaffold lacks. */
+/** Marks `root` as the template source: the folder of a writing skill the pack syncs, which a scaffold lacks. */
 export function markTemplateSource(root: string): void {
-  mkdirSync(join(root, ".agents"), { recursive: true });
+  mkdirSync(join(root, ".agents/skills/unslop"), { recursive: true });
 }
 
 export function commit(root: string): void {

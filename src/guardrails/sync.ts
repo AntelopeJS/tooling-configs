@@ -395,7 +395,7 @@ function repositoryNotices(root: string, context: RepoContext): string[] {
 
 /**
  * Under the template profile the agent layer, the writing skills, is synced only in the template source,
- * marked by an `.agents/` folder at its root, because a scaffold ships without it.
+ * marked by the folder of a writing skill, because a scaffold ships without `.agents/`.
  */
 export function syncRepository(
   root: string,

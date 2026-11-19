@@ -19,9 +19,19 @@ const DOCS_SKILLS = [
   { name: "unslop", text: UNSLOP_SKILL },
 ] as const;
 
+/** The folder of a writing skill, relative to the repository root. */
+function docsSkillFolder(name: string): string {
+  return `.agents/skills/${name}`;
+}
+
+/** The folder of each writing skill, relative to the repository root. */
+export function docsSkillFolders(): string[] {
+  return DOCS_SKILLS.map(({ name }) => docsSkillFolder(name));
+}
+
 /** The file of a writing skill, relative to the repository root. */
 function docsSkillPath(name: string): string {
-  return `.agents/skills/${name}/SKILL.md`;
+  return `${docsSkillFolder(name)}/SKILL.md`;
 }
 
 /** The `.claude/skills` link that exposes a writing skill to Claude Code. */

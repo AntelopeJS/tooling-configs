@@ -30,8 +30,6 @@ export interface Manifest {
   workspaces?: unknown;
   engines?: { node?: string };
   antelopeJs?: {
-    kind?: unknown;
-    implements?: string[];
     docs?: { standard?: boolean };
   };
   /** Renovate's deprecated in-manifest config, read when no config file exists. */

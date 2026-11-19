@@ -35,7 +35,19 @@ for (const [label, manifest] of [
     assert.equal(check.stdout, "Guardrails are in sync.\n");
   });
 
-test("the template source, marked by its `.agents/` folder, still fails the check on one drifted agent skill", (t) => {
+test("a scaffold whose `.agents/skills/` holds other skills, as plugin hooks link there, is not taken for the template source and passes the check", (t) => {
+  const root = templateSource(t);
+  for (const path of SCAFFOLD_EXCLUDED_PATHS)
+    rmSync(join(root, path), { recursive: true, force: true });
+  rmSync(join(root, "renovate.json"));
+  put(root, ".agents/skills/.gitignore", "*\n");
+  put(root, ".agents/skills/dms--dms-pages/SKILL.md", "Linked by a hook.\n");
+  const check = bin(root, "sync", [...TEMPLATE, "--check"]);
+  assert.equal(check.status, 0, check.stdout);
+  assert.equal(check.stdout, "Guardrails are in sync.\n");
+});
+
+test("the template source, marked by a writing skill folder, still fails the check on one drifted agent skill", (t) => {
   const root = templateSource(t);
   assert.equal(bin(root, "sync", [...TEMPLATE, "--check"]).status, 0);
   put(root, ".agents/skills/unslop/SKILL.md", "Hand edited.\n");
