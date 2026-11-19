@@ -421,7 +421,7 @@ export function callerPlan(
  * `placeholderTests` says the `test` script only stands in for tests; that case also turns an existing `true` off. Any
  * other explicit value is left as the repository set it. The caller passes the `NOTION_TOKEN` secret, which ci-node.yml
  * files a flaky-test task with, `single-job: false` when `profile.singleJob` is off, and `affected-tests: true` when
- * `affectedTests` is on. Either input the repository set is kept.
+ * `affectedTests` is on. Where sync writes neither, a value the repository set stays.
  * A `checks` job that only re-aggregates the caller (`needs: [ci]`, steps that `exit` on `needs` results) is removed
  * when the workflow has no other job besides the caller and the Renovate sync, since the shared workflow already
  * reports `ci / checks` and each `needs` hop adds to the critical path. A gate that also covers repository-specific
