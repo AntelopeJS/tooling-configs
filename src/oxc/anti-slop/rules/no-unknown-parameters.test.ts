@@ -73,9 +73,44 @@ tester.run("anti-slop/no-unknown-parameters", noUnknownParametersRule, {
 			name: "a promise executor declaring this: void with a reject not named reject: fails one that takes resolve for the reject position",
 			code: "export const ready = new Promise<number>(function (this: void, resolve, fail: (reason: unknown) => void) { go(resolve, fail); });",
 		},
+		{
+			name: "interface-database-decorators@ca92201 src/model.ts:171 Model.validate narrows its input with a type guard",
+			code: "class Model { static validate(obj: unknown, options?: ValidateInputOptions): ValidationResult { const record = isRecord(obj) ? obj : undefined; return check(record, options); } }",
+		},
+		{
+			name: "a validator guarding each use with && and if",
+			code: "function name(value: unknown): string | undefined { if (isRecord(value)) return isNamed(value) && value.name; return undefined; }",
+		},
+		"const decodeUser = (input: unknown) => User.decode(input);",
+		"function readConfig(input: unknown) { return ConfigSchema.safeParse(input); }",
 	],
 	invalid: [
 		{ code: "function parse(value: unknown): void {}", errors: [error] },
+		{
+			name: "a body that reads the parameter without narrowing it: fails one that exempts any parameter the body reads",
+			code: "function log(value: unknown): void { console.log(value); }",
+			errors: [{ ...error, data: { parameter: "value" } }],
+		},
+		{
+			name: "a use after the guarded branch: fails one that exempts a parameter once any guard call reads it",
+			code: "function save(value: unknown): void { if (isRecord(value)) store(value); send(value); }",
+			errors: [{ ...error, data: { parameter: "value" } }],
+		},
+		{
+			name: "a use in the branch the guard makes false: fails one that accepts either branch",
+			code: "const pick = (value: unknown) => (isRecord(value) ? undefined : value);",
+			errors: [{ ...error, data: { parameter: "value" } }],
+		},
+		{
+			name: "a call outside a test position: fails one that counts any call as a guard",
+			code: "function forward(value: unknown) { const sent = send(value); return sent; }",
+			errors: [{ ...error, data: { parameter: "value" } }],
+		},
+		{
+			name: "a declared validate signature has no body to narrow: fails one that matches the method name",
+			code: "interface Validator { validate(obj: unknown): ValidationResult }",
+			errors: [{ ...error, data: { parameter: "obj" } }],
+		},
 		{ code: "function parse(value: string | unknown): void {}", errors: [error] },
 		{
 			code: "function parse(value: string | (number | unknown)): void {}",
