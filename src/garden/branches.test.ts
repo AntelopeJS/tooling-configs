@@ -122,6 +122,21 @@ test("the default branch, next, develop and protected branches stay however old 
   assert.deepEqual(await prunes(api), []);
 });
 
+test("an assets/* branch is never flagged nor deleted, however old or whatever PR it headed", async () => {
+  const api = world([
+    { name: "assets/pr-diagram-layout", days: 400 },
+    { name: "assets/other", days: 1 },
+    { name: "old", days: 400 },
+  ]);
+  closed(api, "assets/other", [
+    { number: 52, head: "assets/other", merged: true },
+  ]);
+  assert.deepEqual(await prunes(api), ["old: no commit since 2025-09-23"]);
+  const wet = world([{ name: "assets/pr-diagram-layout", days: 400 }]);
+  await garden(wet, { applyPrunes: true, checks: [staleBranches] });
+  assert.deepEqual(wet.writes, []);
+});
+
 test("a branch that heads or receives an open PR stays even when old or heading a closed PR", async () => {
   const api = world([
     { name: "feat/open", days: 90 },

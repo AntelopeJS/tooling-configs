@@ -11,6 +11,9 @@ const INACTIVE_DAYS = 30;
 /** The integration branches the trunk migration deletes as a recorded step of its own, never by a prune. */
 const INTEGRATION_BRANCHES: readonly string[] = ["next", "develop"];
 
+/** Branches under this prefix hold files other repositories embed, such as PR screenshots, so they are never flagged or pruned. */
+const ASSET_PREFIX = "assets/";
+
 /** Why a branch stays or goes; only `prune` verdicts are ever deleted. */
 type Verdict = { kind: "keep" } | { kind: "prune"; reason: string };
 
@@ -41,13 +44,14 @@ function hasOpenPull(facts: BranchFacts): boolean {
   );
 }
 
-/** Decides one branch: the default, `next`, `develop`, protected and open-PR branches always stay. */
+/** Decides one branch: the default, `next`, `develop`, protected, `assets/*` and open-PR branches always stay. */
 async function classify(facts: BranchFacts): Promise<Verdict> {
   const { branch, defaultBranch, closed, now } = facts;
   if (
     branch.name === defaultBranch ||
     INTEGRATION_BRANCHES.includes(branch.name) ||
     branch.protected ||
+    branch.name.startsWith(ASSET_PREFIX) ||
     hasOpenPull(facts)
   )
     return { kind: "keep" };
@@ -99,7 +103,7 @@ function report(repo: GardenRepo, prunes: readonly Prune[]): Finding[] {
     finding(
       { repo: repo.name, check: CHECK, subject: SUBJECT },
       prunes.map(({ branch, reason }) => `${branch} (${reason})`).join(", "),
-      `No branch other than the default, next, develop and protected ones is the head of a merged or closed PR, or has no open PR and no commit for ${INACTIVE_DAYS} days.`,
+      `No branch other than the default, next, develop, protected and assets/* ones is the head of a merged or closed PR, or has no open PR and no commit for ${INACTIVE_DAYS} days.`,
     ),
   ];
 }
