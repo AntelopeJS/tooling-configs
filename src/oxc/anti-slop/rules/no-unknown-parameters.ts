@@ -1,5 +1,5 @@
 import { defineRule } from "@oxlint/plugins";
-import type { ESTree } from "@oxlint/plugins";
+import type { ESTree, SourceCode } from "@oxlint/plugins";
 
 import {
   argumentParameters,
@@ -103,13 +103,72 @@ function isExemptPosition(owner: ParameterOwner, parameter: FunctionParameter): 
   return isRejectFunctionType(owner);
 }
 
+/** Schema methods that decode a value: io-ts `decode`, zod `parse` and `safeParse`. */
+const SCHEMA_DECODE_METHODS: ReadonlySet<string> = new Set(["decode", "parse", "safeParse"]);
+
+/** Return whether a call is a test: an `if` or `?:` condition, or the left operand of `&&` or `||`. */
+function isTestPosition(call: ESTree.CallExpression): boolean {
+  const parent = call.parent;
+  if (parent.type === "IfStatement" || parent.type === "ConditionalExpression") return parent.test === call;
+  return parent.type === "LogicalExpression" && parent.operator !== "??" && parent.left === call;
+}
+
+function isSchemaDecodeCall(call: ESTree.CallExpression): boolean {
+  return (
+    call.callee.type === "MemberExpression" &&
+    !call.callee.computed &&
+    call.callee.property.type === "Identifier" &&
+    SCHEMA_DECODE_METHODS.has(call.callee.property.name)
+  );
+}
+
+/** Return whether `reference` is the subject of a type-guard call in a test position or of a schema decode. */
+function isNarrowingRead(reference: ESTree.Node): boolean {
+  const call = reference.parent;
+  return (
+    call?.type === "CallExpression" &&
+    call.arguments[0] === reference &&
+    (isTestPosition(call) || isSchemaDecodeCall(call))
+  );
+}
+
+/** Return the test that must hold for `child` to run: the condition of the `if` or `?:` it is the consequent of, or the left operand of the `&&` it is the right operand of. */
+function guardingTest(child: ESTree.Node, parent: ESTree.Node): ESTree.Node | null {
+  if ((parent.type === "IfStatement" || parent.type === "ConditionalExpression") && parent.consequent === child) {
+    return parent.test;
+  }
+  return parent.type === "LogicalExpression" && parent.operator === "&&" && parent.right === child ? parent.left : null;
+}
+
+/** Return whether `node` sits in the branch that a type-guard test on one of `references` makes true. */
+function isInGuardedBranch(node: ESTree.Node, owner: ParameterOwner, references: ReadonlySet<ESTree.Node>): boolean {
+  for (let child = node, parent = node.parent; parent !== null && child !== owner; child = parent, parent = parent.parent) {
+    const test = guardingTest(child, parent);
+    if (test?.type === "CallExpression" && test.arguments[0] !== undefined && references.has(test.arguments[0])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Return whether a function body narrows an untrusted parameter before any other use, as a validator does. */
+function isNarrowedBeforeUse(sourceCode: SourceCode, owner: ParameterOwner, parameter: FunctionParameter): boolean {
+  if (!isRuntimeFunction(owner) || parameter.type !== "Identifier") return false;
+  const variable = sourceCode.getDeclaredVariables(owner).find((declared) => declared.name === parameter.name);
+  if (variable === undefined || variable.references.length === 0) return false;
+  const references: ReadonlySet<ESTree.Node> = new Set(variable.references.map((reference) => reference.identifier));
+  return variable.references.every(
+    ({ identifier }) => isNarrowingRead(identifier) || isInGuardedBranch(identifier, owner, references),
+  );
+}
+
 /** Disallow unknown inputs except explicitly named error-cause enrichment. */
 export const noUnknownParametersRule = defineRule({
   meta: {
     type: "problem",
     docs: {
       description:
-        "Disallow explicitly unknown function parameters except `cause`, type-predicate subjects, `this`, request values injected by `@JSONBody`, `@JsonBody` or `@Parameter`, and promise rejection reasons; decode unknown input at its I/O boundary instead.",
+        "Disallow explicitly unknown function parameters except `cause`, type-predicate subjects, `this`, request values injected by `@JSONBody`, `@JsonBody` or `@Parameter`, promise rejection reasons, and a validator's input that the body narrows with a type guard or schema decode before any other use; decode unknown input at its I/O boundary instead.",
     },
     messages: {
       unknownParameter:
@@ -122,7 +181,7 @@ export const noUnknownParametersRule = defineRule({
         const annotation = functionParameterTypeAnnotation(parameter);
         if (annotation === null || annotation === undefined) continue;
         if (!containsUnknownType(annotation.typeAnnotation)) continue;
-        if (isExemptPosition(node, parameter)) continue;
+        if (isExemptPosition(node, parameter) || isNarrowedBeforeUse(context.sourceCode, node, parameter)) continue;
         const name = functionParameterBindingName(parameter, context.sourceCode);
         if (name === "cause" || isTypePredicateSubject(node, name)) continue;
         context.report({
