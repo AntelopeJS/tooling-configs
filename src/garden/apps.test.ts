@@ -60,6 +60,13 @@ test("an app on all repositories outside the baseline and Cursor's app on either
   ]);
 });
 
+test("pkg-pr-new on all repositories of AntelopeJS raises nothing", async () => {
+  const api = new FakeApi()
+    .route("/orgs/AntelopeJS/installations", installed(["pkg-pr-new", "all"]))
+    .route("/orgs/Altab-S-R-L/installations", installed());
+  assert.deepEqual(keys(await aiApps.run(api.context())), []);
+});
+
 test("a token the API refuses to list stops the check instead of reporting a clean organization", async () => {
   await assert.rejects(aiApps.run(new FakeApi().context()), /HTTP 404/);
 });
