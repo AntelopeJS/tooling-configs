@@ -168,7 +168,11 @@ test("a public caller on the channel interface becomes the release-train caller 
       "release-commit": "${{ inputs.release-commit }}",
       "dependency-ranges": "${{ inputs.dependency-ranges }}",
     },
-    secrets: { RELEASE_GITHUB_TOKEN: "${{ secrets.RELEASE_GITHUB_TOKEN }}" },
+    secrets: {
+      RELEASE_GITHUB_TOKEN: "${{ secrets.RELEASE_GITHUB_TOKEN }}",
+      RELEASE_APP_ID: "${{ secrets.RELEASE_APP_ID }}",
+      RELEASE_APP_PRIVATE_KEY: "${{ secrets.RELEASE_APP_PRIVATE_KEY }}",
+    },
   });
   assert.ok(result.notes.some((note) => note.includes("input channel")));
   assert.equal(syncRepository(root, { check: true }).paths.length, 0);
@@ -218,6 +222,8 @@ test("a private package keeps its install-core and gets both secrets and no id-t
   assert.equal(synced.jobs.release.with["install-core"], false);
   assert.deepEqual(Object.keys(synced.jobs.release.secrets), [
     "RELEASE_GITHUB_TOKEN",
+    "RELEASE_APP_ID",
+    "RELEASE_APP_PRIVATE_KEY",
     "NPM_ANTELOPE_TOKEN",
   ]);
 });
@@ -316,6 +322,12 @@ test("cloud keeps develop: its next-sync caller merges main into develop and its
     "AntelopeJS/.github/.github/workflows/next-sync.yml@v2",
   );
   assert.deepEqual(nextSync.jobs["next-sync"].with, { branch: "develop" });
+  assert.deepEqual(nextSync.jobs["next-sync"].secrets, {
+    RELEASE_GITHUB_TOKEN: "${{ secrets.RELEASE_GITHUB_TOKEN }}",
+    RELEASE_APP_ID: "${{ secrets.RELEASE_APP_ID }}",
+    RELEASE_APP_PRIVATE_KEY: "${{ secrets.RELEASE_APP_PRIVATE_KEY }}",
+    NOTION_TOKEN: "${{ secrets.NOTION_TOKEN }}",
+  });
   assert.deepEqual(release(root).on.push, { branches: ["develop"] });
   assert.equal(formatCheck(root, [NEXT_SYNC]).status, 0);
   assert.equal(syncRepository(root, { check: true }).paths.length, 0);

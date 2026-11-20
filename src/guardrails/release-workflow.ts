@@ -50,6 +50,8 @@ jobs:
       branch: ${branch}
     secrets:
       RELEASE_GITHUB_TOKEN: \${{ secrets.RELEASE_GITHUB_TOKEN }}
+      RELEASE_APP_ID: \${{ secrets.RELEASE_APP_ID }}
+      RELEASE_APP_PRIVATE_KEY: \${{ secrets.RELEASE_APP_PRIVATE_KEY }}
       NOTION_TOKEN: \${{ secrets.NOTION_TOKEN }}
 `;
 }
@@ -252,6 +254,8 @@ function releaseJob(release: ReleasePackage, several: boolean): string {
           ]),
     "    secrets:",
     "      RELEASE_GITHUB_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN }}",
+    "      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}",
+    "      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}",
     ...(release.registry === "private"
       ? ["      NPM_ANTELOPE_TOKEN: ${{ secrets.NPM_ANTELOPE_TOKEN }}"]
       : []),
