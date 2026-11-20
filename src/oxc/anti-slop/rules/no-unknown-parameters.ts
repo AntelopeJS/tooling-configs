@@ -154,7 +154,11 @@ function isInGuardedBranch(node: ESTree.Node, owner: ParameterOwner, references:
 /** Return whether a function body narrows an untrusted parameter before any other use, as a validator does. */
 function isNarrowedBeforeUse(sourceCode: SourceCode, owner: ParameterOwner, parameter: FunctionParameter): boolean {
   if (!isRuntimeFunction(owner) || parameter.type !== "Identifier") return false;
-  const variable = sourceCode.getDeclaredVariables(owner).find((declared) => declared.name === parameter.name);
+  const variable = sourceCode.getDeclaredVariables(owner).find(
+    (declared) =>
+      declared.name === parameter.name &&
+      declared.defs.some((definition) => definition.type === "Parameter" && definition.node === owner),
+  );
   if (variable === undefined || variable.references.length === 0) return false;
   const references: ReadonlySet<ESTree.Node> = new Set(variable.references.map((reference) => reference.identifier));
   return variable.references.every(
