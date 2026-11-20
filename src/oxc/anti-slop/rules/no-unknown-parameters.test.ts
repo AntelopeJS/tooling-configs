@@ -81,6 +81,10 @@ tester.run("anti-slop/no-unknown-parameters", noUnknownParametersRule, {
 			name: "a validator guarding each use with && and if",
 			code: "function name(value: unknown): string | undefined { if (isRecord(value)) return isNamed(value) && value.name; return undefined; }",
 		},
+		{
+			name: "a parameter named like its function, narrowed in the body: fails one that judges the function's own name binding",
+			code: "export function g(g: unknown) { if (isRecord(g)) return g; }",
+		},
 		"const decodeUser = (input: unknown) => User.decode(input);",
 		"function readConfig(input: unknown) { return ConfigSchema.safeParse(input); }",
 	],
@@ -110,6 +114,11 @@ tester.run("anti-slop/no-unknown-parameters", noUnknownParametersRule, {
 			name: "a declared validate signature has no body to narrow: fails one that matches the method name",
 			code: "interface Validator { validate(obj: unknown): ValidationResult }",
 			errors: [{ ...error, data: { parameter: "obj" } }],
+		},
+		{
+			name: "a parameter named like its function whose name is narrowed outside: fails one that judges the function's own name binding",
+			code: "export function f(f: unknown) { log(f); } if (isFoo(f)) {}",
+			errors: [{ ...error, data: { parameter: "f" } }],
 		},
 		{ code: "function parse(value: string | unknown): void {}", errors: [error] },
 		{
