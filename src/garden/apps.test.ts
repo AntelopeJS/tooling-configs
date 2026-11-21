@@ -79,6 +79,18 @@ test("antelopejs-release on all repositories raises nothing while another all-re
   ]);
 });
 
+test("renovate on all repositories raises nothing while another all-repos app still does", async () => {
+  const api = new FakeApi()
+    .route(
+      "/orgs/AntelopeJS/installations",
+      installed(["renovate", "all"], ["gitguardian", "all"]),
+    )
+    .route("/orgs/Altab-S-R-L/installations", installed());
+  assert.deepEqual(keys(await aiApps.run(api.context())), [
+    "AntelopeJS|ai-apps|app:gitguardian",
+  ]);
+});
+
 test("a token the API refuses to list stops the check instead of reporting a clean organization", async () => {
   await assert.rejects(aiApps.run(new FakeApi().context()), /HTTP 404/);
 });
