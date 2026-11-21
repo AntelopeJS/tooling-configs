@@ -277,6 +277,23 @@ test("a red ci / checks on the newest push and a repository still reporting the 
   ]);
 });
 
+test("a ci.yml run still in progress with no ci / checks yet is not reported as checks-context", async () => {
+  const pending = conformant(world()).ci(
+    "mongodb",
+    [{ ...run(1, "", 0), status: "in_progress", conclusion: null }],
+    [],
+  );
+  assert.deepEqual(subjects(await conformance.run(pending.context())), []);
+  const finished = conformant(world()).ci(
+    "mongodb",
+    [run(1, "success", 0)],
+    [],
+  );
+  assert.deepEqual(subjects(await conformance.run(finished.context())), [
+    "checks-context",
+  ]);
+});
+
 test("the newest nightly run's checks are judged, so a check that reads only push runs falls back to the branch head", async () => {
   const nightly = conformant(world())
     .ci(

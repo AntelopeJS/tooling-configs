@@ -207,15 +207,17 @@ export class FakeApi implements GardenApi {
   /** The routed body; a workflow-run listing keeps only the runs of the `event` the query names, as GitHub filters them. */
   async json(path: string): Promise<JsonValue> {
     const body = this.lookup(path);
-    const event = new URL(path, "https://api.github.com").searchParams.get(
-      "event",
-    );
-    if (!event || !isObject(body) || !Array.isArray(body.workflow_runs))
-      return body;
+    const query = new URL(path, "https://api.github.com").searchParams;
+    const event = query.get("event");
+    const status = query.get("status");
+    if (!isObject(body) || !Array.isArray(body.workflow_runs)) return body;
     return {
       ...body,
       workflow_runs: body.workflow_runs.filter(
-        (run) => isObject(run) && run.event === event,
+        (run) =>
+          isObject(run) &&
+          (!event || run.event === event) &&
+          (!status || (run.status ?? "completed") === status),
       ),
     };
   }
