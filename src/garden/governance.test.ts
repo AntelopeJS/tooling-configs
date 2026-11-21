@@ -141,6 +141,21 @@ test("an administrator bypass in any mode, and an organization administrator, ra
   assert.deepEqual(subjects(await branchGovernance.run(api.context())), []);
 });
 
+test("the antelopejs-release app bypassing always raises nothing, another Integration is drift", async () => {
+  const run = (actor_id: number) =>
+    branchGovernance.run(
+      repoWorld(PROTECTED, [
+        ruleset(1, "Default branch protection", [
+          ADMIN,
+          { actor_type: "Integration", actor_id, bypass_mode: "always" },
+        ]),
+        ruleset(2, "Required CI"),
+      ]).context(),
+    );
+  assert.deepEqual(subjects(await run(5854792)), []);
+  assert.deepEqual(subjects(await run(1)), ["main:bypass:urgent"]);
+});
+
 test("a ruleset read without its bypass list fails the repository instead of passing it", async () => {
   const api = repoWorld(PROTECTED, [
     { id: 1, name: "Default branch protection" },

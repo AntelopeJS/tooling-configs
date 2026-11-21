@@ -13,7 +13,12 @@ interface AppBaseline {
 }
 
 const ORG_BASELINE: AppBaseline = {
-  all: ["claude", "chatgpt-codex-connector", "pkg-pr-new"],
+  all: [
+    "claude",
+    "chatgpt-codex-connector",
+    "pkg-pr-new",
+    "antelopejs-release",
+  ],
   selectedOnly: [],
 };
 

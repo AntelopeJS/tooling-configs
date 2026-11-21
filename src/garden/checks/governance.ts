@@ -100,10 +100,11 @@ const REQUIREMENTS: readonly Requirement[] = [
   },
 ];
 
-/** Actors that may bypass a default branch ruleset, in any bypass mode: the release workflow pushes with an administrator's token. */
+/** Actors that may bypass a default branch ruleset, in any bypass mode: the administrator role, organization administrators, and the `antelopejs-release` GitHub App, which pushes release commits and tags to `main` and runs next-sync and the module-locks refresh. */
 const ALLOWED_BYPASS: readonly { type: string; id?: number }[] = [
   { type: "RepositoryRole", id: ADMIN_ROLE },
   { type: "OrganizationAdmin" },
+  { type: "Integration", id: 5854792 },
 ];
 
 function mayBypass(actor: JsonObject): boolean {
