@@ -18,6 +18,7 @@ const ORG_BASELINE: AppBaseline = {
     "chatgpt-codex-connector",
     "pkg-pr-new",
     "antelopejs-release",
+    "renovate",
   ],
   selectedOnly: [],
 };
