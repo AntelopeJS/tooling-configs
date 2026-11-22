@@ -7,6 +7,7 @@ import {
   hasDependencyRanges,
 } from "./dependency-ranges-sync.ts";
 import { checkGitIdentity, isGitCheckout } from "./git-identity.ts";
+import { checkOneRange } from "./one-range.ts";
 import { checkPublishedTypes, typedPackages } from "./published-types.ts";
 import { checkReadmeVersion, readmeExamples } from "./readme-version.ts";
 import { runCommand } from "./run-command.ts";
@@ -30,6 +31,7 @@ const CHECK_STEPS = [
   "sync:check",
   "lockfile:singletons",
   "dependency:ranges",
+  "dependency:one-range",
   "git:identity",
   "readme:version",
   "published:types",
@@ -62,6 +64,10 @@ const OWN_STEPS = new Map<string, OwnStep>([
     failureOnly((root) => Promise.resolve(checkSingletonPackages(root))),
   ],
   ["dependency:ranges", failureOnly(checkRepositoryRanges)],
+  [
+    "dependency:one-range",
+    failureOnly((root) => Promise.resolve(checkOneRange(root))),
+  ],
   ["git:identity", failureOnly(checkGitIdentity)],
   ["readme:version", failureOnly(checkReadmeVersion)],
   ["published:types", checkPublishedTypes],
@@ -69,7 +75,7 @@ const OWN_STEPS = new Map<string, OwnStep>([
 
 function hasWork(root: string, step: string): boolean {
   if (step === "lockfile:singletons") return pnpmLockfiles(root).length > 0;
-  if (step === "dependency:ranges")
+  if (step === "dependency:ranges" || step === "dependency:one-range")
     return isGitCheckout(root) && hasDependencyRanges(root);
   if (step === "git:identity") return isGitCheckout(root);
   if (step === "readme:version") return readmeExamples(root).length > 0;

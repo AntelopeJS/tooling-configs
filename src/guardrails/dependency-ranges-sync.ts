@@ -51,7 +51,7 @@ interface TrackedManifest {
 }
 
 /** Each tracked manifest that parses; a fixture that is not JSON is not a package this repository releases. */
-function tracked(root: string): TrackedManifest[] {
+export function tracked(root: string): TrackedManifest[] {
   return trackedManifests(root).flatMap((path) => {
     try {
       const text = readFileSync(join(root, path), "utf8");
