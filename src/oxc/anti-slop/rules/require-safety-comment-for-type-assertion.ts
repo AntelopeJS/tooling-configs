@@ -4,7 +4,10 @@ import { JSDOC_TYPED_FILE, jsDocTagType } from "../shared/type-guards.ts";
 
 import type { Comment, ESTree, SourceCode, Token } from "@oxlint/plugins";
 
-type TypeAssertion = ESTree.TSAsExpression | ESTree.TSTypeAssertion;
+type TypeAssertion =
+  | ESTree.TSAsExpression
+  | ESTree.TSTypeAssertion
+  | ESTree.TSNonNullExpression;
 
 export const DEFAULT_SAFETY_MARKERS = ["SAFETY"] as const;
 
@@ -18,6 +21,7 @@ const commentOwnerKinds = new Set([
 
 function isConstAssertion(node: TypeAssertion): boolean {
   return (
+    node.type !== "TSNonNullExpression" &&
     node.typeAnnotation.type === "TSTypeReference" &&
     node.typeAnnotation.typeName.type === "Identifier" &&
     node.typeAnnotation.typeName.name === "const"
@@ -62,9 +66,10 @@ function jsDocCast(sourceCode: SourceCode, comment: Comment): JsDocCast | null {
   if (type === null || type.trim() === "const") return null;
   const paren = sourceCode.getTokenAfter(comment);
   if (paren?.type !== "Punctuator" || paren.value !== "(") return null;
-  const owner = sourceCode.getNodeByRangeIndex(paren.start);
+  const owner = sourceCode.getNodeByRangeIndex(paren.range[0]);
   if (owner === null) return null;
-  const annotatesArrow = owner.type === "ArrowFunctionExpression" && owner.start === paren.start;
+  const annotatesArrow =
+    owner.type === "ArrowFunctionExpression" && owner.range[0] === paren.range[0];
   return annotatesArrow ? null : { paren, owner };
 }
 
@@ -81,7 +86,10 @@ function hasSafetyComment(
   const justifies = (target: ESTree.Node | Comment): boolean =>
     sourceCode
       .getCommentsBefore(target)
-      .some((comment) => comment.end <= assertion.start && pattern.test(comment.value));
+      .some(
+        (comment) =>
+          comment.range[1] <= assertion.range[0] && pattern.test(comment.value),
+      );
   if (justifies(assertion)) return true;
   let current = owner;
   while (current.type !== "Program") {
@@ -99,17 +107,17 @@ function hasSafetyComment(
   return false;
 }
 
-/** Require every non-const type assertion, JSDoc casts in JavaScript files included, to state the invariant TypeScript cannot express. */
+/** Require every non-const type assertion and every non-null assertion (`x!`), JSDoc casts in JavaScript files included, to state the invariant TypeScript cannot express. */
 export const requireSafetyCommentForTypeAssertionRule = defineRule({
   meta: {
     type: "problem",
     docs: {
       description:
-        "Require a nearby SAFETY comment for every type assertion, TypeScript or JSDoc cast, except const assertions.",
+        "Require a nearby SAFETY comment for every type assertion and non-null assertion, TypeScript or JSDoc cast, except const assertions.",
     },
     messages: {
       missingSafetyComment:
-        "This type assertion has no `{{marker}}:` justification. State the checked invariant immediately before the assertion or its containing statement.",
+        "This type or non-null assertion has no `{{marker}}:` justification. State the checked invariant immediately before the assertion or its containing statement.",
     },
     schema: [
       {
@@ -154,8 +162,8 @@ export const requireSafetyCommentForTypeAssertionRule = defineRule({
       const castParens = new Set<number>();
       for (const comment of sourceCode.getAllComments()) {
         const cast = jsDocCast(sourceCode, comment);
-        if (cast === null || castParens.has(cast.paren.start)) continue;
-        castParens.add(cast.paren.start);
+        if (cast === null || castParens.has(cast.paren.range[0])) continue;
+        castParens.add(cast.paren.range[0]);
         if (hasSafetyComment(sourceCode, comment, cast.owner, pattern)) continue;
         context.report({
           loc: { start: comment.loc.start, end: cast.paren.loc.end },
@@ -168,6 +176,7 @@ export const requireSafetyCommentForTypeAssertionRule = defineRule({
     return {
       Program: checkJsDocCasts,
       TSAsExpression: checkAssertion,
+      TSNonNullExpression: checkAssertion,
       TSTypeAssertion: checkAssertion,
     };
   },
