@@ -169,7 +169,6 @@ test("a public caller on the channel interface becomes the release-train caller 
       "dependency-ranges": "${{ inputs.dependency-ranges }}",
     },
     secrets: {
-      RELEASE_GITHUB_TOKEN: "${{ secrets.RELEASE_GITHUB_TOKEN }}",
       RELEASE_APP_ID: "${{ secrets.RELEASE_APP_ID }}",
       RELEASE_APP_PRIVATE_KEY: "${{ secrets.RELEASE_APP_PRIVATE_KEY }}",
     },
@@ -221,7 +220,6 @@ test("a private package keeps its install-core and gets both secrets and no id-t
   );
   assert.equal(synced.jobs.release.with["install-core"], false);
   assert.deepEqual(Object.keys(synced.jobs.release.secrets), [
-    "RELEASE_GITHUB_TOKEN",
     "RELEASE_APP_ID",
     "RELEASE_APP_PRIVATE_KEY",
     "NPM_ANTELOPE_TOKEN",
@@ -323,13 +321,36 @@ test("cloud keeps develop: its next-sync caller merges main into develop and its
   );
   assert.deepEqual(nextSync.jobs["next-sync"].with, { branch: "develop" });
   assert.deepEqual(nextSync.jobs["next-sync"].secrets, {
-    RELEASE_GITHUB_TOKEN: "${{ secrets.RELEASE_GITHUB_TOKEN }}",
     RELEASE_APP_ID: "${{ secrets.RELEASE_APP_ID }}",
     RELEASE_APP_PRIVATE_KEY: "${{ secrets.RELEASE_APP_PRIVATE_KEY }}",
     NOTION_TOKEN: "${{ secrets.NOTION_TOKEN }}",
   });
   assert.deepEqual(release(root).on.push, { branches: ["develop"] });
   assert.equal(formatCheck(root, [NEXT_SYNC]).status, 0);
+  assert.equal(syncRepository(root, { check: true }).paths.length, 0);
+});
+
+test("sync removes a RELEASE_GITHUB_TOKEN line from an existing release.yml and next-sync.yml and then passes --check, so a sync that keeps forwarding the retired secret fails", (t) => {
+  const root = repoWith(
+    t,
+    { [RELEASE_PATH]: MONGODB },
+    "@antelopejs-private/cloud",
+  );
+  syncRepository(root);
+  const token =
+    "      RELEASE_GITHUB_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN }}\n";
+  for (const path of [RELEASE_PATH, NEXT_SYNC]) {
+    const synced = read(root, path);
+    const marker = "    secrets:\n";
+    put(root, path, synced.replace(marker, `${marker}${token}`));
+    assert.ok(read(root, path).includes("RELEASE_GITHUB_TOKEN"));
+  }
+  syncRepository(root);
+  assert.equal(
+    read(root, RELEASE_PATH).includes("RELEASE_GITHUB_TOKEN"),
+    false,
+  );
+  assert.equal(read(root, NEXT_SYNC).includes("RELEASE_GITHUB_TOKEN"), false);
   assert.equal(syncRepository(root, { check: true }).paths.length, 0);
 });
 

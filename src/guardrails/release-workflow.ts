@@ -49,7 +49,6 @@ jobs:
     with:
       branch: ${branch}
     secrets:
-      RELEASE_GITHUB_TOKEN: \${{ secrets.RELEASE_GITHUB_TOKEN }}
       RELEASE_APP_ID: \${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: \${{ secrets.RELEASE_APP_PRIVATE_KEY }}
       NOTION_TOKEN: \${{ secrets.NOTION_TOKEN }}
@@ -253,7 +252,6 @@ function releaseJob(release: ReleasePackage, several: boolean): string {
             `      package-directory: \${{ inputs.package-directory || '${release.directory}' }}`,
           ]),
     "    secrets:",
-    "      RELEASE_GITHUB_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN }}",
     "      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}",
     "      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}",
     ...(release.registry === "private"

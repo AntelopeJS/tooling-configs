@@ -16,7 +16,7 @@ import type { CheckResult } from "./types.ts";
 const ADMIN = {
   actor_type: "RepositoryRole",
   actor_id: 5,
-  bypass_mode: "always",
+  bypass_mode: "pull_request",
 };
 const MAINTAIN = {
   actor_type: "RepositoryRole",
@@ -128,32 +128,25 @@ test("a Maintain role that bypasses always on a repository ruleset is urgent byp
   }
 });
 
-test("an administrator bypass in any mode, and an organization administrator, raise nothing", async () => {
-  const sets = [
-    ruleset(1, "Default branch protection", [
-      ADMIN,
-      { ...ADMIN, bypass_mode: "pull_request" },
-      { actor_type: "OrganizationAdmin", actor_id: 1, bypass_mode: "always" },
-    ]),
-    ruleset(2, "Required CI"),
-  ];
-  const api = repoWorld(PROTECTED, sets);
-  assert.deepEqual(subjects(await branchGovernance.run(api.context())), []);
-});
-
-test("the antelopejs-release app bypassing always raises nothing, another Integration is drift", async () => {
-  const run = (actor_id: number) =>
-    branchGovernance.run(
-      repoWorld(PROTECTED, [
-        ruleset(1, "Default branch protection", [
-          ADMIN,
-          { actor_type: "Integration", actor_id, bypass_mode: "always" },
-        ]),
-        ruleset(2, "Required CI"),
-      ]).context(),
+test("only the pull_request administrator and the always antelopejs-release app bypass, any other actor or mode is drift", async () => {
+  const run = async (actor: JsonObject) =>
+    subjects(
+      await branchGovernance.run(
+        repoWorld(PROTECTED, [
+          ruleset(1, "Default branch protection", [actor]),
+          ruleset(2, "Required CI"),
+        ]).context(),
+      ),
     );
-  assert.deepEqual(subjects(await run(5854792)), []);
-  assert.deepEqual(subjects(await run(1)), ["main:bypass:urgent"]);
+  const app = { actor_type: "Integration", bypass_mode: "always" };
+  for (const actor of [ADMIN, { ...app, actor_id: 5854792 }])
+    assert.deepEqual(await run(actor), []);
+  for (const actor of [
+    { ...ADMIN, bypass_mode: "always" },
+    { actor_type: "OrganizationAdmin", actor_id: 1, bypass_mode: "always" },
+    { ...app, actor_id: 1 },
+  ])
+    assert.deepEqual(await run(actor), ["main:bypass:urgent"]);
 });
 
 test("a ruleset read without its bypass list fails the repository instead of passing it", async () => {
