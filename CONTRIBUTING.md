@@ -24,6 +24,10 @@ AntelopeJS JavaScript projects use Node.js and pnpm.
 Do not commit generated artifacts, credentials, or unrelated formatting
 changes unless the repository explicitly requires them.
 
+Write comments only as TSDoc on the declaration they document and as a
+`SAFETY:` comment on each type assertion and non-null assertion. Encode any
+other constraint in a type, a lint rule, or a test.
+
 ## Commits and pull requests
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) for commit and
