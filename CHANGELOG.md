@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.9.3
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.9.2...v0.9.3)
+
+### 🩹 Fixes
+
+- **anti-slop:** Skip a validator's unknown input that its body narrows ([#437](https://github.com/AntelopeJS/tooling-configs/pull/437))
+- **garden:** Add pkg-pr-new to the AntelopeJS app baseline ([#438](https://github.com/AntelopeJS/tooling-configs/pull/438))
+- **anti-slop:** Judge a parameter by its own variable in no-unknown-parameters ([#439](https://github.com/AntelopeJS/tooling-configs/pull/439))
+- **garden:** Skip assets/* branches in the stale-branches check ([#440](https://github.com/AntelopeJS/tooling-configs/pull/440))
+- **guardrails:** Forward the release app secrets in the release and next-sync callers ([#441](https://github.com/AntelopeJS/tooling-configs/pull/441))
+- **garden:** Baseline the antelopejs-release app bypass and installation ([#442](https://github.com/AntelopeJS/tooling-configs/pull/442))
+- **garden:** Baseline the renovate app installation ([#443](https://github.com/AntelopeJS/tooling-configs/pull/443))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.9.2
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.9.1...v0.9.2)
