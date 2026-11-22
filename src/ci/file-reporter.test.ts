@@ -31,9 +31,8 @@ test("the file reporter prints seconds per test file, keyed by the path relative
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const durations = parseWeights(run.stdout, "reporter output");
   assert.deepEqual(Object.keys(durations), ["nested/sample.test.ts"]);
-  assert.ok(
-    durations["nested/sample.test.ts"]! >= 0.05,
-    "counts the 60 ms test",
-  );
-  assert.ok(durations["nested/sample.test.ts"]! < 5, "reports seconds, not ms");
+  const seconds = durations["nested/sample.test.ts"];
+  assert.ok(seconds !== undefined);
+  assert.ok(seconds >= 0.05, "counts the 60 ms test");
+  assert.ok(seconds < 5, "reports seconds, not ms");
 });

@@ -57,7 +57,7 @@ export interface AntelopeNuxtConfigOptions {
    * `anti-slop/require-safety-comment-for-type-assertion` to every `.vue`
    * script block and script file. TSDoc is allowed only on the
    * declaration it documents, and every type assertion and non-null
-   * assertion needs a `SAFETY:` comment.
+   * assertion needs a SAFETY comment.
    */
   typeAware?: { tsconfigRootDir: string };
 }

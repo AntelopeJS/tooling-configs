@@ -6,7 +6,7 @@ import { runCli } from "../guardrails/cli.ts";
 import { parseWeights, shardFiles, testFiles } from "./shards.ts";
 
 /** Prints the test files shard `SHARD` of `TOTAL` runs, one per line, from the repository root. */
-runCli(() => {
+function printShard(): number {
   const weightsPath = fileURLToPath(
     new URL("./test-weights.json", import.meta.url),
   );
@@ -19,4 +19,6 @@ runCli(() => {
   );
   process.stdout.write(`${mine.join("\n")}\n`);
   return 0;
-});
+}
+
+runCli(printShard);
