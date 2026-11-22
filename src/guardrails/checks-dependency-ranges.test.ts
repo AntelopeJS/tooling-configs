@@ -77,7 +77,7 @@ test("the draft, fast and full tiers skip dependency:ranges and published:types 
   for (const tier of ["draft", "fast", "full"]) {
     const result = await checks(typed, registry, tier);
     assert.equal(result.status, 0, `${tier}: ${result.stdout}`);
-    assert.match(result.stdout, /Checks: 9 passed, 0 failed, 2 skipped\./);
+    assert.match(result.stdout, /Checks: 10 passed, 0 failed, 2 skipped\./);
   }
   for (const tier of ["queue", "nightly"]) {
     const result = await checks(root, registry, tier);
@@ -96,7 +96,7 @@ test("an open 0.x range in a nested manifest fails checks with its fix, where a 
     result.stdout,
     /\[dependency:ranges\]\nplayground\/package\.json: dependencies\["@antelopejs\/interface-database"\] is ">=0\.3\.0 <1\.0\.0": .*; use ">=0\.3\.0 <0\.4\.0"\n/,
   );
-  assert.match(result.stdout, /Checks: 9 passed, 1 failed\./);
+  assert.match(result.stdout, /Checks: 10 passed, 1 failed\./);
   assert.equal(
     result.stdout.match(/interface-database/g)?.length,
     1,
@@ -412,7 +412,7 @@ test("a DMS release whose range on the interface semver cannot read leaves the i
       },
     ),
   );
-  assert.match(result.stdout, /Checks: 9 passed, 1 failed\./);
+  assert.match(result.stdout, /Checks: 10 passed, 1 failed\./);
   assert.match(result.stdout, /its newest published version/);
 });
 
@@ -491,7 +491,7 @@ test("an exact pin on a preview of the minor a DMS release implements passes che
       "queue",
     );
     assert.equal(result.status, 0, `${field}: ${result.stdout}`);
-    assert.match(result.stdout, /Checks: 11 passed, 0 failed\./);
+    assert.match(result.stdout, /Checks: 12 passed, 0 failed\./);
   }
 });
 
