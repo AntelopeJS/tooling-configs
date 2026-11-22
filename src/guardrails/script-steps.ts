@@ -36,13 +36,15 @@ const MANAGER_VALUED = new Set([
 ]);
 const TARGET_FLAGS = new Set(["-r", "--recursive", "--workspaces", "-ws"]);
 
-/** A package a manager option points a command at, instead of the package the script belongs to. */
+/**
+ * A package a manager option points a command at, instead of the package the script belongs to.
+ * `dir` is the package in the directory `--dir`, `-C`, `--prefix` or `--cwd` names, relative to where the command runs.
+ * `select` is the workspace packages a name or path selector matches, from `--filter`, `-F`, `--workspace` or npm's `-w`.
+ * `all` is every workspace package, from `-r`, `--recursive` or `--workspaces`.
+ */
 export type Target =
-  /** `--dir`, `-C`, `--prefix`, `--cwd`: the package in that directory, relative to where the command runs. */
   | { kind: "dir"; path: string }
-  /** `--filter`, `-F`, `--workspace`, npm's `-w`: the workspace packages a name or path selector matches. */
   | { kind: "select"; selector: string }
-  /** `-r`, `--recursive`, `--workspaces`: every workspace package. */
   | { kind: "all" };
 
 /** One thing a command line of a script runs: scripts, a `tsc` with its arguments, or a `cd` that moves the lines after it. */

@@ -6,7 +6,7 @@ import { runCli } from "../guardrails/cli.ts";
 import { parseWeights, testFiles, unweightedFiles } from "./shards.ts";
 
 /** Fails when a test file under `src` has no entry in `test-weights.json`, run from the repository root. */
-runCli(() => {
+function checkWeights(): number {
   const weightsPath = fileURLToPath(
     new URL("./test-weights.json", import.meta.url),
   );
@@ -22,4 +22,6 @@ runCli(() => {
       "  pnpm run ci:weights <dir>/*",
     ].join("\n"),
   );
-});
+}
+
+runCli(checkWeights);

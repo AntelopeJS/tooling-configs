@@ -71,6 +71,46 @@ tester.run(
   },
 );
 
+tester.run(
+  "anti-slop/require-safety-comment-for-type-assertion (non-null assertions)",
+  requireSafetyCommentForTypeAssertionRule,
+  {
+    valid: [
+      {
+        name: "a rule that ignores the SAFETY line above a non-null assertion rejects a justified one",
+        code: "// SAFETY: The map was filled for every key above.\nconst a = b!;",
+      },
+      {
+        name: "a rule that demands one comment per `!` rejects a chain justified once at its statement",
+        code: "// SAFETY: Every link was checked by the parser above.\nconst c = a!.b!.c;",
+      },
+      "const a = b ?? fallback;",
+    ],
+    invalid: [
+      {
+        name: "a rule that ignores TSNonNullExpression accepts a bare non-null assertion",
+        code: "const a = b!;",
+        errors: [error],
+      },
+      {
+        name: "a rule that reports a chain once, not per assertion, misses the second `!`",
+        code: "const c = a!.b!.c;",
+        errors: [error, error],
+      },
+      {
+        name: "a rule that treats the `as const` around a non-null assertion as the const exemption skips it",
+        code: "const d = e! as const;",
+        errors: [error],
+      },
+      {
+        name: "a rule that takes any earlier comment as the justification accepts an unrelated one",
+        code: "// The lookup cannot fail.\nconst a = b!;",
+        errors: [error],
+      },
+    ],
+  },
+);
+
 const jsTester = new RuleTester();
 
 jsTester.run(

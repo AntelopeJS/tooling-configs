@@ -1,6 +1,7 @@
 import { createConfigForNuxt } from "@nuxt/eslint-config/flat";
 import type { Plugin } from "@oxlint/plugins";
 
+import antiSlopPlugin from "./oxc/anti-slop/index.ts";
 import guardrailsPlugin from "./oxc/guardrails/index.ts";
 import { TYPE_AWARE_RULES, typeAwareRuleSetting } from "./type-aware-rules.ts";
 
@@ -19,11 +20,13 @@ function isEslintPlugin(plugin: Plugin): plugin is Plugin & NuxtPlugin {
   return Object.values(plugin.rules).every((rule) => rule.create !== undefined);
 }
 
-/** The guardrail rules as ESLint registers them. */
-function eslintGuardrails(): NuxtPlugin {
-  if (!isEslintPlugin(guardrailsPlugin))
-    throw new Error("A guardrails rule has no `create` function for ESLint");
-  return guardrailsPlugin;
+/** `plugin` as ESLint registers it. */
+function eslintPlugin(plugin: Plugin): NuxtPlugin {
+  if (!isEslintPlugin(plugin))
+    throw new Error(
+      `A rule of ${plugin.meta?.name ?? "a plugin"} has no \`create\` function for ESLint`,
+    );
+  return plugin;
 }
 
 export interface AntelopeNuxtConfigOptions {
@@ -48,6 +51,13 @@ export interface AntelopeNuxtConfigOptions {
    * report, and a `lang="tsx"` block fails to parse.
    * `antelopejs/no-unsafe-object-assign` skips a component with `generic`
    * type parameters.
+   *
+   * Independent of `typeAware`, `antelopeNuxtConfig` applies
+   * `antelopejs/no-comments` and
+   * `anti-slop/require-safety-comment-for-type-assertion` to every `.vue`
+   * script block and script file. TSDoc is allowed only on the
+   * declaration it documents, and every type assertion and non-null
+   * assertion needs a SAFETY comment.
    */
   typeAware?: { tsconfigRootDir: string };
 }
@@ -136,6 +146,19 @@ export function antelopeNuxtConfig(
         : { tooling: true, typescript: true },
     dirs: { src: options.dirs ?? [] },
   });
+  const antelopejs = eslintPlugin(guardrailsPlugin);
+  composer.append({
+    name: "antelopejs/comments",
+    files: ["**/*.vue", ...SCRIPT_FILES],
+    plugins: {
+      antelopejs,
+      "anti-slop": eslintPlugin(antiSlopPlugin),
+    },
+    rules: {
+      "antelopejs/no-comments": "error",
+      "anti-slop/require-safety-comment-for-type-assertion": "error",
+    },
+  });
   if (options.typeAware !== undefined) {
     composer.append({
       name: "antelopejs/vue-type-aware",
@@ -146,7 +169,7 @@ export function antelopeNuxtConfig(
           tsconfigRootDir: options.typeAware.tsconfigRootDir,
         },
       },
-      plugins: { antelopejs: eslintGuardrails() },
+      plugins: { antelopejs },
       rules: {
         ...Object.fromEntries(
           TYPE_AWARE_RULES.map((rule) => [

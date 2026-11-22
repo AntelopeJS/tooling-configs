@@ -6,6 +6,12 @@ import { num, object, parseJson } from "../garden/json.ts";
 /** Seconds each test file took in CI, keyed by repository-relative path. */
 export type TestWeights = Readonly<Record<string, number>>;
 
+/** The files assigned to one shard and the seconds they sum to. */
+interface Shard {
+  files: string[];
+  load: number;
+}
+
 /** Seconds every test file costs before its first test, process start and imports, which the measured weights leave out. */
 const FILE_OVERHEAD = 0.2;
 
@@ -21,10 +27,11 @@ export function testFiles(cwd = "."): string[] {
 
 function median(values: number[]): number {
   const sorted = values.toSorted((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2
-    ? sorted[middle]!
-    : (sorted[middle - 1]! + sorted[middle]!) / 2;
+  const [low = 0, high = low] = sorted.slice(
+    Math.ceil(sorted.length / 2) - 1,
+    Math.floor(sorted.length / 2) + 1,
+  );
+  return (low + high) / 2;
 }
 
 function byWeightThenPath(
@@ -83,20 +90,24 @@ export function assignShards(
 ): string[][] {
   const known = Object.values(weights);
   const fallback = known.length ? median(known) : 1;
-  const shards: string[][] = Array.from({ length: total }, () => []);
-  const loads: number[] = Array.from({ length: total }, () => 0);
+  const shards = Array.from({ length: total }, (): Shard => ({
+    files: [],
+    load: 0,
+  }));
   const weighted = files.map((file) => ({
     file,
     weight:
-      (Object.hasOwn(weights, file) ? weights[file]! : fallback) +
+      ((Object.hasOwn(weights, file) ? weights[file] : undefined) ?? fallback) +
       FILE_OVERHEAD,
   }));
   for (const { file, weight } of weighted.toSorted(byWeightThenPath)) {
-    const target = loads.indexOf(Math.min(...loads));
-    shards[target]!.push(file);
-    loads[target]! += weight;
+    const target = shards.reduce((least, shard) =>
+      shard.load < least.load ? shard : least,
+    );
+    target.files.push(file);
+    target.load += weight;
   }
-  return shards;
+  return shards.map((shard) => shard.files);
 }
 
 /**
@@ -121,7 +132,7 @@ export function shardFiles(
     throw new Error(
       `node --test reads each path as a glob; rename these test files: ${odd.join(" ")}`,
     );
-  const mine = assignShards(files, weights, total)[shard - 1]!;
-  if (!mine.length) throw new Error(`shard ${shard} runs no test file`);
+  const mine = assignShards(files, weights, total)[shard - 1];
+  if (!mine?.length) throw new Error(`shard ${shard} runs no test file`);
   return mine;
 }

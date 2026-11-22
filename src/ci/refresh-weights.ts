@@ -14,7 +14,7 @@ const WEIGHTS_PATH = fileURLToPath(
  * Rewrites `test-weights.json` as the per-file mean of every `durations.json` under the directories given, the layout
  * `gh run download <id> -D <dir>` leaves for the `test-durations-*` artifacts.
  */
-runCli(() => {
+function refreshWeights(): number {
   const directories = process.argv.slice(2);
   if (!directories.length)
     throw new Error("usage: refresh-weights.ts <downloaded-run-directory>...");
@@ -30,4 +30,6 @@ runCli(() => {
     `${JSON.stringify(meanWeights(measurements), null, 2)}\n`,
   );
   return 0;
-});
+}
+
+runCli(refreshWeights);
