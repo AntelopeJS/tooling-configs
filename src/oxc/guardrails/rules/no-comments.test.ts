@@ -168,7 +168,7 @@ tester.run("antelopejs/no-comments", noCommentsRule, {
     },
     {
       name: "a rule that attaches a block to any ancestor accepts it before a function expression inside a call",
-      code: "register(/** Handles it. */ function () {});",
+      code: "export const a = register(/** Handles it. */ function () {});",
       errors: [detached],
     },
     {
@@ -233,6 +233,32 @@ jsTester.run("antelopejs/no-comments (JavaScript files)", noCommentsRule, {
       filename: "types.mjs",
       code: "/** @import { Foo } from './foo.js' */\nrun();",
     },
+    ...[
+      [
+        "`@type` on `module.exports`",
+        "config.cjs",
+        "/** @type {import('x').Config} */\nmodule.exports = { a: 1 };",
+      ],
+      [
+        "`@type` on a local const",
+        "map.mjs",
+        "export function f() {\n  /** @type {Map<string, number>} */\n  const m = new Map();\n  return m;\n}",
+      ],
+      [
+        "`@param` on a local function",
+        "local.js",
+        "export function f() {\n  /** @param {string} a */\n  function g(a) {}\n  return g;\n}",
+      ],
+      [
+        "`@type` on a `this` property",
+        "class.js",
+        "class A {\n  constructor() {\n    /** @type {number} */\n    this.x = 1;\n  }\n}",
+      ],
+    ].map(([name, filename, code]) => ({
+      name: `a rule that reads only declarations rejects JavaScript's type system, ${name}`,
+      filename,
+      code,
+    })),
   ],
   invalid: [
     {
@@ -245,6 +271,18 @@ jsTester.run("antelopejs/no-comments (JavaScript files)", noCommentsRule, {
       name: "a rule that accepts any detached block in a script accepts prose before a call",
       filename: "plain.mjs",
       code: "/** Runs it. */\nrun();",
+      errors: [detached],
+    },
+    {
+      name: "a rule that accepts any `/**` in a script accepts prose before a local const",
+      filename: "local.mjs",
+      code: "export function f() {\n  /** The id. */\n  const id = 1;\n  return id;\n}",
+      errors: [detached],
+    },
+    {
+      name: "a rule that treats any `/**` before `(` as a cast in a script accepts prose there",
+      filename: "paren.mjs",
+      code: "export const a = /** The value. */ (y);",
       errors: [detached],
     },
   ],

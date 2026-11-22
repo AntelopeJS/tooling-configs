@@ -45,7 +45,8 @@ const MODULE_LEVEL_PARENTS: ReadonlySet<string> = new Set([
 ]);
 const MODULE_DOC_TAG =
   /(?:^|\s)@(?:packageDocumentation|module|fileoverview)\b/u;
-const JS_STANDALONE_DOC_TAG = /(?:^|\s)@(?:typedef|callback|import)\b/u;
+const JS_TYPE_TAG =
+  /(?:^|\s)@(?:typedef|callback|import|type|param|returns?|template|satisfies|this|enum|property|extends|augments|implements|overload)\b/u;
 
 const allowedCommentForms = [
   { type: "Shebang", pattern: /^/u },
@@ -104,7 +105,10 @@ function documentsDeclaration(
   return false;
 }
 
-/** Whether a `/**` block documents something other than a declaration the way the file kind allows. */
+/**
+ * Whether a `/**` block needs no declaration: a module doc that opens the file, or in a
+ * JavaScript file a JSDoc type annotation, which is that file's type system wherever it sits.
+ */
 function isStandaloneDoc(
   sourceCode: SourceCode,
   comment: Comment,
@@ -115,10 +119,7 @@ function isStandaloneDoc(
     sourceCode.getTokenBefore(comment) === null
   )
     return true;
-  if (!JSDOC_TYPED_FILE.test(filename)) return false;
-  if (JS_STANDALONE_DOC_TAG.test(comment.value)) return true;
-  const next = sourceCode.getTokenAfter(comment);
-  return next?.type === "Punctuator" && next.value === "(";
+  return JSDOC_TYPED_FILE.test(filename) && JS_TYPE_TAG.test(comment.value);
 }
 
 /** Ordinary comments must become executable constraints or TSDoc on the declaration it documents. */
