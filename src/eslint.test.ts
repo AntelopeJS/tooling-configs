@@ -114,6 +114,58 @@ test("without typeAware no rule needs type information", async () => {
   assert.deepEqual(await lintVueProject(false), []);
 });
 
+const COMMENT_RULE_BODY = `function run(maybe: string | undefined, raw: unknown): number {
+  const x = maybe!;
+  const y = raw as number;
+  // SAFETY: the caller passed a number.
+  const w = raw as number;
+  // SAFETY: the caller passed a string.
+  // The key was checked before the call.
+  const z = maybe!;
+  /** A local. */
+  const doc = 1;
+  return x.length + y + w + z.length + doc;
+}
+`;
+
+async function lintCommentRules() {
+  const root = mkdtempSync(join(tmpdir(), "antelope-eslint-"));
+  try {
+    writeFileSync(join(root, "run.ts"), `export ${COMMENT_RULE_BODY}`);
+    writeFileSync(
+      join(root, "Run.vue"),
+      `<script setup lang="ts">\n${COMMENT_RULE_BODY}</script>\n\n<template><div>{{ run("a", 1) }}</div></template>\n`,
+    );
+    const eslint = new ESLint({
+      cwd: root,
+      overrideConfigFile: true,
+      overrideConfig: await antelopeNuxtConfig(),
+    });
+    const results = await eslint.lintFiles(["run.ts", "Run.vue"]);
+    return results.flatMap((result) =>
+      result.messages.map(
+        (message) =>
+          `${result.filePath.slice(root.length + 1)}:${message.line} ${message.ruleId} ${message.messageId}`,
+      ),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("the comment rules report an unexplained assertion and a detached TSDoc block in .ts and .vue, and accept SAFETY comments, one block or a run of lines", async () => {
+  const safety =
+    "anti-slop/require-safety-comment-for-type-assertion missingSafetyComment";
+  assert.deepEqual(await lintCommentRules(), [
+    `run.ts:2 ${safety}`,
+    `run.ts:3 ${safety}`,
+    "run.ts:9 antelopejs/no-comments detachedDoc",
+    `Run.vue:3 ${safety}`,
+    `Run.vue:4 ${safety}`,
+    "Run.vue:10 antelopejs/no-comments detachedDoc",
+  ]);
+});
+
 async function lintComposable(
   config: ReturnType<typeof antelopeNuxtConfig>,
 ): Promise<string[]> {
