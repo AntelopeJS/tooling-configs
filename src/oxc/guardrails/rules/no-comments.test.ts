@@ -76,6 +76,10 @@ tester.run("antelopejs/no-comments", noCommentsRule, {
       ],
       ["a default export", "/** The default. */ export default function () {}"],
       [
+        "a namespace re-export",
+        "/** The helpers. */ export * as helpers from './helpers';",
+      ],
+      [
         "a member of a nested declared module",
         "declare module 'a' {\n  /** Runs. */\n  function run(): void;\n  namespace B {\n    /** The id. */\n    const id: number;\n  }\n}",
       ],

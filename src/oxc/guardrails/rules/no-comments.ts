@@ -20,6 +20,7 @@ const DOCUMENTED_KINDS: ReadonlyMap<string, "module" | "member"> = new Map([
   ["TSDeclareFunction", "module"],
   ["ExportNamedDeclaration", "module"],
   ["ExportDefaultDeclaration", "module"],
+  ["ExportAllDeclaration", "module"],
   ["TSExportAssignment", "module"],
   ["MethodDefinition", "member"],
   ["PropertyDefinition", "member"],
