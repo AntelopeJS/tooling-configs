@@ -100,19 +100,23 @@ const REQUIREMENTS: readonly Requirement[] = [
   },
 ];
 
-/** Actors that may bypass a default branch ruleset, in any bypass mode: the administrator role, organization administrators, and the `antelopejs-release` GitHub App, which pushes release commits and tags to `main` and runs next-sync and the module-locks refresh. */
-const ALLOWED_BYPASS: readonly { type: string; id?: number }[] = [
-  { type: "RepositoryRole", id: ADMIN_ROLE },
-  { type: "OrganizationAdmin" },
-  { type: "Integration", id: 5854792 },
+/** Actors that may bypass a default branch ruleset, as the organization rulesets set them: the administrator role through a pull request only, and the `antelopejs-release` GitHub App always, which pushes release commits and tags to `main` and runs next-sync and the module-locks refresh. */
+const ALLOWED_BYPASS: readonly {
+  type: string;
+  id: number;
+  mode: string;
+}[] = [
+  { type: "RepositoryRole", id: ADMIN_ROLE, mode: "pull_request" },
+  { type: "Integration", id: 5854792, mode: "always" },
 ];
 
 function mayBypass(actor: JsonObject): boolean {
   const type = optStr(actor, "actor_type");
   const id = optNum(actor, "actor_id");
+  const mode = optStr(actor, "bypass_mode");
   return ALLOWED_BYPASS.some(
     (allowed) =>
-      allowed.type === type && (allowed.id === undefined || allowed.id === id),
+      allowed.type === type && allowed.id === id && allowed.mode === mode,
   );
 }
 
