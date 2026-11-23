@@ -3,6 +3,7 @@ import type { Plugin } from "@oxlint/plugins";
 
 import antiSlopPlugin from "./oxc/anti-slop/index.ts";
 import guardrailsPlugin from "./oxc/guardrails/index.ts";
+import { TEST_FILE_GLOBS } from "./oxc/guardrails/shared.ts";
 import { TYPE_AWARE_RULES, typeAwareRuleSetting } from "./type-aware-rules.ts";
 
 /** The rule map `overrideRules` accepts, derived so no transitive type is named. */
@@ -204,6 +205,11 @@ export function antelopeNuxtConfig(
           rules: Object.fromEntries(
             Object.entries(rules).filter(([name]) => name.startsWith("vue/")),
           ),
+        },
+        {
+          name: "antelopejs/vue-test-files",
+          files: TEST_FILE_GLOBS,
+          rules: { "vue/one-component-per-file": "off" },
         },
       ];
     }),
