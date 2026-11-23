@@ -124,7 +124,12 @@ const COMMENT_RULE_BODY = `function run(maybe: string | undefined, raw: unknown)
   const z = maybe!;
   /** A local. */
   const doc = 1;
-  return x.length + y + w + z.length + doc;
+  let total = 0;
+  // SAFETY: the caller passed an array.
+  if (z) {
+    for (const part of raw as string[]) total += part.length;
+  }
+  return x.length + y + w + z.length + doc + total;
 }
 `;
 
@@ -153,16 +158,18 @@ async function lintCommentRules() {
   }
 }
 
-test("the comment rules report an unexplained assertion and a detached TSDoc block in .ts and .vue, and accept SAFETY comments, one block or a run of lines", async () => {
+test("the comment rules report an unexplained assertion, one under a SAFETY comment on an enclosing if, and a detached TSDoc block in .ts and .vue, and accept SAFETY comments, one block or a run of lines", async () => {
   const safety =
     "anti-slop/require-safety-comment-for-type-assertion missingSafetyComment";
   assert.deepEqual(await lintCommentRules(), [
     `run.ts:2 ${safety}`,
     `run.ts:3 ${safety}`,
     "run.ts:9 antelopejs/no-comments detachedDoc",
+    `run.ts:14 ${safety}`,
     `Run.vue:3 ${safety}`,
     `Run.vue:4 ${safety}`,
     "Run.vue:10 antelopejs/no-comments detachedDoc",
+    `Run.vue:15 ${safety}`,
   ]);
 });
 

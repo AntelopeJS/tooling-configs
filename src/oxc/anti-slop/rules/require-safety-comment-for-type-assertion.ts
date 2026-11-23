@@ -11,13 +11,25 @@ type TypeAssertion =
 
 export const DEFAULT_SAFETY_MARKERS = ["SAFETY"] as const;
 
-const commentOwnerKinds = new Set([
-  "ExpressionStatement",
+const classMemberKinds: ReadonlySet<string> = new Set([
+  "AccessorProperty",
+  "MethodDefinition",
   "PropertyDefinition",
-  "ReturnStatement",
-  "ThrowStatement",
-  "VariableDeclaration",
+  "StaticBlock",
+  "TSAbstractAccessorProperty",
+  "TSAbstractMethodDefinition",
+  "TSAbstractPropertyDefinition",
+  "TSIndexSignature",
 ]);
+
+/** Whether `node` is a statement, a declaration or a class member. */
+function isStatementLike(node: ESTree.Node): boolean {
+  return (
+    node.type.endsWith("Statement") ||
+    node.type.endsWith("Declaration") ||
+    classMemberKinds.has(node.type)
+  );
+}
 
 function isConstAssertion(node: TypeAssertion): boolean {
   return (
@@ -75,7 +87,7 @@ function jsDocCast(sourceCode: SourceCode, comment: Comment): JsDocCast | null {
 
 /**
  * Return whether a marker comment ends before `assertion` starts, either right before it
- * or before a node between `owner` and its statement or class property.
+ * or before a node from `owner` up to its innermost statement, declaration or class member.
  */
 function hasSafetyComment(
   sourceCode: SourceCode,
@@ -94,10 +106,11 @@ function hasSafetyComment(
   let current = owner;
   while (current.type !== "Program") {
     if (justifies(current)) return true;
-    if (commentOwnerKinds.has(current.type)) {
+    if (isStatementLike(current)) {
       const exportDeclaration = current.parent;
       return (
-        exportDeclaration.type === "ExportNamedDeclaration" &&
+        (exportDeclaration.type === "ExportNamedDeclaration" ||
+          exportDeclaration.type === "ExportDefaultDeclaration") &&
         exportDeclaration.declaration === current &&
         justifies(exportDeclaration)
       );
