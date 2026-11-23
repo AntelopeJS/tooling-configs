@@ -111,6 +111,61 @@ tester.run(
   },
 );
 
+tester.run(
+  "anti-slop/require-safety-comment-for-type-assertion (innermost statement)",
+  requireSafetyCommentForTypeAssertionRule,
+  {
+    valid: [
+      {
+        name: "a rule that stops before the if statement rejects a SAFETY line above an if whose test asserts",
+        code: "// SAFETY: The parser returned a boolean.\nif (flag as boolean) run();",
+      },
+      {
+        name: "a rule that stops before the loop rejects a SAFETY line above a for-of whose iterable asserts",
+        code: "// SAFETY: The parser returned an array.\nfor (const item of items as Item[]) use(item);",
+      },
+      {
+        name: "a rule that stops before the loop rejects a SAFETY line above a while whose test asserts",
+        code: "// SAFETY: The queue holds a head while it is non-empty.\nwhile (queue.head!.next) queue.shift();",
+      },
+      {
+        name: "a rule that ignores comments inside the statement rejects a SAFETY line before an object property",
+        code: "const user = {\n// SAFETY: The parser established the UserId invariant.\nid: value as UserId,\n};",
+      },
+      {
+        name: "a rule that skips the export wrapper rejects a SAFETY line above an exported function whose default asserts",
+        code: "// SAFETY: Every caller passes a parsed id.\nexport function load(id = value as UserId) {}",
+      },
+      {
+        name: "a rule that skips the default export wrapper rejects a SAFETY line above an exported default class whose heritage asserts",
+        code: "// SAFETY: The registry holds a class here.\nexport default class Parser extends (Base as Constructor) {}",
+      },
+    ],
+    invalid: [
+      {
+        name: "a rule that walks past the inner for-of accepts a SAFETY line above the enclosing if",
+        code: "// SAFETY: The parser returned an array.\nif (ready) {\nfor (const item of items as Item[]) use(item);\n}",
+        errors: [error],
+      },
+      {
+        name: "a rule that walks past the inner if accepts a SAFETY line above the enclosing function",
+        code: "// SAFETY: The function validates its input.\nfunction parse() {\nif (flag as boolean) run();\n}",
+        errors: [error],
+      },
+      {
+        name: "a rule that walks past the method accepts a SAFETY line above the enclosing class",
+        code: "// SAFETY: The class validates its input.\nclass Parser {\nparse(id = value as UserId) {}\n}",
+        errors: [error],
+      },
+      {
+        name: "a rule that walks past the inner while accepts a SAFETY line above the enclosing block",
+        code: "// SAFETY: The queue is never empty here.\n{\nwhile (queue.head!.next) queue.shift();\n}",
+        errors: [error],
+      },
+    ],
+  },
+);
+
 const jsTester = new RuleTester();
 
 jsTester.run(

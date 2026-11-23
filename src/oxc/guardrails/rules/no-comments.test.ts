@@ -42,6 +42,7 @@ tester.run("antelopejs/no-comments", noCommentsRule, {
     "#!/usr/bin/env node\nrun();",
     "/** @internal @packageDocumentation */\nexport {};",
     "/** @module */\nimport { a } from './a';",
+    "/** @fileoverview Parses manifests. */\nimport { a } from './a';",
     "/** SAFETY: the caller holds the lock. */ run();",
     "/** @__PURE__ */ build();",
     "/*! Licensed under Apache-2.0. */ function run() { /*! kept anywhere */ }",
