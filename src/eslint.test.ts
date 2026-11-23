@@ -209,3 +209,26 @@ test("a layer's appended rules still win over the Vue script rules in .ts files"
     ["6 no-useless-assignment", "10 no-unreachable"],
   );
 });
+
+async function lintTwoComponents(file: string): Promise<string[]> {
+  const eslint = new ESLint({
+    cwd: process.cwd(),
+    overrideConfigFile: true,
+    overrideConfig: await antelopeNuxtConfig(),
+  });
+  const [result] = await eslint.lintText(
+    'import { defineComponent } from "vue";\n\nexport const a = defineComponent({ name: "ChildStub" });\nexport const b = defineComponent({ name: "RootHost" });\n',
+    { filePath: join(process.cwd(), file) },
+  );
+  assert(result);
+  return result.messages.map((message) => message.ruleId ?? message.message);
+}
+
+test("two defineComponent calls pass in test files and still fail in a source file", async () => {
+  assert.deepEqual(await lintTwoComponents("components/Mount.test.ts"), []);
+  assert.deepEqual(await lintTwoComponents("tests/mount.ts"), []);
+  assert.deepEqual(await lintTwoComponents("components/mount.ts"), [
+    "vue/one-component-per-file",
+    "vue/one-component-per-file",
+  ]);
+});
