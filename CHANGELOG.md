@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.10.0
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.9.5...v0.10.0)
+
+### 🚀 Enhancements
+
+- **lint:** Require SAFETY on non-null assertions and TSDoc on a declaration, in Vue too ([#447](https://github.com/AntelopeJS/tooling-configs/pull/447))
+
+### 🩹 Fixes
+
+- **lint:** Accept a SAFETY comment only before the assertion's innermost statement ([#451](https://github.com/AntelopeJS/tooling-configs/pull/451))
+
+### 📖 Documentation
+
+- Name every file-opening doc tag and the SAFETY comment scope in the README ([#450](https://github.com/AntelopeJS/tooling-configs/pull/450))
+
+### 🏡 Chore
+
+- **deps:** Update dependency playwright-core to v1.65.1 ([#449](https://github.com/AntelopeJS/tooling-configs/pull/449))
+- **deps:** Update dependency semver to v7.8.6 ([#452](https://github.com/AntelopeJS/tooling-configs/pull/452))
+- **deps:** Update dependency vite to v8.3.8 ([#453](https://github.com/AntelopeJS/tooling-configs/pull/453))
+
+#### ⚠️ Breaking Changes
+
+- **lint:** Require SAFETY on non-null assertions and TSDoc on a declaration, in Vue too ([#447](https://github.com/AntelopeJS/tooling-configs/pull/447))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.9.5
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.9.4...v0.9.5)
