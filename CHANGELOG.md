@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.10.1
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.0...v0.10.1)
+
+### 🩹 Fixes
+
+- **eslint:** Turn vue/one-component-per-file off for test files ([#454](https://github.com/AntelopeJS/tooling-configs/pull/454))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.10.0
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.9.5...v0.10.0)
