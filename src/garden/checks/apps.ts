@@ -19,12 +19,13 @@ const ORG_BASELINE: AppBaseline = {
     "pkg-pr-new",
     "antelopejs-release",
     "renovate",
+    "gitguardian",
   ],
   selectedOnly: [],
 };
 
 const ALTAB_BASELINE: AppBaseline = {
-  all: ["claude", "chatgpt-codex-connector"],
+  all: ["claude", "chatgpt-codex-connector", "gitguardian"],
   selectedOnly: [],
 };
 

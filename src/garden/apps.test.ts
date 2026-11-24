@@ -43,7 +43,7 @@ test("an app on all repositories outside the baseline and Cursor's app on either
       "/orgs/AntelopeJS/installations",
       installed(
         ["claude", "all"],
-        ["gitguardian", "all"],
+        ["stray-app", "all"],
         ["render", "selected"],
         ["cursor", "selected"],
       ),
@@ -53,11 +53,21 @@ test("an app on all repositories outside the baseline and Cursor's app on either
       installed(["cursor-agent", "all"]),
     );
   assert.deepEqual(keys(await aiApps.run(api.context())), [
-    "AntelopeJS|ai-apps|app:gitguardian",
+    "AntelopeJS|ai-apps|app:stray-app",
     "AntelopeJS|ai-apps|cursor:cursor",
     "Altab-S-R-L|ai-apps|cursor:cursor-agent",
     "Altab-S-R-L|ai-apps|app:cursor-agent",
   ]);
+});
+
+test("gitguardian on all repositories of both organizations raises nothing", async () => {
+  const api = new FakeApi()
+    .route("/orgs/AntelopeJS/installations", installed(["gitguardian", "all"]))
+    .route(
+      "/orgs/Altab-S-R-L/installations",
+      installed(["gitguardian", "all"]),
+    );
+  assert.deepEqual(keys(await aiApps.run(api.context())), []);
 });
 
 test("pkg-pr-new on all repositories of AntelopeJS raises nothing", async () => {
@@ -71,11 +81,11 @@ test("antelopejs-release on all repositories raises nothing while another all-re
   const api = new FakeApi()
     .route(
       "/orgs/AntelopeJS/installations",
-      installed(["antelopejs-release", "all"], ["gitguardian", "all"]),
+      installed(["antelopejs-release", "all"], ["stray-app", "all"]),
     )
     .route("/orgs/Altab-S-R-L/installations", installed());
   assert.deepEqual(keys(await aiApps.run(api.context())), [
-    "AntelopeJS|ai-apps|app:gitguardian",
+    "AntelopeJS|ai-apps|app:stray-app",
   ]);
 });
 
@@ -83,11 +93,11 @@ test("renovate on all repositories raises nothing while another all-repos app st
   const api = new FakeApi()
     .route(
       "/orgs/AntelopeJS/installations",
-      installed(["renovate", "all"], ["gitguardian", "all"]),
+      installed(["renovate", "all"], ["stray-app", "all"]),
     )
     .route("/orgs/Altab-S-R-L/installations", installed());
   assert.deepEqual(keys(await aiApps.run(api.context())), [
-    "AntelopeJS|ai-apps|app:gitguardian",
+    "AntelopeJS|ai-apps|app:stray-app",
   ]);
 });
 
