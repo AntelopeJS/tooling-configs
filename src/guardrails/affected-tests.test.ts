@@ -27,7 +27,9 @@ function repo(t: TestContext, layout: Layout): string {
   for (const [directory, script] of Object.entries(layout.packages)) {
     mkdirSync(join(root, directory), { recursive: true });
     const manifest = {
-      name: layout.names?.[directory] ?? (directory || "workspace"),
+      name:
+        new Map(Object.entries(layout.names ?? {})).get(directory) ??
+        (directory || "workspace"),
       scripts: script === undefined ? {} : { test: script },
     };
     writeFileSync(

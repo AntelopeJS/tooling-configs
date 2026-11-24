@@ -11,6 +11,22 @@ const inOperator = { messageId: "inOperator" };
 tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
   valid: [
     {
+      name: "a private name and a well-known symbol tested with in",
+      code: "class A { #x = 1; static has(o: object) { return #x in o; } } const iterable = (o: object) => Symbol.iterator in o;",
+    },
+    {
+      name: "an in test guarded by Object.hasOwn, and of keys iterated from the same object",
+      code: "function f(o: object, k: string) { return Object.hasOwn(o, k) && k in o; } function g(o: Record<string, number>) { for (const k of Object.keys(o)) if (k in o) use(k); }",
+    },
+    {
+      name: "a module constant read with a key typed by a local closed union or a type parameter",
+      code: "type Mode = 'a' | 'b'; const T = { a: 1, b: 2 } as const; function f(m: Mode) { return T[m]; } function g<K extends keyof typeof T>(k: K) { return T[k]; }",
+    },
+    {
+      name: "a module constant read with a literal key and a config record with an own-key guard",
+      code: "interface Config { storages?: Record<string, number>; } function f(config: Config, name: string) { return config.storages && Object.hasOwn(config.storages, name) ? config.storages[name] : undefined; } const T = { a: 1 }; function g(name: string) { return T.a + T['a']; }",
+    },
+    {
       name: "a Map answers only the keys it was given",
       code: "const HANDLERS = new Map<string, Handler>([['a', run]]); function f(name: string) { return HANDLERS.get(name); }",
     },
