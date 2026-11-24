@@ -221,7 +221,7 @@ async function scanBranch(
         report(
           "bypass",
           `Rulesets on ${branch} let actors other than administrators bypass them: ${offenders.join("; ")}.`,
-          `Only the admin role and organization administrators can bypass the rulesets on ${branch}.`,
+          `Only the admin repository role (pull_request mode) and the antelopejs-release GitHub App (always mode) can bypass the rulesets on ${branch}.`,
           "urgent",
         ),
       ]
