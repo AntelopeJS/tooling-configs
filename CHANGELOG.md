@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.10.2
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.1...v0.10.2)
+
+### 🩹 Fixes
+
+- **deps:** Update dependency semver to v7.8.6 ([#457](https://github.com/AntelopeJS/tooling-configs/pull/457))
+- **garden:** State the branch governance scope and fix the unmet rule wording ([#463](https://github.com/AntelopeJS/tooling-configs/pull/463))
+
+### 📖 Documentation
+
+- **garden:** List merge_queue and the bypass modes in branch governance ([#456](https://github.com/AntelopeJS/tooling-configs/pull/456))
+- **garden:** Name the allowed bypass actors in branch governance texts ([#459](https://github.com/AntelopeJS/tooling-configs/pull/459))
+- **garden:** Align bypass evidence and branch-governance README with the checks ([#460](https://github.com/AntelopeJS/tooling-configs/pull/460))
+
+### 🏡 Chore
+
+- **garden:** Add gitguardian to the AI apps baseline ([#455](https://github.com/AntelopeJS/tooling-configs/pull/455))
+- **deps:** Update dependency @types/node to v24.19.2 ([#458](https://github.com/AntelopeJS/tooling-configs/pull/458))
+- **deps:** Update dependency @typescript-eslint/parser to v8.73.0 ([#461](https://github.com/AntelopeJS/tooling-configs/pull/461))
+- **deps:** Update dependency eslint to v10.15.0 ([#462](https://github.com/AntelopeJS/tooling-configs/pull/462))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.10.1
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.0...v0.10.1)
