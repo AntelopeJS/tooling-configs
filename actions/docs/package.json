@@ -10,7 +10,7 @@
     "entities": "8.1.0",
     "github-slugger": "2.0.0",
     "marked": "18.1.1",
-    "semver": "7.8.5"
+    "semver": "7.8.6"
   },
   "devDependencies": {
     "typescript": "5.9.3"
