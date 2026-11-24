@@ -123,8 +123,15 @@ test("a Maintain role that bypasses always on a repository ruleset is urgent byp
   assert.deepEqual(subjects(result), ["main:bypass:urgent"]);
   assert.equal(result.kind, "findings");
   if (result.kind === "findings") {
-    assert.match(result.findings[0].evidence, /Main \(repository ruleset 3\)/);
-    assert.match(result.findings[0].evidence, /RepositoryRole 2 \(always\)/);
+    const [{ evidence, doneMeans }] = result.findings;
+    const who =
+      "admin repository role (pull_request mode) and the antelopejs-release GitHub App (always mode)";
+    assert.match(
+      evidence,
+      /Main \(repository ruleset 3\).*RepositoryRole 2 \(always\)/,
+    );
+    assert.ok(evidence.includes(`only the ${who} may`));
+    assert.ok(doneMeans.startsWith(`Only the ${who} can bypass`));
   }
 });
 
