@@ -59,6 +59,7 @@ interface Requirement {
   subject: string;
   severity: Severity;
   need: string;
+  article?: string;
   applies(repo: GardenRepo): boolean;
   met(rules: readonly JsonObject[]): boolean;
 }
@@ -79,7 +80,7 @@ const REQUIREMENTS: readonly Requirement[] = [
   ...REQUIRED_RULES.map((type): Requirement => ({
     subject: `rule:${type}`,
     severity: "urgent",
-    need: `a ${type} rule`,
+    need: `${type} rule`,
     applies: (repo) => !OWN_POLICY.get(repo.name)?.includes(type),
     met: (rules) => rules.some((rule) => optStr(rule, "type") === type),
   })),
@@ -87,20 +88,21 @@ const REQUIREMENTS: readonly Requirement[] = [
     subject: "checks",
     severity: "normal",
     need: `${CI_CONTEXT} from GitHub Actions as a required status check`,
+    article: "",
     applies: (repo) => CI_PACKS.some((pack) => pack === repo.pack),
     met: requiresCi,
   },
   {
     subject: "rule:merge_queue",
     severity: "normal",
-    need: "a merge_queue rule",
+    need: "merge_queue rule",
     applies: (repo) => !WITHOUT_MERGE_QUEUE.has(repo.name),
     met: (rules) =>
       rules.some((rule) => optStr(rule, "type") === "merge_queue"),
   },
 ];
 
-/** Actors that may bypass a default branch ruleset, as the organization rulesets set them: the administrator role through a pull request only, and the `antelopejs-release` GitHub App always, which pushes release commits and tags to `main` and runs next-sync and the module-locks refresh. */
+/** Actors that may bypass a default branch ruleset, as the organization rulesets set them: the admin repository role through a pull request only, and the `antelopejs-release` GitHub App always, which pushes release commits and tags to `main` and runs next-sync and the module-locks refresh. */
 const ALLOWED_BYPASS: readonly {
   type: string;
   id: number;
@@ -206,7 +208,7 @@ async function scanBranch(
     report(
       entry.subject,
       `The rules in force on ${branch} hold no ${entry.need}.`,
-      `The rules in force on ${branch} hold ${entry.need}.`,
+      `The rules in force on ${branch} hold ${entry.article ?? "a "}${entry.need}.`,
       entry.severity,
     ),
   );
