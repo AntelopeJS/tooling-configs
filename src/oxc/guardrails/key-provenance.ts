@@ -36,6 +36,22 @@ export function isStaticKey(key: ESTree.Node): boolean {
   return key.type === "TemplateLiteral" && key.expressions.length === 0;
 }
 
+function isPrivateName(key: ESTree.Node): boolean {
+  const type: string = key.type;
+  return type === "PrivateIdentifier";
+}
+
+/** A `#name in obj` key, or a well-known `Symbol.x` key: neither names an `Object.prototype` member. */
+export function isNeverInherited(key: ESTree.Node): boolean {
+  return (
+    isPrivateName(key) ||
+    (key.type === "MemberExpression" &&
+      !key.computed &&
+      key.object.type === "Identifier" &&
+      key.object.name === "Symbol")
+  );
+}
+
 function constInitializer(
   identifier: ESTree.Node & { name: string },
   source: SourceCode,

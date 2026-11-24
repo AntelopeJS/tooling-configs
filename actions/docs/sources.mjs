@@ -120,7 +120,7 @@ function targets(entry) {
     ...keys.filter((key) => key !== "source" && key !== "types"),
   ];
   return order
-    .filter((key) => key in entry)
+    .filter((key) => Object.hasOwn(entry, key))
     .flatMap((key) => targets(entry[key]));
 }
 

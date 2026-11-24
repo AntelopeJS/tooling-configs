@@ -12,7 +12,15 @@ import {
   unwrapExpression,
   type LocalTypes,
 } from "../local-types.ts";
-import { isKnownKey, isStaticKey } from "../key-provenance.ts";
+import {
+  isKnownKey,
+  isNeverInherited,
+  isStaticKey,
+} from "../key-provenance.ts";
+import {
+  isModuleLiteralTable,
+  isOpenStringParameter,
+} from "../parameter-keys.ts";
 import { isOwnKeyGuarded } from "../own-key-guard.ts";
 import { callName } from "../shared.ts";
 
@@ -274,10 +282,80 @@ function tableKind(
     return kinds.includes("literal") ? "literal" : null;
   }
   if (value.type === "MemberExpression")
-    return fieldKind(value, environment, depth);
+    return (
+      fieldKind(value, environment, depth) ??
+      configRecordKind(value, environment, depth)
+    );
   if (value.type !== "Identifier") return null;
   const variable = resolveVariable(environment.source, value);
   return variable === null ? null : variableKind(variable, environment, depth);
+}
+
+function signatureMembers(
+  type: ESTree.TSType,
+  environment: Environment,
+  depth: number,
+): ESTree.TSSignature[] {
+  if (depth > MAX_ALIAS_DEPTH) return [];
+  switch (type.type) {
+    case "TSParenthesizedType":
+      return signatureMembers(type.typeAnnotation, environment, depth + 1);
+    case "TSTypeLiteral":
+      return type.members;
+    case "TSIntersectionType":
+    case "TSUnionType":
+      return type.types.flatMap((part) =>
+        signatureMembers(part, environment, depth + 1),
+      );
+    case "TSTypeReference": {
+      const name = referenceName(type);
+      if (name === null) return [];
+      const alias = environment.types.aliases.get(name);
+      if (alias !== undefined)
+        return signatureMembers(alias, environment, depth + 1);
+      return (environment.types.interfaces.get(name) ?? []).flatMap(
+        (declaration) => declaration.body.body,
+      );
+    }
+    default:
+      return [];
+  }
+}
+
+/** `config.storages` where `config` is a parameter whose local type declares `storages` as a string-keyed record. */
+function configRecordKind(
+  node: ESTree.MemberExpression,
+  environment: Environment,
+  depth: number,
+): TableKind | null {
+  if (
+    node.computed ||
+    node.object.type !== "Identifier" ||
+    node.property.type !== "Identifier"
+  )
+    return null;
+  const variable = resolveVariable(environment.source, node.object);
+  const [definition] = variable?.defs ?? [];
+  const annotation =
+    definition?.type === "Parameter" ? annotationOf(definition) : undefined;
+  if (annotation === undefined) return null;
+  const name = node.property.name;
+  const declared = signatureMembers(annotation, environment, depth).find(
+    (member) =>
+      member.type === "TSPropertySignature" &&
+      !member.computed &&
+      member.key.type === "Identifier" &&
+      member.key.name === name,
+  );
+  return declared?.type === "TSPropertySignature" &&
+    declared.typeAnnotation != null &&
+    isStringKeyedType(
+      declared.typeAnnotation.typeAnnotation,
+      environment,
+      depth,
+    )
+    ? "dictionary"
+    : null;
 }
 
 function isWrite(node: ESTree.MemberExpression): boolean {
@@ -333,7 +411,7 @@ export const noInheritedKeyLookupRule = defineRule({
     type: "problem",
     docs: {
       description:
-        "Disallow reading a string-keyed object table with a computed key, or testing it with `in`, without an own-key check.",
+        "Disallow reading a string-keyed object table with a computed key, or testing any object with `in` and a non-literal key, without an own-key check.",
     },
     messages: {
       lookup:
@@ -366,9 +444,12 @@ export const noInheritedKeyLookupRule = defineRule({
     ): void => {
       if (environment === null) return;
       const kind = tableKind(object, environment);
+      const parameterKey =
+        isModuleLiteralTable(object, environment.source) &&
+        isOpenStringParameter(key, environment.source, environment.types);
       if (
-        kind === null ||
-        (kind === "literal" && key.type !== "TSAsExpression")
+        !parameterKey &&
+        (kind === null || (kind === "literal" && key.type !== "TSAsExpression"))
       )
         return;
       const table = context.sourceCode.getText(object);
@@ -408,7 +489,12 @@ export const noInheritedKeyLookupRule = defineRule({
           node.operator !== "in" ||
           isStaticKey(node.left) ||
           isPredicateKey(node) ||
-          tableKind(node.right, environment) === null
+          isKnownKey(
+            node.left,
+            context.sourceCode.getText(node.right),
+            context.sourceCode,
+          ) ||
+          isNeverInherited(node.left)
         )
           return;
         report({
