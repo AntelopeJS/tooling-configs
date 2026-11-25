@@ -419,7 +419,7 @@ export function syncRepository(
       profile === "full" || isTemplateSource(root, profile),
     ),
     ...pnpmWorkspaceArtifacts(root, manifest, profile),
-    ...releaseArtifacts(root, integrationBranch ?? "main"),
+    ...releaseArtifacts(root),
     ...(profile === "full" ? nextSyncArtifacts(root, integrationBranch) : []),
     ...retiredWorkflowArtifacts(root, integrationBranch !== undefined),
   ];
