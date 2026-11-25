@@ -48,16 +48,21 @@ function mayBeArbitraryString(
       const name = referenceName(type);
       if (name === null) return false;
       if (name === "PropertyKey") return true;
+      const parameter = enclosingTypeParameter(fn, name);
+      if (parameter !== null)
+        return (
+          parameter.constraint === null ||
+          mayBeArbitraryString(
+            parameter.constraint,
+            parameter,
+            types,
+            depth + 1,
+          )
+        );
       const alias = types.aliases.get(name);
       if (alias !== undefined)
         return mayBeArbitraryString(alias, fn, types, depth + 1);
-      if (types.interfaces.has(name) || types.enums.has(name)) return false;
-      const parameter = enclosingTypeParameter(fn, name);
-      if (parameter === null) return true;
-      return (
-        parameter.constraint === null ||
-        mayBeArbitraryString(parameter.constraint, parameter, types, depth + 1)
-      );
+      return !types.interfaces.has(name) && !types.enums.has(name);
     }
     default:
       return false;
