@@ -207,10 +207,14 @@ function configModules(root: string): ConfigModules {
         version:
           fieldOrigin(propertyValue(node, "version"), parameters) ?? LATEST,
       };
-      const local = [origins.package, origins.version].every(
-        (origin) => origin !== "unreadable" && "text" in origin,
+      const fromArguments = [origins.package, origins.version].some(
+        (origin) => origin !== "unreadable" && "argument" in origin,
       );
-      if (helper && !local) helpers.set(helper.name, origins);
+      const unreadable = [origins.package, origins.version].includes(
+        "unreadable",
+      );
+      if (helper && fromArguments && !unreadable)
+        helpers.set(helper.name, origins);
       else sources.push({ at: node, origins, args: [] });
     }
     ts.forEachChild(node, findSources);

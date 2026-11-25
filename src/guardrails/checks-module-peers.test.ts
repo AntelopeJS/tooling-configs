@@ -184,6 +184,17 @@ test("a package source whose package is not a string fails and names its line, c
   );
 });
 
+test("a package source with a non-literal version inside a default-exported function fails and names its line, caught by an implementation that stores it as a helper only a call resolves", async (t) => {
+  const config = `export default function build() {\n  const v = process.env.V ?? "0.2.1";\n  return {\n    modules: {\n      assistant: {\n        source: { type: "package", package: "${ASSISTANT}", version: v },\n      },\n    },\n  };\n}\n`;
+  const root = template(t, config, { "@openai/codex": "0.166.0" });
+  const result = await checks(t, root, {});
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(
+    result.stdout,
+    /\nantelope\.config\.ts:6 holds a package source whose package or version is not a string/,
+  );
+});
+
 test("the draft, fast and full tiers skip lockfile:module-peers because it reads the registry, and the queue tier runs it, caught by an implementation that leaves it out of the registry steps", async (t) => {
   const root = template(t, literalSource(ASSISTANT, "^0.2.1"), {
     "@openai/codex": "0.170.0",

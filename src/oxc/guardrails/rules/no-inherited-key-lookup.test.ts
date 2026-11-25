@@ -107,6 +107,10 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       code: "type Closed = 'a' | 'b'; const T = { a: 1, b: 2 }; class C<K extends Closed> { m(k: K) { return T[k]; } }",
     },
     {
+      name: "a closed constraint wins over a same-name open alias, caught by an implementation that resolves the alias first",
+      code: "type K = string; const T = { a: 1, b: 2 }; function f<K extends 'a' | 'b'>(k: K) { return T[k]; }",
+    },
+    {
       name: "a key typed by a type parameter of an outer function",
       code: "type Closed = 'a' | 'b'; const T = { a: 1, b: 2 }; function outer<K extends Closed>() { return (k: K) => T[k]; }",
     },
@@ -152,6 +156,11 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
     },
   ],
   invalid: [
+    {
+      name: "an open constraint wins over a same-name closed alias, caught by an implementation that resolves the alias first",
+      code: "type K = 'a' | 'b'; const T = { a: 1, b: 2 }; function f<K extends string>(k: K) { return T[k]; }",
+      errors: [lookup],
+    },
     {
       name: "a key typed by an unconstrained type parameter of the enclosing class",
       code: "const T = { a: 1, b: 2 }; class ClsU<K> { m(k: K) { return T[k]; } }",
