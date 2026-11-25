@@ -11,12 +11,13 @@ export {
 } from "./guardrails/shared.ts";
 
 /**
- * Generated output and the agent files `antelopejs-sync` writes. oxlint reads ignorePatterns only from the root config,
+ * Generated output, the agent files `antelopejs-sync` writes and everything under `.claude/skills`. oxlint reads ignorePatterns only from the root config,
  * never from extends: set them there, and spread them when adding repository-specific ignores.
  */
 export const ANTELOPE_IGNORE_PATTERNS = [
   ...IGNORE_PATTERNS,
   ...SYNCED_AGENT_PATTERNS,
+  ".claude/skills/**",
 ];
 
 type Severity = "off" | "error";

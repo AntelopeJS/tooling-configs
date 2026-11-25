@@ -129,3 +129,14 @@ test("the synced oxlint.config.ts skips the pack's .claude/skills links, and rep
     "src/index.ts:1 antelopejs(require-tsconfig-types)",
   ]);
 });
+
+test("the synced oxlint.config.ts skips a repository-authored file under .claude/skills", (t) => {
+  const root = syncedConsumer();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, ".claude/skills/own"), { recursive: true });
+  writeFileSync(join(root, ".claude/skills/own/script.ts"), PROBE);
+  assert.deepEqual(
+    lint(root).filter((line) => line.startsWith(".claude/")),
+    [],
+  );
+});
