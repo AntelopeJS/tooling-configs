@@ -153,6 +153,16 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
   ],
   invalid: [
     {
+      name: "a key typed by an unconstrained type parameter of the enclosing class",
+      code: "const T = { a: 1, b: 2 }; class ClsU<K> { m(k: K) { return T[k]; } }",
+      errors: [lookup],
+    },
+    {
+      name: "a key typed by a type parameter constrained to string",
+      code: "const T = { a: 1, b: 2 }; function f<K extends string>(k: K) { return T[k]; }",
+      errors: [lookup],
+    },
+    {
       name: "rethinkdb@ea47b29:src/implementations/database/expression.ts:193",
       code: `
 const FUNC_STAGE_MAP: Record<string, FuncStageHandler> = {

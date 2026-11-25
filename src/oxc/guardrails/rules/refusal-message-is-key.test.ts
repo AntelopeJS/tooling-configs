@@ -21,6 +21,11 @@ tester.run("antelopejs/refusal-message-is-key", refusalMessageIsKeyRule, {
       filename,
     },
     { code: "assert(ok, 422, `$database.invalid`);", filename },
+    {
+      name: "a key built from an interpolated template literal",
+      code: "assert(ok, 404, `$database.${kind}_not_found`);",
+      filename,
+    },
     { code: 'assert(ok, 500, "Something broke");', filename },
     { code: 'assert(ok, 400, "Bad request");', filename },
     { code: 'assert(ok, status, "Not a known status");', filename },

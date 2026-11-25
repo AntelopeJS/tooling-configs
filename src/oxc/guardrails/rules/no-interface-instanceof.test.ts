@@ -33,6 +33,19 @@ tester.run("antelopejs/no-interface-instanceof", noInterfaceInstanceofRule, {
       code: "class Private {} value instanceof Private;",
       filename: inInterface,
     },
+    {
+      name: "a parameter that shadows an imported class",
+      code: 'import { Stream } from "@antelopejs/interface-data-api"; function f(Stream: Function, v: unknown) { return v instanceof Stream; }',
+    },
+    {
+      name: "a parameter that shadows a namespace import",
+      code: 'import * as core from "@antelopejs/interface-core"; function f(core: { AsyncProxy: Function }, x: unknown) { return x instanceof core.AsyncProxy; }',
+    },
+    {
+      name: "a local class that shadows an interface package's own exported class",
+      code: "export class Stream {} export function check(v: unknown) { class Stream {} return v instanceof Stream; }",
+      filename: inInterface,
+    },
   ],
   invalid: [
     {
@@ -65,6 +78,12 @@ tester.run("antelopejs/no-interface-instanceof", noInterfaceInstanceofRule, {
       code: "export class Stream {} export function check(v: unknown) { return v instanceof Stream; }",
       filename: inInterface,
       errors: [error("Stream")],
+    },
+    {
+      name: "an interface package's class exported through an export list",
+      code: "class S {} class R {} export { S, R as Renamed }; export function check(v: unknown) { return v instanceof S || v instanceof R; }",
+      filename: inInterface,
+      errors: [error("S"), error("R")],
     },
   ],
 });
