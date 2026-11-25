@@ -67,6 +67,7 @@ const allowedCommentForms = [
       /^webpack(?:ChunkName|Prefetch|Preload|Mode|Ignore|Exports|Include|Exclude)\s*:/u,
   },
   { type: null, pattern: /^(?:prettier|oxfmt)-ignore\s*$/u },
+  { type: null, pattern: /^@vitest-environment\s+\S+$/u, fileStart: true },
 ];
 const attachedDoc = { type: "Block" } as const;
 const disableDirective =
@@ -77,7 +78,43 @@ function isDocBlock(comment: Comment): boolean {
 }
 
 /**
- * Whether a declaration of `DOCUMENTED_KINDS` starts after `comment`, at the token that follows it or an ancestor of that token.
+ * Whether no token precedes `comment` in its script. vue-eslint-parser opens each `.vue` script
+ * block with a `<script>` punctuator, which oxlint, linting the block alone, never sees.
+ */
+function startsScript(sourceCode: SourceCode, comment: Comment): boolean {
+  const token = sourceCode.getTokenBefore(comment);
+  return (
+    token === null ||
+    (token.type === "Punctuator" && token.value === "<script>")
+  );
+}
+
+/**
+ * The token `comment` documents: the next token, past directive comments, with no blank line
+ * and no other `/**` block on the way.
+ */
+function documentedToken(
+  sourceCode: SourceCode,
+  comment: Comment,
+): ESTree.Token | null {
+  const token = sourceCode.getTokenAfter(comment);
+  if (token === null) return null;
+  const between = sourceCode
+    .getCommentsBefore(token)
+    .filter((other) => other.range[0] >= comment.range[1]);
+  const chain = [comment, ...between, token];
+  const separated = chain
+    .slice(1)
+    .some((item, index) =>
+      /\n[^\S\n]*\n/u.test(
+        sourceCode.text.slice(chain[index]?.range[1], item.range[0]),
+      ),
+    );
+  return separated || between.some(isDocBlock) ? null : token;
+}
+
+/**
+ * Whether a declaration of `DOCUMENTED_KINDS` starts at the token `comment` documents or an ancestor of that token.
  * A decorator written before `export` lies outside the range of its class, so decorators are looked up by start.
  */
 function documentsDeclaration(
@@ -85,7 +122,7 @@ function documentsDeclaration(
   decorators: ReadonlyMap<number, ESTree.Decorator>,
   comment: Comment,
 ): boolean {
-  const token = sourceCode.getTokenAfter(comment);
+  const token = documentedToken(sourceCode, comment);
   if (token === null) return false;
   let node: ESTree.Node | null =
     decorators.get(token.range[0]) ??
@@ -114,10 +151,7 @@ function isStandaloneDoc(
   comment: Comment,
   filename: string,
 ): boolean {
-  if (
-    MODULE_DOC_TAG.test(comment.value) &&
-    sourceCode.getTokenBefore(comment) === null
-  )
+  if (MODULE_DOC_TAG.test(comment.value) && startsScript(sourceCode, comment))
     return true;
   return JSDOC_TYPED_FILE.test(filename) && JS_TYPE_TAG.test(comment.value);
 }
@@ -162,6 +196,8 @@ export const noCommentsRule = defineRule({
               : allowedCommentForms.find(
                   (allowed) =>
                     (allowed.type === null || allowed.type === comment.type) &&
+                    (!("fileStart" in allowed) ||
+                      startsScript(sourceCode, comment)) &&
                     allowed.pattern.test(
                       "raw" in allowed ? comment.value : text,
                     ),
