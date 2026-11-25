@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.10.3
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.2...v0.10.3)
+
+### 🚀 Enhancements
+
+- **guardrails:** Flag in with a non-literal key and parameter-keyed const tables in no-inherited-key-lookup ([#464](https://github.com/AntelopeJS/tooling-configs/pull/464))
+- **guardrails:** Add refusal-message-is-key rule ([#467](https://github.com/AntelopeJS/tooling-configs/pull/467))
+- **guardrails:** Add no-interface-instanceof rule ([#468](https://github.com/AntelopeJS/tooling-configs/pull/468))
+- **guardrails:** Add lockfile:module-peers step ([#471](https://github.com/AntelopeJS/tooling-configs/pull/471))
+- **guardrails:** Ban shifted params indexing and derive skipped builds ([#474](https://github.com/AntelopeJS/tooling-configs/pull/474))
+
+### 🩹 Fixes
+
+- **guardrails:** Treat same-file enums and enclosing type parameters as closed keys ([#475](https://github.com/AntelopeJS/tooling-configs/pull/475))
+- **deps:** Update dependency marked to v18.2.1 ([#476](https://github.com/AntelopeJS/tooling-configs/pull/476))
+- **guardrails:** Scope refusal-message-is-key to DMS modules ([#478](https://github.com/AntelopeJS/tooling-configs/pull/478))
+- **guardrails:** Resolve type parameter constraints, export lists, shadowing and template keys ([#479](https://github.com/AntelopeJS/tooling-configs/pull/479))
+- **guardrails:** Resolve enclosing type parameters first and fail unreadable package sources ([#480](https://github.com/AntelopeJS/tooling-configs/pull/480))
+- **guardrails:** Accept camelCase segments in refusal translation keys ([#481](https://github.com/AntelopeJS/tooling-configs/pull/481))
+- **guardrails:** Write the release caller that dispatches previews with preview: true ([#482](https://github.com/AntelopeJS/tooling-configs/pull/482))
+
+### 🏡 Chore
+
+- **deps:** Update dependency eslint-plugin-perfectionist to v5.14.0 ([#466](https://github.com/AntelopeJS/tooling-configs/pull/466))
+- **deps:** Update dependency oxlint-tsgolint to v7.0.2008 ([#465](https://github.com/AntelopeJS/tooling-configs/pull/465))
+- **deps:** Update dependency knip to v6.47.0 ([#469](https://github.com/AntelopeJS/tooling-configs/pull/469))
+- **deps:** Pin dependencies ([#448](https://github.com/AntelopeJS/tooling-configs/pull/448))
+- **deps:** Update dependency mongodb-memory-server to v11.4.0 ([#472](https://github.com/AntelopeJS/tooling-configs/pull/472))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.10.2
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.1...v0.10.2)
