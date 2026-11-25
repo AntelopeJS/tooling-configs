@@ -8,6 +8,22 @@ import {
 
 const MAX_DEPTH = 8;
 
+function declaresTypeParameter(node: ESTree.Node, name: string): boolean {
+  let current: ESTree.Node | null = node;
+  while (current !== null) {
+    if (
+      "typeParameters" in current &&
+      current.typeParameters?.type === "TSTypeParameterDeclaration" &&
+      current.typeParameters.params.some(
+        (parameter) => parameter.name.name === name,
+      )
+    )
+      return true;
+    current = current.parent;
+  }
+  return false;
+}
+
 function mayBeArbitraryString(
   type: ESTree.TSType,
   fn: ESTree.Node,
@@ -31,10 +47,8 @@ function mayBeArbitraryString(
       const alias = types.aliases.get(name);
       if (alias !== undefined)
         return mayBeArbitraryString(alias, fn, types, depth + 1);
-      if (types.interfaces.has(name)) return false;
-      const typeParameters =
-        "typeParameters" in fn ? (fn.typeParameters?.params ?? []) : [];
-      return !typeParameters.some((parameter) => parameter.name.name === name);
+      if (types.interfaces.has(name) || types.enums.has(name)) return false;
+      return !declaresTypeParameter(fn, name);
     }
     default:
       return false;

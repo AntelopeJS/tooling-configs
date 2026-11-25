@@ -99,6 +99,18 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       code: "type Status = 'open' | 'closed'; const LABELS: Record<Status, string> = { open: 'Open', closed: 'Closed' }; function f(s: Status) { return LABELS[s]; }",
     },
     {
+      name: "a key typed by a same-file string enum",
+      code: "enum Mode { A = 'a', B = 'b' } const T = { a: 1, b: 2 }; function e(m: Mode) { return T[m]; }",
+    },
+    {
+      name: "a key typed by a type parameter of the enclosing class",
+      code: "type Closed = 'a' | 'b'; const T = { a: 1, b: 2 }; class C<K extends Closed> { m(k: K) { return T[k]; } }",
+    },
+    {
+      name: "a key typed by a type parameter of an outer function",
+      code: "type Closed = 'a' | 'b'; const T = { a: 1, b: 2 }; function outer<K extends Closed>() { return (k: K) => T[k]; }",
+    },
+    {
       name: "an untyped literal table read with a key typed by the table",
       code: "const T = { a: 1 } as const; function f(k: keyof typeof T) { return T[k]; }",
     },
