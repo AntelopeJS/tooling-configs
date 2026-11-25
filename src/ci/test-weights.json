@@ -178,6 +178,7 @@
   "src/oxc/guardrails/self-import-lint.test.ts": 1.6,
   "src/oxc/guardrails/type-checker.test.ts": 1.2,
   "src/oxc/guardrails/vue-script.test.ts": 0,
+  "src/oxc/internal/index.test.ts": 0.2,
   "src/oxc/lint-hidden-any.test.ts": 2.8,
   "src/oxc/lint-object-assign.test.ts": 12.6,
   "src/oxc/lint-synced-skills.test.ts": 1.1,
