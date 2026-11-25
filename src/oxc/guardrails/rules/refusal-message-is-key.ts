@@ -5,7 +5,7 @@ import { enclosingPackage } from "../self-package.ts";
 import { resolveVariable, unwrapExpression } from "../local-types.ts";
 
 const ASSERT_STATUSES = new Set([403, 404, 409, 422]);
-const TRANSLATION_KEY = /^\$?[A-Za-z0-9_-]+(\.[a-z0-9_]+)+$/;
+const TRANSLATION_KEY = /^\$?[A-Za-z0-9_-]+(\.[A-Za-z0-9_]+)+$/;
 const DMS_PACKAGE = /^(@[^/]+\/)?(interface-)?dms(-|$)/;
 
 function isDmsPackage(file: string): boolean {

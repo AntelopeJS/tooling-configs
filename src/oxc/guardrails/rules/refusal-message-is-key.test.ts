@@ -14,6 +14,11 @@ const error = { messageId: "sentence" };
 
 tester.run("antelopejs/refusal-message-is-key", refusalMessageIsKeyRule, {
   valid: [
+    {
+      name: "a camelCase key segment",
+      code: 'assert(ok, 404, "$helio.crm.customers.errors.notFound");',
+      filename,
+    },
     { code: 'assert(ok, 403, "$database.connection_refused");', filename },
     { code: 'assert(ok, 404, "database.not_found");', filename },
     {
@@ -61,6 +66,12 @@ tester.run("antelopejs/refusal-message-is-key", refusalMessageIsKeyRule, {
   ],
   invalid: [
     {
+      name: "a sentence with a dot",
+      code: 'assert(ok, 404, "Not found. Retry");',
+      filename,
+      errors: [error],
+    },
+    {
       name: "dms-database#172: refusal answered an English sentence",
       code: 'assert(connection, 404, "Database connection not found");',
       filename,
@@ -99,12 +110,6 @@ tester.run("antelopejs/refusal-message-is-key", refusalMessageIsKeyRule, {
     {
       name: "const status and a message with a space and a dot",
       code: 'const GONE = 410; new HTTPResult(GONE, "Gone. Really.");',
-      filename,
-      errors: [error],
-    },
-    {
-      name: "a key with an uppercase letter is a sentence",
-      code: 'assert(ok, 404, "Database.NotFound");',
       filename,
       errors: [error],
     },
