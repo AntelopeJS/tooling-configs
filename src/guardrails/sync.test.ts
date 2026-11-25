@@ -10,6 +10,7 @@ import {
   AGENTS_BLOCK_START,
 } from "./agents-block.ts";
 import { ANTELOPE_STYLE } from "../oxc/fmt.ts";
+import { linkTsgolint } from "../oxc/helpers/tsgolint.ts";
 import { parseManifest, PREPARE_INSTALL, toolingVersions } from "./package.ts";
 import { isExecutable } from "./exec-bit.ts";
 import { MANAGED_ARTIFACTS, syncRepository } from "./sync.ts";
@@ -81,6 +82,10 @@ test("full sync preserves handwritten text even behind a CLAUDE symlink, and doe
   assert.match(
     read(root, "lefthook.yml"),
     /npm exec -- oxfmt --no-error-on-unmatched-pattern \{staged_files\}/,
+  );
+  assert.match(
+    read(root, "lefthook.yml"),
+    /run: npm exec -- antelopejs-lint-staged \{staged_files\}\n/,
   );
   assert.doesNotMatch(
     read(root, "lefthook.yml"),
@@ -454,4 +459,54 @@ test("sync adds no note when antelopejs-checks runs every step of the replaced c
     parseManifest(read(root, "package.json")).scripts?.checks,
     "antelopejs-checks",
   );
+});
+
+test("the commit hook skips type-aware lint for staged files whose tsconfig cannot load, saying CI covers them, and lints the rest", (t) => {
+  const root = testRepo(t);
+  linkOxlint(root);
+  linkTsgolint(root);
+  put(
+    root,
+    "oxlint.config.ts",
+    'export default { options: { typeAware: true }, rules: { "eslint/no-debugger": "error", "typescript/no-floating-promises": "error" } };\n',
+  );
+  put(
+    root,
+    "frontend/tsconfig.json",
+    '{ "extends": "./.dms-types/tsconfig.json" }\n',
+  );
+  put(root, "frontend/page.ts", "export const page = 1;\n");
+  put(
+    root,
+    "backend/tsconfig.json",
+    '{ "compilerOptions": { "strict": true } }\n',
+  );
+  put(root, "backend/routes.ts", "async function load() {}\nload();\n");
+  const skipped =
+    /frontend\/tsconfig\.json cannot load \(Cannot read file '.+\.dms-types\/tsconfig\.json'\.\), so the staged files it covers were linted without type information; CI lints them with it\.\n/;
+  const files = ["frontend/page.ts", "backend/routes.ts"];
+
+  const floating = bin(root, "lint-staged", files);
+  assert.equal(floating.status, 1, floating.stderr);
+  assert.match(floating.stdout, skipped);
+  assert.match(
+    floating.stderr,
+    /^backend\/routes\.ts:2:1: typescript\(no-floating-promises\): Promises must be awaited/,
+  );
+  assert.doesNotMatch(floating.stderr, /tsconfig/);
+
+  put(root, "frontend/page.ts", "export const page = 1;\ndebugger;\n");
+  put(root, "backend/routes.ts", "async function load() {}\nvoid load();\n");
+  const syntactic = bin(root, "lint-staged", files);
+  assert.equal(syntactic.status, 1, syntactic.stderr);
+  assert.match(
+    syntactic.stderr,
+    /^frontend\/page\.ts:2:1: eslint\(no-debugger\)/,
+  );
+
+  put(root, "frontend/page.ts", "export const page = 1;\n");
+  const clean = bin(root, "lint-staged", files);
+  assert.equal(clean.status, 0, clean.stderr);
+  assert.match(clean.stdout, skipped);
+  assert.equal(clean.stderr, "");
 });

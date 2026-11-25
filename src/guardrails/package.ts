@@ -192,7 +192,7 @@ export function repositoryTools(manifest: Manifest) {
         "oxfmt.config.ts": "@antelopejs/tooling-configs/oxc/fmt",
         "knip.config.ts": "@antelopejs/tooling-configs/knip",
       },
-      hookPrefix: `${execCommand(packageManager(manifest))} `,
+      lintHook: `${execCommand(packageManager(manifest))} antelopejs-lint-staged`,
     },
     source: {
       commands: {
@@ -206,7 +206,7 @@ export function repositoryTools(manifest: Manifest) {
         "oxfmt.config.ts": "./src/oxc/fmt.ts",
         "knip.config.ts": "./src/knip.ts",
       },
-      hookPrefix: "",
+      lintHook: "node src/bin/lint-staged.ts",
     },
   };
   return targets[

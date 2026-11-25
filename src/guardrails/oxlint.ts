@@ -27,6 +27,7 @@ interface OxlintDiagnostic {
   filename?: string;
   message: string;
   help?: string;
+  severity?: "error" | "warning" | "advice";
   labels?: { span: OxlintSpan }[];
 }
 
@@ -174,6 +175,50 @@ export function directiveReport(
             : file,
         message: item.message,
       });
+  }
+  return report;
+}
+
+/** What the commit hook prints after linting the staged files. */
+interface StagedLintReport {
+  /** One line per tsconfig that cannot load, whose files were linted without type information. */
+  skipped: string[];
+  /** Every other diagnostic, one `file:line:column: code: message` line each. */
+  findings: string[];
+  /** Whether any of the findings is an error. */
+  failed: boolean;
+}
+
+const TSCONFIG_ERROR = "typescript(tsconfig-error)";
+
+/**
+ * Lints `files` as configured, reporting a tsconfig that cannot load, such as
+ * one extending generated types not built yet, as skipped rather than failed:
+ * oxlint still runs its other rules on the files it covers, and CI, which
+ * builds first, runs the type-aware ones.
+ */
+export function lintStaged(root: string, files: string[]): StagedLintReport {
+  const report: StagedLintReport = { skipped: [], findings: [], failed: false };
+  if (files.length === 0) return report;
+  for (const item of runOxlint(root, undefined, files, [])) {
+    const file =
+      item.filename === undefined
+        ? undefined
+        : repositoryPath(root, item.filename);
+    if (item.code === TSCONFIG_ERROR) {
+      report.skipped.push(
+        `${file} cannot load (${item.help ?? item.message}), so the staged files it covers were linted without type information; CI lints them with it.`,
+      );
+      continue;
+    }
+    const span = item.labels?.[0]?.span;
+    const location = span ? `${file}:${span.line}:${span.column}` : file;
+    const help = item.help === undefined ? "" : ` ${item.help}`;
+    report.findings.push(
+      `${location === undefined ? "" : `${location}: `}${item.code ?? "error"}: ${item.message}${help}`,
+    );
+    if (item.severity !== "warning" && item.severity !== "advice")
+      report.failed = true;
   }
   return report;
 }

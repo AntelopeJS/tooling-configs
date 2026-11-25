@@ -84,6 +84,7 @@ const RETIRED_HOOK_COMMANDS = [
 export function lefthook(
   current: string | undefined,
   manager: PackageManager,
+  tools: ReturnType<typeof repositoryTools>,
 ): string {
   const exec = execCommand(manager);
   const document = parseDocument(current ?? "{}\n");
@@ -105,7 +106,7 @@ export function lefthook(
       },
       "antelopejs-lint": {
         glob,
-        run: `${exec} oxlint --no-error-on-unmatched-pattern {staged_files}`,
+        run: `${tools.lintHook} {staged_files}`,
       },
     },
   };

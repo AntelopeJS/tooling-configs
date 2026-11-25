@@ -28,6 +28,7 @@
     "antelopejs-comment-proof": "./dist/bin/comment-proof.mjs",
     "antelopejs-garden": "./dist/bin/garden.mjs",
     "antelopejs-lease": "./dist/bin/lease.mjs",
+    "antelopejs-lint-staged": "./dist/bin/lint-staged.mjs",
     "antelopejs-readme-strip": "./dist/bin/readme-strip.mjs",
     "antelopejs-suppressions": "./dist/bin/suppressions.mjs",
     "antelopejs-sync": "./dist/bin/sync.mjs",
