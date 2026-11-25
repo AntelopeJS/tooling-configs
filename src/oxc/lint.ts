@@ -178,6 +178,7 @@ export function guardrailsRules() {
       "antelopejs/no-inherited-key-lookup": "error",
       "antelopejs/no-presence-only-type-guard": "error",
       "antelopejs/no-read-then-insert": "error",
+      "antelopejs/refusal-message-is-key": "error",
     },
     overrides: [
       {
