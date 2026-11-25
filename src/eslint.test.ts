@@ -173,6 +173,42 @@ test("the comment rules report an unexplained assertion, one under a SAFETY comm
   ]);
 });
 
+async function lintVueText(code: string): Promise<string[]> {
+  const eslint = new ESLint({
+    cwd: process.cwd(),
+    overrideConfigFile: true,
+    overrideConfig: await antelopeNuxtConfig(),
+  });
+  const [result] = await eslint.lintText(code, {
+    filePath: join(process.cwd(), "components/Doc.vue"),
+  });
+  assert(result);
+  return result.messages.map(
+    (message) => `${message.line} ${message.ruleId} ${message.messageId}`,
+  );
+}
+
+test("a .vue script block may open with a module doc, as under oxlint, and one after code is still detached", async () => {
+  const setup =
+    '<script setup lang="ts">\n/** @packageDocumentation */\nimport { ref } from "vue";\nconst a = ref(1);\n</script>\n';
+  assert.deepEqual(
+    await lintVueText(`${setup}\n<template><div>{{ a }}</div></template>\n`),
+    [],
+  );
+  assert.deepEqual(
+    await lintVueText(
+      `<script lang="ts">\nexport const b = 2;\n</script>\n${setup}\n<template><div>{{ a }}{{ b }}</div></template>\n`,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    await lintVueText(
+      '<script setup lang="ts">\nimport { ref } from "vue";\nconst a = ref(1);\n/** @packageDocumentation */\nconsole.log(a);\n</script>\n',
+    ),
+    ["4 antelopejs/no-comments detachedDoc"],
+  );
+});
+
 async function lintComposable(
   config: ReturnType<typeof antelopeNuxtConfig>,
 ): Promise<string[]> {
