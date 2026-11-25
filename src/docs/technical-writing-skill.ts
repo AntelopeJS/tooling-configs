@@ -1,4 +1,4 @@
-/** The technical-writing skill, vendored unchanged from Upd4ting/agent-config `claude/skills/technical-writing/SKILL.md` at 4e0a848. */
+/** The technical-writing skill, vendored from Upd4ting/agent-config `claude/skills/technical-writing/SKILL.md` at 4e0a848 without its Claude Code adapter paragraph (the adapter file is not synced). */
 export const TECHNICAL_WRITING_SKILL: string =
   [
     "---",
@@ -8,8 +8,6 @@ export const TECHNICAL_WRITING_SKILL: string =
     "---",
     "",
     "# Technical writing",
-    "",
-    "In Claude Code, read [the Claude Code adapter](../../docs/harness/claude-code.md) once per session before you follow this skill. It maps the Cursor names in pstack skills to Claude Code.",
     "",
     "Write so a tired engineer understands on the first read. Apply all four layers.",
     "",

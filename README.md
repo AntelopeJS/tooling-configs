@@ -68,7 +68,7 @@ Both profiles of `antelopejs-sync` keep the shared CI caller on the job id `ci`,
 
 ## Writing skills
 
-`antelopejs-sync` also installs the `technical-writing` and `unslop` skills in every full-profile repository and in a template source. Each is `.agents/skills/<name>/SKILL.md` with a `.claude/skills/<name>` link. The text is vendored unchanged from Upd4ting/agent-config `claude/skills/<name>/SKILL.md` at commit 4e0a848, and `--check` reports an edited file as drift. Write documentation with them: `technical-writing` picks the page's mode and sets the sentence rules, and `unslop` lists the patterns to cut.
+`antelopejs-sync` also installs the `technical-writing` and `unslop` skills in every full-profile repository and in a template source. Each is `.agents/skills/<name>/SKILL.md` with a `.claude/skills/<name>` link. The text is vendored from Upd4ting/agent-config `claude/skills/<name>/SKILL.md` at commit 4e0a848, minus the `technical-writing` paragraph that links the unsynced `docs/harness/claude-code.md`, and `--check` reports an edited file as drift. Write documentation with them: `technical-writing` picks the page's mode and sets the sentence rules, and `unslop` lists the patterns to cut.
 
 ## Install
 
