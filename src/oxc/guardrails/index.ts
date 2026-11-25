@@ -4,6 +4,7 @@ import { noCommentsRule } from "./rules/no-comments.ts";
 import { noConstantValueAssertionRule } from "./rules/no-constant-value-assertion.ts";
 import { noFsReadInTestsRule } from "./rules/no-fs-read-in-tests.ts";
 import { noInheritedKeyLookupRule } from "./rules/no-inherited-key-lookup.ts";
+import { noInterfaceInstanceofRule } from "./rules/no-interface-instanceof.ts";
 import { noPresenceOnlyTypeGuardRule } from "./rules/no-presence-only-type-guard.ts";
 import { noReadThenInsertRule } from "./rules/no-read-then-insert.ts";
 import { noSelfImportInTestsRule } from "./rules/no-self-import-in-tests.ts";
@@ -17,13 +18,14 @@ import { requireTsconfigTypesRule } from "./rules/require-tsconfig-types.ts";
 
 export { ASSERTION_FUNCTION_NAMES, TEST_FILE_GLOBS } from "./shared.ts";
 
-/** AntelopeJS rules that reject comments, inherited-key lookups, presence-only type guards, 4xx refusals whose message is a sentence, inserts that follow a read of the same table or that a called function makes once an awaited read found nothing, unrun interface-database queries an awaited function returns, unchecked Object.assign writes, low-evidence tests, files no tsconfig lists and tsconfigs that list no `types`. */
+/** AntelopeJS rules that reject comments, inherited-key lookups, instanceof against an interface package class, presence-only type guards, 4xx refusals whose message is a sentence, inserts that follow a read of the same table or that a called function makes once an awaited read found nothing, unrun interface-database queries an awaited function returns, unchecked Object.assign writes, low-evidence tests, files no tsconfig lists and tsconfigs that list no `types`. */
 const guardrailsPlugin = eslintCompatPlugin({
   meta: { name: "antelopejs" },
   rules: {
     "no-comments": noCommentsRule,
     "no-fs-read-in-tests": noFsReadInTestsRule,
     "no-inherited-key-lookup": noInheritedKeyLookupRule,
+    "no-interface-instanceof": noInterfaceInstanceofRule,
     "no-presence-only-type-guard": noPresenceOnlyTypeGuardRule,
     "no-read-then-insert": noReadThenInsertRule,
     "no-constant-value-assertion": noConstantValueAssertionRule,
