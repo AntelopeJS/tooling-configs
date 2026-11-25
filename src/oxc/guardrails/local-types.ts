@@ -1,4 +1,5 @@
 import type { ESTree, Scope, SourceCode, Variable } from "@oxlint/plugins";
+import { argumentParameters } from "../anti-slop/shared/function-parameters.ts";
 
 /** The type aliases and interfaces a file declares at its top level, by name. */
 export interface LocalTypes {
@@ -123,7 +124,7 @@ export function classField(
         value: member.value,
       };
     if (member.type === "MethodDefinition" && member.kind === "constructor") {
-      for (const parameter of member.value.params) {
+      for (const parameter of argumentParameters(member.value)) {
         if (
           parameter.type === "TSParameterProperty" &&
           parameter.parameter.type === "Identifier" &&

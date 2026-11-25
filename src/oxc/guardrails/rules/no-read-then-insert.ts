@@ -11,6 +11,7 @@ import {
   type ReadSubject,
 } from "../read-decision.ts";
 import { memberName } from "../shared.ts";
+import { argumentParameters } from "../../anti-slop/shared/function-parameters.ts";
 
 const READ_METHOD =
   /^(?:get|getAll|count|find|findOne|(?:get|find)By(?:[A-Z]\w*)?)$/u;
@@ -139,7 +140,7 @@ function rootName(node: ESTree.Node): string | null {
 function declares(scope: Scope, name: string): boolean {
   return (
     scope.type !== "Program" &&
-    scope.params.some(
+    argumentParameters(scope).some(
       (param) => param.type === "Identifier" && param.name === name,
     )
   );

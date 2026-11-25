@@ -39,7 +39,7 @@ export interface Manifest {
 export type PackageManager = "pnpm" | "npm" | "yarn" | "bun";
 
 /** The capture tool's optional peers, which a repository with `docs/captures.ts` declares as devDependencies at the ranges the pack tests against. */
-const CAPTURE_PEERS = [
+export const CAPTURE_PEERS = [
   "mongodb-memory-server",
   "pixelmatch",
   "playwright-core",
@@ -47,6 +47,41 @@ const CAPTURE_PEERS = [
 ] as const;
 
 type CapturePeer = (typeof CAPTURE_PEERS)[number];
+
+/** A package sync declares in a repository's manifest, whether as a tool or as a capture peer. */
+export type DeclaredPackage =
+  | "@antelopejs/tooling-configs"
+  | "@types/node"
+  | "knip"
+  | "lefthook"
+  | "oxfmt"
+  | "oxlint"
+  | "oxlint-tsgolint"
+  | "typescript"
+  | CapturePeer;
+
+/**
+ * What pnpm 11 does with the install script of each declared package: `skip` packages have a preinstall, install or
+ * postinstall script that sync decides not to run, so sync writes `allowBuilds.<name>: false` for them. A `none` package has no such script.
+ * The synced `prepare` script runs `lefthook install` itself, and `MongoMemoryServer.create()` downloads the mongod that the capture peer's postinstall would fetch.
+ */
+export const DECLARED_PACKAGES: Record<
+  DeclaredPackage,
+  { build: "skip" | "none" }
+> = {
+  lefthook: { build: "skip" },
+  "mongodb-memory-server": { build: "skip" },
+  "@antelopejs/tooling-configs": { build: "none" },
+  "@types/node": { build: "none" },
+  knip: { build: "none" },
+  oxfmt: { build: "none" },
+  oxlint: { build: "none" },
+  "oxlint-tsgolint": { build: "none" },
+  pixelmatch: { build: "none" },
+  "playwright-core": { build: "none" },
+  sharp: { build: "none" },
+  typescript: { build: "none" },
+};
 
 export function parseManifest(text: string): Manifest {
   /* SAFETY: package.json is written by package managers; every Manifest field is optional and read with a fallback. */

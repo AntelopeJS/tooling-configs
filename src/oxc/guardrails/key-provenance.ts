@@ -1,6 +1,7 @@
 import type { ESTree, SourceCode, Variable } from "@oxlint/plugins";
 import { resolveVariable, unwrapExpression } from "./local-types.ts";
 import { callName } from "./shared.ts";
+import { argumentParameters } from "../anti-slop/shared/function-parameters.ts";
 
 type Definition = Variable["defs"][number];
 
@@ -169,13 +170,14 @@ function keySource(
       call.callee.type !== "MemberExpression" ||
       call.callee.computed ||
       call.callee.property.type !== "Identifier" ||
-      !ITERATING_METHODS.has(call.callee.property.name) ||
-      fn.params[0] === undefined
+      !ITERATING_METHODS.has(call.callee.property.name)
     )
       return null;
+    const [first] = argumentParameters(fn);
+    if (first === undefined) return null;
     return {
       list: call.callee.object,
-      binding: keyBinding(fn.params[0], definition.name),
+      binding: keyBinding(first, definition.name),
     };
   }
   const loop = definition.parent?.parent;

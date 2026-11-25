@@ -7,6 +7,7 @@ import type { ESTree } from "@oxlint/plugins";
 import { memberName } from "../shared.ts";
 import { nodeAt, typedFile } from "../type-checker.ts";
 import type { TypedFile } from "../type-checker.ts";
+import { argumentParameters } from "../../anti-slop/shared/function-parameters.ts";
 
 type FunctionNode = ESTree.Function | ESTree.ArrowFunctionExpression;
 
@@ -83,9 +84,7 @@ function callsFirstParameter(call: ESTree.CallExpression): boolean {
     fn !== null;
     fn = enclosingFunction(fn)
   ) {
-    const first = fn.params.find(
-      (param) => param.type !== "Identifier" || param.name !== "this",
-    );
+    const first = argumentParameters(fn)[0];
     const name = first?.type === "AssignmentPattern" ? first.left : first;
     if (name?.type === "Identifier" && name.name === callee.name) return true;
   }
