@@ -297,3 +297,30 @@ test("comment-proof skips and reports a package whose tsconfig extends a reposit
   assert.equal(outside.status, 1);
   assert.match(outside.stdout + outside.stderr, /TS5083.*absent-base\.json/);
 });
+
+test("comment-proof fails and names the skipped packages when every package is skipped and the head side compares 0 entries; an implementation that prints '0 entries unchanged' and exits 0 fails it", (t) => {
+  const root = testRepo(t);
+  symlinkSync(
+    join(PACKAGE_ROOT, "node_modules"),
+    join(root, "node_modules"),
+    "dir",
+  );
+  put(root, ".gitignore", "node_modules\n*.generated.json\n");
+  put(root, "package.json", JSON.stringify({ private: true }));
+  put(
+    root,
+    "tsconfig.json",
+    JSON.stringify({ extends: "./paths.generated.json", include: ["*.ts"] }),
+  );
+  put(root, "paths.generated.json", "{}");
+  put(root, "app.ts", "export const app = 1;\n");
+  commit(root);
+  put(root, "app.ts", "/** The app. */\nexport const app = 1;\n");
+  commit(root);
+  const proof = bin(root, "comment-proof", ["HEAD~1"]);
+  assert.equal(proof.status, 1, proof.stdout + proof.stderr);
+  assert.match(
+    proof.stdout,
+    /the head side compared 0 entries.*skipped packages: \./,
+  );
+});
