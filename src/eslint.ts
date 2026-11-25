@@ -128,6 +128,11 @@ const SCRIPT_FILES = ["**/*.?([cm])[jt]s?(x)"];
 /**
  * ESLint config for an AntelopeJS Nuxt layer.
  *
+ * It inherits the `**\/public` ignore of `@nuxt/eslint-config`, so no file
+ * under a directory named `public` is linted, a layer source directory
+ * included. Name a source directory anything else, such as `assets` or
+ * `static-src`, to lint it.
+ *
  * @example
  * ```js
  * // eslint.config.mjs

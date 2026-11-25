@@ -422,6 +422,8 @@ export default antelopeNuxtConfig({
 
 `antelopeNuxtConfig` also applies `antelopejs/no-comments` and `anti-slop/require-safety-comment-for-type-assertion` to every `.vue` script block and script file, with or without `typeAware`, so a front end follows the same comment rule as the oxlint preset: TSDoc only on a declaration, and a `SAFETY:` comment on every type assertion and non-null assertion.
 
+`antelopeNuxtConfig` inherits the `**/public` ignore of `@nuxt/eslint-config`: no file under a directory named `public` is linted, including a layer source directory with that name. Name such a directory anything else to lint it.
+
 `@nuxt/eslint-config` supplies the Vue and TypeScript rules. The preset only records where AntelopeJS layers differ: single-word page components, `any` and `{}` allowed, `_`-prefixed unused bindings, and import order left alone. It sets no formatting rule, since oxfmt formats `.vue`. Every rule the resolved config sets to warn becomes an error, so no rule warns there either. Pass `rules` to layer your own on top, and declare `@nuxt/eslint-config` in the front end's `package.json`.
 
 ## Knip
