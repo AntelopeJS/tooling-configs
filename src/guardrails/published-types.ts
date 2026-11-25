@@ -8,7 +8,6 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { gunzipSync } from "node:zlib";
 import { join, relative } from "node:path";
 import { stringify } from "yaml";
 
@@ -33,6 +32,7 @@ import {
 } from "./known-failures.ts";
 import { packTarball } from "./pack-tarball.ts";
 import { runCommand } from "./run-command.ts";
+import { tarEntry } from "./tar-entry.ts";
 
 /** A package of the repository that publishes declarations: its directory relative to the root, `""` for the root, and its `name`. */
 interface TypedPackage {
@@ -141,27 +141,10 @@ function readable(output: string, consumer: string, name: string): string {
     .replace(store, `${name}/`);
 }
 
-const TAR_BLOCK = 512;
-
-/** The text of the entry `path` in the gzipped tar archive `tarball`, read in Node so no `tar` binary, which differs across platforms, is needed. */
-function tarEntry(tarball: string, path: string): string | undefined {
-  const archive = gunzipSync(readFileSync(tarball));
-  for (let offset = 0; offset + TAR_BLOCK <= archive.length;) {
-    const header = archive.subarray(offset, offset + TAR_BLOCK);
-    const name = header.toString("utf8", 0, 100).replace(/\0.*$/s, "");
-    if (!name) return undefined;
-    const size = Number.parseInt(header.toString("utf8", 124, 136), 8) || 0;
-    const start = offset + TAR_BLOCK;
-    if (name === path) return archive.toString("utf8", start, start + size);
-    offset = start + Math.ceil(size / TAR_BLOCK) * TAR_BLOCK;
-  }
-  return undefined;
-}
-
 function packedManifest(destination: string): Packed {
   const [file = ""] = readdirSync(destination);
   const tarball = join(destination, file);
-  const text = tarEntry(tarball, "package/package.json");
+  const text = tarEntry(readFileSync(tarball), "package/package.json");
   return text === undefined
     ? { failure: `${file} holds no package/package.json.\n` }
     : { failure: "", tarball, manifest: parseManifest(text) };

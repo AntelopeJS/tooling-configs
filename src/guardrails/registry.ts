@@ -3,8 +3,10 @@ import {
   isString,
   type JsonObject,
   type JsonValue,
+  optChild,
   optStr,
   parseJson,
+  stringValues,
 } from "../garden/json.ts";
 import { tagVersion } from "../garden/npm.ts";
 
@@ -122,4 +124,58 @@ export async function implementingRelease(
     if (range !== undefined) implemented.set(interfaceName, range);
   }
   return { name, version, implements: implemented };
+}
+
+/** How long one tarball download may take before it counts as failed. */
+const TARBALL_TIMEOUT_MS = 30_000;
+
+/** A published release as the abbreviated packument lists it: the ranges it declares under `peerDependencies` and its tarball URL. */
+export interface ListedRelease {
+  peerDependencies: ReadonlyMap<string, string>;
+  tarball: string | undefined;
+}
+
+/** The dist-tags and releases of a package, keyed by tag and by version. */
+export interface Packument {
+  tags: ReadonlyMap<string, string>;
+  releases: ReadonlyMap<string, ListedRelease>;
+}
+
+/** The {@link Packument} of `name` on the {@link registry}, or `undefined` when it is unpublished or cannot be read. */
+export async function packument(name: string): Promise<Packument | undefined> {
+  const read = await readRegistry(
+    encodedName(name),
+    "application/vnd.npm.install-v1+json",
+  );
+  if (read === undefined || read === UNPUBLISHED || !isObject(read.document))
+    return undefined;
+  const releases = new Map<string, ListedRelease>();
+  for (const [version, release] of Object.entries(
+    optChild(read.document, "versions") ?? {},
+  ))
+    if (isObject(release))
+      releases.set(version, {
+        peerDependencies: stringValues(optChild(release, "peerDependencies")),
+        tarball: optStr(optChild(release, "dist") ?? {}, "tarball"),
+      });
+  return { tags: stringValues(optChild(read.document, "dist-tags")), releases };
+}
+
+/** The bytes at the tarball URL `url`, or `undefined` when they cannot be downloaded within {@link REGISTRY_ATTEMPTS} tries of {@link TARBALL_TIMEOUT_MS} each. */
+export async function downloadTarball(
+  url: string,
+): Promise<Uint8Array | undefined> {
+  for (let attempt = 0; attempt < REGISTRY_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(TARBALL_TIMEOUT_MS),
+      });
+      if (response.status === 429 || response.status >= 500) continue;
+      if (!response.ok) return undefined;
+      return new Uint8Array(await response.arrayBuffer());
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
 }

@@ -7,6 +7,7 @@ import {
   hasDependencyRanges,
 } from "./dependency-ranges-sync.ts";
 import { checkGitIdentity, isGitCheckout } from "./git-identity.ts";
+import { checkModulePeers, hasModulePeers } from "./module-peers.ts";
 import { checkOneRange } from "./one-range.ts";
 import { checkPublishedTypes, typedPackages } from "./published-types.ts";
 import { checkReadmeVersion, readmeExamples } from "./readme-version.ts";
@@ -30,6 +31,7 @@ const CHECK_STEPS = [
   "suppressions",
   "sync:check",
   "lockfile:singletons",
+  "lockfile:module-peers",
   "dependency:ranges",
   "dependency:one-range",
   "git:identity",
@@ -63,6 +65,7 @@ const OWN_STEPS = new Map<string, OwnStep>([
     "lockfile:singletons",
     failureOnly((root) => Promise.resolve(checkSingletonPackages(root))),
   ],
+  ["lockfile:module-peers", failureOnly(checkModulePeers)],
   ["dependency:ranges", failureOnly(checkRepositoryRanges)],
   [
     "dependency:one-range",
@@ -75,6 +78,7 @@ const OWN_STEPS = new Map<string, OwnStep>([
 
 function hasWork(root: string, step: string): boolean {
   if (step === "lockfile:singletons") return pnpmLockfiles(root).length > 0;
+  if (step === "lockfile:module-peers") return hasModulePeers(root);
   if (step === "dependency:ranges" || step === "dependency:one-range")
     return isGitCheckout(root) && hasDependencyRanges(root);
   if (step === "git:identity") return isGitCheckout(root);
@@ -167,6 +171,7 @@ export const CI_TIER_ENV = "ANTELOPEJS_CI_TIER";
 
 /** The steps that read the npm registry, which the pull request tiers leave to the merge queue and the nightly run. */
 const REGISTRY_STEPS = [
+  "lockfile:module-peers",
   "dependency:ranges",
   "readme:version",
   "published:types",
@@ -286,7 +291,7 @@ function summary(
  * output buffered and listed in step order whichever step finishes first. `skipSetting` is the comma-separated value of
  * `ANTELOPEJS_CHECKS_SKIP`: the steps it names are not run and are counted as skipped, never as passed, and a name that
  * is not a step fails the run before any step starts so a typo cannot skip nothing. On the `draft`, `fast` and `full` tiers of
- * `tier`, the steps that read the npm registry, `dependency:ranges`, `readme:version` and `published:types`, are skipped the same way;
+ * `tier`, the steps that read the npm registry, `lockfile:module-peers`, `dependency:ranges`, `readme:version` and `published:types`, are skipped the same way;
  * the `queue` and `nightly` tiers, and no tier, run them. Unless `services` is false, the
  * services of `.github/compose.yml` are started before the steps when `test` runs, and removed after them if the run created them, also when a step fails or
  * `signal` aborts the run; an aborted run stops every running step and reports `interrupted`.
