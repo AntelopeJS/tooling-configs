@@ -89,6 +89,26 @@ tester.run("antelopejs/no-comments", noCommentsRule, {
       code,
     })),
     {
+      name: "a rule that stops at the first comment after TSDoc rejects TSDoc above a named disable directive",
+      code: "/** Runs. */\n// oxlint-disable-next-line no-debugger -- debugging this operation\nexport function run() {}",
+    },
+    {
+      name: "a rule that rejects every TSDoc after a comment rejects a declaration's TSDoc under the file's module doc",
+      code: "/** @packageDocumentation */\n\n/** Runs. */\nexport function run() {}",
+    },
+    {
+      name: "a rule without the Vitest pragma rejects a line pragma at the top of a file",
+      code: "// @vitest-environment jsdom\nimport { a } from './a';",
+    },
+    {
+      name: "a rule without the Vitest pragma rejects a block pragma at the top of a file",
+      code: "/** @vitest-environment happy-dom */\nimport { a } from './a';",
+    },
+    {
+      name: "a rule that reads the pragma only as the first comment rejects it after a license block",
+      code: "/*! Licensed under Apache-2.0. */\n// @vitest-environment jsdom\nimport { a } from './a';",
+    },
+    {
       name: "a rule that accepts only TSDoc without JSDoc tags would reject a typedef in a script",
       filename: "types.mjs",
       code: "/** @typedef {{ id: number }} Foo */\nexport const a = 1;",
@@ -196,6 +216,41 @@ tester.run("antelopejs/no-comments", noCommentsRule, {
       name: "a rule that drops the unnamed-disable check for TSDoc accepts a bare directive in a detached block",
       code: "/** eslint-disable */ run();",
       errors: [{ messageId: "unnamedDisable" }],
+    },
+    {
+      name: "a rule that attaches TSDoc to the next token past comments accepts the first of two stacked blocks",
+      code: "/** First. */\n/** Second. */\nexport function run() {}",
+      errors: [detached],
+    },
+    {
+      name: "a rule that ignores blank lines accepts TSDoc separated from its declaration",
+      code: "/** Runs. */\n\nexport function run() {}",
+      errors: [detached],
+    },
+    {
+      name: "a rule that ignores blank lines accepts TSDoc separated from its declaration by CRLF lines",
+      code: "/** Runs. */\r\n\r\nexport function run() {}",
+      errors: [detached],
+    },
+    {
+      name: "a rule that skips directives without checking the gap after them accepts TSDoc a blank line above",
+      code: "/** Runs. */\n// oxlint-disable-next-line no-debugger -- debugging this operation\n\nexport function run() {}",
+      errors: [detached],
+    },
+    {
+      name: "a rule that accepts the Vitest pragma anywhere accepts it after code",
+      code: "import { a } from './a';\n// @vitest-environment jsdom",
+      errors: [error],
+    },
+    {
+      name: "a rule that accepts any text after the Vitest pragma accepts prose in it",
+      code: "// @vitest-environment\nimport { a } from './a';",
+      errors: [error],
+    },
+    {
+      name: "a rule that accepts the Vitest pragma inside any doc block accepts prose with it",
+      code: "/**\n * Tests the router.\n * @vitest-environment jsdom\n */\nimport { a } from './a';",
+      errors: [detached],
     },
     {
       name: "a rule that keeps the old `[*!]` block form accepts prose in `/**` before a statement",

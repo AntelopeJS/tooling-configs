@@ -9,6 +9,8 @@
  * startup at the next patch release. An exact pin on a preview `next`
  * publishes, `X.Y.Z-next.<count>.g<sha>`, passes: the release train turns it
  * into the capped range on `X.Y.Z` at release.
+ *
+ * @packageDocumentation
  */
 
 const ANTELOPEJS_SCOPE = "@antelopejs/";
