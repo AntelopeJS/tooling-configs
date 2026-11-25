@@ -16,11 +16,12 @@ function isDmsPackage(file: string): boolean {
   );
 }
 
-/** What an expression statically is: a sentence-bearing text, a status number, or a template that interpolates. */
+/** What an expression statically is: a text, with a placeholder segment at each template substitution, or a status number. */
 type Static =
   | { kind: "text"; text: string }
-  | { kind: "number"; value: number }
-  | { kind: "interpolated" };
+  | { kind: "number"; value: number };
+
+const SUBSTITUTION_PLACEHOLDER = "x";
 
 function literalValue(literal: {
   raw?: string | null;
@@ -34,9 +35,12 @@ function literalValue(literal: {
 }
 
 function templateValue(template: ESTree.TemplateLiteral): Static {
-  return template.expressions.length > 0
-    ? { kind: "interpolated" }
-    : { kind: "text", text: template.quasis[0]?.value.cooked ?? "" };
+  return {
+    kind: "text",
+    text: template.quasis
+      .map((quasi) => quasi.value.cooked ?? "")
+      .join(SUBSTITUTION_PLACEHOLDER),
+  };
 }
 
 function staticValue(
@@ -88,7 +92,6 @@ function messageOf(argument: ESTree.Argument | undefined): ESTree.Node | null {
 
 function isSentence(node: ESTree.Node, source: SourceCode): boolean {
   const value = staticValue(node, source);
-  if (value?.kind === "interpolated") return true;
   return value?.kind === "text" && !TRANSLATION_KEY.test(value.text);
 }
 

@@ -8,20 +8,24 @@ import {
 
 const MAX_DEPTH = 8;
 
-function declaresTypeParameter(node: ESTree.Node, name: string): boolean {
+function enclosingTypeParameter(
+  node: ESTree.Node,
+  name: string,
+): ESTree.TSTypeParameter | null {
   let current: ESTree.Node | null = node;
   while (current !== null) {
     if (
       "typeParameters" in current &&
-      current.typeParameters?.type === "TSTypeParameterDeclaration" &&
-      current.typeParameters.params.some(
-        (parameter) => parameter.name.name === name,
-      )
-    )
-      return true;
+      current.typeParameters?.type === "TSTypeParameterDeclaration"
+    ) {
+      const parameter = current.typeParameters.params.find(
+        (candidate) => candidate.name.name === name,
+      );
+      if (parameter !== undefined) return parameter;
+    }
     current = current.parent;
   }
-  return false;
+  return null;
 }
 
 function mayBeArbitraryString(
@@ -48,14 +52,19 @@ function mayBeArbitraryString(
       if (alias !== undefined)
         return mayBeArbitraryString(alias, fn, types, depth + 1);
       if (types.interfaces.has(name) || types.enums.has(name)) return false;
-      return !declaresTypeParameter(fn, name);
+      const parameter = enclosingTypeParameter(fn, name);
+      if (parameter === null) return true;
+      return (
+        parameter.constraint === null ||
+        mayBeArbitraryString(parameter.constraint, parameter, types, depth + 1)
+      );
     }
     default:
       return false;
   }
 }
 
-/** A parameter declared with a type that can hold an arbitrary string: `string`, `PropertyKey`, or a type this file cannot resolve. */
+/** A parameter declared with a type that can hold an arbitrary string: `string`, `PropertyKey`, a type parameter whose constraint is open or missing, or a type this file cannot resolve. */
 export function isOpenStringParameter(
   key: ESTree.Node,
   source: SourceCode,

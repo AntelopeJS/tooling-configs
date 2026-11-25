@@ -81,9 +81,9 @@ tester.run("antelopejs/no-interface-instanceof", noInterfaceInstanceofRule, {
     },
     {
       name: "an interface package's class exported through an export list",
-      code: "class S {} class R {} export { S, R as Renamed }; export function check(v: unknown) { return v instanceof S || v instanceof R; }",
+      code: "class S {} class R {} class D {} export { S, R as Renamed }; export default D; export function check(v: unknown) { return v instanceof S || v instanceof R || v instanceof D; }",
       filename: inInterface,
-      errors: [error("S"), error("R")],
+      errors: [error("S"), error("R"), error("D")],
     },
   ],
 });
