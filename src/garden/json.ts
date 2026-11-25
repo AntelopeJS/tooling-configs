@@ -56,6 +56,26 @@ export function optStr(source: JsonObject, key: string): string | undefined {
   return value !== undefined && isString(value) ? value : undefined;
 }
 
+/** The object under `key`, or `undefined` when it is absent or not an object. */
+export function optChild(
+  source: JsonObject,
+  key: string,
+): JsonObject | undefined {
+  const value = field(source, key);
+  return value !== undefined && isObject(value) ? value : undefined;
+}
+
+/** The string values of `source` by key, skipping any other value; empty when `source` is absent. */
+export function stringValues(
+  source: JsonObject | undefined,
+): Map<string, string> {
+  return new Map(
+    Object.entries(source ?? {}).flatMap(([key, value]): [string, string][] =>
+      isString(value) ? [[key, value]] : [],
+    ),
+  );
+}
+
 export function num(source: JsonObject, key: string): number {
   const value = field(source, key);
   if (value === undefined || !isNumber(value))

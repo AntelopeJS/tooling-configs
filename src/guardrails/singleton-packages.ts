@@ -102,7 +102,7 @@ function reached(resolved: Mapping, from: readonly Edge[]): Set<string> {
 }
 
 /** Each document of a lockfile: pnpm 11 writes its config dependencies, installed apart from the project, as a document before the project's. */
-function lockfileDocuments(path: string): YAMLMap[] {
+export function lockfileDocuments(path: string): YAMLMap[] {
   return parseAllDocuments(readFileSync(path, "utf8"), {
     schema: "failsafe",
     uniqueKeys: false,
