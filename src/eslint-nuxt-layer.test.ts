@@ -158,7 +158,7 @@ test("components without imports keep their declarations apart, and no-unsafe-ob
   const findings = await lintLayer(
     {
       "tsconfig.json": JSON.stringify({
-        compilerOptions: COMPILER_OPTIONS,
+        compilerOptions: { ...COMPILER_OPTIONS, moduleDetection: "force" },
         include: ["**/*"],
       }),
       "app/Label.vue": LABEL,
@@ -171,5 +171,69 @@ test("components without imports keep their declarations apart, and no-unsafe-ob
   assert.deepEqual(
     findings.filter((finding) => finding.includes("antelopejs/")),
     [],
+  );
+});
+
+/** Vue's global `defineProps`, as `@vue/runtime-core` declares it. */
+const VUE_MACROS = `declare global {
+  function defineProps<T>(): Readonly<T>;
+}
+export {};
+`;
+
+/** dms's LayoutContainer.vue: a component without imports whose `props` sorts first in the program, which reads it as raw text. */
+const CONTAINER = `<script setup lang="ts">
+const props = defineProps<{ wide: boolean }>();
+</script>
+
+<template>
+  <div :class="{ wide: props.wide }" />
+</template>
+`;
+
+/** dms-automation's LiveTopics.vue without the `toRef` import it needed: the loop on line 10 hands each topic to a `string` parameter. */
+const LIVE_TOPICS = `<script setup lang="ts">
+const props = defineProps<{
+  realtimeTopic: string[];
+}>();
+
+function listen(topic: string): string {
+  return topic;
+}
+
+for (const topic of props.realtimeTopic) listen(topic);
+</script>
+
+<template>
+  <span hidden />
+</template>
+`;
+
+/** A layer whose two components import nothing, read under `moduleDetection`. */
+function macroLayer(moduleDetection: "auto" | "force") {
+  return {
+    "tsconfig.json": JSON.stringify({
+      compilerOptions: { ...COMPILER_OPTIONS, moduleDetection },
+      include: ["**/*"],
+    }),
+    "app/env.d.ts": VUE_MACROS,
+    "app/components/LayoutContainer.vue": CONTAINER,
+    "app/components/LiveTopics.vue": LIVE_TOPICS,
+    "app/components/Spacer.vue":
+      '<script setup lang="ts">\ndefineProps<{ size: number }>();\n</script>\n\n<template>\n  <hr />\n</template>\n',
+  };
+}
+
+test("a defineProps component without imports lints clean when its tsconfig reads every file as a module, as the generated .nuxt/tsconfig.json does, and require-tsconfig-include names the missing moduleDetection otherwise (fails if the script's `props` resolves to another component's global declaration, or a tsconfig that makes it a global script goes unreported, or a script that declares no name is reported)", async () => {
+  const targets = [
+    "app/components/LiveTopics.vue",
+    "app/components/Spacer.vue",
+  ];
+  assert.deepEqual(await lintLayer(macroLayer("force"), targets), []);
+  assert.deepEqual(
+    (await lintLayer(macroLayer("auto"), targets)).filter((finding) =>
+      finding.includes("antelopejs/"),
+    ),
+    ["app/components/LiveTopics.vue:1 antelopejs/require-tsconfig-include"],
   );
 });

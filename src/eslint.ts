@@ -44,7 +44,10 @@ export interface AntelopeNuxtConfigOptions {
    * Each `.vue` file must be listed by its nearest `tsconfig.json`, or it
    * fails to parse. In a Nuxt layer that tsconfig extends the generated
    * `.nuxt/tsconfig.json`, which carries the `paths` of the layer's aliases,
-   * and the lint script runs `nuxt prepare` first so it exists. An import the
+   * and the lint script runs `nuxt prepare` first so it exists. That tsconfig
+   * sets `compilerOptions.moduleDetection` to `"force"`, as `.nuxt/tsconfig.json`
+   * does, or `antelopejs/require-tsconfig-include` reports each script that
+   * imports nothing, which TypeScript would read as a global script. An import the
    * tsconfig cannot resolve, such as `#dms-core/user` without those `paths`,
    * is reported by `antelopejs/require-tsconfig-include`, because everything
    * imported through it is an error type. Without Volar, a type imported
