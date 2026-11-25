@@ -41,9 +41,10 @@ function uncommittedBase(worktree: string, directory: string) {
     : path.split(sep).join("/");
 }
 
-/** Proves comment-free JavaScript emit matches, including private packages and excluding tests. A workspace base tsconfig is left out. A package whose tsconfig extends a repository file the commit lacks cannot compile from it, so it is skipped and reported; a missing base outside the repository still fails. */
+/** Proves comment-free JavaScript emit matches, including private packages and excluding tests. A workspace base tsconfig is left out. A package whose tsconfig extends a repository file the commit lacks cannot compile from it, so it is skipped and reported; a missing base outside the repository still fails, and so does a head side that compares 0 entries. */
 export function commentProof(root: string, baseRef: string) {
   const skipped = new Map<string, string>();
+  let headEntries = 0;
   const result = compareRevisions(
     root,
     baseRef,
@@ -73,6 +74,7 @@ export function commentProof(root: string, baseRef: string) {
           entries++;
         }
       }
+      headEntries = entries;
       return { packages: packages.map(({ directory }) => directory), entries };
     },
   );
@@ -83,8 +85,12 @@ export function commentProof(root: string, baseRef: string) {
         `Comment proof: skipped ${directory}, its tsconfig extends ${file}, which the commit does not hold.\n`,
     )
     .join("");
+  const empty = headEntries === 0;
+  const emptyReport = empty
+    ? `Comment proof: the head side compared 0 entries, so nothing was proved${skipped.size === 0 ? "" : `; skipped packages: ${[...skipped.keys()].sort((a, b) => a.localeCompare(b)).join(", ")}`}.\n`
+    : "";
   return {
-    ...result,
-    output: result.output + skips + revisionCounts(root, baseRef),
+    different: result.different || empty,
+    output: result.output + skips + emptyReport + revisionCounts(root, baseRef),
   };
 }
