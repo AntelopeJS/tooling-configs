@@ -170,6 +170,7 @@ export async function downloadTarball(
       const response = await fetch(url, {
         signal: AbortSignal.timeout(TARBALL_TIMEOUT_MS),
       });
+      if (response.status === 429 || response.status >= 500) continue;
       if (!response.ok) return undefined;
       return new Uint8Array(await response.arrayBuffer());
     } catch {

@@ -104,7 +104,40 @@ test("a module antelope-lock/ holds is checked at its locked release, not the ne
   assert.equal(result.status, 1, result.stdout);
   assert.match(
     result.stdout,
-    /locks "@openai\/codex" at 0\.170\.0, outside "0\.166\.0", the range @antelopejs\/dms-assistant@0\.3\.2 \(antelope-lock\/\) declares in package\.json peerDependencies\./,
+    /locks "@openai\/codex" at 0\.170\.0, outside "0\.166\.0", the range @antelopejs\/dms-assistant@0\.3\.2 \(antelope-lock\/, for antelope\.config\.ts: ">=0\.3\.2 <0\.4\.0"\) declares in package\.json peerDependencies\./,
+  );
+});
+
+test("an antelope-lock/ record the config range no longer admits is not the installed release, the newest release in the range is, caught by an implementation that trusts every antelope-lock/ folder", async (t) => {
+  const root = template(t, literalSource(ASSISTANT, ">=0.4.0 <0.5.0"), {
+    "@openai/codex": "0.166.0",
+  });
+  put(root, `antelope-lock/${ASSISTANT}@0.3.2/package-lock.json`, "{}");
+  const result = await checks(t, root, {
+    [ASSISTANT]: {
+      "0.3.2": codexPeer("0.166.0"),
+      "0.4.0": codexPeer("0.170.0"),
+    },
+  });
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(
+    result.stdout,
+    /locks "@openai\/codex" at 0\.166\.0, outside "0\.170\.0", the range @antelopejs\/dms-assistant@0\.4\.0 \(antelope\.config\.ts: ">=0\.4\.0 <0\.5\.0"\)/,
+  );
+  assert.doesNotMatch(result.stdout, /0\.3\.2/);
+});
+
+test("a prerelease locked below a peerDependencies floor fails, caught by an implementation that reads every prerelease as the release it leads to, as only the renderer range does", async (t) => {
+  const root = template(t, literalSource(ASSISTANT, "0.2.6"), {
+    "@openai/codex": "1.0.0-rc.1",
+  });
+  const result = await checks(t, root, {
+    [ASSISTANT]: { "0.2.6": codexPeer(">=1.0.0") },
+  });
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(
+    result.stdout,
+    /locks "@openai\/codex" at 1\.0\.0-rc\.1, outside ">=1\.0\.0"/,
   );
 });
 

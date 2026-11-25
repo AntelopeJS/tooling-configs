@@ -34,46 +34,44 @@ const LOCKED_FIELDS = [
   "optionalDependencies",
 ] as const;
 
-/** A module the project installs: its package, the version, range or dist-tag that picks its release, and where that pick is written. */
+/** A module the project installs: its package, the version, range or dist-tag that picks its release, the `antelope-lock/` version a build replays for that pick if any, and where the pick is written. */
 interface Installed {
   name: string;
   pick: string;
+  recorded?: string;
   from: string;
 }
 
-/** A range a module release declares on another package, and where in the release it declares it. */
+/** A range a module release declares on another package, where in the release it declares it, and whether a prerelease counts as the release it leads to. */
 interface Requirement {
   peer: string;
   range: string;
   where: string;
+  releaseLine: boolean;
 }
 
-/** The modules `antelope-lock/` holds, from its `<name>@<version>` and `@<scope>/<name>@<version>` folders. */
-function lockedModules(root: string): Installed[] {
+/** The versions `antelope-lock/` records for each package, from its `<name>@<version>` and `@<scope>/<name>@<version>` folders. */
+function recordedVersions(root: string): Map<string, string[]> {
   const folder = join(root, MODULE_LOCKS);
-  if (!existsSync(folder)) return [];
+  const recorded = new Map<string, string[]>();
+  if (!existsSync(folder)) return recorded;
   const folders = (path: string): string[] =>
     readdirSync(path, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name);
-  return folders(folder)
+  folders(folder)
     .flatMap((entry) =>
       entry.startsWith("@")
         ? folders(join(folder, entry)).map((name) => `${entry}/${name}`)
         : [entry],
     )
-    .flatMap((entry): Installed[] => {
+    .forEach((entry) => {
       const at = entry.lastIndexOf("@");
-      return at > 0
-        ? [
-            {
-              name: entry.slice(0, at),
-              pick: entry.slice(at + 1),
-              from: `${MODULE_LOCKS}/`,
-            },
-          ]
-        : [];
+      if (at <= 0) return;
+      const name = entry.slice(0, at);
+      recorded.set(name, [...(recorded.get(name) ?? []), entry.slice(at + 1)]);
     });
+  return recorded;
 }
 
 /** Where a field of a package source comes from: a string, the argument at a position of the local function that returns the source, or an expression this check cannot read. */
@@ -243,15 +241,26 @@ function configModules(root: string): ConfigModules {
   return { modules, failure };
 }
 
-/** The modules of `antelope-lock/`, then each module of `antelope.config.ts` that `antelope-lock/` does not hold, and what of the config could not be read. */
+/**
+ * The modules of `antelope.config.ts`, each with the version `ajs` replays from `antelope-lock/`: the highest recorded
+ * version a range admits. An exact version or a dist-tag replays none, and resolves on the registry.
+ */
 function installedModules(root: string): ConfigModules {
-  const locked = lockedModules(root);
-  const names = new Set(locked.map(({ name }) => name));
+  const records = recordedVersions(root);
   const config = configModules(root);
-  const modules = [
-    ...locked,
-    ...config.modules.filter(({ name }) => !names.has(name)),
-  ];
+  const modules = config.modules.map((module): Installed => {
+    const replayed =
+      valid(module.pick) === null && validRange(module.pick) !== null
+        ? maxSatisfying(records.get(module.name) ?? [], module.pick)
+        : null;
+    return replayed === null
+      ? module
+      : {
+          ...module,
+          recorded: replayed,
+          from: `${MODULE_LOCKS}/, for ${module.from}`,
+        };
+  });
   return {
     modules: [
       ...new Map(
@@ -297,32 +306,70 @@ function rendererRange(manifest: JsonValue): Requirement[] {
     : undefined;
   return range === undefined
     ? []
-    : [{ peer: RENDERER, range, where: `${FRONTEND_MANIFEST} engines` }];
+    : [
+        {
+          peer: RENDERER,
+          range,
+          where: `${FRONTEND_MANIFEST} engines`,
+          releaseLine: true,
+        },
+      ];
 }
 
-/** The ranges `release` declares in its `peerDependencies` and in the `frontend-vue/package.json` its tarball holds; `undefined` when the tarball cannot be downloaded. */
+/** The ranges a release declares, or why its tarball could not be read. */
+type Declared = { requirements: Requirement[] } | { failure: string };
+
+/** The renderer range the `frontend-vue/package.json` in the tarball at `url` declares, or what kept it from being read. */
+async function tarballRequirements(url: string | undefined): Promise<Declared> {
+  const tarball = url === undefined ? undefined : await downloadTarball(url);
+  if (tarball === undefined)
+    return { failure: `could not be downloaded from ${url ?? registry()}` };
+  try {
+    const frontend = tarEntry(tarball, `package/${FRONTEND_MANIFEST}`);
+    return {
+      requirements:
+        frontend === undefined ? [] : rendererRange(parseJson(frontend)),
+    };
+  } catch {
+    return {
+      failure: `from ${url} is not a gzipped tarball holding a JSON ${FRONTEND_MANIFEST}`,
+    };
+  }
+}
+
+/**
+ * The ranges `release` declares in its `peerDependencies` and, when the root lockfile locks the renderer, in the
+ * `frontend-vue/package.json` its tarball holds.
+ */
 async function declaredRanges(
   release: ListedRelease,
-): Promise<Requirement[] | undefined> {
-  const tarball =
-    release.tarball === undefined
-      ? undefined
-      : await downloadTarball(release.tarball);
-  if (tarball === undefined) return undefined;
-  const frontend = tarEntry(tarball, `package/${FRONTEND_MANIFEST}`);
-  return [
-    ...[...release.peerDependencies].map(([peer, range]) => ({
+  locked: ReadonlyMap<string, string>,
+): Promise<Declared> {
+  const peers = [...release.peerDependencies].map(
+    ([peer, range]): Requirement => ({
       peer,
       range,
       where: "package.json peerDependencies",
-    })),
-    ...(frontend === undefined ? [] : rendererRange(parseJson(frontend))),
-  ];
+      releaseLine: false,
+    }),
+  );
+  if (!locked.has(RENDERER)) return { requirements: peers };
+  const frontend = await tarballRequirements(release.tarball);
+  return "failure" in frontend
+    ? frontend
+    : { requirements: [...peers, ...frontend.requirements] };
 }
 
-/** Whether `range` admits `version`, a prerelease counting as the release it leads to, as `ajs-dms build` judges a frontend's range. */
-const admits = (range: string, version: string): boolean =>
-  satisfies(coerce(version)?.version ?? version, range);
+/** Whether `range` admits `version`; with `releaseLine`, a prerelease counts as the release it leads to, as `ajs-dms build` judges a frontend's range. */
+const admits = (
+  range: string,
+  version: string,
+  releaseLine: boolean,
+): boolean =>
+  satisfies(
+    releaseLine ? (coerce(version)?.version ?? version) : version,
+    range,
+  );
 
 async function moduleReport(
   module: Installed,
@@ -332,6 +379,7 @@ async function moduleReport(
   if (listing === undefined)
     return `${module.from} names "${module.name}", which could not be read from ${registry()}.\n`;
   const version =
+    module.recorded ??
     listing.tags.get(module.pick) ??
     (validRange(module.pick) === null
       ? null
@@ -339,13 +387,15 @@ async function moduleReport(
   const release = version === null ? undefined : listing.releases.get(version);
   if (version === null || release === undefined)
     return `${module.from} names "${module.name}", which has no release in "${module.pick}" on ${registry()}.\n`;
-  const declared = await declaredRanges(release);
-  if (declared === undefined)
-    return `The tarball of ${module.name}@${version} could not be downloaded from ${release.tarball ?? registry()}.\n`;
-  return declared
-    .flatMap(({ peer, range, where }) => {
+  const declared = await declaredRanges(release, locked);
+  if ("failure" in declared)
+    return `The tarball of ${module.name}@${version} ${declared.failure}.\n`;
+  return declared.requirements
+    .flatMap(({ peer, range, where, releaseLine }) => {
       const at = locked.get(peer);
-      return at === undefined || validRange(range) === null || admits(range, at)
+      return at === undefined ||
+        validRange(range) === null ||
+        admits(range, at, releaseLine)
         ? []
         : [
             `${ROOT_LOCK} locks "${peer}" at ${at}, outside "${range}", the range ${module.name}@${version} (${module.from}) declares in ${where}.\n  Set "${peer}" in package.json to a version in "${range}", then run \`pnpm install\`.\n`,
@@ -354,21 +404,20 @@ async function moduleReport(
     .join("");
 }
 
-/** Whether the repository has a root `pnpm-lock.yaml` and installs modules through `antelope-lock/` or `antelope.config.ts`. */
+/** Whether the repository has a root `pnpm-lock.yaml` and an `antelope.config.ts`. */
 export function hasModulePeers(root: string): boolean {
   return (
-    existsSync(join(root, ROOT_LOCK)) &&
-    (existsSync(join(root, MODULE_LOCKS)) ||
-      existsSync(join(root, PROJECT_CONFIG)))
+    existsSync(join(root, ROOT_LOCK)) && existsSync(join(root, PROJECT_CONFIG))
   );
 }
 
 /**
  * Fails when the root `pnpm-lock.yaml` locks a direct dependency outside a range an installed module release declares on
  * it: under its `peerDependencies`, or in its `frontend-vue/package.json` `engines["@antelopejs/dms-frontend"]`, the range
- * `ajs-dms build` holds the dashboard's renderer to. The installed release
- * is the one `antelope-lock/` holds, else the newest the `antelope.config.ts` range or dist-tag admits, as a build installs
- * it. Reads each release's packument and tarball from the registry, and nothing else over the network. Returns what
+ * `ajs-dms build` holds the dashboard's renderer to. The installed release of each `antelope.config.ts` source is the one
+ * a build installs: the highest `antelope-lock/` version its range admits, else the newest release on the registry its
+ * range, exact version or dist-tag admits. Reads each release's packument from the registry, and its tarball when the
+ * root lockfile locks the renderer. Returns what
  * failed, naming the module, the dependency, the range, the locked version and the fix; empty when every range admits
  * its locked version.
  */
