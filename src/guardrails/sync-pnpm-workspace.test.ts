@@ -6,7 +6,8 @@ import test from "node:test";
 
 import { parse } from "yaml";
 
-import { parseManifest } from "./package.ts";
+import { DECLARED_PACKAGES, parseManifest } from "./package.ts";
+import { installScripts } from "./helpers/install-scripts.ts";
 import { bin, put, read, testRepo } from "./helpers/test-repo.ts";
 
 function pinnedRepo(t: TestContext, packageManager: string): string {
@@ -209,4 +210,9 @@ test("sync fails on a minimumReleaseAgeExclude that is not a list and leaves the
     /minimumReleaseAgeExclude must be a list/,
   );
   assert.equal(read(root, "pnpm-workspace.yaml"), own);
+});
+
+test("a declared package marked build none has no preinstall, install or postinstall script (fails if a dependency gains one that sync leaves undecided)", () => {
+  for (const [name, { build }] of Object.entries(DECLARED_PACKAGES))
+    if (build === "none") assert.deepEqual(installScripts(name), [], name);
 });

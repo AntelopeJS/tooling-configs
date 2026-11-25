@@ -5,7 +5,13 @@ import { type Document, isMap, isScalar, isSeq, parseDocument } from "yaml";
 
 import { admits } from "../garden/semver.ts";
 import type { AgentsBlockContext } from "./agents-block.ts";
-import { packageManager, usesCaptures, type Manifest } from "./package.ts";
+import {
+  CAPTURE_PEERS,
+  DECLARED_PACKAGES,
+  packageManager,
+  usesCaptures,
+  type Manifest,
+} from "./package.ts";
 import { pnpmLockfiles } from "./singleton-packages.ts";
 import type { PlannedArtifact } from "./sync.ts";
 import { installsWithPnpm, inWorkspace } from "./lockfile-reading.ts";
@@ -54,12 +60,15 @@ function creation(manifest: Manifest): "write" | "skip" | "raise" {
   return admits(">=11.0.0", pinned) ? "raise" : "skip";
 }
 
-/**
- * The dependency builds sync declares and pnpm 11 must be told to skip.
- * The synced `prepare` script runs `lefthook install` itself, and `MongoMemoryServer.create()` downloads the mongod that the capture peer's postinstall would fetch.
- */
+/** The dependency builds sync declares and pnpm 11 must be told to skip: each `skip` package in `DECLARED_PACKAGES`, and the capture peers only when the repository has captures. */
 function skippedBuilds(captures: boolean): string[] {
-  return captures ? ["lefthook", "mongodb-memory-server"] : ["lefthook"];
+  const peers: readonly string[] = CAPTURE_PEERS;
+  return Object.entries(DECLARED_PACKAGES)
+    .filter(
+      ([name, { build }]) =>
+        build === "skip" && (captures || !peers.includes(name)),
+    )
+    .map(([name]) => name);
 }
 
 /**
