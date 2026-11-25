@@ -111,7 +111,7 @@ jobs:
 
 interface ReleaseView {
   on: {
-    push: { branches: string[] };
+    push?: { branches: string[] };
     pull_request: { types: string[] };
     workflow_dispatch: { inputs: Record<string, { default?: string }> };
   };
@@ -147,11 +147,12 @@ test("a public caller on the channel interface becomes the release-train caller 
   const result = syncRepository(root);
   assert.deepEqual(result.errors, []);
   const synced = release(root);
-  assert.deepEqual(synced.on.push, { branches: ["main"] });
+  assert.equal(synced.on.push, undefined);
   assert.deepEqual(Object.keys(synced.on.workflow_dispatch.inputs), [
     "release-version",
     "release-commit",
     "dependency-ranges",
+    "preview",
   ]);
   assert.equal(
     synced.on.workflow_dispatch.inputs["dependency-ranges"].default,
@@ -167,6 +168,7 @@ test("a public caller on the channel interface becomes the release-train caller 
       "release-version": "${{ inputs.release-version }}",
       "release-commit": "${{ inputs.release-commit }}",
       "dependency-ranges": "${{ inputs.dependency-ranges }}",
+      preview: "${{ inputs.preview == true }}",
     },
     secrets: {
       RELEASE_APP_ID: "${{ secrets.RELEASE_APP_ID }}",
@@ -300,7 +302,7 @@ test("a repository with no release caller gets no release.yml and no next-sync c
   assert.equal(existsSync(join(root, NEXT_SYNC)), false);
 });
 
-test("cloud keeps develop: its next-sync caller merges main into develop and its preview pushes on develop, and a second sync changes nothing, so a sync that moves cloud to trunk or retires its next-sync fails", (t) => {
+test("cloud keeps develop: its next-sync caller merges main into develop, and a second sync changes nothing, so a sync that moves cloud to trunk or retires its next-sync fails", (t) => {
   const root = repoWith(
     t,
     { [RELEASE_PATH]: MONGODB },
@@ -325,7 +327,6 @@ test("cloud keeps develop: its next-sync caller merges main into develop and its
     RELEASE_APP_PRIVATE_KEY: "${{ secrets.RELEASE_APP_PRIVATE_KEY }}",
     NOTION_TOKEN: "${{ secrets.NOTION_TOKEN }}",
   });
-  assert.deepEqual(release(root).on.push, { branches: ["develop"] });
   assert.equal(formatCheck(root, [NEXT_SYNC]).status, 0);
   assert.equal(syncRepository(root, { check: true }).paths.length, 0);
 });

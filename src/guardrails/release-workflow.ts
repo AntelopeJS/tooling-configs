@@ -241,6 +241,7 @@ function releaseJob(release: ReleasePackage, several: boolean): string {
     "      release-version: ${{ inputs.release-version }}",
     "      release-commit: ${{ inputs.release-commit }}",
     "      dependency-ranges: ${{ inputs.dependency-ranges }}",
+    "      preview: ${{ inputs.preview == true }}",
     ...(release.installCore === undefined
       ? []
       : [`      install-core: ${release.installCore}`]),
@@ -262,16 +263,14 @@ function releaseJob(release: ReleasePackage, several: boolean): string {
 }
 
 /**
- * The release.yml that publishes `packages`: a preview of each on every push to `branch`, a pull request preview on each
- * label, push or reopen of a pull request that carries the `preview` label, and the stable version the release train
+ * The release.yml that publishes `packages`: a `next` preview on a dispatch with `preview: true`, a pull request preview on
+ * each label, push or reopen of a pull request that carries the `preview` label, and the stable version the release train
  * dispatches on the default branch with `release-version`, `release-commit`, `dependency-ranges` and, when a package is
  * not at the root, `package-directory`. The shared workflow skips a pull request without the `preview` label. With several
- * packages, each has its own job, which a dispatch runs only for the `package-directory` it names.
+ * packages, each has its own job, which a dispatch runs only for the `package-directory` it names. A single root package
+ * gets AntelopeJS/.github's scripts/release-train/frozen-caller.yml byte for byte.
  */
-function releaseCaller(
-  packages: readonly ReleasePackage[],
-  branch: string,
-): string {
+function releaseCaller(packages: readonly ReleasePackage[]): string {
   const several = packages.length > 1;
   const nested = packages.some(({ directory }) => directory !== ".");
   const directoryInput = nested
@@ -287,8 +286,6 @@ function releaseCaller(
   return `name: Release
 
 on:
-  push:
-    branches: [${branch}]
   pull_request:
     types: [labeled, synchronize, reopened]
   workflow_dispatch:
@@ -306,6 +303,11 @@ on:
         required: false
         default: "{}"
         type: string
+      preview:
+        description: Publish a preview under the npm dist-tag next from the default branch or a work/* branch
+        required: false
+        default: false
+        type: boolean
 ${directoryInput}
 permissions:
   contents: write
@@ -321,10 +323,7 @@ ${packages.map((release) => releaseJob(release, several)).join("\n")}`;
  * `services-compose-file`) and jobs besides the callers, such as a metadata `validate` job, are dropped and named in
  * a note. A repository with no release caller publishes nothing, and nothing is written.
  */
-export function releaseArtifacts(
-  root: string,
-  branch: string,
-): PlannedArtifact[] {
+export function releaseArtifacts(root: string): PlannedArtifact[] {
   const found = releaseCallers(root);
   if (found.errors.length)
     return found.errors.map((message) => ({
@@ -333,7 +332,7 @@ export function releaseArtifacts(
       message,
     }));
   if (!found.packages.length) return [];
-  const content = releaseCaller(found.packages, branch);
+  const content = releaseCaller(found.packages);
   const removed = [...found.files.keys()].filter(
     (file) => file !== RELEASE_PATH,
   );
