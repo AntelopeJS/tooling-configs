@@ -1,0 +1,7 @@
+{
+  "name": "billing",
+  "version": "0.0.0",
+  "dependencies": {
+    "@antelopejs/interface-dms": "1.0.0"
+  }
+}

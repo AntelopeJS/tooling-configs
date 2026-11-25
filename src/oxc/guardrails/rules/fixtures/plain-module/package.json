@@ -1,0 +1,7 @@
+{
+  "name": "plain-fixture",
+  "version": "0.0.0",
+  "dependencies": {
+    "@antelopejs/interface-api": "1.0.0"
+  }
+}
