@@ -10,9 +10,18 @@ interface JsonObject {
 interface Manifest {
   name: string;
   exports: Json | undefined;
+  /** Names declared in `dependencies`, `devDependencies`, `peerDependencies` and `optionalDependencies`. */
+  dependencyNames: string[];
   /** Whether `antelopeJs.test` is set, which makes `ajs module test` run the tests and bind package names through its own module resolver instead of `node_modules`. */
   testedByAjs: boolean;
 }
+
+const DEPENDENCY_FIELDS = [
+  "dependencies",
+  "devDependencies",
+  "peerDependencies",
+  "optionalDependencies",
+];
 
 function isObject(value: Json | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -31,9 +40,14 @@ function readManifest(directory: string): Manifest | undefined {
   }
   if (!isObject(parsed) || !isText(parsed.name)) return undefined;
   const { antelopeJs } = parsed;
+  const dependencyNames = DEPENDENCY_FIELDS.flatMap((field) => {
+    const group = parsed[field];
+    return isObject(group) ? Object.keys(group) : [];
+  });
   return {
     name: parsed.name,
     exports: parsed.exports,
+    dependencyNames,
     testedByAjs: isObject(antelopeJs) && isText(antelopeJs.test),
   };
 }

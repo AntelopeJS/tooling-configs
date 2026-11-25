@@ -1,10 +1,20 @@
 import { defineRule } from "@oxlint/plugins";
 
 import type { ESTree, SourceCode } from "@oxlint/plugins";
+import { enclosingPackage } from "../self-package.ts";
 import { resolveVariable, unwrapExpression } from "../local-types.ts";
 
 const ASSERT_STATUSES = new Set([403, 404, 409, 422]);
-const TRANSLATION_KEY = /^\$?[a-z0-9_]+(\.[a-z0-9_]+)+$/;
+const TRANSLATION_KEY = /^\$?[A-Za-z0-9_-]+(\.[a-z0-9_]+)+$/;
+const DMS_PACKAGE = /^(@[^/]+\/)?(interface-)?dms(-|$)/;
+
+function isDmsPackage(file: string): boolean {
+  const manifest = enclosingPackage(file)?.manifest;
+  if (manifest === undefined) return false;
+  return [manifest.name, ...manifest.dependencyNames].some((name) =>
+    DMS_PACKAGE.test(name),
+  );
+}
 
 /** What an expression statically is: a sentence-bearing text, a status number, or a template that interpolates. */
 type Static =
@@ -96,11 +106,13 @@ export const refusalMessageIsKeyRule = defineRule({
     },
   },
   createOnce(context) {
+    let dms = false;
     function check(
       status: ESTree.Argument | undefined,
       message: ESTree.Node | null,
       accepts: (code: number) => boolean,
     ) {
+      if (!dms) return;
       if (status === undefined || status.type === "SpreadElement") return;
       const code = staticValue(status, context.sourceCode);
       if (code?.kind !== "number" || !accepts(code.value)) return;
@@ -108,6 +120,9 @@ export const refusalMessageIsKeyRule = defineRule({
         context.report({ node: message, messageId: "sentence" });
     }
     return {
+      before() {
+        dms = isDmsPackage(context.filename);
+      },
       CallExpression(node) {
         if (node.callee.type !== "Identifier" || node.callee.name !== "assert")
           return;
