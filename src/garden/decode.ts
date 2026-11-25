@@ -30,6 +30,8 @@ interface ReferencedWorkflow {
 
 export interface WorkflowRun {
   id: number;
+  /** `completed`, or a state such as `queued` or `in_progress` while the run is live; `completed` when the payload lacks it. */
+  status: string;
   conclusion: string | undefined;
   createdAt: number;
   startedAt: number;
@@ -124,6 +126,7 @@ export function workflowRun(value: JsonValue): WorkflowRun {
   const created = time(source, "created_at");
   return {
     id: num(source, "id"),
+    status: optStr(source, "status") ?? "completed",
     conclusion: optStr(source, "conclusion"),
     createdAt: created,
     startedAt: optTime(source, "run_started_at") ?? created,

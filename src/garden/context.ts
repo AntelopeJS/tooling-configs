@@ -123,6 +123,7 @@ export class GardenContext {
   private readonly files = new Memo<string | undefined>();
   private readonly manifests = new Memo<PackageJson[]>();
   private readonly runs = new Memo<WorkflowRun[] | undefined>();
+  private readonly pending = new Memo<boolean>();
   private readonly checks = new Memo<CheckRun[]>();
   private readonly queueRuns = new Memo<WorkflowRun[] | undefined>();
   private readonly suites = new Memo<CheckRun[]>();
@@ -195,6 +196,28 @@ export class GardenContext {
     return runs?.filter(
       ({ event }) => event === "push" || event === "schedule",
     );
+  }
+
+  /** Whether the newest run of a workflow that judges a branch has not completed yet, so its checks may still be missing. */
+  branchRunPending(
+    repo: GardenRepo,
+    workflow: string,
+    branch: string,
+  ): Promise<boolean> {
+    return this.pending.get(`${repo.name}:${workflow}:${branch}`, async () => {
+      try {
+        const body = await this.api.json(
+          `/repos/${ORG}/${repo.name}/actions/workflows/${workflow}/runs?branch=${branch}&per_page=20`,
+        );
+        const newest = children(object(body, "runs"), "workflow_runs")
+          .map((run) => workflowRun(run))
+          .find(({ event }) => event === "push" || event === "schedule");
+        return newest !== undefined && newest.status !== "completed";
+      } catch (error) {
+        if (error instanceof Error && isMissing(error)) return false;
+        throw error;
+      }
+    });
   }
 
   tree(repo: GardenRepo): Promise<string[]> {
