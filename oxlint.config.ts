@@ -17,8 +17,16 @@ export default defineConfig({
   jsPlugins: [
     { name: "anti-slop", specifier: "./src/oxc/anti-slop/index.ts" },
     { name: "antelopejs", specifier: "./src/oxc/guardrails/index.ts" },
+    { name: "tooling-internal", specifier: "./src/oxc/internal/index.ts" },
   ],
   rules: {
     ...antiSlopRules(),
   },
+  overrides: [
+    {
+      files: ["src/oxc/**"],
+      excludeFiles: ["src/oxc/anti-slop/shared/function-parameters.ts"],
+      rules: { "tooling-internal/no-params-indexing": "error" },
+    },
+  ],
 });

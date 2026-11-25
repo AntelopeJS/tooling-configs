@@ -11,6 +11,7 @@ import {
 } from "../local-types.ts";
 import { isHasOwnPropertyCall } from "../key-provenance.ts";
 import { callName, memberName } from "../shared.ts";
+import { argumentParameters } from "../../anti-slop/shared/function-parameters.ts";
 
 type FunctionNode = ESTree.ArrowFunctionExpression | ESTree.Function;
 
@@ -119,7 +120,7 @@ function parameterType(
   fn: FunctionNode,
   name: string,
 ): ESTree.TSType | undefined {
-  for (const parameter of fn.params) {
+  for (const parameter of argumentParameters(fn)) {
     const binding =
       parameter.type === "AssignmentPattern" ? parameter.left : parameter;
     if (binding.type === "Identifier" && binding.name === name)
