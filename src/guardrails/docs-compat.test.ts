@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { parseDocument } from "yaml";
 
+import { NIGHTLY_INPUT } from "./ci-verdict.ts";
 import { CI_CALLER } from "./ci-workflow.ts";
 import {
   compatBlock,
@@ -309,6 +310,7 @@ test("sync writes the block of every qualifying workspace package, lists every p
     "docs-typescript-project": "packages/a/tsconfig.json",
     "docs-files": DOCS_FILES,
     "extra-commands": "pnpm --dir packages/a check\n",
+    nightly: NIGHTLY_INPUT,
   });
   assert.match(workflow, /# The interface examples compile against this/);
   const style = formatCheck(root, [

@@ -18,12 +18,22 @@ function rewrite(text: string, profile?: CiProfile): string {
   });
 }
 
+const DISPATCH = {
+  inputs: {
+    nightly: {
+      description: "Run the nightly tier, with the Windows jobs and Stress",
+      type: "boolean",
+      default: false,
+    },
+  },
+};
+
 interface TriggersView {
   pull_request?: { types?: string[] };
   merge_group?: null;
   push?: { branches?: string[] };
   schedule?: { cron: string }[];
-  workflow_dispatch?: null;
+  workflow_dispatch?: typeof DISPATCH;
 }
 
 function triggers(text: string): TriggersView {
@@ -48,7 +58,7 @@ const TRUNK_TRIGGERS: TriggersView = {
   merge_group: null,
   push: { branches: ["main"] },
   schedule: [{ cron: "17 2 * * *" }],
-  workflow_dispatch: null,
+  workflow_dispatch: DISPATCH,
 };
 
 const WINDOWS_CALLER = `jobs:\n  ci:\n    uses: ${CI_NODE_REF}\n    with:\n      windows: true\n      windows-pull-requests: true\n`;
@@ -87,7 +97,7 @@ test("cloud keeps its develop integration branch and gets no merge queue, and it
     pull_request: { types: [...PULL_REQUEST_TYPES, "labeled", "unlabeled"] },
     push: { branches: ["develop"] },
     schedule: TRUNK_TRIGGERS.schedule,
-    workflow_dispatch: null,
+    workflow_dispatch: DISPATCH,
   };
   const rewritten = rewrite(CI_CALLER, cloud);
   assert.deepEqual(triggers(rewritten), develop);
@@ -112,7 +122,7 @@ test("rewritten triggers keep the blank line before the next key, so a rewrite t
   const rewritten = rewrite(
     `on:\n  push:\n    branches: [next]\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\njobs:\n  ci:\n    uses: ${CI_NODE_REF}\n`,
   );
-  assert.match(rewritten, /workflow_dispatch:\n\npermissions:/);
+  assert.match(rewritten, /default: false\n\npermissions:/);
 });
 
 test("the comments of replaced triggers go with them and a dedented comment under the last trigger stays above permissions, which a rewrite that replaces on before restoring empty-value comments drops", () => {
@@ -120,10 +130,7 @@ test("the comments of replaced triggers go with them and a dedented comment unde
     `on:\n  push:\n    branches: [main]\n  # No branch filter\n  pull_request:\n\n  # only pull requests\n\n# least privilege\npermissions:\n  contents: read\njobs:\n  ci:\n    uses: ${CI_NODE_REF}\n`,
   );
   assert.doesNotMatch(rewritten, /branch filter|only pull requests/);
-  assert.match(
-    rewritten,
-    /workflow_dispatch:\n\n# least privilege\npermissions:/,
-  );
+  assert.match(rewritten, /default: false\n\n# least privilege\npermissions:/);
   assert.equal(rewrite(rewritten), rewritten);
 });
 
@@ -148,7 +155,7 @@ test("outside antelopejs and cloud-sdk sync drops windows: true and windows-pull
     );
     assert.deepEqual(
       Object.keys(withInputs(rewrite(asked))),
-      ["renovate-sync", "test-job"],
+      ["renovate-sync", "test-job", "nightly"],
       input,
     );
   }
