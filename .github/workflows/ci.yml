@@ -152,3 +152,20 @@ jobs:
           echo "VALE_BIN=$vale_bin" >> "$GITHUB_ENV"
       - run: npm test --prefix actions/docs
       - uses: ./actions/docs
+
+  verdict:
+    needs: [verify, test, checks, legacy-checks, docs]
+    if: ${{ always() }}
+    runs-on: ${{ vars.RUNNER_CI || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Fail when a job failed or was cancelled
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          failed=$(jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | "\(.key): \(.value.result)"' <<< "$NEEDS")
+          if [ -n "$failed" ]; then
+            echo "$failed"
+            exit 1
+          fi

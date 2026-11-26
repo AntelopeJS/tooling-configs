@@ -13,6 +13,7 @@ import {
   ciTriggers,
   ciWorkflow,
 } from "./ci-workflow.ts";
+import { NIGHTLY_INPUT, verdictJob } from "./ci-verdict.ts";
 import { syncRepository } from "./sync.ts";
 import {
   PACKAGE_ROOT,
@@ -155,7 +156,7 @@ test("renaming the caller to ci also rewrites needs.<old-id> in if, env and run 
 });
 
 test("a conformant caller is returned byte for byte, comments and extra jobs included", () => {
-  const text = `# keep me\nname: ci\n${ciTriggers}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: true\n      docs-files: README.md # docs\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n  deploy:\n    needs: ci\n    runs-on: ubuntu-latest\n    steps: []\n`;
+  const text = `# keep me\nname: ci\n${ciTriggers}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: true\n      docs-files: README.md # docs\n      nightly: ${NIGHTLY_INPUT}\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n  deploy:\n    needs: ci\n    runs-on: ubuntu-latest\n    steps: []\n${verdictJob(["ci", "renovate-sync", "deploy"])}`;
   assert.equal(rewrite(text), text);
   assert.equal(rewrite(CI_CALLER), CI_CALLER);
 });
@@ -166,6 +167,7 @@ test("the canonical caller keeps the job ci read-only and gives only the renovat
   assert.deepEqual(parsed.ci.with, {
     "renovate-sync": false,
     "test-job": true,
+    nightly: NIGHTLY_INPUT,
   });
   assert.deepEqual(parsed["renovate-sync"].permissions, {
     contents: "write",
@@ -197,6 +199,7 @@ test("an old-shape caller with write grants is rewritten to the new shape and th
   assert.deepEqual(parsed.ci.with, {
     "renovate-sync": false,
     "test-job": true,
+    nightly: NIGHTLY_INPUT,
   });
   assert.equal(parsed.ci.uses, CI_NODE_REF);
   assert.deepEqual(parsed["renovate-sync"], jobs(CI_CALLER)["renovate-sync"]);
@@ -213,6 +216,7 @@ test("rewriting keeps the other inputs, comments and other jobs and moves a call
     "docs-files": "README.md",
     "renovate-sync": false,
     "test-job": true,
+    nightly: NIGHTLY_INPUT,
   });
   assert.deepEqual(parsed.ci.permissions, { contents: "read" });
   assert.deepEqual(parsed.deploy, {
@@ -237,7 +241,7 @@ test("a caller without the test-job input gets test-job: true, with or without a
 });
 
 test("a caller that sets test-job itself keeps its value, so a repository can opt out", () => {
-  const optOut = `${ciTriggers}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: false\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n`;
+  const optOut = `${ciTriggers}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: false\n      nightly: ${NIGHTLY_INPUT}\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n${verdictJob(["ci", "renovate-sync"])}`;
   assert.equal(rewrite(optOut), optOut);
 });
 
@@ -246,7 +250,7 @@ test("an existing renovate-sync caller keeps its id and condition, moves to the 
     "AntelopeJS/.github/.github/workflows/ci-renovate-sync.yml@fix/branch";
   const text = `name: ci\non: [workflow_dispatch]\njobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n  sync:\n    if: github.event_name == 'pull_request'\n    permissions: write-all\n    uses: ${ref}\n`;
   const parsed = jobs(rewrite(text));
-  assert.deepEqual(Object.keys(parsed), ["ci", "sync"]);
+  assert.deepEqual(Object.keys(parsed), ["ci", "sync", "verdict"]);
   assert.equal(parsed.sync.uses, CI_RENOVATE_SYNC_REF);
   assert.equal(parsed.sync.if, "github.event_name == 'pull_request'");
   assert.deepEqual(parsed.sync.permissions, {
@@ -312,11 +316,13 @@ test("a renamed caller still gets a renovate-sync job and keeps its dependents",
     "deploy",
     "notify",
     "renovate-sync",
+    "verdict",
   ]);
   assert.deepEqual(parsed.ci.with, {
     "docs-files": "README.md",
     "renovate-sync": false,
     "test-job": true,
+    nightly: NIGHTLY_INPUT,
   });
 });
 

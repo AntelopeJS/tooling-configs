@@ -9,6 +9,7 @@ import {
   ciTriggers,
   ciWorkflow,
 } from "./ci-workflow.ts";
+import { NIGHTLY_INPUT, verdictJob } from "./ci-verdict.ts";
 import {
   PACKAGE_ROOT,
   bin,
@@ -75,6 +76,7 @@ jobs:
     with:
       renovate-sync: false
       test-job: true
+      nightly: ${NIGHTLY_INPUT}
   renovate-sync:
     permissions:
       contents: write
@@ -103,7 +105,7 @@ jobs:
     steps:
       - if: contains(needs.*.result, 'failure') || needs.ci.result == 'skipped' || needs.deploy.result == 'skipped'
         run: exit 1
-`;
+${verdictJob(["ci", "renovate-sync", "formal", "deploy", "ubuntu"])}`;
 
 test("sync --check fails the dms #545 caller (d5638a92) whose ubuntu gate still reads needs.checks after the rename to ci, and names the fix", (t) => {
   const root = adoptedRepo(t);

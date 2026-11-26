@@ -14,6 +14,13 @@ import {
   LEGACY_AGGREGATOR_ID,
 } from "./ci-aggregator.ts";
 import { setCallersDocsFiles, type DocsFilesPlan } from "./ci-docs-files.ts";
+import {
+  DISPATCH_TRIGGER,
+  NIGHTLY_INPUT,
+  setVerdict,
+  VERDICT_JOB_ID,
+  verdictJob,
+} from "./ci-verdict.ts";
 import { sharedWorkflow } from "./workflow.ts";
 import { renameJobReferences, staleNeeds } from "./workflow-needs.ts";
 import { restoreEmptyValueComments } from "./yaml-comments.ts";
@@ -75,8 +82,7 @@ export const ciTriggers = `on:
     branches: [main]
   schedule:
     - cron: "17 2 * * *"
-  workflow_dispatch:
-`;
+${DISPATCH_TRIGGER}`;
 
 /** The triggers of a repository with an integration branch: pull requests (label changes included, so `ci:full` applies), pushes to `branch`, a nightly run and manual dispatch; a push to `main` runs nothing. */
 function integrationTriggers(branch: string): string {
@@ -87,8 +93,7 @@ function integrationTriggers(branch: string): string {
     branches: [${branch}]
   schedule:
     - cron: "17 2 * * *"
-  workflow_dispatch:
-`;
+${DISPATCH_TRIGGER}`;
 }
 
 function triggersFor({ integrationBranch }: CiProfile): string {
@@ -111,6 +116,7 @@ jobs:
     with:
       renovate-sync: false
       test-job: true
+      nightly: ${NIGHTLY_INPUT}
   ${RENOVATE_SYNC_JOB_ID}:
     if: >-
       github.event_name == 'pull_request'
@@ -121,7 +127,7 @@ jobs:
       actions: write
       statuses: write
     uses: ${CI_RENOVATE_SYNC_REF}
-`;
+${verdictJob([CI_JOB_ID, RENOVATE_SYNC_JOB_ID])}`;
 
 function triggersOf(document: Document): string {
   const node = document.get("on", true);
@@ -255,7 +261,7 @@ function setInput(
   document: Document,
   job: YAMLMap,
   key: string,
-  value: boolean,
+  value: boolean | string,
 ): boolean {
   const inputs = job.get("with", true);
   if (isMap(inputs)) {
@@ -284,7 +290,8 @@ function setCallerInputs(
     !profile.singleJob && setInput(document, job, "single-job", false);
   const affected =
     affectedTests === true && setInput(document, job, "affected-tests", true);
-  return dropNotionToken(job) || singleJob || affected || testJob;
+  const nightly = setInput(document, job, "nightly", NIGHTLY_INPUT);
+  return dropNotionToken(job) || singleJob || affected || testJob || nightly;
 }
 
 /** The caller sync writes into a repository without one, its test job off when the `test` script is a placeholder. */
@@ -365,6 +372,7 @@ function dropRedundantAggregator(
 ): string[] {
   const keep = new Set([
     CI_JOB_ID,
+    VERDICT_JOB_ID,
     ...(syncCallers.length
       ? syncCallers.map(({ id }) => id)
       : [RENOVATE_SYNC_JOB_ID]),
@@ -372,6 +380,18 @@ function dropRedundantAggregator(
   if (!hasRedundantAggregator(jobs, CI_JOB_ID, keep)) return [];
   jobs.delete(LEGACY_AGGREGATOR_ID);
   return [LEGACY_AGGREGATOR_ID];
+}
+
+/** Adds a missing Renovate sync job and drops the redundant aggregator, then has the verdict need every job left. */
+function settleJobs(
+  document: Document,
+  jobs: YAMLMap,
+  syncCallers: { id: string }[],
+) {
+  const added = ensureSyncJob(document, jobs, syncCallers);
+  const removed = dropRedundantAggregator(jobs, syncCallers);
+  const verdict = setVerdict(document, jobs);
+  return { changed: added || removed.length > 0 || verdict, removed };
 }
 
 function renameCaller(
@@ -419,7 +439,7 @@ export function callerPlan(
  * A `checks` job that only re-aggregates the caller (`needs: [ci]`, steps that `exit` on `needs` results) is removed
  * when the workflow has no other job besides the caller and the Renovate sync, since the shared workflow already
  * reports `ci / checks` and each `needs` hop adds to the critical path. A gate that also covers repository-specific
- * jobs is kept.
+ * jobs is kept. The caller forwards the dispatch `nightly` input, and a `verdict` job needs every other job.
  * The workflow declares exactly the `ciTriggers` of the trunk-based CI: pull requests, the merge queue, pushes to `main`, the nightly run and dispatch;
  * a profile with an `integrationBranch` pushes on that branch instead and has no merge queue. Unless
  * `profile.windowsOnPullRequests` lets the repository ask for Windows on pull requests, no caller passes
@@ -468,11 +488,9 @@ export function ciWorkflow(
   changed = skipRenovateSync(document, pair.value) || changed;
   changed =
     setCallerInputs(document, pair.value, placeholderTests, plan) || changed;
-  changed = ensureSyncJob(document, jobs, syncCallers) || changed;
-  const removed = dropRedundantAggregator(jobs, syncCallers);
-  changed = removed.length > 0 || changed;
-  changed = setTriggers(document, profile) || changed;
-  const stale = staleNeeds(document, CI_PATH, removed);
+  const settled = settleJobs(document, jobs, syncCallers);
+  changed = setTriggers(document, profile) || settled.changed || changed;
+  const stale = staleNeeds(document, CI_PATH, settled.removed);
   if (stale.length) throw new Error(stale.join("\n"));
   if (!changed) return current;
   blockOverflowingFlow(document);

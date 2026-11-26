@@ -11,7 +11,8 @@ import {
 const NEEDS_REFERENCE =
   /(?<![\w.'"-])needs(?:\.([A-Za-z_][\w-]*)|\[\s*(['"])([^'"]+)\2\s*\])/g;
 
-function neededIds(job: YAMLMap): string[] {
+/** The job ids `job` lists under `needs:`, whether a single id or a list. */
+export function neededIds(job: YAMLMap): string[] {
   const needs = job.get("needs", true);
   const entries = isSeq(needs) ? needs.items : [needs];
   return entries.flatMap((entry) =>

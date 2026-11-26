@@ -9,6 +9,7 @@ import {
   ciTriggers,
   ciWorkflow,
 } from "./ci-workflow.ts";
+import { NIGHTLY_INPUT, verdictJob } from "./ci-verdict.ts";
 import { bin, commit, put, read, testRepo } from "./helpers/test-repo.ts";
 import { ciNodeCallers, ciRenovateSyncCallers } from "./workflow.ts";
 
@@ -41,6 +42,7 @@ jobs:
     with:
       renovate-sync: false
       test-job: true
+      nightly: ${NIGHTLY_INPUT}
   renovate-sync:
     if: >-
       github.event_name == 'pull_request' && startsWith(github.head_ref, 'renovate/') && github.event.pull_request.head.repo.full_name == github.repository
@@ -53,6 +55,10 @@ jobs:
 
 const REDIS_CALLER = `${HEAD}${AGGREGATOR}`;
 
+const NL = `      nightly: ${NIGHTLY_INPUT}\n`;
+
+const VERDICT = verdictJob(["ci", "renovate-sync"]);
+
 const E2E = `  e2e:
     runs-on: ubuntu-latest
     steps:
@@ -61,20 +67,20 @@ const E2E = `  e2e:
 
 test("the redis caller loses its checks job that only re-aggregates ci, so a rewrite that keeps it fails", () => {
   const synced = rewrite(REDIS_CALLER);
-  assert.deepEqual(jobIds(synced), ["ci", "renovate-sync"]);
-  assert.equal(synced, HEAD);
+  assert.deepEqual(jobIds(synced), ["ci", "renovate-sync", "verdict"]);
+  assert.equal(synced, `${HEAD}${VERDICT}`);
 });
 
 test("a caller without the sync job loses its checks job in the run that adds the sync job, so a second run changing the file fails", () => {
   const withoutSync = `${HEAD.slice(0, HEAD.indexOf("  renovate-sync:\n"))}${AGGREGATOR}`;
   const once = rewrite(withoutSync);
-  assert.deepEqual(jobIds(once), ["ci", "renovate-sync"]);
+  assert.deepEqual(jobIds(once), ["ci", "renovate-sync", "verdict"]);
   assert.equal(rewrite(once), once);
 });
 
 test("a caller on a job id other than ci is renamed first, so its checks job needing that id is still removed", () => {
   const before = `${HEAD.replace("  ci:\n", "  verify:\n")}${AGGREGATOR.replace("needs: [ci]", "needs: verify")}`;
-  assert.deepEqual(jobIds(rewrite(before)), ["ci", "renovate-sync"]);
+  assert.deepEqual(jobIds(rewrite(before)), ["ci", "renovate-sync", "verdict"]);
 });
 
 test("the same aggregator beside an e2e job is kept, so a rewrite that removes it on shape alone fails", () => {
@@ -85,8 +91,10 @@ test("the same aggregator beside an e2e job is kept, so a rewrite that removes i
       "renovate-sync",
       "e2e",
       "checks",
+      "verdict",
     ]);
-  assert.equal(rewrite(`${HEAD}${E2E}${gated}`), `${HEAD}${E2E}${gated}`);
+  const kept = `${HEAD}${E2E}${gated}${verdictJob(["ci", "renovate-sync", "e2e", "checks"])}`;
+  assert.equal(rewrite(kept), kept);
 });
 
 test("a checks job that runs real steps is kept, so a rewrite that removes any job named checks fails", () => {
@@ -106,7 +114,12 @@ test("a checks job that runs real steps is kept, so a rewrite that removes any j
         run: exit 1
 `;
   for (const text of [real, exitAfterWork])
-    assert.deepEqual(jobIds(rewrite(text)), ["ci", "renovate-sync", "checks"]);
+    assert.deepEqual(jobIds(rewrite(text)), [
+      "ci",
+      "renovate-sync",
+      "checks",
+      "verdict",
+    ]);
 });
 
 test("a checks job whose steps do not only exit on needs results is kept", () => {
@@ -193,10 +206,7 @@ test("sync --check reports a repo still carrying the redundant checks job, and s
   assert.equal(bin(root, "sync").status, 0);
   assert.equal(
     read(root, ".github/workflows/ci.yml"),
-    HEAD.replace(
-      "test-job: true\n",
-      "test-job: true\n      affected-tests: true\n",
-    ),
+    `${HEAD}${VERDICT}`.replace(NL, `${NL}      affected-tests: true\n`),
   );
   commit(root);
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
