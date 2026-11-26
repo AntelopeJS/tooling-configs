@@ -9,8 +9,9 @@ import { parseManifest } from "./package.ts";
 import { bin, put, read, testRepo } from "./helpers/test-repo.ts";
 
 const TEMPLATE = ["--profile", "template"];
-const FRESH_INTERFACES = {
-  minimumReleaseAgeExclude: ["@antelopejs/interface-*"],
+const RELEASE_AGE = {
+  minimumReleaseAge: 1440,
+  minimumReleaseAgeExclude: ["@antelopejs/*"],
 };
 const PLAYGROUND_LOCK = "playground/pnpm-lock.yaml";
 const PLAYGROUND_WORKSPACE = "playground/pnpm-workspace.yaml";
@@ -43,7 +44,7 @@ test("sync lists the interface pattern in the pnpm-workspace.yaml of a nested fo
   const root = pinnedRepo(t, "pnpm@11.27.1");
   withPlayground(root);
   synced(root);
-  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), FRESH_INTERFACES);
+  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), RELEASE_AGE);
   const check = bin(root, "sync", ["--check"]);
   assert.equal(check.status, 0, check.stdout + check.stderr);
 });
@@ -52,7 +53,7 @@ test("sync lists the interface pattern in the pnpm-workspace.yaml of a playgroun
   const root = pinnedRepo(t, "pnpm@11.27.1");
   put(root, "playground/package.json", '{ "private": true }\n');
   synced(root);
-  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), FRESH_INTERFACES);
+  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), RELEASE_AGE);
   const check = bin(root, "sync", ["--check"]);
   assert.equal(check.status, 0, check.stdout + check.stderr);
 });
@@ -84,18 +85,20 @@ test("sync adds the interface pattern to the pnpm-workspace.yaml pnpm 11 wrote i
   );
   synced(root);
   assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), {
-    minimumReleaseAgeExclude: [
-      "@antelopejs/dms@0.20.0",
-      "@antelopejs/interface-*",
-    ],
+    minimumReleaseAge: 1440,
+    minimumReleaseAgeExclude: ["@antelopejs/dms@0.20.0", "@antelopejs/*"],
   });
 });
 
-test("sync writes no pnpm-workspace.yaml in a nested folder of a pnpm 10 repository, where a sync that writes it leaves a stray file pnpm 10 has no release age for", (t) => {
-  const root = pinnedRepo(t, "pnpm@10.6.5");
+test("sync holds the root and the playground of a pnpm 10 repository to the release age, each in its own pnpm-workspace.yaml, where a sync that writes only the root makes pnpm 10 install the playground into the repository root", (t) => {
+  const root = pinnedRepo(t, "pnpm@10.33.0");
   withPlayground(root);
   synced(root);
-  assert.equal(existsSync(join(root, PLAYGROUND_WORKSPACE)), false);
+  assert.deepEqual(parse(read(root, "pnpm-workspace.yaml")), {
+    allowBuilds: { lefthook: false },
+    ...RELEASE_AGE,
+  });
+  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), RELEASE_AGE);
 });
 
 test("sync keeps the builds it declares in the root pnpm-workspace.yaml of a repository with a root pnpm-lock.yaml and a nested one, where a sync that also plans the root as a nested folder overwrites them with the interface pattern alone", (t) => {
@@ -106,17 +109,8 @@ test("sync keeps the builds it declares in the root pnpm-workspace.yaml of a rep
   const workspace: unknown = parse(read(root, "pnpm-workspace.yaml"));
   assert.deepEqual(workspace, {
     allowBuilds: { lefthook: false },
-    ...FRESH_INTERFACES,
+    ...RELEASE_AGE,
   });
-});
-
-test("sync keeps a nested pnpm-workspace.yaml that holds only the interface pattern in a pnpm 10 repository, where a sync that asks the root to delete such a file asks it of every install folder", (t) => {
-  const root = pinnedRepo(t, "pnpm@10.6.5");
-  withPlayground(root);
-  const content = 'minimumReleaseAgeExclude:\n  - "@antelopejs/interface-*"\n';
-  put(root, PLAYGROUND_WORKSPACE, content);
-  synced(root);
-  assert.equal(read(root, PLAYGROUND_WORKSPACE), content);
 });
 
 test("sync writes no pnpm-workspace.yaml beside a pnpm-lock.yaml that .gitignore leaves out, where a sync that walks ignored folders writes into node_modules", (t) => {
@@ -132,7 +126,7 @@ test("sync writes no pnpm-workspace.yaml beside a pnpm-lock.yaml that .gitignore
 test("sync --profile template writes a pnpm-workspace.yaml that holds only the interface pattern, then reports no drift, where a template sync that writes no file lets a fresh install lock two copies of an interface released less than a day ago and one that decides lefthook declares a build the template does not install", (t) => {
   const root = pinnedRepo(t, "pnpm@11.27.1");
   synced(root, TEMPLATE);
-  assert.deepEqual(parse(read(root, "pnpm-workspace.yaml")), FRESH_INTERFACES);
+  assert.deepEqual(parse(read(root, "pnpm-workspace.yaml")), RELEASE_AGE);
   const check = bin(root, "sync", [...TEMPLATE, "--check"]);
   assert.equal(check.status, 0, check.stdout + check.stderr);
 });
@@ -148,23 +142,11 @@ test("sync --profile template asks a pnpm 11 pin below 11.27.1 to rise and write
   assert.equal(existsSync(join(root, "pnpm-workspace.yaml")), false);
 });
 
-test("sync --profile template asks a pnpm 10 repository to delete a pnpm-workspace.yaml that holds only the interface pattern, where a sync that keeps it keeps nested installs going to the root", (t) => {
-  const root = pinnedRepo(t, "pnpm@10.6.5");
-  put(
-    root,
-    "pnpm-workspace.yaml",
-    'minimumReleaseAgeExclude:\n  - "@antelopejs/interface-*"\n',
-  );
-  const result = bin(root, "sync", TEMPLATE);
-  assert.equal(result.status, 1, result.stdout + result.stderr);
-  assert.match(result.stdout + result.stderr, /Delete pnpm-workspace\.yaml/);
-});
-
 test("sync lists the interface pattern in the pnpm-workspace.yaml of a pnpm-locked playground in an npm repository and writes no root file, then reports no drift, where a sync that skips every folder of a non-pnpm root lets that playground's pnpm 11 install lock two copies of an interface released less than a day ago", (t) => {
   const root = pinnedRepo(t, "npm@10.9.0");
   withPlayground(root);
   synced(root);
-  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), FRESH_INTERFACES);
+  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), RELEASE_AGE);
   assert.equal(existsSync(join(root, "pnpm-workspace.yaml")), false);
   const check = bin(root, "sync", ["--check"]);
   assert.equal(check.status, 0, check.stdout + check.stderr);
@@ -198,7 +180,7 @@ test("sync lists the interface pattern in the root pnpm-workspace.yaml of a repo
   synced(root);
   assert.deepEqual(
     parse(read(root, "pnpm-workspace.yaml")).minimumReleaseAgeExclude,
-    FRESH_INTERFACES.minimumReleaseAgeExclude,
+    RELEASE_AGE.minimumReleaseAgeExclude,
   );
 });
 

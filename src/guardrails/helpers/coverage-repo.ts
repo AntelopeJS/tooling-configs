@@ -19,7 +19,7 @@ export function findingsFor(
     JSON.stringify({
       name: "coverage-test",
       type: "module",
-      packageManager: "pnpm@10.0.0",
+      packageManager: "pnpm@10.33.0",
       scripts,
       ...manifest,
     }),

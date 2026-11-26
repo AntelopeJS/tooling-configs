@@ -9,7 +9,7 @@ import { shimInvocation } from "./run-command.ts";
 
 /** Every step but `published:types`, so it alone decides the run. */
 const OTHER_STEPS =
-  "typecheck,lint,format:check,knip,test,size,suppressions,sync:check,git:identity,lockfile:singletons";
+  "typecheck,lint,format:check,knip,test,size,suppressions,sync:check,git:identity,lockfile:singletons,pnpm:release-age";
 
 /** The `package.json` fields a fixture sets beside its name, version and `types`. */
 interface FixtureFields {
@@ -63,7 +63,7 @@ test("a declaration importing a package the tarball does not depend on fails che
     result.stdout,
     /^\[published:types\]\npackage\.json: @fixture\/typed as a consumer installs it, checked by tsc with skipLibCheck off:\n@fixture\/typed\/index\.d\.ts\(1,\d+\): error TS2307: Cannot find module 'not-a-dependency'/,
   );
-  assert.match(result.stdout, /Checks: 0 passed, 1 failed, 9 skipped\.\n$/);
+  assert.match(result.stdout, /Checks: 0 passed, 1 failed, 10 skipped\.\n$/);
 });
 
 test("a declaration importing a file that package.json files leaves out of the tarball fails checks, caught by an implementation that typechecks the working tree instead of the packed package", (t) => {
@@ -98,7 +98,7 @@ test("a declaration importing an optional peer passes checks, caught by an imple
   );
   const result = checks(root);
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 9 skipped.\n");
+  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 10 skipped.\n");
 });
 
 test("typedPackages lists a typed workspace member beside a private root and skips an untyped and a private member, caught by an implementation that reads only the root package", (t) => {
@@ -143,7 +143,11 @@ for (const packageManager of ["pnpm@10.2.0", "npm@11.0.0"])
     );
     const result = checks(root);
     assert.equal(result.status, 0, result.stdout + result.stderr);
-    assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 9 skipped.\n");
+    const skipped = packageManager.startsWith("pnpm") ? 10 : 9;
+    assert.equal(
+      result.stdout,
+      `Checks: 1 passed, 0 failed, ${skipped} skipped.\n`,
+    );
   });
 
 test("a declaration using the compiler API of a typescript peer passes checks, caught by an implementation that installs the latest typescript over the peer's range", (t) => {
@@ -157,7 +161,7 @@ test("a declaration using the compiler API of a typescript peer passes checks, c
   );
   const result = checks(root);
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 9 skipped.\n");
+  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 10 skipped.\n");
 });
 
 test("a workspace package using a type its unpublished sibling adds passes checks, caught by an implementation that installs the sibling from the registry", (t) => {
@@ -208,7 +212,7 @@ test("a workspace package using a type its unpublished sibling adds passes check
   });
   const result = checks(root);
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 10 skipped.\n");
+  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 11 skipped.\n");
 });
 
 test("checks reports an error in a file a wildcard export reaches and none in a shipped file no export reaches, caught by an implementation that checks every shipped declaration or skips wildcard subpaths", (t) => {
@@ -305,7 +309,7 @@ test("a package that only CommonJS can require passes checks, caught by an imple
   );
   const result = checks(root);
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 9 skipped.\n");
+  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 10 skipped.\n");
 });
 
 test("workspace packages that depend on each other pass checks, caught by an implementation that lets a sibling pull the checked package from the registry", (t) => {
@@ -347,7 +351,7 @@ test("workspace packages that depend on each other pass checks, caught by an imp
   });
   const result = checks(root);
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 10 skipped.\n");
+  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 11 skipped.\n");
 });
 
 test("a broken declaration behind a types condition listed after import and require fails checks, caught by an implementation that stops at the first matching condition", (t) => {
@@ -387,5 +391,5 @@ test("a suffix-less pattern beside a longer null pattern passes checks, caught b
   );
   const result = checks(root);
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 9 skipped.\n");
+  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 10 skipped.\n");
 });

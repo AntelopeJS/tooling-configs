@@ -8,7 +8,7 @@ import { bin, binAsync, put, testRepo } from "./helpers/test-repo.ts";
 
 /** Every step but `readme:version`, so it alone decides the run. */
 const OTHER_STEPS =
-  "typecheck,lint,format:check,knip,test,size,suppressions,sync:check,git:identity";
+  "typecheck,lint,format:check,knip,test,size,suppressions,sync:check,pnpm:release-age,git:identity";
 
 function moduleRepo(t: TestContext, version: string, readme: string): string {
   const root = testRepo(t);
@@ -37,7 +37,7 @@ test("a README example range that no longer admits the package.json version fail
   assert.equal(result.status, 1, result.stdout);
   assert.equal(
     result.stdout,
-    '[readme:version]\nREADME.md:10 gives @antelopejs/brevo the version range "^0.0.6", which does not stop below the next minor of 0.0.9, the version in package.json. Use ">=0.0.9 <0.1.0".\nChecks: 0 passed, 1 failed, 9 skipped.\n',
+    '[readme:version]\nREADME.md:10 gives @antelopejs/brevo the version range "^0.0.6", which does not stop below the next minor of 0.0.9, the version in package.json. Use ">=0.0.9 <0.1.0".\nChecks: 0 passed, 1 failed, 10 skipped.\n',
   );
 });
 
@@ -45,7 +45,7 @@ test("a README example range that admits the package.json version passes, caught
   const root = moduleRepo(t, "0.0.10", example(">=0.0.9 <0.1.0"));
   const result = checks(root);
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 9 skipped.\n");
+  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 10 skipped.\n");
 });
 
 test("a range that admits the package.json version but is open past its next minor fails, caught by an implementation that only checks the range admits the version", (t) => {
@@ -94,7 +94,7 @@ test("a workspace package whose README range no longer admits its version fails 
   assert.equal(result.status, 1, result.stdout);
   assert.equal(
     result.stdout,
-    '[readme:version]\nREADME.md:10 gives @antelopejs/brevo the version range "^0.9.0", which does not stop below the next minor of 0.10.0, the version in packages/dms-saas/package.json. Use ">=0.10.0 <0.11.0".\npackages/dms-saas/README.md:10 gives @antelopejs/brevo the version range "^0.9.0", which does not stop below the next minor of 0.10.0, the version in packages/dms-saas/package.json. Use ">=0.10.0 <0.11.0".\nChecks: 0 passed, 1 failed, 9 skipped.\n',
+    '[readme:version]\nREADME.md:10 gives @antelopejs/brevo the version range "^0.9.0", which does not stop below the next minor of 0.10.0, the version in packages/dms-saas/package.json. Use ">=0.10.0 <0.11.0".\npackages/dms-saas/README.md:10 gives @antelopejs/brevo the version range "^0.9.0", which does not stop below the next minor of 0.10.0, the version in packages/dms-saas/package.json. Use ">=0.10.0 <0.11.0".\nChecks: 0 passed, 1 failed, 10 skipped.\n',
   );
 });
 
@@ -113,7 +113,7 @@ test("a README example of a package outside @antelopejs does not run the step, c
   const root = moduleRepo(t, "0.0.9", example("^1.4.2", "lodash"));
   const result = checks(root);
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 0 passed, 0 failed, 9 skipped.\n");
+  assert.equal(result.stdout, "Checks: 0 passed, 0 failed, 10 skipped.\n");
 });
 
 /** Serves `latest` as the newest published version of `@antelopejs/mongodb`, and a 404 for any other package. */
@@ -136,7 +136,7 @@ test("an example of another @antelopejs package on an older minor than its newes
   assert.equal(result.status, 1, result.stdout);
   assert.equal(
     result.stdout,
-    '[readme:version]\nREADME.md:10 gives @antelopejs/mongodb the version range "~1.3.0", which does not stop below the next minor of 1.4.2, its newest published version. Use "~1.4.2".\nChecks: 0 passed, 1 failed, 9 skipped.\n',
+    '[readme:version]\nREADME.md:10 gives @antelopejs/mongodb the version range "~1.3.0", which does not stop below the next minor of 1.4.2, its newest published version. Use "~1.4.2".\nChecks: 0 passed, 1 failed, 10 skipped.\n',
   );
 });
 
@@ -155,7 +155,7 @@ test("an example of another @antelopejs package with a tilde on its newest minor
   const root = moduleRepo(t, "0.0.9", example("~1.4.0", "@antelopejs/mongodb"));
   const result = await checksWith(root, await registry(t, "1.4.2"));
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 9 skipped.\n");
+  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 10 skipped.\n");
 });
 
 test("the draft, fast and full tiers skip readme:version because it reads the registry's latest, and the queue and nightly tiers and no tier run it, caught by an implementation that leaves it out of the registry steps or skips it on the merge queue", async (t) => {
@@ -166,7 +166,7 @@ test("the draft, fast and full tiers skip readme:version because it reads the re
     assert.equal(result.status, 0, `${tier}: ${result.stdout}`);
     assert.equal(
       result.stdout,
-      "Checks: 0 passed, 0 failed, 10 skipped.\n",
+      "Checks: 0 passed, 0 failed, 11 skipped.\n",
       tier,
     );
   }

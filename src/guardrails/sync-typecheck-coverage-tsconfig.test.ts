@@ -177,7 +177,7 @@ test("a directory where a tsconfig or a release-it config is expected becomes a 
     JSON.stringify({
       name: "read-error",
       type: "module",
-      packageManager: "pnpm@10.0.0",
+      packageManager: "pnpm@10.33.0",
       scripts: { release: "release-it", ...FULL },
     }),
   );

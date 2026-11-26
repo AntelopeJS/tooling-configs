@@ -23,11 +23,16 @@ function passingRepo(t: TestContext): string {
     root,
     "package.json",
     JSON.stringify({
-      packageManager: "pnpm@10.2.0",
+      packageManager: "pnpm@10.33.0",
       scripts: Object.fromEntries(
         PASSING_STEPS.map((name) => [name, 'node -e "process.exit(0)"']),
       ),
     }),
+  );
+  put(
+    root,
+    "pnpm-workspace.yaml",
+    'minimumReleaseAge: 1440\nminimumReleaseAgeExclude:\n  - "@antelopejs/*"\n',
   );
   return root;
 }
@@ -85,7 +90,7 @@ test("a lockfile holding two copies of an interface package fails checks and nam
     result.stdout,
     /\[lockfile:singletons\]\npnpm-lock\.yaml resolves "@antelopejs\/interface-core" at 2 versions, and an interface package must load once:\n {2}0\.1\.1, pulled by importer "\.", @antelopejs\/interface-api@0\.1\.0\n {2}0\.2\.6, pulled by @antelopejs\/core@1\.17\.2\n/,
   );
-  assert.match(result.stdout, /Checks: 9 passed, 1 failed\./);
+  assert.match(result.stdout, /Checks: 10 passed, 1 failed\./);
 });
 
 test("one interface copy under two peer contexts and two copies of a package that is not an interface pass, caught by counting snapshot keys or flagging any duplicate", (t) => {

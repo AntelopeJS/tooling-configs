@@ -143,7 +143,7 @@ function workspace(t: TestContext): string {
     manifest({
       name: "fixture-workspace",
       private: true,
-      packageManager: "pnpm@10.2.0",
+      packageManager: "pnpm@10.33.0",
       scripts: { "sync:check": "antelopejs-sync --check" },
       devDependencies: { "@antelopejs/core": "^1.17.0" },
     }),
@@ -353,7 +353,7 @@ test("a pnpm repository without a lockfile fails naming the fix, and another man
     manifest({
       name: "@antelopejs/module",
       version: "1.0.0",
-      packageManager: "pnpm@10.2.0",
+      packageManager: "pnpm@10.33.0",
       scripts: { "sync:check": "antelopejs-sync --check" },
       dependencies: { "@antelopejs/interface-core": ">=0.2.4 <1.0.0" },
     }),
@@ -367,7 +367,7 @@ test("a pnpm repository without a lockfile fails naming the fix, and another man
   put(
     root,
     "package.json",
-    read(root, "package.json").replace("pnpm@10.2.0", "npm@11.0.0"),
+    read(root, "package.json").replace("pnpm@10.33.0", "npm@11.0.0"),
   );
   assert.deepEqual(syncRepository(root).errors, []);
   assert.equal(
@@ -401,7 +401,7 @@ function perPackageRepo(t: TestContext, setting: "npmrc" | "workspace" | "on") {
     manifest({
       name: "fixture-workspace",
       private: true,
-      packageManager: "pnpm@10.2.0",
+      packageManager: "pnpm@10.33.0",
       scripts: { "sync:check": "antelopejs-sync --check" },
     }),
   );
