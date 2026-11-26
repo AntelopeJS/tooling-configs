@@ -218,11 +218,18 @@ function appended(text: string, ...blocks: string[]): string {
 
 /**
  * `current` with `allowBuilds.<name>` set to `false` for each of `names` the repository does not already decide,
- * `minimumReleaseAge` at one day or more, and `@antelopejs/*` in `minimumReleaseAgeExclude`. pnpm 11 fails an install on a
+ * `minimumReleaseAge` at one day or more, and `@antelopejs/*` in `minimumReleaseAgeExclude`. A `nested` file with no `packages`
+ * gets `packages: ["."]`, since pnpm 10.33 fails `pnpm --dir <folder>` with "packages field missing or empty" on a nested file
+ * that has none. pnpm 11 fails an install on a
  * dependency build it was not told about, pnpm installs a release the day it is published without the age, and with the age
  * but no exclusion locks two copies of an interface released less than a day ago.
  */
-function withSyncedSettings(names: string[], current = ""): string {
+function withSyncedSettings(
+  names: string[],
+  current = "",
+  nested = false,
+): string {
+  const packages = nested ? `packages:\n  - "."\n` : "";
   const age = `${RELEASE_AGE}: ${MINIMUM_RELEASE_AGE}\n`;
   const exclude = `${EXCLUDE}:\n  - "${FRESH_RELEASES}"\n`;
   const document = parseDocument(current);
@@ -231,12 +238,19 @@ function withSyncedSettings(names: string[], current = ""): string {
   if (document.toJS() == null) {
     const lines = names.map((name) => `  ${name}: false\n`).join("");
     const builds = names.length ? [`allowBuilds:\n${lines}`] : [];
-    return appended(current.trimStart(), ...builds, age, exclude);
+    return appended(
+      current.trimStart(),
+      ...(packages ? [packages] : []),
+      ...builds,
+      age,
+      exclude,
+    );
   }
   if (!isMap(document.contents))
     throw new Error("its top level must be a YAML mapping.");
   const ageAbsent = !document.has(RELEASE_AGE);
   const excludeAbsent = document.get(EXCLUDE) == null;
+  const packagesAbsent = packages !== "" && !document.has("packages");
   const decided = decideBuilds(document, names);
   const held = !ageAbsent && holdReleaseAge(document);
   const excluded = !excludeAbsent && excludeFreshReleases(document);
@@ -247,6 +261,7 @@ function withSyncedSettings(names: string[], current = ""): string {
       : current;
   return appended(
     text,
+    ...(packagesAbsent ? [packages] : []),
     ...(ageAbsent ? [age] : []),
     ...(excludeAbsent ? [exclude] : []),
   );
@@ -272,7 +287,7 @@ function installRootArtifact(
   const file = join(root, path);
   const current = existsSync(file) ? readFileSync(file, "utf8") : undefined;
   try {
-    const content = withSyncedSettings(builds, current);
+    const content = withSyncedSettings(builds, current, folder !== "");
     const action = creation(manifest);
     if (
       folder === "" &&

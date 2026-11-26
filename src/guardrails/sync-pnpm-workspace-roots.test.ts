@@ -13,6 +13,7 @@ const RELEASE_AGE = {
   minimumReleaseAge: 1440,
   minimumReleaseAgeExclude: ["@antelopejs/*"],
 };
+const NESTED = { packages: ["."], ...RELEASE_AGE };
 const PLAYGROUND_LOCK = "playground/pnpm-lock.yaml";
 const PLAYGROUND_WORKSPACE = "playground/pnpm-workspace.yaml";
 
@@ -44,7 +45,7 @@ test("sync lists the interface pattern in the pnpm-workspace.yaml of a nested fo
   const root = pinnedRepo(t, "pnpm@11.27.1");
   withPlayground(root);
   synced(root);
-  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), RELEASE_AGE);
+  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), NESTED);
   const check = bin(root, "sync", ["--check"]);
   assert.equal(check.status, 0, check.stdout + check.stderr);
 });
@@ -53,7 +54,7 @@ test("sync lists the interface pattern in the pnpm-workspace.yaml of a playgroun
   const root = pinnedRepo(t, "pnpm@11.27.1");
   put(root, "playground/package.json", '{ "private": true }\n');
   synced(root);
-  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), RELEASE_AGE);
+  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), NESTED);
   const check = bin(root, "sync", ["--check"]);
   assert.equal(check.status, 0, check.stdout + check.stderr);
 });
@@ -85,6 +86,7 @@ test("sync adds the interface pattern to the pnpm-workspace.yaml pnpm 11 wrote i
   );
   synced(root);
   assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), {
+    packages: ["."],
     minimumReleaseAge: 1440,
     minimumReleaseAgeExclude: ["@antelopejs/dms@0.20.0", "@antelopejs/*"],
   });
@@ -98,7 +100,7 @@ test("sync holds the root and the playground of a pnpm 10 repository to the rele
     allowBuilds: { lefthook: false },
     ...RELEASE_AGE,
   });
-  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), RELEASE_AGE);
+  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), NESTED);
 });
 
 test("sync keeps the builds it declares in the root pnpm-workspace.yaml of a repository with a root pnpm-lock.yaml and a nested one, where a sync that also plans the root as a nested folder overwrites them with the interface pattern alone", (t) => {
@@ -146,7 +148,7 @@ test("sync lists the interface pattern in the pnpm-workspace.yaml of a pnpm-lock
   const root = pinnedRepo(t, "npm@10.9.0");
   withPlayground(root);
   synced(root);
-  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), RELEASE_AGE);
+  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), NESTED);
   assert.equal(existsSync(join(root, "pnpm-workspace.yaml")), false);
   const check = bin(root, "sync", ["--check"]);
   assert.equal(check.status, 0, check.stdout + check.stderr);
@@ -189,4 +191,19 @@ test("sync writes no root pnpm-workspace.yaml in a repository that pins no packa
   put(root, "yarn.lock", "# yarn lockfile v1\n");
   synced(root);
   assert.equal(existsSync(join(root, "pnpm-workspace.yaml")), false);
+});
+
+test('sync gives a nested pnpm-workspace.yaml a packages field and keeps one the repository wrote, where a sync that writes only the release-age keys makes pnpm 10.33 fail `pnpm --dir <folder>` with "packages field missing or empty"', (t) => {
+  const root = pinnedRepo(t, "pnpm@10.33.0");
+  withPlayground(root);
+  put(root, "nested/package.json", '{ "private": true }\n');
+  put(root, "nested/pnpm-lock.yaml", "lockfileVersion: '9.0'\n");
+  put(root, "nested/pnpm-workspace.yaml", "packages:\n  - sub\n");
+  synced(root);
+  assert.deepEqual(parse(read(root, PLAYGROUND_WORKSPACE)), NESTED);
+  assert.deepEqual(parse(read(root, "nested/pnpm-workspace.yaml")), {
+    packages: ["sub"],
+    ...RELEASE_AGE,
+  });
+  assert.equal(parse(read(root, "pnpm-workspace.yaml")).packages, undefined);
 });
