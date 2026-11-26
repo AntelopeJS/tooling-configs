@@ -32,7 +32,7 @@ const HONOURS_RELEASE_AGE = "10.17.0";
 const RELEASE_AGE = "minimumReleaseAge";
 
 /** The lowest `minimumReleaseAge` a repository may set: one day, so a broken release is pulled or fixed before an install locks it. */
-export const MINIMUM_RELEASE_AGE = 1440;
+const MINIMUM_RELEASE_AGE = 1440;
 
 /** The pnpm setting that lists the packages pnpm installs the day they are published, despite `minimumReleaseAge`. */
 const EXCLUDE = "minimumReleaseAgeExclude";
@@ -43,7 +43,7 @@ const EXCLUDE = "minimumReleaseAgeExclude";
  * and only a range that admits nothing older to the new one, so a fresh install locks two copies of one interface and
  * `lockfile:singletons` fails.
  */
-export const FRESH_RELEASES = "@antelopejs/*";
+const FRESH_RELEASES = "@antelopejs/*";
 
 /** The narrower pattern sync listed before `FRESH_RELEASES`, which sync replaces with it. */
 const INTERFACE_RELEASES = "@antelopejs/interface-*";
