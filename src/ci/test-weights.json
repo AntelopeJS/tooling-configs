@@ -78,6 +78,7 @@
   "src/guardrails/ci-workflow-caller-inputs.test.ts": 0.2,
   "src/guardrails/ci-workflow-needs.test.ts": 9.2,
   "src/guardrails/ci-workflow-triggers.test.ts": 2.7,
+  "src/guardrails/ci-workflow-verdict.test.ts": 2,
   "src/guardrails/ci-workflow.test.ts": 9.8,
   "src/guardrails/comment-proof-links.test.ts": 4.4,
   "src/guardrails/comment-proof.test.ts": 46,
