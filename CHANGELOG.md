@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.10.4
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.3...v0.10.4)
+
+### 🩹 Fixes
+
+- **oxc:** Ignore all of .claude/skills in the preset ([#484](https://github.com/AntelopeJS/tooling-configs/pull/484))
+- **guardrails:** Attach TSDoc only directly above its declaration, accept .vue module docs and the Vitest pragma ([#486](https://github.com/AntelopeJS/tooling-configs/pull/486))
+- **guardrails:** Skip type-aware lint in the commit hook for files whose tsconfig cannot load ([#487](https://github.com/AntelopeJS/tooling-configs/pull/487))
+- **guardrails:** Fail comment-proof when the head side compares 0 entries ([#485](https://github.com/AntelopeJS/tooling-configs/pull/485))
+- **guardrails:** Report a .vue script that TypeScript reads as a global script ([#490](https://github.com/AntelopeJS/tooling-configs/pull/490))
+
+### 📖 Documentation
+
+- **eslint:** Document the inherited **/public ignore of antelopeNuxtConfig ([#483](https://github.com/AntelopeJS/tooling-configs/pull/483))
+- **oxc:** State the no-unknown-parameters convention for aliases resolving to unknown ([#488](https://github.com/AntelopeJS/tooling-configs/pull/488))
+- **guardrails:** Drop the unsynced adapter link from the technical-writing skill ([#489](https://github.com/AntelopeJS/tooling-configs/pull/489))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.10.3
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.2...v0.10.3)
