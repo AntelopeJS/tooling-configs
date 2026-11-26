@@ -22,8 +22,8 @@ function checks(root: string) {
   });
 }
 
-function failed(lines: string[]): string {
-  return `[pnpm:release-age]\n${lines.join("\n")}\nRun antelopejs-sync.\nChecks: 0 passed, 1 failed, 9 skipped.\n`;
+function failed(lines: string[], sync = true): string {
+  return `[pnpm:release-age]\n${lines.join("\n")}\n${sync ? "Run antelopejs-sync.\n" : ""}Checks: 0 passed, 1 failed, 9 skipped.\n`;
 }
 
 for (const [name, workspace, failure] of [
@@ -116,8 +116,23 @@ test("pnpm:release-age fails a nested package.json pinning a pnpm before 10.17.0
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.equal(
     result.stdout,
-    failed([
-      "frontend-vue/package.json pins packageManager to pnpm@10.2.0, and pnpm before 10.17.0 installs a release the day it is published, whatever minimumReleaseAge says.",
-    ]),
+    failed(
+      [
+        "frontend-vue/package.json pins packageManager to pnpm@10.2.0, and pnpm before 10.17.0 installs a release the day it is published, whatever minimumReleaseAge says. Set packageManager in frontend-vue/package.json to pnpm@10.33.0.",
+      ],
+      false,
+    ),
   );
+});
+
+test("pnpm:release-age names a package.json that is not valid JSON, where the run aborted with no file name", (t) => {
+  const root = pnpmRepo(t, `minimumReleaseAge: 1440\n${EXCLUDE}`);
+  put(root, "frontend-vue/package.json", "{ not json");
+  const result = checks(root);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(
+    result.stdout,
+    /^\[pnpm:release-age\]\nfrontend-vue\/package\.json is not valid JSON/,
+  );
+  assert.doesNotMatch(result.stdout, /Run antelopejs-sync/);
 });
