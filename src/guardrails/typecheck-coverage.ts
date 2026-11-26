@@ -118,30 +118,19 @@ function usedPrograms(
 }
 
 function skipLibCheckErrors(files: CoverageFiles, scripts: Scripts): string[] {
-  const readers = new Map<
-    string,
-    { sets: boolean; by: string[]; from: string }
-  >();
+  const readers = new Map<string, string[]>();
   for (const [program, users] of usedPrograms(files, scripts)) {
     const setting = skipLibCheckSetting(files, program);
     const target = setting?.value ? reportedFile(files, setting) : undefined;
-    if (setting === undefined || target === undefined) continue;
+    if (target === undefined) continue;
     const reader = users.length
       ? `${program} (script ${[...new Set(users)].map((name) => `"${name}"`).join(", ")})`
       : `${program} (the root program)`;
-    const known = readers.get(target.file);
-    if (known) known.by.push(reader);
-    else
-      readers.set(target.file, {
-        sets: target.sets,
-        by: [reader],
-        from: setting.chain.at(-1) ?? target.file,
-      });
+    readers.set(target, [...(readers.get(target) ?? []), reader]);
   }
-  return [...readers].map(([file, { sets, by, from }]) =>
-    sets
-      ? `${file}: sets compilerOptions.skipLibCheck: true, read by ${by.join(", ")}. Remove it so "typecheck" checks the declaration files; "build" may pass --skipLibCheck on the command line for the program "typecheck" covers.`
-      : `${file}: inherits compilerOptions.skipLibCheck: true from ${from}, which git ignores, read by ${by.join(", ")}. Set \`skipLibCheck: false\` here so "typecheck" checks the declaration files; "build" may pass --skipLibCheck on the command line for the program "typecheck" covers.`,
+  return [...readers].map(
+    ([file, by]) =>
+      `${file}: sets compilerOptions.skipLibCheck: true, read by ${by.join(", ")}. Remove it so "typecheck" checks the declaration files; "build" may pass --skipLibCheck on the command line for the program "typecheck" covers.`,
   );
 }
 

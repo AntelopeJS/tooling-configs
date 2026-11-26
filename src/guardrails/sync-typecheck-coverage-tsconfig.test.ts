@@ -120,52 +120,48 @@ test("the last of a repeated key wins, as when tsc reads it; a check that takes 
   );
 });
 
-test("a generated tsconfig in the extends chain is not edited: the finding names the first tracked file with the fix to set skipLibCheck false there; a check that names the setter tells the user to edit .nuxt/tsconfig.json", (t) => {
+test("a tracked tsconfig that only extends a git-ignored one setting skipLibCheck true is not refused, under .nuxt and under .dms-types; a check that reports the first tracked file of the chain refuses it", (t) => {
+  for (const dir of [".nuxt", ".dms-types"])
+    assert.deepEqual(
+      findingsFor(t, FULL, {
+        ".gitignore": `node_modules\n${dir}\n`,
+        "tsconfig.json": `{ "extends": "./${dir}/tsconfig.json" }`,
+        [`${dir}/tsconfig.json`]: SKIPS,
+      }),
+      [],
+      dir,
+    );
+});
+
+test("a tracked file that sets skipLibCheck true is refused even when it extends a git-ignored tsconfig; a check that skips every chain through an ignored file passes it", (t) => {
   const findings = findingsFor(t, FULL, {
-    ".gitignore": "node_modules\n.nuxt\n",
-    "tsconfig.json": '{ "extends": "./.nuxt/tsconfig.json" }',
-    ".nuxt/tsconfig.json": SKIPS,
+    ".gitignore": "node_modules\n.dms-types\n",
+    "tsconfig.json":
+      '{ "extends": "./.dms-types/tsconfig.json", "compilerOptions": { "skipLibCheck": true } }',
+    ".dms-types/tsconfig.json": "{}",
   });
   assert.equal(findings.length, 1);
   assert.match(
     findings[0],
-    /^tsconfig\.json: inherits compilerOptions\.skipLibCheck: true from \.nuxt\/tsconfig\.json, which git ignores/,
-  );
-  assert.match(findings[0], /Set `skipLibCheck: false` here/);
-  assert.doesNotMatch(findings[0], /^\.nuxt/);
-});
-
-test("a chain with no tracked file reports nothing; a check that falls back to the generated file reports it", (t) => {
-  assert.deepEqual(
-    findingsFor(
-      t,
-      { typecheck: "tsc --noEmit -p .nuxt/tsconfig.json" },
-      {
-        ".gitignore": "node_modules\n.nuxt\n",
-        "tsconfig.json": "{}",
-        ".nuxt/tsconfig.json": SKIPS,
-      },
-    ),
-    [],
+    /^tsconfig\.json: sets compilerOptions\.skipLibCheck: true/,
   );
 });
 
-test("a tracked file between two generated ones is the one reported; a check that reports the program or the setter names a file nobody can edit", (t) => {
+test("a tracked file between two ignored ones that sets skipLibCheck true is refused, one inheriting it from a tracked setter through an ignored file too; a check that stops at the first ignored file passes it", (t) => {
   const findings = findingsFor(
     t,
     { typecheck: "tsc --noEmit -p .nuxt/tsconfig.app.json" },
     {
       ".gitignore": "node_modules\n.nuxt\n",
       "tsconfig.json": "{}",
-      "base.json": '{ "extends": "./.nuxt/tsconfig.json" }',
+      "base.json": SKIPS,
       ".nuxt/tsconfig.app.json": '{ "extends": "../base.json" }',
-      ".nuxt/tsconfig.json": SKIPS,
     },
   );
   assert.equal(findings.length, 1);
   assert.match(
     findings[0],
-    /^base\.json: inherits compilerOptions\.skipLibCheck: true from \.nuxt\/tsconfig\.json/,
+    /^base\.json: sets compilerOptions\.skipLibCheck: true/,
   );
 });
 
