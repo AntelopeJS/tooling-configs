@@ -140,14 +140,11 @@ export function withReferences(
   return [...seen];
 }
 
-/** The file to report a `true` setting against: the file that sets it, or when git ignores that one (a generated file such as Nuxt's `.nuxt/tsconfig.json`) the first file of the chain git does not ignore, which overrides it. Nothing when every file of the chain is generated. */
+/** The file that sets a `true` setting, when git tracks it. Nothing when git ignores it (a generated file such as Nuxt's `.nuxt/tsconfig.json` or the `.dms-types` tree of `ajs dms prepare-types`): the repository cannot edit it, and a tsconfig that only extends it is not refused. */
 export function reportedFile(
   files: CoverageFiles,
   setting: SkipLibCheckSetting,
-): { file: string; sets: boolean } | undefined {
+): string | undefined {
   const setter = setting.chain.at(-1);
-  if (setter !== undefined && files.isTracked(setter))
-    return { file: setter, sets: true };
-  const file = setting.chain.find((candidate) => files.isTracked(candidate));
-  return file === undefined ? undefined : { file, sets: false };
+  return setter !== undefined && files.isTracked(setter) ? setter : undefined;
 }
