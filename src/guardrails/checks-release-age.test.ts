@@ -94,3 +94,30 @@ test("pnpm:release-age does not run in an npm repository, where a step that runs
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(result.stdout, "Checks: 0 passed, 0 failed, 9 skipped.\n");
 });
+
+test("pnpm:release-age fails a nested package.json pinning a pnpm before 10.17.0 and names the file, where a step that reads only the root pin passes a frontend whose pnpm ignores minimumReleaseAge", (t) => {
+  const root = pnpmRepo(t, `minimumReleaseAge: 1440\n${EXCLUDE}`);
+  put(
+    root,
+    "frontend-vue/package.json",
+    JSON.stringify({ packageManager: "pnpm@10.2.0" }),
+  );
+  put(
+    root,
+    "frontend-vue/node_modules/dep/package.json",
+    '{"packageManager":"pnpm@9.0.0"}',
+  );
+  put(
+    root,
+    "frontend-vue/pnpm-workspace.yaml",
+    `minimumReleaseAge: 1440\n${EXCLUDE}`,
+  );
+  const result = checks(root);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.equal(
+    result.stdout,
+    failed([
+      "frontend-vue/package.json pins packageManager to pnpm@10.2.0, and pnpm before 10.17.0 installs a release the day it is published, whatever minimumReleaseAge says.",
+    ]),
+  );
+});
