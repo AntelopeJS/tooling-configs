@@ -13,6 +13,7 @@ import {
   usesCaptures,
   type Manifest,
 } from "./package.ts";
+import { gitFiles } from "./files.ts";
 import { pnpmLockfiles } from "./singleton-packages.ts";
 import type { PlannedArtifact } from "./sync.ts";
 import { installsWithPnpm, inWorkspace } from "./lockfile-reading.ts";
@@ -358,14 +359,43 @@ export function releaseAgeFolders(root: string): string[] {
   );
 }
 
+/** Each `package.json` of the repository outside `node_modules` that pins `packageManager` to a pnpm before `HONOURS_RELEASE_AGE`, which ignores `minimumReleaseAge` whatever the workspace file says. */
+function oldPnpmPins(root: string): string[] {
+  return gitFiles(root)
+    .filter(
+      (file) =>
+        (file === "package.json" || file.endsWith("/package.json")) &&
+        !file.split("/").includes("node_modules") &&
+        existsSync(join(root, file)),
+    )
+    .sort()
+    .flatMap((file) => {
+      const pin = parseManifest(
+        readFileSync(join(root, file), "utf8"),
+      ).packageManager;
+      const [manager, version] = pin?.split("@") ?? [];
+      return manager === "pnpm" &&
+        version !== undefined &&
+        !admits(`>=${HONOURS_RELEASE_AGE}`, version)
+        ? [
+            `${file} pins packageManager to ${pin}, and pnpm before ${HONOURS_RELEASE_AGE} installs a release the day it is published, whatever ${RELEASE_AGE} says.`,
+          ]
+        : [];
+    });
+}
+
 /**
  * The `pnpm:release-age` failure: each install root whose `pnpm-workspace.yaml` is missing, sets `minimumReleaseAge` below
- * 1440 or not at all, or does not list `@antelopejs/*` under `minimumReleaseAgeExclude`; empty when every one passes.
+ * 1440 or not at all, or does not list `@antelopejs/*` under `minimumReleaseAgeExclude`, and each `package.json` that pins a
+ * pnpm before 10.17.0; empty when every one passes.
  */
 export function checkReleaseAge(root: string): string {
-  const failures = releaseAgeFolders(root).flatMap((folder) =>
-    releaseAgeFailures(root, folder),
-  );
+  const failures = [
+    ...releaseAgeFolders(root).flatMap((folder) =>
+      releaseAgeFailures(root, folder),
+    ),
+    ...oldPnpmPins(root),
+  ];
   return failures.length
     ? `${failures.join("\n")}\nRun antelopejs-sync.\n`
     : "";
