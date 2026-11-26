@@ -359,8 +359,35 @@ export function releaseAgeFolders(root: string): string[] {
   );
 }
 
-/** Each `package.json` of the repository outside `node_modules` that pins `packageManager` to a pnpm before `HONOURS_RELEASE_AGE`, which ignores `minimumReleaseAge` whatever the workspace file says. */
-function oldPnpmPins(root: string): string[] {
+/** A `package.json` failure of `pnpm:release-age`; `sync` is whether `antelopejs-sync` repairs it. */
+interface PinFailure {
+  message: string;
+  sync: boolean;
+}
+
+/** The root's pnpm pin when it honours `minimumReleaseAge`, which a nested `package.json` is told to copy. */
+function rootPin(root: string): string | undefined {
+  try {
+    const pin = parseManifest(
+      readFileSync(join(root, "package.json"), "utf8"),
+    ).packageManager;
+    const [manager, version] = pin?.split("@") ?? [];
+    return manager === "pnpm" &&
+      version !== undefined &&
+      admits(`>=${HONOURS_RELEASE_AGE}`, version)
+      ? pin
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Each `package.json` of the repository outside `node_modules` that is not valid JSON, or that pins `packageManager` to a pnpm
+ * before `HONOURS_RELEASE_AGE`, which ignores `minimumReleaseAge` whatever the workspace file says. Sync raises the root's
+ * pin and leaves a nested one alone, so a nested failure says to copy the root's pin.
+ */
+function packageJsonFailures(root: string): PinFailure[] {
   return gitFiles(root)
     .filter(
       (file) =>
@@ -369,18 +396,37 @@ function oldPnpmPins(root: string): string[] {
         existsSync(join(root, file)),
     )
     .sort()
-    .flatMap((file) => {
-      const pin = parseManifest(
-        readFileSync(join(root, file), "utf8"),
-      ).packageManager;
+    .flatMap((file): PinFailure[] => {
+      let pin: string | undefined;
+      try {
+        pin = parseManifest(
+          readFileSync(join(root, file), "utf8"),
+        ).packageManager;
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return [
+          {
+            message: `${file} is not valid JSON, so its packageManager pin cannot be read: ${reason}`,
+            sync: false,
+          },
+        ];
+      }
       const [manager, version] = pin?.split("@") ?? [];
-      return manager === "pnpm" &&
-        version !== undefined &&
-        !admits(`>=${HONOURS_RELEASE_AGE}`, version)
-        ? [
-            `${file} pins packageManager to ${pin}, and pnpm before ${HONOURS_RELEASE_AGE} installs a release the day it is published, whatever ${RELEASE_AGE} says.`,
-          ]
-        : [];
+      if (
+        manager !== "pnpm" ||
+        version === undefined ||
+        admits(`>=${HONOURS_RELEASE_AGE}`, version)
+      )
+        return [];
+      const failure = `${file} pins packageManager to ${pin}, and pnpm before ${HONOURS_RELEASE_AGE} installs a release the day it is published, whatever ${RELEASE_AGE} says.`;
+      if (file === "package.json") return [{ message: failure, sync: true }];
+      const target = rootPin(root) ?? `pnpm@${HONOURS_RELEASE_AGE} or later`;
+      return [
+        {
+          message: `${failure} Set packageManager in ${file} to ${target}.`,
+          sync: false,
+        },
+      ];
     });
 }
 
@@ -390,15 +436,14 @@ function oldPnpmPins(root: string): string[] {
  * pnpm before 10.17.0; empty when every one passes.
  */
 export function checkReleaseAge(root: string): string {
-  const failures = [
-    ...releaseAgeFolders(root).flatMap((folder) =>
-      releaseAgeFailures(root, folder),
-    ),
-    ...oldPnpmPins(root),
-  ];
-  return failures.length
-    ? `${failures.join("\n")}\nRun antelopejs-sync.\n`
-    : "";
+  const folders = releaseAgeFolders(root).flatMap((folder) =>
+    releaseAgeFailures(root, folder),
+  );
+  const pins = packageJsonFailures(root);
+  const failures = [...folders, ...pins.map((pin) => pin.message)];
+  if (failures.length === 0) return "";
+  const sync = folders.length > 0 || pins.some((pin) => pin.sync);
+  return `${failures.join("\n")}\n${sync ? "Run antelopejs-sync.\n" : ""}`;
 }
 
 /**
