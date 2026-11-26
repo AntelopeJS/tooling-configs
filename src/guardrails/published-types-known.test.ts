@@ -10,7 +10,7 @@ import { KNOWN_FAILURES_FILE, readKnownFailures } from "./known-failures.ts";
 import { shimInvocation } from "./run-command.ts";
 
 const OTHER_STEPS =
-  "typecheck,lint,format:check,knip,test,size,suppressions,sync:check,git:identity,lockfile:singletons";
+  "typecheck,lint,format:check,knip,test,size,suppressions,sync:check,git:identity,lockfile:singletons,pnpm:release-age";
 
 const BROKEN = "export declare const value: Missing;\n";
 const SOUND = "export declare const value: number;\n";
@@ -77,7 +77,7 @@ test("a declared error in a dependency's declarations passes checks and is print
     result.stdout,
     /^\[published:types\]\npackage\.json: @fixture\/typed as a consumer installs it, checked by tsc with skipLibCheck off, errors guardrails\.published-types\.json declares as known:\nvendor-types\/index\.d\.ts\(1,\d+\): error TS2304: Cannot find name 'Missing'\.\n/,
   );
-  assert.match(result.stdout, /Checks: 1 passed, 0 failed, 9 skipped\.\n$/);
+  assert.match(result.stdout, /Checks: 1 passed, 0 failed, 10 skipped\.\n$/);
 });
 
 test("a declared error that no longer occurs fails checks and names the entry to remove, caught by an implementation that lets a stale entry pass", (t) => {

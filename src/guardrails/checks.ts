@@ -9,6 +9,7 @@ import {
 import { checkGitIdentity, isGitCheckout } from "./git-identity.ts";
 import { checkModulePeers, hasModulePeers } from "./module-peers.ts";
 import { checkOneRange } from "./one-range.ts";
+import { checkReleaseAge, releaseAgeFolders } from "./pnpm-workspace.ts";
 import { checkPublishedTypes, typedPackages } from "./published-types.ts";
 import { checkReadmeVersion, readmeExamples } from "./readme-version.ts";
 import { runCommand } from "./run-command.ts";
@@ -32,6 +33,7 @@ const CHECK_STEPS = [
   "sync:check",
   "lockfile:singletons",
   "lockfile:module-peers",
+  "pnpm:release-age",
   "dependency:ranges",
   "dependency:one-range",
   "git:identity",
@@ -66,6 +68,10 @@ const OWN_STEPS = new Map<string, OwnStep>([
     failureOnly((root) => Promise.resolve(checkSingletonPackages(root))),
   ],
   ["lockfile:module-peers", failureOnly(checkModulePeers)],
+  [
+    "pnpm:release-age",
+    failureOnly((root) => Promise.resolve(checkReleaseAge(root))),
+  ],
   ["dependency:ranges", failureOnly(checkRepositoryRanges)],
   [
     "dependency:one-range",
@@ -79,6 +85,7 @@ const OWN_STEPS = new Map<string, OwnStep>([
 function hasWork(root: string, step: string): boolean {
   if (step === "lockfile:singletons") return pnpmLockfiles(root).length > 0;
   if (step === "lockfile:module-peers") return hasModulePeers(root);
+  if (step === "pnpm:release-age") return releaseAgeFolders(root).length > 0;
   if (step === "dependency:ranges" || step === "dependency:one-range")
     return isGitCheckout(root) && hasDependencyRanges(root);
   if (step === "git:identity") return isGitCheckout(root);

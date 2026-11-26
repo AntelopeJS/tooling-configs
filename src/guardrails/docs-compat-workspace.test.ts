@@ -18,7 +18,11 @@ function repo(
   put(
     root,
     "package.json",
-    manifest({ name: "fixture", private: true, packageManager: "pnpm@10.2.0" }),
+    manifest({
+      name: "fixture",
+      private: true,
+      packageManager: "pnpm@10.33.0",
+    }),
   );
   put(root, "pnpm-workspace.yaml", 'packages:\n  - "packages/*"\n');
   put(

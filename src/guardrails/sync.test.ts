@@ -415,7 +415,7 @@ test("sync names each step of the replaced checks script that antelopejs-checks 
     root,
     "package.json",
     JSON.stringify({
-      packageManager: "pnpm@10.0.0",
+      packageManager: "pnpm@10.33.0",
       scripts: {
         checks:
           "pnpm run lint && pnpm run format:check && pnpm run typecheck && pnpm run check:generated && pnpm run test && node scripts/audit.mjs",
