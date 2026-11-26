@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.10.6
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.5...v0.10.6)
+
+### 🩹 Fixes
+
+- **guardrails:** Write packages in a nested pnpm-workspace.yaml ([#492](https://github.com/AntelopeJS/tooling-configs/pull/492))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.10.5
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.4...v0.10.5)
