@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.10.7
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.6...v0.10.7)
+
+### 🩹 Fixes
+
+- **guardrails:** Fail pnpm:release-age on a pnpm pin before 10.17.0 in any package.json ([#493](https://github.com/AntelopeJS/tooling-configs/pull/493))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.10.6
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.5...v0.10.6)
