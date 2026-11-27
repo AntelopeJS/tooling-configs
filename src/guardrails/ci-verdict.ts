@@ -27,7 +27,7 @@ export const NIGHTLY_INPUT = "${{ inputs.nightly == true }}";
 export function verdictJob(needs: readonly string[]): string {
   return `  ${VERDICT_JOB_ID}:
     needs: [${needs.join(", ")}]
-    if: \${{ always() }}
+    if: \${{ !cancelled() }}
     runs-on: \${{ vars.RUNNER_CI || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions: {}
@@ -44,16 +44,23 @@ export function verdictJob(needs: readonly string[]): string {
 `;
 }
 
-function runsAlways(job: YAMLMap): boolean {
+/**
+ * Whether the job runs with `if: !cancelled()`, with or without the expression braces. Unlike `always()`, it ends the
+ * job cancelled without a runner in a run that was cancelled, a conclusion that blocks a merge as a failure does, while
+ * a failed job of a run that goes on still runs it; a self-hosted runner pool then never runs a verdict only to fail it.
+ */
+function runsUnlessCancelled(job: YAMLMap): boolean {
   const condition = job.get("if");
   return (
     String(condition) === condition &&
-    condition.replace(/^\$\{\{([\s\S]*)\}\}$/, "$1").trim() === "always()"
+    /^!\s*cancelled\(\)$/.test(
+      condition.replace(/^\$\{\{([\s\S]*)\}\}$/, "$1").trim(),
+    )
   );
 }
 
 /**
- * Gives `jobs` a `verdict` job that needs every other job and runs with `if: always()`. A missing verdict gets the
+ * Gives `jobs` a `verdict` job that needs every other job and runs with `if: ${{ !cancelled() }}`. A missing verdict gets the
  * canonical job; an existing one keeps its steps and has its `needs` and `if` set when they differ.
  */
 export function setVerdict(document: Document, jobs: YAMLMap): boolean {
@@ -76,8 +83,8 @@ export function setVerdict(document: Document, jobs: YAMLMap): boolean {
     needed.size === others.length && others.every((id) => needed.has(id));
   if (!needsAll)
     verdict.set("needs", document.createNode(others, { flow: true }));
-  if (runsAlways(verdict)) return !needsAll;
-  verdict.set("if", "${{ always() }}");
+  if (runsUnlessCancelled(verdict)) return !needsAll;
+  verdict.set("if", "${{ !cancelled() }}");
   return true;
 }
 
