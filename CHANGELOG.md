@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.10.10
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.9...v0.10.10)
+
+### 🚀 Enhancements
+
+- **guardrails:** Sync a verify-changes skill and point the Guardrails block to it ([#512](https://github.com/AntelopeJS/tooling-configs/pull/512))
+- **guardrails:** Ship one CI test timeout for mocha and vitest ([#513](https://github.com/AntelopeJS/tooling-configs/pull/513))
+- **guardrails:** Write the shared test timeout into mocha scripts on sync ([#514](https://github.com/AntelopeJS/tooling-configs/pull/514))
+
+### 🩹 Fixes
+
+- **guardrails:** Emit merge_group in the integration-branch CI triggers ([#515](https://github.com/AntelopeJS/tooling-configs/pull/515))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.10.9
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.8...v0.10.9)
