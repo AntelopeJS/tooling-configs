@@ -40,7 +40,7 @@ function view(text: string): WorkflowView {
   return parseDocument(text).toJS();
 }
 
-/** What keeps the verdict of `text` from covering the file: each job it does not need, and an `if` other than always(). */
+/** What keeps the verdict of `text` from covering the file: each job it does not need, and an `if` other than !cancelled(). */
 function uncovered(text: string): string[] {
   const { jobs } = view(text);
   const verdict = jobs.verdict;
@@ -49,7 +49,7 @@ function uncovered(text: string): string[] {
   const missing = Object.keys(jobs).filter(
     (id) => id !== "verdict" && !needs.includes(id),
   );
-  return verdict.if === "${{ always() }}"
+  return verdict.if === "${{ !cancelled() }}"
     ? missing
     : [...missing, `if: ${verdict.if}`];
 }
@@ -60,7 +60,7 @@ const E2E = `  e2e:
       - run: pnpm run e2e
 `;
 
-test("a new caller gets a verdict job needing ci and renovate-sync with if: always(), so a sync that leaves the Renovate sync a result the merge queue merges past fails", () => {
+test("a new caller gets a verdict job needing ci and renovate-sync with if: ${{ !cancelled() }}, so a sync that leaves the Renovate sync a result the merge queue merges past fails", () => {
   const created = ciWorkflow(undefined, [], []);
   assert.deepEqual(uncovered(created), []);
   assert.deepEqual(Object.keys(view(created).jobs), [
@@ -88,7 +88,7 @@ test("a caller declares the nightly dispatch input and forwards it to ci-node.ym
 test("a verdict that misses a repository job needs it after sync and keeps its own steps, so a sync that only adds a missing verdict or rewrites its steps fails", () => {
   const steps = "    steps:\n      - run: echo own\n";
   const partial = `${CI_CALLER}${E2E}`.replace(
-    /    if: \$\{\{ always\(\) \}\}\n[\s\S]*?(?=  e2e:)/,
+    /    if: \$\{\{ !cancelled\(\) \}\}\n[\s\S]*?(?=  e2e:)/,
     `    runs-on: ubuntu-latest\n${steps}`,
   );
   assert.notEqual(partial, `${CI_CALLER}${E2E}`);
@@ -98,10 +98,31 @@ test("a verdict that misses a repository job needs it after sync and keeps its o
   assert.equal(rewrite(rewritten), rewritten);
 });
 
-test("a verdict whose if reads always() without the expression braces is kept, so a sync that rewrites an equivalent condition on every run fails", () => {
-  const bare = CI_CALLER.replace("if: ${{ always() }}", "if: always()");
+test("a verdict whose if reads !cancelled() without the expression braces is kept, so a sync that rewrites an equivalent condition on every run fails", () => {
+  const bare = CI_CALLER.replace(
+    "if: ${{ !cancelled() }}",
+    "if: '!cancelled()'",
+  );
   assert.notEqual(bare, CI_CALLER);
   assert.equal(rewrite(bare), bare);
+});
+
+test("a verdict that runs with always() gets if: ${{ !cancelled() }}, so a sync that leaves a cancelled run's verdict waiting for a runner only to fail fails", () => {
+  for (const condition of [
+    "${{ always() }}",
+    "always()",
+    "${{ success() }}",
+    "${{ !cancelled() && github.event_name != 'push' }}",
+  ]) {
+    const other = CI_CALLER.replace(
+      "if: ${{ !cancelled() }}",
+      `if: ${condition}`,
+    );
+    assert.notEqual(other, CI_CALLER, condition);
+    const rewritten = rewrite(other);
+    assert.deepEqual(uncovered(rewritten), [], condition);
+    assert.equal(rewrite(rewritten), rewritten, condition);
+  }
 });
 
 test("sync refuses a job that needs verdict as a scalar or a list and names it, so a sync that has the verdict need it back, or that reads only list needs, fails", () => {
@@ -159,7 +180,7 @@ test("the verdict note says a ci.yml has no verdict job, so a note that lists ev
   ]);
 });
 
-test("tooling-configs' own ci.yml has a verdict job needing every job with if: always(), so a job added without the verdict needing it fails", () => {
+test("tooling-configs' own ci.yml has a verdict job needing every job with if: ${{ !cancelled() }}, so a job added without the verdict needing it fails", () => {
   assert.deepEqual(
     uncovered(read(PACKAGE_ROOT, ".github/workflows/ci.yml")),
     [],
