@@ -17,6 +17,7 @@ import { gitFiles } from "./files.ts";
 import { pnpmLockfiles } from "./singleton-packages.ts";
 import type { PlannedArtifact } from "./sync.ts";
 import { installsWithPnpm, inWorkspace } from "./lockfile-reading.ts";
+import { prettierQuote, type Quote } from "./prettier-quote.ts";
 
 const PATH = "pnpm-workspace.yaml";
 
@@ -223,16 +224,17 @@ function appended(text: string, ...blocks: string[]): string {
  * gets `packages: ["."]`, since pnpm 10.33 fails `pnpm --dir <folder>` with "packages field missing or empty" on a nested file
  * that has none. pnpm 11 fails an install on a
  * dependency build it was not told about, pnpm installs a release the day it is published without the age, and with the age
- * but no exclusion locks two copies of an interface released less than a day ago.
+ * but no exclusion locks two copies of an interface released less than a day ago. Each string sync adds is quoted with `quote`.
  */
 function withSyncedSettings(
   names: string[],
   current = "",
   nested = false,
+  quote: Quote = '"',
 ): string {
-  const packages = nested ? `packages:\n  - "."\n` : "";
+  const packages = nested ? `packages:\n  - ${quote}.${quote}\n` : "";
   const age = `${RELEASE_AGE}: ${MINIMUM_RELEASE_AGE}\n`;
-  const exclude = `${EXCLUDE}:\n  - "${FRESH_RELEASES}"\n`;
+  const exclude = `${EXCLUDE}:\n  - ${quote}${FRESH_RELEASES}${quote}\n`;
   const document = parseDocument(current);
   if (document.errors.length)
     throw new Error(document.errors.map(({ message }) => message).join("; "));
@@ -258,7 +260,11 @@ function withSyncedSettings(
   document.contents.flow = false;
   const text =
     decided || held || excluded
-      ? document.toString({ lineWidth: 0, flowCollectionPadding: false })
+      ? document.toString({
+          lineWidth: 0,
+          flowCollectionPadding: false,
+          singleQuote: quote === "'",
+        })
       : current;
   return appended(
     text,
@@ -288,7 +294,12 @@ function installRootArtifact(
   const file = join(root, path);
   const current = existsSync(file) ? readFileSync(file, "utf8") : undefined;
   try {
-    const content = withSyncedSettings(builds, current, folder !== "");
+    const content = withSyncedSettings(
+      builds,
+      current,
+      folder !== "",
+      prettierQuote(root, folder),
+    );
     const action = creation(manifest);
     if (
       folder === "" &&
