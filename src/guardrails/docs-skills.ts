@@ -90,13 +90,13 @@ export function docsSkillPaths(): string[] {
   ]);
 }
 
-/** One change to the synced writing skills. */
+/** One change to the synced skills. */
 export type DocsSkillAction =
   | { kind: "write"; path: string; content: string }
   | { kind: "link"; path: string; target: string }
   | { kind: "remove"; path: string };
 
-/** What sync changes for the writing skills, and the paths it refuses to overwrite. */
+/** What sync changes for the synced skills, and the paths it refuses to overwrite. */
 interface DocsSkillsPlan {
   actions: DocsSkillAction[];
   errors: string[];
@@ -125,9 +125,10 @@ export function planDocsSkills(
   const actions: DocsSkillAction[] = [];
   const errors: string[] = [];
   const skills = [...DOCS_SKILLS];
-  if (profile === "full")
+  if (profile === "full") {
     if (ownVerifySkills(root).length) actions.push(...retiredVerifySkill(root));
     else skills.push(VERIFY_SKILL);
+  }
   for (const { name, text } of skills) {
     const path = docsSkillPath(name);
     const file = join(root, path);
