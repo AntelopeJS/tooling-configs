@@ -16,10 +16,11 @@ import { refusalMessageIsKeyRule } from "./rules/refusal-message-is-key.ts";
 import { requireAssertionRule } from "./rules/require-assertion.ts";
 import { requireTsconfigIncludeRule } from "./rules/require-tsconfig-include.ts";
 import { requireTsconfigTypesRule } from "./rules/require-tsconfig-types.ts";
+import { sharedTestTimeoutRule } from "./rules/shared-test-timeout.ts";
 
 export { ASSERTION_FUNCTION_NAMES, TEST_FILE_GLOBS } from "./shared.ts";
 
-/** AntelopeJS rules that reject comments, inherited-key lookups, instanceof against an interface package class, presence-only type guards, 4xx refusals whose message is a sentence or a key no locale file holds, inserts that follow a read of the same table or that a called function makes once an awaited read found nothing, unrun interface-database queries an awaited function returns, unchecked Object.assign writes, low-evidence tests, files no tsconfig lists and tsconfigs that list no `types`. */
+/** AntelopeJS rules that reject comments, inherited-key lookups, instanceof against an interface package class, presence-only type guards, 4xx refusals whose message is a sentence or a key no locale file holds, inserts that follow a read of the same table or that a called function makes once an awaited read found nothing, unrun interface-database queries an awaited function returns, unchecked Object.assign writes, low-evidence tests, files no tsconfig lists, tsconfigs that list no `types` and vitest configs off the shared test timeout. */
 const guardrailsPlugin = eslintCompatPlugin({
   meta: { name: "antelopejs" },
   rules: {
@@ -39,6 +40,7 @@ const guardrailsPlugin = eslintCompatPlugin({
     "require-assertion": requireAssertionRule,
     "require-tsconfig-include": requireTsconfigIncludeRule,
     "require-tsconfig-types": requireTsconfigTypesRule,
+    "shared-test-timeout": sharedTestTimeoutRule,
   },
 });
 

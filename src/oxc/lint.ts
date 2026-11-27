@@ -201,6 +201,10 @@ export function guardrailsRules() {
           "antelopejs/no-fs-read-in-tests": "off",
         },
       },
+      {
+        files: ["**/vitest.config.*"],
+        rules: { "antelopejs/shared-test-timeout": "error" },
+      },
     ],
   });
 }

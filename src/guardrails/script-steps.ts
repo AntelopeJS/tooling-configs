@@ -47,7 +47,7 @@ export type Target =
   | { kind: "select"; selector: string }
   | { kind: "all" };
 
-/** One thing a command line of a script runs: scripts, a `tsc` with its arguments, or a `cd` that moves the lines after it. */
+/** One thing a command line of a script runs: scripts, a `tsc` or a mocha runner with its arguments, or a `cd` that moves the lines after it. */
 export type Step =
   | {
       kind: "script";
@@ -63,7 +63,17 @@ export type Step =
       /** The packages the manager runs it in (`pnpm --filter a exec tsc`, `pnpm -C a tsc`); none for this package. */
       targets: Target[];
     }
+  | {
+      kind: "test";
+      runner: TestRunner;
+      args: string[];
+      /** The packages the manager runs it in; none for this package. */
+      targets: Target[];
+    }
   | { kind: "cd"; path: string };
+
+/** The mocha runners a script starts: `ajs module test`, and `mocha` by name or path. */
+type TestRunner = "ajs module test" | "mocha";
 
 interface Options {
   index: number;
@@ -128,12 +138,24 @@ function tscCommand(word: string): TscCommand | undefined {
   return TSC_COMMANDS.find((command) => command === name);
 }
 
-/** `tsc` or the pack's `antelopejs-tsc`, a path to either, or `node` running one. */
+/** `tsc` or the pack's `antelopejs-tsc`, a path to either, `node` running one, or a mocha runner of {@link TestRunner}. */
 function programSteps(line: readonly string[]): Step[] {
   const [head, ...rest] = line;
   if (head === undefined) return [];
   const command = tscCommand(head);
   if (command) return [{ kind: "tsc", command, args: rest, targets: [] }];
+  const name = head.split(/[\\/]/u).at(-1);
+  if (name === "ajs" && rest[0] === "module" && rest[1] === "test")
+    return [
+      {
+        kind: "test",
+        runner: "ajs module test",
+        args: rest.slice(2),
+        targets: [],
+      },
+    ];
+  if (name === "mocha")
+    return [{ kind: "test", runner: "mocha", args: rest, targets: [] }];
   if (head !== "node") return [];
   if (rest[0] === "--run" && rest[1] !== undefined)
     return [{ kind: "script", names: [rest[1]], targets: [] }];
@@ -237,7 +259,7 @@ function lineSteps(line: readonly string[]): Step[] {
   return programSteps([head, ...args]);
 }
 
-/** The scripts and `tsc` runs a script's command lines start. */
+/** The scripts, `tsc` runs and mocha runs a script's command lines start. */
 export function stepsOf(script: string): Step[] {
   return lines(script).flatMap(lineSteps);
 }
