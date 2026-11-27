@@ -304,7 +304,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({ test: { ...testTimeouts } });
 ```
 
-A suite that needs a longer limit by design, such as a browser journey that boots a whole stack, sets it with an `oxlint-disable-next-line antelopejs/shared-test-timeout -- <reason>` directive, which the [suppression budget](#suppression-budget) counts. Per-test `this.timeout()` and `vi.setConfig()` calls are not read.
+A suite that needs a longer limit by design, such as a browser journey that boots a whole stack, sets it with an `oxlint-disable-next-line antelopejs/shared-test-timeout -- <reason>` directive, which the [suppression budget](#suppression-budget) counts. Per-test `this.timeout()` and `vi.setConfig()` calls are not read, and neither is a package that runs vitest with no `vitest.config.*` file.
 
 ### TypeScript 7 for build and typecheck
 
