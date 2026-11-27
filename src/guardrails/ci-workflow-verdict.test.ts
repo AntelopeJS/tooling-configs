@@ -103,7 +103,20 @@ test("a verdict whose if reads always() without the expression braces is kept, s
   assert.equal(rewrite(bare), bare);
 });
 
-test("sync --check fails a ci.yml whose verdict misses a job, and passes once sync wrote it", (t) => {
+test("sync refuses a job that needs verdict and names it, so a sync that has the verdict need it back writes a cycle GitHub rejects", () => {
+  const notify = `  notify:
+    needs: [ci, verdict]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo done
+`;
+  assert.throws(
+    () => rewrite(`${CI_CALLER}${notify}`),
+    /\.github\/workflows\/ci\.yml: job notify needs verdict/,
+  );
+});
+
+test("sync --check fails a ci.yml whose verdict misses a job, names that job, and passes once sync wrote it", (t) => {
   const root = testRepo(t, false);
   assert.equal(bin(root, "sync").status, 0);
   const synced = read(root, ".github/workflows/ci.yml");
@@ -112,6 +125,7 @@ test("sync --check fails a ci.yml whose verdict misses a job, and passes once sy
   const drift = bin(root, "sync", ["--check"]);
   assert.equal(drift.status, 1);
   assert.match(drift.stdout, /Drift: \.github\/workflows\/ci\.yml/);
+  assert.match(drift.stdout, /verdict does not need e2e/);
   assert.equal(bin(root, "sync").status, 0);
   assert.deepEqual(uncovered(read(root, ".github/workflows/ci.yml")), []);
   commit(root);
