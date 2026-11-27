@@ -170,3 +170,22 @@ test("dms-antelope-cloud: a job that needs ci and is not an aggregator is report
   ]);
   assert.equal(syncCi(once.content).content, once.content);
 });
+
+test("antelope-web: the site build matrix joins ci's needs, so ci / checks waits for Build (dms); its runner and pins move and cancel-in-progress true becomes the pull-request-only expression, so a sync that leaves build beside ci or cancels a merge queue run fails", () => {
+  const before = fixture("antelope-web-ci.yml");
+  const once = syncCi(before);
+  const jobs = jobsOf(once.content);
+  assert.deepEqual(jobs.ci.needs, ["build"]);
+  assert.equal(jobs.ci.if, GATE_IF);
+  assert.equal(jobs.build["runs-on"], "blacksmith-4vcpu-ubuntu-2404");
+  assert.equal(jobs.build.name, "Build (${{ matrix.site }})");
+  const concurrency = parseDocument(once.content).toJS().concurrency;
+  assert.deepEqual(concurrency, {
+    group: "ci-${{ github.ref }}",
+    "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
+  });
+  assert.doesNotMatch(once.content, /# v4/);
+  assert.deepEqual(advisoryKinds(once.advisories), []);
+  assert.deepEqual(ciFindings(once.content), []);
+  assert.equal(syncCi(once.content).content, once.content);
+});
