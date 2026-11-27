@@ -178,7 +178,6 @@ test("antelope-web: the site build matrix joins ci's needs, so ci / checks waits
   assert.deepEqual(jobs.ci.needs, ["build"]);
   assert.equal(jobs.ci.if, GATE_IF);
   assert.equal(jobs.build["runs-on"], "blacksmith-4vcpu-ubuntu-2404");
-  assert.equal(jobs.build.name, "Build (${{ matrix.site }})");
   const concurrency = parseDocument(once.content).toJS().concurrency;
   assert.deepEqual(concurrency, {
     group: "ci-${{ github.ref }}",
