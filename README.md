@@ -297,7 +297,7 @@ Every repository runs its tests on one timeout, 30,000 ms per test and per hook,
 - mocha: `ajs module test` builds its mocha run in code and reads no `.mocharc`, so the timeout travels as a flag. `antelopejs-sync --check` fails, and plain `antelopejs-sync` prints a `Note:`, for each `ajs module test` or `mocha` run in the scripts of the root `package.json` and of every workspace member that does not pass `--timeout 30000` (`--timeout=30000`, and mocha's `-t 30000`, also count). Runs are found through `pnpm exec`, `npx`, `&&` chains and environment prefixes, as in [Lib check coverage](#lib-check-coverage). A run without the flag is on mocha's 2000 ms default.
 - vitest: spread `testTimeouts` into the config's `test`. Projects declared with `extends: true` inherit it. The lint rule `antelopejs/shared-test-timeout` fails a `vitest.config.*` that sets `testTimeout` or `hookTimeout` itself, or never imports the preset.
 
-```ts
+```ts fragment
 import { testTimeouts } from "@antelopejs/tooling-configs/vitest";
 import { defineConfig } from "vitest/config";
 
