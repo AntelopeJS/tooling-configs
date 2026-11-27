@@ -126,6 +126,7 @@
   "src/guardrails/sync-template-scaffold.test.ts": 9.8,
   "src/guardrails/sync-template-scripts.test.ts": 4.7,
   "src/guardrails/sync-test-job.test.ts": 4.3,
+  "src/guardrails/sync-test-timeout.test.ts": 1.5,
   "src/guardrails/sync-typecheck-coverage-scripts.test.ts": 3.5,
   "src/guardrails/sync-typecheck-coverage-tsconfig.test.ts": 5.2,
   "src/guardrails/sync-typecheck-coverage.test.ts": 9.5,
@@ -182,6 +183,7 @@
   "src/oxc/guardrails/rules/refusal-message-is-key.test.ts": 0.2,
   "src/oxc/guardrails/rules/refusal-message-types.test.ts": 0.8,
   "src/oxc/guardrails/rules/require-assertion.test.ts": 0.5,
+  "src/oxc/guardrails/rules/shared-test-timeout.test.ts": 0.1,
   "src/oxc/guardrails/self-import-lint.test.ts": 1.6,
   "src/oxc/guardrails/type-checker.test.ts": 1.2,
   "src/oxc/guardrails/vue-script.test.ts": 0,
@@ -194,6 +196,7 @@
   "src/oxc/lint-tsconfig-types.test.ts": 3.1,
   "src/oxc/lint-type-guards.test.ts": 0.7,
   "src/oxc/lint-unrun-query.test.ts": 30.9,
+  "src/oxc/lint-vitest-config.test.ts": 0.8,
   "src/oxc/lint.test.ts": 3.9,
   "src/triage/triage.test.ts": 0
 }

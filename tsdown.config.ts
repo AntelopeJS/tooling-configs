@@ -6,6 +6,7 @@ export default {
     "./src/oxc/anti-slop/index.ts",
     "./src/oxc/guardrails/index.ts",
     "./src/knip.ts",
+    "./src/vitest.ts",
     "./src/eslint.ts",
     "./src/formal/index.ts",
     "./src/capture/index.ts",

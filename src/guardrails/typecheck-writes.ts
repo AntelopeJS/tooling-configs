@@ -113,6 +113,7 @@ function stepWrites(
   step: Exclude<Step, { kind: "cd" }>,
   depth: number,
 ): boolean {
+  if (step.kind === "test") return false;
   const directories = stepDirectories(walk, directory, step.targets);
   if (directories === undefined) return true;
   if (step.kind === "tsc")

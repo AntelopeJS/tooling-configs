@@ -47,7 +47,7 @@ export type Target =
   | { kind: "select"; selector: string }
   | { kind: "all" };
 
-/** One thing a command line of a script runs: scripts, a `tsc` with its arguments, or a `cd` that moves the lines after it. */
+/** One thing a command line of a script runs: scripts, a `tsc` or a mocha runner with its arguments, or a `cd` that moves the lines after it. */
 export type Step =
   | {
       kind: "script";
@@ -63,7 +63,17 @@ export type Step =
       /** The packages the manager runs it in (`pnpm --filter a exec tsc`, `pnpm -C a tsc`); none for this package. */
       targets: Target[];
     }
+  | {
+      kind: "test";
+      runner: TestRunner;
+      args: string[];
+      /** The packages the manager runs it in; none for this package. */
+      targets: Target[];
+    }
   | { kind: "cd"; path: string };
+
+/** The mocha runners a script starts: `ajs module test`, and `mocha` by name or path. */
+type TestRunner = "ajs module test" | "mocha";
 
 interface Options {
   index: number;
@@ -128,20 +138,49 @@ function tscCommand(word: string): TscCommand | undefined {
   return TSC_COMMANDS.find((command) => command === name);
 }
 
-/** `tsc` or the pack's `antelopejs-tsc`, a path to either, or `node` running one. */
+/** The coverage tools that run a test command given after their own options. */
+const COVERAGE_WRAPPERS = new Set(["c8", "nyc"]);
+
+/** A mocha runner of {@link TestRunner} by name or path (`mocha`, `_mocha`, `mocha.js`), or one behind a coverage wrapper. */
+function testSteps(line: readonly string[]): Step[] {
+  const [head, ...rest] = line;
+  const name = head?.split(/[\\/]/u).at(-1)?.replace(/\.js$/u, "");
+  if (name === "ajs" && rest[0] === "module" && rest[1] === "test")
+    return [
+      {
+        kind: "test",
+        runner: "ajs module test",
+        args: rest.slice(2),
+        targets: [],
+      },
+    ];
+  if (name === "mocha" || name === "_mocha")
+    return [{ kind: "test", runner: "mocha", args: rest, targets: [] }];
+  if (name === undefined || !COVERAGE_WRAPPERS.has(name)) return [];
+  for (let index = 0; index < rest.length; index++) {
+    const wrapped = testSteps(rest.slice(index));
+    if (wrapped.length) return wrapped;
+  }
+  return [];
+}
+
+/** `tsc` or the pack's `antelopejs-tsc`, a path to either, a mocha runner of {@link testSteps}, or `node` running one of them. */
 function programSteps(line: readonly string[]): Step[] {
   const [head, ...rest] = line;
   if (head === undefined) return [];
   const command = tscCommand(head);
   if (command) return [{ kind: "tsc", command, args: rest, targets: [] }];
+  const test = testSteps(line);
+  if (test.length) return test;
   if (head !== "node") return [];
   if (rest[0] === "--run" && rest[1] !== undefined)
     return [{ kind: "script", names: [rest[1]], targets: [] }];
   const at = rest.findIndex((word) => !word.startsWith("-"));
-  const run = at === -1 ? undefined : tscCommand(rest[at]);
+  if (at === -1) return [];
+  const run = tscCommand(rest[at]);
   return run
     ? [{ kind: "tsc", command: run, args: rest.slice(at + 1), targets: [] }]
-    : [];
+    : testSteps(rest.slice(at));
 }
 
 /** What `npx`, `pnpm exec` and `npm exec` run: the command after the options and the packages they name. */
@@ -184,6 +223,8 @@ function managerSteps(manager: string, args: readonly string[]): Step[] {
     return pointedAt(execSteps(args.slice(first.index + 1)), first.targets);
   if (tscCommand(verb))
     return pointedAt(programSteps(args.slice(first.index)), first.targets);
+  const test = testSteps(args.slice(first.index));
+  if (test.length) return pointedAt(test, first.targets);
   const run = verb === "run" || verb === "run-script";
   const second = run
     ? skipOptions(args, first.index + 1, valued)
@@ -237,7 +278,7 @@ function lineSteps(line: readonly string[]): Step[] {
   return programSteps([head, ...args]);
 }
 
-/** The scripts and `tsc` runs a script's command lines start. */
+/** The scripts, `tsc` runs and mocha runs a script's command lines start. */
 export function stepsOf(script: string): Step[] {
   return lines(script).flatMap(lineSteps);
 }

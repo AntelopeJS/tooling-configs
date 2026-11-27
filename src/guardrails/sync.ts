@@ -56,6 +56,7 @@ import { planDocs, type DocsPlan } from "./docs-compat.ts";
 import { isTemplateSource, planWritingSkills } from "./template-agent-layer.ts";
 import { applyDocsSkillActions, verifySkillFolders } from "./docs-skills.ts";
 import { checkTypecheckCoverage } from "./typecheck-coverage.ts";
+import { checkTestTimeouts } from "./test-timeout.ts";
 
 export interface RepoContext extends AgentsBlockContext {
   manager: PackageManager;
@@ -435,8 +436,9 @@ export function syncRepository(
     .map(({ message }) => message);
   const entryOnly = checkEntryOnlyConfiguration(root);
   const coverage = checkTypecheckCoverage(root, Boolean(options.check));
+  const timeouts = checkTestTimeouts(root, Boolean(options.check));
   errors.push(...entryOnly.errors, ...writing.errors);
-  errors.push(...coverage.errors);
+  errors.push(...coverage.errors, ...timeouts.errors);
   const notes = plan.flatMap((artifact) =>
     artifact.kind === "migrated" ? artifact.notes : [],
   );
@@ -470,7 +472,11 @@ export function syncRepository(
     removed: removals,
     errors,
     notes,
-    advisories: [...entryOnly.advisories, ...coverage.advisories],
+    advisories: [
+      ...entryOnly.advisories,
+      ...coverage.advisories,
+      ...timeouts.advisories,
+    ],
     dependenciesAdded,
   };
 }

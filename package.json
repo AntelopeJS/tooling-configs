@@ -46,6 +46,7 @@
     "./oxc/anti-slop": "./dist/oxc/anti-slop/index.mjs",
     "./oxc/guardrails": "./dist/oxc/guardrails/index.mjs",
     "./knip": "./dist/knip.mjs",
+    "./vitest": "./dist/vitest.mjs",
     "./eslint": "./dist/eslint.mjs",
     "./formal": "./dist/formal/index.mjs",
     "./capture": "./dist/capture/index.mjs"
