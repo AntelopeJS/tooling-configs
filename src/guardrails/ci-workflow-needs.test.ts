@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { parseDocument } from "yaml";
 
+import { GATE_CONDITION } from "./ci-gate.ts";
+import { CANCEL_IN_PROGRESS } from "./ci-hand-jobs.ts";
 import {
   CI_CALLER,
   CI_NODE_REF,
@@ -26,7 +28,8 @@ const DMS_545_STALE_GATE = read(
 );
 
 function rewrite(text: string): string {
-  return ciWorkflow(text, ciNodeCallers(text), ciRenovateSyncCallers(text));
+  return ciWorkflow(text, ciNodeCallers(text), ciRenovateSyncCallers(text))
+    .content;
 }
 
 function adoptedRepo(t: TestContext): string {
@@ -68,8 +71,15 @@ jobs:
 const EXTRA_JOBS = `name: ci
 ${ciTriggers}permissions:
   contents: read
+
+concurrency:
+  group: \${{ github.workflow }}-\${{ github.ref }}
+  cancel-in-progress: ${CANCEL_IN_PROGRESS}
+
 jobs:
   ci:
+    needs: [formal, deploy]
+    if: ${GATE_CONDITION}
     permissions:
       contents: read
     uses: ${CI_NODE_REF}
@@ -84,7 +94,7 @@ jobs:
       statuses: write
     uses: ${CI_RENOVATE_SYNC_REF}
   formal:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     strategy:
       matrix:
         check: [a, b]
@@ -93,7 +103,7 @@ jobs:
   deploy:
     needs: formal
     if: needs.formal.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       FORMAL: \${{ needs['formal'].outputs.report }}
     steps:
@@ -101,7 +111,7 @@ jobs:
   ubuntu:
     if: always()
     needs: [ci, formal, deploy]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - if: contains(needs.*.result, 'failure') || needs.ci.result == 'skipped' || needs.deploy.result == 'skipped'
         run: exit 1

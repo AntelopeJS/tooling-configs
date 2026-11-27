@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  merge_group:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # `pnpm run checks`: typecheck (nuxi, every site), lint (oxlint, then ESLint
+  # for the Vue templates and i18n rules), format, knip, the tools tests, size,
+  # ratchet and sync. It builds nothing; the build job below builds each site once.
+  ci:
+    uses: AntelopeJS/.github/.github/workflows/ci-node.yml@v2
+    with:
+      docs-files: |
+        README.md
+        sites/dms/content/docs-modules
+      renovate-sync: false
+      test-job: true
+      # The sites build and deploy on Linux only (the Dockerfile.* images), and the
+      # tools tests cover docs tooling that has never run on Windows (antelope-web#130).
+      windows: false
+    permissions:
+      contents: read
+
+  # One job per site, in parallel: on Blacksmith a job waits a few seconds for its runner,
+  # so the slowest site sets the run's length, not the sum of the five. The ci-tier action
+  # gives the tier ci-node.yml runs with: on a pull request (fast) only the sites the change
+  # can reach are built; in the merge queue, on the nightly run, on a manual run and with the
+  # ci:full label every site is; on a push to main nothing is, as in ci-node.yml, since the
+  # merge queue built that very tree. A leg whose site is not reached stops after the tier.
+  build:
+    name: Build (${{ matrix.site }})
+    # Our runners when the repository variable RUNNER_CI names their scale set (antelope-ci);
+    # GitHub's when it is empty or unset.
+    runs-on: ${{ vars.RUNNER_CI || 'ubuntu-latest' }}
+    timeout-minutes: 45
+    strategy:
+      # Every site builds, so one failure does not hide another's.
+      fail-fast: false
+      matrix:
+        site: [framework, labs, dms, cloud, interfaces]
+    steps:
+      # No persisted credentials: the ci-tier action fetches the base with its own authorization header, and a second
+      # one from the checkout makes GitHub refuse the fetch (400). Nothing below needs git credentials; the
+      # documentation sources check reads the API with GITHUB_TOKEN.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      # The merge queue deletes the branch of a group it rebuilds or drops but leaves the group's run queued. The
+      # ci-tier action fails a merge_group job of such a group at once, so a dropped group builds no site.
+      - name: Pick the tier
+        id: tier
+        uses: AntelopeJS/.github/.github/actions/ci-tier@v2
+        with:
+          selection: ${{ vars.CI_SELECTION }}
+      # A site's build reads its own folder, the layers it extends, the tools and the root
+      # configuration, so a change under sites/<site>/ reaches that site alone and any other
+      # change reaches every site. The remote docs sources a build pulls change without a
+      # commit here; the nightly run builds every site for them.
+      - name: Check that the change can reach ${{ matrix.site }}
+        id: reach
+        env:
+          TIER: ${{ steps.tier.outputs.tier }}
+          BASE: ${{ steps.tier.outputs.base }}
+          SITE: ${{ matrix.site }}
+        run: |
+          case "$TIER" in
+            none) build=false ;;
+            fast)
+              build=false
+              while IFS= read -r file; do
+                case "$file" in
+                  "") ;;
+                  "sites/$SITE"/*) build=true ;;
+                  sites/*/*) ;;
+                  *) build=true ;;
+                esac
+              done <<< "$(git -c core.quotepath=off diff --name-only --no-renames "$BASE" HEAD)"
+              ;;
+            *) build=true ;;
+          esac
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          if [[ "$build" == true ]]; then
+            echo "Tier \`${TIER}\`: builds $SITE" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Tier \`${TIER}\`: $SITE is not reached" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        if: steps.reach.outputs.build == 'true'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.reach.outputs.build == 'true'
+        with:
+          # The Dockerfiles build the deployed sites on Node 22.
+          node-version: 22
+          cache: pnpm
+      - if: steps.reach.outputs.build == 'true'
+        run: pnpm install --frozen-lockfile
+      # Remote docs sources (AntelopeJS/dms, AntelopeJS/antelopejs and the interface-* repos)
+      # are public, so the check needs no credentials.
+      - name: Check the documentation sources
+        if: steps.reach.outputs.build == 'true' && contains(fromJSON('["framework", "dms", "interfaces"]'), matrix.site)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: pnpm docs:sources "${{ matrix.site }}"
+      - name: Build
+        if: steps.reach.outputs.build == 'true'
+        env:
+          # The runner defaults Node to a ~2 GB old-space heap, which the Nuxt/Nitro
+          # production build overruns (FATAL: heap out of memory, exit 134).
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: pnpm run "build:${{ matrix.site }}"
+      # The site's server answers for the audit of what search engines read.
+      - name: Audit what search engines read
+        if: steps.reach.outputs.build == 'true'
+        env:
+          SITE: ${{ matrix.site }}
+          PORT: "3000"
+        run: |
+          node "sites/$SITE/.output/server/index.mjs" &
+          server=$!
+          trap 'kill "$server" 2> /dev/null || true' EXIT
+          if ! timeout 60 bash -c "until curl -sf -o /dev/null http://localhost:3000/; do sleep 1; done"; then
+            echo "::error title=Build ($SITE)::the server did not answer"
+            exit 1
+          fi
+          pnpm seo:audit http://localhost:3000
+  renovate-sync:
+    if: >-
+      github.event_name == 'pull_request' && startsWith(github.head_ref, 'renovate/') && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+      actions: write
+      statuses: write
+    uses: AntelopeJS/.github/.github/workflows/ci-renovate-sync.yml@v2

@@ -14,7 +14,8 @@ import { bin, commit, put, read, testRepo } from "./helpers/test-repo.ts";
 import { ciNodeCallers, ciRenovateSyncCallers } from "./workflow.ts";
 
 function rewrite(text: string): string {
-  return ciWorkflow(text, ciNodeCallers(text), ciRenovateSyncCallers(text));
+  return ciWorkflow(text, ciNodeCallers(text), ciRenovateSyncCallers(text))
+    .content;
 }
 
 function jobIds(text: string): string[] {
@@ -24,7 +25,7 @@ function jobIds(text: string): string[] {
 const AGGREGATOR = `  checks:
     if: always()
     needs: [ci]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
@@ -60,7 +61,7 @@ const NL = `      nightly: ${NIGHTLY_INPUT}\n`;
 const VERDICT = verdictJob(["ci", "renovate-sync"]);
 
 const E2E = `  e2e:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - run: pnpm run e2e
 `;
@@ -93,7 +94,7 @@ test("the same aggregator beside an e2e job is kept, so a rewrite that removes i
       "checks",
       "verdict",
     ]);
-  const kept = `${HEAD}${E2E}${gated}${verdictJob(["ci", "renovate-sync", "e2e", "checks"])}`;
+  const kept = rewrite(`${HEAD}${E2E}${gated}`);
   assert.equal(rewrite(kept), kept);
 });
 

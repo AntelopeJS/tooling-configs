@@ -1,0 +1,234 @@
+name: ci
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  merge_group:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:
+    uses: AntelopeJS/.github/.github/workflows/ci-node.yml@v2
+    with:
+      # `pnpm run checks` does not emit `dist/` or bundle the DMS frontend.
+      extra-commands: |
+        pnpm build
+        pnpm frontend:verify
+      renovate-sync: false
+      module-locks: true
+      test-job: true
+      affected-tests: true
+      docs-files: |
+        README.md
+    permissions:
+      contents: read
+
+  tier:
+    # A few seconds of shell: the small lane when RUNNER_CI_SMALL names one, else our runners when the
+    # repository variable RUNNER_CI names their scale set (antelope-ci), else GitHub's.
+    runs-on: ${{ vars.RUNNER_CI_SMALL || vars.RUNNER_CI || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    outputs:
+      tier: ${{ steps.tier.outputs.tier }}
+    steps:
+      - name: Pick the tier from the event, the target branch and the draft flag
+        id: tier
+        uses: AntelopeJS/.github/.github/actions/ci-tier@v2
+
+  backend:
+    needs: tier
+    if: contains(fromJSON('["fast","full","queue","nightly"]'), needs.tier.outputs.tier)
+    runs-on: ${{ vars.RUNNER_CI || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            .antelope/cache
+            ~/.cache/mongodb-binaries
+          key: backend-${{ runner.os }}-${{ hashFiles('src/test/harness.ts', 'src/test/antelope-modules.ts', 'src/test/stack.ts', 'antelope-lock/**', 'pnpm-lock.yaml') }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:backend
+      - if: ${{ !cancelled() }}
+        uses: AntelopeJS/.github/.github/actions/module-locks-committed@v2
+
+  e2e:
+    needs: tier
+    if: contains(fromJSON('["fast","full","queue","nightly"]'), needs.tier.outputs.tier)
+    runs-on: ${{ vars.RUNNER_CI || 'ubuntu-latest' }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: |
+          echo "DMS_E2E_RUNS=${RUNNER_TEMP}/dms-runs" >> "$GITHUB_ENV"
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            frontend-vue/pnpm-lock.yaml
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cache/mongodb-binaries
+            ~/.cache/ms-playwright
+            ~/.cache/dms-e2e/npm
+          key: e2e-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'frontend-vue/pnpm-lock.yaml', 'playground/antelope.config.ts', 'playground/antelope-lock/**') }}
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cache/dms-e2e/frontend
+          key: dms-e2e-frontend-${{ github.sha }}
+          restore-keys: dms-e2e-frontend-
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium and its system packages
+        run: |
+          if timeout 240 pnpm exec playwright install ${{ vars.RUNNER_CI == '' && '--with-deps' || '' }} --only-shell chromium; then
+            exit 0
+          fi
+          echo "::warning::Chromium's system packages did not install (the package mirrors of the runner did not answer): installing the browser alone"
+          pnpm exec playwright install --only-shell chromium
+      - name: Run the @smoke journeys of a pull request without the ci:full label
+        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'ci:full')
+        run: pnpm e2e --grep @smoke
+      - name: Run every journey for ci:full, the merge queue, a dispatch or a push
+        if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full'))
+        run: pnpm e2e
+      - name: Run the nightly shard of every journey
+        if: github.event_name == 'schedule'
+        run: pnpm e2e --shard=${{ matrix.shard }}/${{ strategy.job-total }} --reporter=blob
+        env:
+          PLAYWRIGHT_BLOB_OUTPUT_DIR: e2e/blob-report
+      - if: ${{ !cancelled() }}
+        uses: AntelopeJS/.github/.github/actions/module-locks-committed@v2
+      - if: always() && github.event_name == 'schedule'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: blob-report-${{ matrix.shard }}
+          path: e2e/blob-report
+          retention-days: 3
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: e2e-evidence-${{ matrix.shard }}
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+            ${{ runner.temp }}/dms-runs/*/evidence
+            ${{ runner.temp }}/dms-runs/*/logs
+          retention-days: 7
+
+  e2e-report:
+    needs: e2e
+    if: ${{ !cancelled() && github.event_name == 'schedule' && needs.e2e.result != 'skipped' }}
+    runs-on: ${{ vars.RUNNER_CI || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: blob-report-*
+          path: e2e/blob-reports
+          merge-multiple: true
+      - run: pnpm exec playwright merge-reports --reporter html,json e2e/blob-reports
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: e2e/playwright-report
+          PLAYWRIGHT_HTML_OPEN: never
+          PLAYWRIGHT_JSON_OUTPUT_FILE: e2e/playwright-report/results.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 14
+
+  leaks:
+    needs: tier
+    if: contains(fromJSON('["fast","full","queue","nightly"]'), needs.tier.outputs.tier)
+    runs-on: ${{ vars.RUNNER_CI || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm leaks:test
+      - run: pnpm leaks
+      - run: pnpm product-name:test
+
+  module-locks:
+    needs: [ci, backend, e2e]
+    if: ${{ !cancelled() }}
+    permissions:
+      contents: read
+      actions: read
+    uses: AntelopeJS/.github/.github/workflows/module-locks-renovate.yml@v2
+    secrets:
+      RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+  ubuntu:
+    # !cancelled(), not always(): a cancelled run ends this gate cancelled without waiting for a runner of the pool.
+    if: ${{ !cancelled() }}
+    needs: [tier, ci, backend, e2e, e2e-report, leaks, module-locks]
+    runs-on: ${{ vars.RUNNER_CI_SMALL || vars.RUNNER_CI || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - if: needs.tier.result != 'success' || contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || needs.ci.result == 'skipped' || (contains(fromJSON('["fast","full","queue","nightly"]'), needs.tier.outputs.tier) && needs.e2e.result == 'skipped')
+        run: exit 1
+      - if: needs.tier.outputs.tier == 'draft'
+        run: |
+          echo "::error::Draft pull request: only lint and typecheck ran. Mark it ready for review to run the tests."
+          exit 1
+
+  renovate-sync:
+    if: >-
+      github.event_name == 'pull_request' && startsWith(github.head_ref, 'renovate/') && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+      actions: write
+      statuses: write
+    uses: AntelopeJS/.github/.github/workflows/ci-renovate-sync.yml@v2

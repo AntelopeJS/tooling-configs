@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  merge_group:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: AntelopeJS/.github/.github/workflows/ci-node.yml@v2
+    with:
+      node-versions: "[22, 24]"
+      docs-files: |
+        README.md
+        docs
+      renovate-sync: false
+      extra-commands: |
+        node .agents/skills/formal-change-feed-delivery/check.mjs
+        node .agents/skills/formal-mariadb-read-warnings/check.mjs
+        node .agents/skills/formal-unique-index-gate/check.mjs
+        pnpm run test:bench
+      test-job: true
+      setup-commands: |
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          data=$(cygpath -w "$RUNNER_TEMP/mysql-data")
+          mysqld --initialize-insecure --datadir="$data" > "$RUNNER_TEMP/mysqld-init.log" 2>&1 || { cat "$RUNNER_TEMP/mysqld-init.log"; exit 1; }
+          nohup mysqld --datadir="$data" --bind-address=127.0.0.1 --port=3306 --innodb-flush-log-at-trx-commit=0 --sync-binlog=0 > "$RUNNER_TEMP/mysqld.log" 2>&1 &
+          for _ in $(seq 300); do
+            mysqladmin -uroot -h127.0.0.1 --silent ping > /dev/null 2>&1 && break
+            sleep 0.2
+          done
+          if ! mysqladmin -uroot -h127.0.0.1 --silent ping > /dev/null 2>&1; then
+            cat "$RUNNER_TEMP/mysqld.log"
+            echo "::error::MySQL did not listen on 127.0.0.1:3306 within 60 seconds."
+            exit 1
+          fi
+          cd "$RUNNER_TEMP"
+          curl -sSfLO https://downloads.mysql.com/general/timezone_2026f_posix_sql.zip
+          echo "24c99cb5660e659634311aa015a22e8a7d3f25caec2111b275289b07df7c1948  timezone_2026f_posix_sql.zip" | sha256sum -c --quiet
+          unzip -q timezone_2026f_posix_sql.zip
+          mysql -uroot -h127.0.0.1 mysql < timezone_2026f_posix_sql/timezone_posix.sql
+          echo "MYSQL_TEST_URL=mysql://root@127.0.0.1:3306/mysql" >> "$GITHUB_ENV"
+        fi
+      affected-tests: true
+    permissions:
+      contents: read
+  renovate-sync:
+    if: >-
+      github.event_name == 'pull_request' && startsWith(github.head_ref, 'renovate/') && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+      actions: write
+      statuses: write
+    uses: AntelopeJS/.github/.github/workflows/ci-renovate-sync.yml@v2

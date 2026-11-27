@@ -33,7 +33,8 @@ interface WorkflowView {
 }
 
 function rewrite(text: string): string {
-  return ciWorkflow(text, ciNodeCallers(text), ciRenovateSyncCallers(text));
+  return ciWorkflow(text, ciNodeCallers(text), ciRenovateSyncCallers(text))
+    .content;
 }
 
 function view(text: string): WorkflowView {
@@ -61,7 +62,7 @@ const E2E = `  e2e:
 `;
 
 test("a new caller gets a verdict job needing ci and renovate-sync with if: ${{ !cancelled() }}, so a sync that leaves the Renovate sync a result the merge queue merges past fails", () => {
-  const created = ciWorkflow(undefined, [], []);
+  const created = ciWorkflow(undefined, [], []).content;
   assert.deepEqual(uncovered(created), []);
   assert.deepEqual(Object.keys(view(created).jobs), [
     "ci",
