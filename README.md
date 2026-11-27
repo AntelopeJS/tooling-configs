@@ -294,8 +294,8 @@ Known blind spots, none of them read: `|| true` or a background `&` after a `typ
 
 Every repository runs its tests on one timeout, 30,000 ms per test and per hook, under mocha and vitest alike. It is `TEST_TIMEOUT_MS` in `src/test-timeout.ts`, and a release that changes it reaches every repository through the checks below.
 
-- mocha: `ajs module test` builds its mocha run in code and reads no `.mocharc`, so the timeout travels as a flag. `antelopejs-sync --check` fails, and plain `antelopejs-sync` prints a `Note:`, for each `ajs module test` or `mocha` run in the scripts of the root `package.json` and of every workspace member that does not pass `--timeout 30000` (`--timeout=30000`, and mocha's `-t 30000`, also count). Runs are found through `pnpm exec`, `npx`, `&&` chains and environment prefixes, as in [Lib check coverage](#lib-check-coverage). A run without the flag is on mocha's 2000 ms default.
-- vitest: spread `testTimeouts` into the config's `test`. Projects declared with `extends: true` inherit it. The lint rule `antelopejs/shared-test-timeout` fails a `vitest.config.*` that sets `testTimeout` or `hookTimeout` itself, or never imports the preset.
+- mocha: `ajs module test` builds its mocha run in code and reads no `.mocharc`, so the timeout travels as a flag. `antelopejs-sync --check` fails, and plain `antelopejs-sync` prints a `Note:`, for each `ajs module test` or `mocha` run in the scripts of the root `package.json` and of every workspace member that does not pass `--timeout 30000` (`--timeout=30000`, and mocha's `-t 30000`, also count). Runs are found through `pnpm exec`, `npx`, a package manager running the bin (`pnpm mocha`), `&&` chains and environment prefixes, as in [Lib check coverage](#lib-check-coverage), behind `c8` or `nyc`, and as `node` running `mocha`, `_mocha` or `mocha.js` by path. The flag is read as written, the last one winning, so `--timeout 30s` is reported. A run without the flag is on mocha's 2000 ms default or, for a plain `mocha`, on a `.mocharc` limit.
+- vitest: spread `testTimeouts` into the config's `test`. Projects declared with `extends: true` inherit it. The lint rule `antelopejs/shared-test-timeout` fails a `vitest.config.*` that sets `testTimeout` or `hookTimeout` itself, or never uses `testTimeouts` from the preset (a bare or type-only import does not count).
 
 ```ts fragment
 import { testTimeouts } from "@antelopejs/tooling-configs/vitest";
@@ -304,7 +304,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({ test: { ...testTimeouts } });
 ```
 
-A suite that needs a longer limit by design, such as a browser journey that boots a whole stack, sets it with an `oxlint-disable-next-line antelopejs/shared-test-timeout -- <reason>` directive, which the [suppression budget](#suppression-budget) counts. Per-test `this.timeout()` and `vi.setConfig()` calls are not read, and neither is a package that runs vitest with no `vitest.config.*` file.
+A suite that needs a longer limit by design, such as a browser journey that boots a whole stack, sets it with an `oxlint-disable-next-line antelopejs/shared-test-timeout -- <reason>` directive, which the [suppression budget](#suppression-budget) counts. Per-test `this.timeout()` and `vi.setConfig()` calls are not read, and neither are a package that runs vitest with no `vitest.config.*` file, a `test` block in `vite.config.*`, or a `--testTimeout` flag. A `vitest.config.*` that only extends a shared base file through `mergeConfig` is reported even when the base spreads `testTimeouts`: spread it in the file vitest loads.
 
 ### TypeScript 7 for build and typecheck
 

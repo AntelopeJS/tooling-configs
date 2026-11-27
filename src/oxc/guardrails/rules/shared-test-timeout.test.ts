@@ -21,6 +21,11 @@ export default defineConfig({ test: { ...testTimeouts, projects: [{ extends: tru
       code: `${PRESET}
 export default { test: { ...testTimeouts, name: options.testTimeout } };`,
     },
+    {
+      name: "a namespace import read for its testTimeouts passes; a rule that accepts only the named import reports it",
+      code: `import * as shared from "@antelopejs/tooling-configs/vitest";
+export default { test: { ...shared.testTimeouts } };`,
+    },
   ],
   invalid: [
     {
@@ -39,6 +44,23 @@ export default defineConfig({ test: { ...testTimeouts, projects: [{ extends: tru
       code: `import { defineConfig } from "vitest/config";
 export default defineConfig({ test: { environment: "happy-dom" } });`,
       errors: [{ messageId: "frameworkDefault" }],
+    },
+    ...[
+      'import "@antelopejs/tooling-configs/vitest";',
+      'import type { testTimeouts } from "@antelopejs/tooling-configs/vitest";',
+      'import { type testTimeouts } from "@antelopejs/tooling-configs/vitest";',
+      PRESET,
+    ].map((line) => ({
+      name: `\`${line}\` with testTimeouts never spread leaves the 5000 ms default; a rule that only checks the import passes it`,
+      code: `${line}
+export default { test: { retry: 1 } };`,
+      errors: [{ messageId: "frameworkDefault" }],
+    })),
+    {
+      name: "a template-literal key is a hand-set limit; a rule that reads only identifier and string keys passes it",
+      code: `${PRESET}
+export default { test: { ...testTimeouts, [\`testTimeout\`]: 1 } };`,
+      errors: [{ messageId: "handSet", data: { key: "testTimeout" } }],
     },
   ],
 });

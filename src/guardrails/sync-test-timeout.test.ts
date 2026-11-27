@@ -31,8 +31,8 @@ test("the hand-set limits of dms-database, rethinkdb and cloud's default each fa
   });
   assert.deepEqual(errors, [
     'package.json script "test" runs ajs module test with its own --timeout 10000; set --timeout 30000, the shared CI test timeout.',
-    `package.json script "test:integration" runs ajs module test on mocha's 2000 ms default timeout; add --timeout 30000, the shared CI test timeout.`,
-    `package.json script "test:infra" runs mocha on mocha's 2000 ms default timeout; add --timeout 30000, the shared CI test timeout.`,
+    `package.json script "test:integration" runs ajs module test without --timeout, so it runs on mocha's 2000 ms default or a .mocharc limit; add --timeout 30000, the shared CI test timeout.`,
+    `package.json script "test:infra" runs mocha without --timeout, so it runs on mocha's 2000 ms default or a .mocharc limit; add --timeout 30000, the shared CI test timeout.`,
   ]);
 });
 
@@ -46,6 +46,38 @@ test("every spelling of the shared timeout passes, through pnpm exec, npx and a 
       e: "pnpm run build && node --test && vitest run",
     }),
     [],
+  );
+});
+
+test("runs through a manager bin, a coverage wrapper or node running mocha by path are read; a check that knows only the bare command words passes them", (t) => {
+  const scripts = {
+    a: "pnpm mocha 'dist/**/*.test.js'",
+    b: "yarn mocha",
+    c: "pnpm ajs module test .",
+    d: "c8 --reporter text ajs module test .",
+    e: "nyc mocha",
+    f: "node ./node_modules/mocha/bin/mocha.js",
+    g: "node node_modules/.bin/_mocha",
+  };
+  assert.deepEqual(
+    errorsFor(t, scripts).map((error) => error.split(" runs ")[0]),
+    Object.keys(scripts).map((name) => `package.json script "${name}"`),
+  );
+});
+
+test("the last timeout flag wins and -t counts only for mocha, whose short flag ajs module test does not take; a check that reads the first flag, or -t for both runners, passes these", (t) => {
+  const errors = errorsFor(t, {
+    a: "ajs module test . --timeout 30000 --timeout 10000",
+    b: "ajs module test . -t 30000",
+    c: "mocha --timeout 30000 -t 5000",
+  });
+  assert.deepEqual(
+    errors.map((error) => error.split("; ")[0]),
+    [
+      'package.json script "a" runs ajs module test with its own --timeout 10000',
+      `package.json script "b" runs ajs module test without --timeout, so it runs on mocha's 2000 ms default or a .mocharc limit`,
+      'package.json script "c" runs mocha with its own --timeout 5000',
+    ],
   );
 });
 

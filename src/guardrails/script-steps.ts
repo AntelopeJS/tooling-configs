@@ -138,13 +138,13 @@ function tscCommand(word: string): TscCommand | undefined {
   return TSC_COMMANDS.find((command) => command === name);
 }
 
-/** `tsc` or the pack's `antelopejs-tsc`, a path to either, `node` running one, or a mocha runner of {@link TestRunner}. */
-function programSteps(line: readonly string[]): Step[] {
+/** The coverage tools that run a test command given after their own options. */
+const COVERAGE_WRAPPERS = new Set(["c8", "nyc"]);
+
+/** A mocha runner of {@link TestRunner} by name or path (`mocha`, `_mocha`, `mocha.js`), or one behind a coverage wrapper. */
+function testSteps(line: readonly string[]): Step[] {
   const [head, ...rest] = line;
-  if (head === undefined) return [];
-  const command = tscCommand(head);
-  if (command) return [{ kind: "tsc", command, args: rest, targets: [] }];
-  const name = head.split(/[\\/]/u).at(-1);
+  const name = head?.split(/[\\/]/u).at(-1)?.replace(/\.js$/u, "");
   if (name === "ajs" && rest[0] === "module" && rest[1] === "test")
     return [
       {
@@ -154,16 +154,33 @@ function programSteps(line: readonly string[]): Step[] {
         targets: [],
       },
     ];
-  if (name === "mocha")
+  if (name === "mocha" || name === "_mocha")
     return [{ kind: "test", runner: "mocha", args: rest, targets: [] }];
+  if (name === undefined || !COVERAGE_WRAPPERS.has(name)) return [];
+  for (let index = 0; index < rest.length; index++) {
+    const wrapped = testSteps(rest.slice(index));
+    if (wrapped.length) return wrapped;
+  }
+  return [];
+}
+
+/** `tsc` or the pack's `antelopejs-tsc`, a path to either, a mocha runner of {@link testSteps}, or `node` running one of them. */
+function programSteps(line: readonly string[]): Step[] {
+  const [head, ...rest] = line;
+  if (head === undefined) return [];
+  const command = tscCommand(head);
+  if (command) return [{ kind: "tsc", command, args: rest, targets: [] }];
+  const test = testSteps(line);
+  if (test.length) return test;
   if (head !== "node") return [];
   if (rest[0] === "--run" && rest[1] !== undefined)
     return [{ kind: "script", names: [rest[1]], targets: [] }];
   const at = rest.findIndex((word) => !word.startsWith("-"));
-  const run = at === -1 ? undefined : tscCommand(rest[at]);
+  if (at === -1) return [];
+  const run = tscCommand(rest[at]);
   return run
     ? [{ kind: "tsc", command: run, args: rest.slice(at + 1), targets: [] }]
-    : [];
+    : testSteps(rest.slice(at));
 }
 
 /** What `npx`, `pnpm exec` and `npm exec` run: the command after the options and the packages they name. */
@@ -206,6 +223,8 @@ function managerSteps(manager: string, args: readonly string[]): Step[] {
     return pointedAt(execSteps(args.slice(first.index + 1)), first.targets);
   if (tscCommand(verb))
     return pointedAt(programSteps(args.slice(first.index)), first.targets);
+  const test = testSteps(args.slice(first.index));
+  if (test.length) return pointedAt(test, first.targets);
   const run = verb === "run" || verb === "run-script";
   const second = run
     ? skipOptions(args, first.index + 1, valued)

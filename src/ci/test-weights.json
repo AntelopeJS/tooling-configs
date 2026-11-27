@@ -196,6 +196,7 @@
   "src/oxc/lint-tsconfig-types.test.ts": 3.1,
   "src/oxc/lint-type-guards.test.ts": 0.7,
   "src/oxc/lint-unrun-query.test.ts": 30.9,
+  "src/oxc/lint-vitest-config.test.ts": 0.8,
   "src/oxc/lint.test.ts": 3.9,
   "src/triage/triage.test.ts": 0
 }

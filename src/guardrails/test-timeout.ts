@@ -35,7 +35,7 @@ function finding(
   if (timeout === wanted) return undefined;
   const where = `${manifest} script "${script}" runs ${step.runner}`;
   return timeout === undefined
-    ? `${where} on mocha's 2000 ms default timeout; add --timeout ${wanted}, the shared CI test timeout.`
+    ? `${where} without --timeout, so it runs on mocha's 2000 ms default or a .mocharc limit; add --timeout ${wanted}, the shared CI test timeout.`
     : `${where} with its own --timeout ${timeout}; set --timeout ${wanted}, the shared CI test timeout.`;
 }
 
