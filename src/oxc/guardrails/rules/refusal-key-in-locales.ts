@@ -2,17 +2,12 @@ import { readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { defineRule } from "@oxlint/plugins";
 
-import { enclosingPackage } from "../self-package.ts";
+import { enclosingPackage, isObject, isText } from "../self-package.ts";
+import type { Json } from "../self-package.ts";
 import { refusalVisitors, staticValue } from "../refusals.ts";
 
 const REFUSAL_KEY = /^\$([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_]+)+)$/;
 const LOCALE_ROOT = "frontend-vue";
-
-type Json = string | number | boolean | null | Json[] | JsonObject;
-
-interface JsonObject {
-  [key: string]: Json;
-}
 
 /** What the locale files a module ships hold: every `i18n/locales/*.json` under its `frontend-vue` directory. */
 interface Locales {
@@ -42,14 +37,6 @@ function localeFiles(directory: string): string[] {
       ? [path]
       : [];
   });
-}
-
-function isObject(value: Json): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isText(value: Json): value is string {
-  return typeof value === "string";
 }
 
 function readLocale(file: string): Json {

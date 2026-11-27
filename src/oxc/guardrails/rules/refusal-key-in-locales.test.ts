@@ -44,7 +44,7 @@ tester.run("antelopejs/refusal-key-in-locales", refusalKeyInLocalesRule, {
       filename,
     },
     {
-      name: "a key without the $ prefix is not resolved by the presenter",
+      name: "a key without the $ prefix",
       code: 'assert(ok, 404, "dms_app.connections.gone");',
       filename,
     },
