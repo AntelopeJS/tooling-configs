@@ -104,7 +104,7 @@
     "release-it": "^19.2.4",
     "release-it-changelogen": "^0.1.0",
     "sharp": "^0.35.5",
-    "tsdown": "^0.22.14",
+    "tsdown": "^0.23.0",
     "typescript5": "npm:typescript@^5.9.3",
     "typescript7": "npm:typescript@~7.0.2",
     "vite": "^8.3.4"
@@ -174,5 +174,5 @@
   "engines": {
     "node": ">=22.18.0"
   },
-  "packageManager": "pnpm@10.33.0"
+  "packageManager": "pnpm@10.34.9"
 }
