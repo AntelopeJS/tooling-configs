@@ -6,12 +6,8 @@ import test, { type TestContext } from "node:test";
 import { parseDocument } from "yaml";
 
 import { affectedTestsFit } from "./affected-tests.ts";
-import {
-  CI_CALLER,
-  CI_NODE_REF,
-  ciProfile,
-  ciWorkflow,
-} from "./ci-workflow.ts";
+import { ciProfile } from "./ci-profile.ts";
+import { CI_CALLER, CI_NODE_REF, ciWorkflow } from "./ci-workflow.ts";
 import { ciNodeCallers, ciRenovateSyncCallers } from "./workflow.ts";
 
 /** A repository: the `test` script of each package by directory, `""` the root, and the pnpm workspace globs. */

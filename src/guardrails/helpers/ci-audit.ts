@@ -75,8 +75,16 @@ function jobFindings(
   jobs: ReadonlyMap<string, AuditJob>,
 ): string[] {
   const allowed: readonly string[] = Object.values(BLACKSMITH_RUNNERS);
+  const covered = [...jobs.values()].some(
+    (other) =>
+      other !== job &&
+      isAggregator(other) &&
+      needsOf(other).includes("ci") &&
+      needsOf(other).includes(id),
+  );
   const besideCaller =
     id !== "verdict" &&
+    !covered &&
     !needsOf(jobs.get("ci")).includes(id) &&
     !reaches(jobs, id, "ci");
   return [
@@ -91,8 +99,8 @@ function jobFindings(
 /**
  * The runner, action-version, concurrency and gate findings the org's /ci audit would report on the workflow `text`, one
  * line each: a hand-written job off the two Blacksmith runners or on an unpinned action, a pull request workflow with a
- * hand-written job and no `cancel-in-progress` expression, and a hand-written job beside the `ci` caller that neither
- * the caller needs nor needs the caller.
+ * hand-written job and no `cancel-in-progress` expression, and a hand-written job beside the `ci` caller that the caller
+ * does not need, that does not need the caller, and that no aggregator needs with the caller.
  */
 export function ciFindings(text: string): string[] {
   const workflow: AuditWorkflow = parseDocument(text).toJS();
