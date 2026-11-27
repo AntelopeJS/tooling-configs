@@ -3,6 +3,7 @@ import test from "node:test";
 import { parseDocument } from "yaml";
 
 import { CI_CALLER, CI_NODE_REF, ciWorkflow } from "./ci-workflow.ts";
+import { verdictNotes } from "./ci-verdict.ts";
 import {
   PACKAGE_ROOT,
   bin,
@@ -131,6 +132,19 @@ test("sync --check fails a ci.yml whose verdict misses a job, names that job, an
   commit(root);
   const check = bin(root, "sync", ["--check"]);
   assert.equal(check.status, 0, check.stdout);
+});
+
+test("the verdict note names no job sync renamed or added, so a note that reads the rewritten verdict alone blames the verdict for the caller renamed to ci", () => {
+  const renamed = CI_CALLER.replace("  ci:\n", "  checks:\n").replace(
+    "needs: [ci, renovate-sync]",
+    "needs: [checks]",
+  );
+  assert.notEqual(renamed, CI_CALLER);
+  const rewritten = rewrite(renamed);
+  assert.deepEqual(uncovered(rewritten), []);
+  assert.deepEqual(verdictNotes("ci.yml", renamed, rewritten), [
+    "ci.yml: verdict does not need renovate-sync, so the merge queue merges past its result. Sync adds it to the needs: of verdict.",
+  ]);
 });
 
 test("tooling-configs' own ci.yml has a verdict job needing every job with if: always(), so a job added without the verdict needing it fails", () => {

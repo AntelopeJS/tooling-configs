@@ -111,15 +111,21 @@ function verdictNeeds(text: string): string[] {
   return isMap(verdict) ? neededIds(verdict) : [];
 }
 
-/** A note naming the jobs the verdict of `content` needs and the verdict of `current` did not, so a drift report says which result the merge queue merged past. */
+/**
+ * A note naming each job of `current` that the verdict of `content` needs and the verdict of `current` did not, so a drift
+ * report says which result the merge queue merged past. A job sync adds or renames is not one the verdict missed.
+ */
 export function verdictNotes(
   path: string,
   current: string | undefined,
   content: string,
 ): string[] {
   if (current === undefined) return [];
+  const jobs = parseDocument(current).get("jobs", true);
   const before = new Set(verdictNeeds(current));
-  const missing = verdictNeeds(content).filter((id) => !before.has(id));
+  const missing = verdictNeeds(content).filter(
+    (id) => isMap(jobs) && jobs.has(id) && !before.has(id),
+  );
   return missing.length
     ? [
         `${path}: ${VERDICT_JOB_ID} does not need ${missing.join(", ")}, so the merge queue merges past ${missing.length === 1 ? "its result" : "their results"}. Sync adds ${missing.length === 1 ? "it" : "them"} to the needs: of ${VERDICT_JOB_ID}.`,
