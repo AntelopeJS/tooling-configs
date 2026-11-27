@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
 import test, { type TestContext } from "node:test";
 
 import { bin, put, testRepo } from "./helpers/test-repo.ts";
 import type { ExportTarget } from "./package.ts";
 import { typedPackages } from "./published-types.ts";
 import { shimInvocation } from "./run-command.ts";
+import { writeTool } from "./helpers/shell.ts";
 
 /** Every step but `published:types`, so it alone decides the run. */
 const OTHER_STEPS =
@@ -392,4 +396,39 @@ test("a suffix-less pattern beside a longer null pattern passes checks, caught b
   const result = checks(root);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 10 skipped.\n");
+});
+
+test("the scratch project of published:types holds minimumReleaseAge and excludes @antelopejs/*, caught by an implementation that writes neither, which pnpm refuses a release published today with ERR_PNPM_NO_MATURE_MATCHING_VERSION", (t) => {
+  const root = typedRepo(
+    t,
+    {},
+    { "index.d.ts": "export declare const claims: string;\n" },
+  );
+  const tools = mkdtempSync(join(tmpdir(), "fake-pnpm-"));
+  t.after(() => rmSync(tools, { recursive: true, force: true }));
+  writeTool(
+    tools,
+    "pnpm",
+    `
+const { readFileSync, existsSync } = require("node:fs");
+const { spawnSync } = require("node:child_process");
+const { delimiter } = require("node:path");
+const args = process.argv.slice(2);
+if (args[0] === "install" && existsSync("pnpm-workspace.yaml")) {
+  const workspace = readFileSync("pnpm-workspace.yaml", "utf8");
+  if (!/^minimumReleaseAge: 1440$/m.test(workspace) || !/^ +- "?@antelopejs\\/\\*"?$/m.test(workspace)) {
+    console.error("ERR_PNPM_NO_MATURE_MATCHING_VERSION");
+    process.exit(1);
+  }
+}
+const path = process.env.PATH.split(delimiter).filter((entry) => entry !== ${JSON.stringify(tools)}).join(delimiter);
+const result = spawnSync("pnpm", args, { stdio: "inherit", env: { ...process.env, PATH: path }, shell: process.platform === "win32" });
+process.exit(result.status ?? 1);
+`,
+  );
+  const result = bin(root, "checks", ["--no-services"], {
+    ANTELOPEJS_CHECKS_SKIP: OTHER_STEPS,
+    PATH: `${tools}${delimiter}${process.env.PATH}`,
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
 });

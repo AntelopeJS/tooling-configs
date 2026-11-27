@@ -30,6 +30,7 @@ import {
   readKnownFailures,
   splitDiagnostics,
 } from "./known-failures.ts";
+import { FRESH_RELEASES, MINIMUM_RELEASE_AGE } from "./pnpm-workspace.ts";
 import { packTarball } from "./pack-tarball.ts";
 import { runCommand } from "./run-command.ts";
 import { tarEntry } from "./tar-entry.ts";
@@ -200,7 +201,7 @@ async function siblingTarballs(
   return { failure: "", tarballs };
 }
 
-/** Writes the consumer's `package.json`, and for pnpm its `pnpm-workspace.yaml` in block style, which pnpm edits when it records a setting, so each sibling resolves to its tarball wherever it is required. */
+/** Writes the consumer's `package.json`, and for pnpm its `pnpm-workspace.yaml` in block style, which pnpm edits when it records a setting, so each sibling resolves to its tarball wherever it is required. It carries the repository policy `minimumReleaseAge` with AntelopeJS's own packages excluded, so a release published today installs. */
 function writeConsumer(
   consumer: string,
   manager: "pnpm" | "npm",
@@ -223,7 +224,12 @@ function writeConsumer(
   if (manager === "pnpm")
     writeFileSync(
       join(consumer, "pnpm-workspace.yaml"),
-      stringify({ packages: ["."], overrides }),
+      stringify({
+        packages: ["."],
+        overrides,
+        minimumReleaseAge: MINIMUM_RELEASE_AGE,
+        minimumReleaseAgeExclude: [FRESH_RELEASES],
+      }),
     );
 }
 
