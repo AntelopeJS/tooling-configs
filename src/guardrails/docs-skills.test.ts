@@ -24,19 +24,26 @@ function linkPath(name: string): string {
   return `.claude/skills/${name}`;
 }
 
+const VERIFY = "verify-changes";
+
+/** A full-profile repository `antelopejs-sync` can sync: the pack's oxlint linked and its preset config in place. */
+function fullRepo(t: Parameters<typeof testRepo>[0]): string {
+  const root = testRepo(t);
+  linkOxlint(root);
+  put(
+    root,
+    "oxlint.config.ts",
+    'import type {} from "@antelopejs/tooling-configs/oxc/lint";\nexport default {};\n',
+  );
+  return root;
+}
+
 for (const profile of PROFILES) {
   const label = profile.length ? "template" : "full";
 
   test(`sync installs the vendored writing skills and a Claude link for each, ${label} profile`, (t) => {
-    const root = testRepo(t);
-    if (!profile.length) {
-      linkOxlint(root);
-      put(
-        root,
-        "oxlint.config.ts",
-        'import type {} from "@antelopejs/tooling-configs/oxc/lint";\nexport default {};\n',
-      );
-    } else markTemplateSource(root);
+    const root = profile.length ? testRepo(t) : fullRepo(t);
+    if (profile.length) markTemplateSource(root);
     const result = bin(root, "sync", [...profile]);
     assert.equal(result.status, 0, result.stderr);
     for (const name of SKILLS) {
@@ -127,4 +134,65 @@ test("a check after sync is silent with the skills in place", (t) => {
   const again = bin(root, "sync", [...TEMPLATE_SOURCE, "--check"]);
   assert.equal(again.status, 0, again.stdout);
   assert.equal(again.stdout, "Guardrails are in sync.\n");
+});
+
+test("full-profile sync installs verify-changes, reading the repository's facts, and the Guardrails block points to it; a template source gets neither", (t) => {
+  const root = fullRepo(t);
+  assert.equal(bin(root, "sync").status, 0);
+  const skill = read(root, `${linkPath(VERIFY)}/SKILL.md`);
+  assert.match(skill, /^---\nname: verify-changes\n/);
+  assert.match(skill, /`scripts` of the `package.json`/);
+  assert.match(skill, /`## Tests` section/);
+  assert.match(skill, /at most 4 test workers/);
+  assert.match(
+    read(root, "AGENTS.md"),
+    /\[`verify-changes`\]\(\.agents\/skills\/verify-changes\/SKILL\.md\)/,
+  );
+  const template = testRepo(t);
+  markTemplateSource(template);
+  assert.equal(bin(template, "sync", TEMPLATE_SOURCE).status, 0);
+  assert.equal(
+    lstatSync(join(template, ".agents/skills", VERIFY), {
+      throwIfNoEntry: false,
+    }),
+    undefined,
+  );
+});
+
+test("a repository with its own verify-* skill gets no verify-changes, and the Guardrails block points to its skill", (t) => {
+  const root = fullRepo(t);
+  put(root, ".claude/skills/verify-dms/SKILL.md", "own\n");
+  assert.equal(bin(root, "sync").status, 0);
+  assert.equal(
+    lstatSync(join(root, linkPath(VERIFY)), { throwIfNoEntry: false }),
+    undefined,
+  );
+  const agents = read(root, "AGENTS.md");
+  assert.match(
+    agents,
+    /\[`verify-dms`\]\(\.claude\/skills\/verify-dms\/SKILL\.md\) skill says/,
+  );
+  assert.doesNotMatch(agents, /verify-changes/);
+  assert.equal(bin(root, "sync", ["--check"]).status, 0);
+});
+
+test("a verify-* skill added after sync retires verify-changes: --check names its files as drift, and sync removes them", (t) => {
+  const root = fullRepo(t);
+  assert.equal(bin(root, "sync").status, 0);
+  put(root, ".agents/skills/verify-api/SKILL.md", "own\n");
+  const check = bin(root, "sync", ["--check"]);
+  assert.equal(check.status, 1);
+  for (const path of [skillPath(VERIFY), linkPath(VERIFY)])
+    assert.ok(
+      check.stdout.includes(`Drift: ${path}; run antelopejs-sync\n`),
+      check.stdout,
+    );
+  assert.equal(bin(root, "sync").status, 0);
+  for (const path of [skillPath(VERIFY), linkPath(VERIFY)])
+    assert.equal(
+      lstatSync(join(root, path), { throwIfNoEntry: false }),
+      undefined,
+    );
+  assert.equal(read(root, ".agents/skills/verify-api/SKILL.md"), "own\n");
+  assert.equal(bin(root, "sync", ["--check"]).status, 0);
 });

@@ -71,6 +71,12 @@ Both profiles of `antelopejs-sync` keep the shared CI caller on the job id `ci`,
 
 `antelopejs-sync` also installs the `technical-writing` and `unslop` skills in every full-profile repository and in a template source. Each is `.agents/skills/<name>/SKILL.md` with a `.claude/skills/<name>` link. The text is vendored from Upd4ting/agent-config `claude/skills/<name>/SKILL.md` at commit 4e0a848, minus the `technical-writing` paragraph that links the unsynced `docs/harness/claude-code.md`, and `--check` reports an edited file as drift. Write documentation with them: `technical-writing` picks the page's mode and sets the sentence rules, and `unslop` lists the patterns to cut.
 
+## Verification skill
+
+`antelopejs-sync` installs the `verify-changes` skill in every full-profile repository that has no `verify-*` skill of its own in `.agents/skills` or `.claude/skills`, the same way as the writing skills. It tells an agent which check to run for each kind of change, how to scope a test run to one file with at most 4 workers, how to start the services a test needs, and what CI and the merge queue run instead. It reads the commands from the repository's `package.json` scripts and its `## Tests` section, and copies none of them. The Guardrails block of `AGENTS.md` points to it.
+
+A repository whose checks differ, such as a DMS or a template, writes its own `verify-<repo>` skill. Sync then installs no `verify-changes`, removes a copy it installed before, and points the Guardrails block to the repository's skill.
+
 ## Install
 
 Node.js 24, or at least 22.18: oxlint reads `oxlint.config.ts` and loads JS plugins by executing TypeScript.

@@ -19,12 +19,12 @@ export function isTemplateSource(
   );
 }
 
-/** The writing skills belong to the agent layer, which the template profile syncs only in the template source. */
+/** The synced skills belong to the agent layer, which the template profile syncs only in the template source. */
 export function planWritingSkills(
   root: string,
   profile: AgentsBlockContext["profile"],
 ): ReturnType<typeof planDocsSkills> {
   if (profile === "template" && !isTemplateSource(root, profile))
     return { actions: [], errors: [] };
-  return planDocsSkills(root);
+  return planDocsSkills(root, profile);
 }

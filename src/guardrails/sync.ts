@@ -54,7 +54,7 @@ import { backendBoundaryArtifacts } from "./backend-boundary.ts";
 import { checkEntryOnlyConfiguration } from "./entry-only.ts";
 import { planDocs, type DocsPlan } from "./docs-compat.ts";
 import { isTemplateSource, planWritingSkills } from "./template-agent-layer.ts";
-import { applyDocsSkillActions } from "./docs-skills.ts";
+import { applyDocsSkillActions, verifySkillFolders } from "./docs-skills.ts";
 import { checkTypecheckCoverage } from "./typecheck-coverage.ts";
 
 export interface RepoContext extends AgentsBlockContext {
@@ -355,6 +355,7 @@ function repositoryContext(
     glossary: ["GLOSSARY.md", "docs/GLOSSARY.md"].find((file) =>
       existsSync(join(root, file)),
     ),
+    verifySkills: verifySkillFolders(root),
     docs:
       profile === "full" && current.has("package.json")
         ? planDocs(root, manager)
