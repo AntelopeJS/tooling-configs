@@ -283,6 +283,16 @@ export function stepsOf(script: string): Step[] {
   return lines(script).flatMap(lineSteps);
 }
 
+/** The script cut at its separators, which stay in the list, so joining the parts gives the script back; {@link commandSteps} reads each part. */
+export function commandParts(script: string): string[] {
+  return script.split(new RegExp(`(${SEPARATORS.source})`, "u"));
+}
+
+/** The steps one part of {@link commandParts} starts. */
+export function commandSteps(command: string): Step[] {
+  return lineSteps(words(command));
+}
+
 /** The script names a `run-s` pattern list selects among `available`. */
 export function matchingScripts(
   names: readonly string[],
