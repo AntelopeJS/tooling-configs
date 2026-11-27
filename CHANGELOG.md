@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.10.9
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.8...v0.10.9)
+
+### 🩹 Fixes
+
+- **guardrails:** Carry the release-age policy into the published:types scratch project ([#511](https://github.com/AntelopeJS/tooling-configs/pull/511))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.10.8
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.7...v0.10.8)
