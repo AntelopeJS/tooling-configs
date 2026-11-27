@@ -102,7 +102,7 @@
     "oxlint-tsgolint": "^7.0.2008",
     "pixelmatch": "^8.0.0",
     "playwright-core": "^1.65.0",
-    "release-it": "^19.2.4",
+    "release-it": "^21.0.0",
     "release-it-changelogen": "^0.1.0",
     "sharp": "^0.35.5",
     "tsdown": "^0.23.0",
