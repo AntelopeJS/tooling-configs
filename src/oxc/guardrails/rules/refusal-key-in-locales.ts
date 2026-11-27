@@ -4,7 +4,7 @@ import { defineRule } from "@oxlint/plugins";
 
 import { enclosingPackage, isObject, isText } from "../self-package.ts";
 import type { Json } from "../self-package.ts";
-import { refusalVisitors, staticValue } from "../refusals.ts";
+import { messageTexts, refusalVisitors } from "../refusals.ts";
 
 const REFUSAL_KEY = /^\$([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_]+)+)$/;
 const LOCALE_ROOT = "frontend-vue";
@@ -86,14 +86,26 @@ export const refusalKeyInLocalesRule = defineRule({
   createOnce(context) {
     let locales: Locales | undefined;
     const visitors = refusalVisitors(context, (message) => {
-      const value = staticValue(message, context.sourceCode);
-      if (value?.kind !== "text" || !value.exact) return;
-      const key = REFUSAL_KEY.exec(value.text)?.[1];
-      if (key === undefined) return;
-      const [namespace = ""] = key.split(".");
-      locales ??= packageLocales(context.filename);
-      if (locales.namespaces.has(namespace) && !locales.keys.has(key))
-        context.report({ node: message, messageId: "missing", data: { key } });
+      const owned = () => {
+        locales ??= packageLocales(context.filename);
+        return locales;
+      };
+      for (const { text, exact } of messageTexts(
+        message,
+        context,
+        () => owned().namespaces.size > 0,
+      )) {
+        const key = exact ? REFUSAL_KEY.exec(text)?.[1] : undefined;
+        if (key === undefined) continue;
+        const [namespace = ""] = key.split(".");
+        const { namespaces, keys } = owned();
+        if (namespaces.has(namespace) && !keys.has(key))
+          context.report({
+            node: message,
+            messageId: "missing",
+            data: { key },
+          });
+      }
     });
     return {
       before() {

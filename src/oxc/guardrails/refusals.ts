@@ -1,6 +1,10 @@
 import type { ESTree, SourceCode } from "@oxlint/plugins";
+import ts from "../../typescript6.ts";
+
 import { enclosingPackage } from "./self-package.ts";
 import { resolveVariable, unwrapExpression } from "./local-types.ts";
+import { nodeAt, typedFile } from "./type-checker.ts";
+import { lintedSource } from "./vue-script.ts";
 
 const ASSERT_STATUSES = new Set([403, 404, 409, 422]);
 const DMS_PACKAGE = /^(@[^/]+\/)?(interface-)?dms(-|$)/;
@@ -43,7 +47,7 @@ function templateValue(template: ESTree.TemplateLiteral): Static {
 }
 
 /** The value of a literal, a template literal or a `const` initialised with one, or null when it is not static. */
-export function staticValue(
+function staticValue(
   node: ESTree.Node,
   source: SourceCode,
   seen = new Set<string>(),
@@ -71,6 +75,49 @@ export function staticValue(
     return null;
   seen.add(expression.name);
   return staticValue(definition.node.init, source, seen);
+}
+
+/** A text a refusal message can hold. */
+type RefusalText = Extract<Static, { kind: "text" }>;
+
+/** What a rule's context gives the refusal helpers: the linted file and its source. */
+export interface RefusalContext {
+  readonly filename: string;
+  readonly sourceCode: SourceCode;
+}
+
+function literalTypes(
+  message: ESTree.Node,
+  context: RefusalContext,
+): RefusalText[] {
+  const linted = lintedSource(context.filename, context.sourceCode.text);
+  const typed = linted && typedFile(context.filename, linted.text);
+  if (linted === undefined || typed === undefined) return [];
+  const [start, end] = message.range;
+  const expression = nodeAt(
+    typed.sourceFile,
+    { range: [start + linted.offset, end + linted.offset] },
+    ts.isExpression,
+  );
+  if (expression === undefined) return [];
+  const type = typed.checker.getTypeAtLocation(expression);
+  return (type.isUnion() ? type.types : [type]).flatMap(
+    (member): RefusalText[] =>
+      member.isStringLiteral()
+        ? [{ kind: "text", text: member.value, exact: true }]
+        : [],
+  );
+}
+
+/** The texts a refusal message can hold: its static value, otherwise, when `typed` allows it, each string literal its type allows, as a member of an `as const` object read from this file or another one has. Empty when neither tells. */
+export function messageTexts(
+  message: ESTree.Node,
+  context: RefusalContext,
+  typed: () => boolean = () => true,
+): RefusalText[] {
+  const value = staticValue(message, context.sourceCode);
+  if (value !== null) return value.kind === "text" ? [value] : [];
+  return typed() ? literalTypes(message, context) : [];
 }
 
 function messageOf(argument: ESTree.Argument | undefined): ESTree.Node | null {
@@ -107,7 +154,7 @@ function calleeName(callee: ESTree.Node, source: SourceCode): string | null {
 
 /** Visitors that call `onRefusal` with the message of each `assert(cond, 403|404|409|422, message)` and `new HTTPResult(4xx, message)`, aliased imports included. */
 export function refusalVisitors(
-  context: { readonly sourceCode: SourceCode },
+  context: RefusalContext,
   onRefusal: (message: ESTree.Node) => void,
 ) {
   function check(
