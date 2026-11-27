@@ -4,13 +4,8 @@ import test from "node:test";
 import { parseDocument } from "yaml";
 
 import { MAX_FILE_BYTES } from "./ceilings.ts";
-import {
-  CI_CALLER,
-  CI_NODE_REF,
-  ciProfile,
-  ciWorkflow,
-  type CiProfile,
-} from "./ci-workflow.ts";
+import { ciProfile, type CiProfile } from "./ci-profile.ts";
+import { CI_CALLER, CI_NODE_REF, ciWorkflow } from "./ci-workflow.ts";
 import { ciNodeCallers, ciRenovateSyncCallers } from "./workflow.ts";
 
 const NOTION_TOKEN = "${{ secrets.NOTION_TOKEN }}";

@@ -2,13 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { parseDocument } from "yaml";
 
-import {
-  CI_CALLER,
-  CI_NODE_REF,
-  ciProfile,
-  ciWorkflow,
-  type CiProfile,
-} from "./ci-workflow.ts";
+import { ciProfile, type CiProfile } from "./ci-profile.ts";
+import { CI_CALLER, CI_NODE_REF, ciWorkflow } from "./ci-workflow.ts";
 import { bin, commit, put, read, testRepo } from "./helpers/test-repo.ts";
 import { ciNodeCallers, ciRenovateSyncCallers } from "./workflow.ts";
 

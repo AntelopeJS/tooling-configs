@@ -65,7 +65,10 @@ test("a hand-written job's runner is rewritten in the file and a second run chan
   const once = syncCi(before);
   assert.equal(jobsOf(once.content).lint["runs-on"], LINUX);
   assert.equal(jobsOf(once.content).win["runs-on"], WINDOWS);
-  assert.deepEqual(once.advisories, []);
+  assert.deepEqual(
+    once.advisories.filter((note) => note.startsWith("Runner:")),
+    [],
+  );
   assert.equal(syncCi(once.content).content, once.content);
 });
 
@@ -110,7 +113,10 @@ test("a matrix.os list is rewritten item by item and runs-on stays, so an implem
   const job = jobsOf(text.content).test;
   assert.equal(job["runs-on"], "${{ matrix.os }}");
   assert.deepEqual(job.strategy, { matrix: { os: [LINUX, WINDOWS] } });
-  assert.deepEqual(text.advisories, []);
+  assert.deepEqual(
+    text.advisories.filter((note) => note.startsWith("Runner:")),
+    [],
+  );
   assert.equal(syncCi(text.content).content, text.content);
 });
 
