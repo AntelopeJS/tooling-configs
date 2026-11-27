@@ -104,7 +104,7 @@ test("a verdict whose if reads always() without the expression braces is kept, s
   assert.equal(rewrite(bare), bare);
 });
 
-test("sync refuses a job that needs verdict and names it, so a sync that has the verdict need it back writes a cycle GitHub rejects", () => {
+test("sync refuses a job that needs verdict as a scalar or a list and names it, so a sync that has the verdict need it back, or that reads only list needs, fails", () => {
   const notify = `  notify:
     needs: [ci, verdict]
     runs-on: ubuntu-latest
@@ -115,9 +115,13 @@ test("sync refuses a job that needs verdict and names it, so a sync that has the
     () => rewrite(`${CI_CALLER}${notify}`),
     /\.github\/workflows\/ci\.yml: job notify needs verdict/,
   );
+  assert.throws(
+    () => rewrite(`${CI_CALLER}${notify.replace("[ci, verdict]", "verdict")}`),
+    /\.github\/workflows\/ci\.yml: job notify needs verdict/,
+  );
 });
 
-test("sync --check fails a ci.yml whose verdict misses a job, names that job, and passes once sync wrote it", (t) => {
+test("sync --check fails a ci.yml whose verdict misses a job, names that job, and passes once sync wrote it, so a check that reports only the drifted file fails", (t) => {
   const root = testRepo(t, false);
   assert.equal(bin(root, "sync").status, 0);
   const synced = read(root, ".github/workflows/ci.yml");
@@ -144,6 +148,14 @@ test("the verdict note names no job sync renamed or added, so a note that reads 
   assert.deepEqual(uncovered(rewritten), []);
   assert.deepEqual(verdictNotes("ci.yml", renamed, rewritten), [
     "ci.yml: verdict does not need renovate-sync, so the merge queue merges past its result. Sync adds it to the needs: of verdict.",
+  ]);
+});
+
+test("the verdict note says a ci.yml has no verdict job, so a note that lists every job as missed from a verdict that does not exist fails", () => {
+  const without = CI_CALLER.slice(0, CI_CALLER.indexOf("  verdict:"));
+  assert.notEqual(without, CI_CALLER);
+  assert.deepEqual(verdictNotes("ci.yml", without, rewrite(without)), [
+    "ci.yml: has no verdict job, so the merge queue merges past every result. Sync adds one that needs every other job.",
   ]);
 });
 
