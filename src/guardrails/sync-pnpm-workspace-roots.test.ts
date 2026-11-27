@@ -207,3 +207,72 @@ test('sync gives a nested pnpm-workspace.yaml a packages field and keeps one the
   });
   assert.equal(parse(read(root, "pnpm-workspace.yaml")).packages, undefined);
 });
+
+const FRONTEND = "frontend-vue";
+const FRONTEND_WORKSPACE = `${FRONTEND}/pnpm-workspace.yaml`;
+
+function nestedRepo(t: TestContext): string {
+  const root = pinnedRepo(t, "pnpm@11.27.1");
+  put(root, `${FRONTEND}/pnpm-lock.yaml`, "lockfileVersion: '9.0'\n");
+  return root;
+}
+
+function syncedClean(root: string): void {
+  synced(root);
+  const check = bin(root, "sync", ["--check"]);
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+}
+
+test("sync writes a nested pnpm-workspace.yaml in single quotes under a .prettierrc that sets singleQuote, where a sync that always writes double quotes fails the folder's prettier --check", (t) => {
+  const root = nestedRepo(t);
+  put(
+    root,
+    `${FRONTEND}/.prettierrc`,
+    '{ "singleQuote": true, "useTabs": true }\n',
+  );
+  syncedClean(root);
+  assert.equal(
+    read(root, FRONTEND_WORKSPACE),
+    "packages:\n  - '.'\nminimumReleaseAge: 1440\nminimumReleaseAgeExclude:\n  - '@antelopejs/*'\n",
+  );
+});
+
+test("sync adds the interface pattern in single quotes to a nested list under a package.json prettier key that sets singleQuote, where a sync that reads only .prettierrc adds it in double quotes", (t) => {
+  const root = nestedRepo(t);
+  put(
+    root,
+    `${FRONTEND}/package.json`,
+    '{ "private": true, "prettier": { "singleQuote": true } }\n',
+  );
+  put(
+    root,
+    FRONTEND_WORKSPACE,
+    "packages:\n  - '.'\nminimumReleaseAge: 1440\nminimumReleaseAgeExclude:\n  - '@antelopejs/dms@0.20.0'\n",
+  );
+  syncedClean(root);
+  assert.equal(
+    read(root, FRONTEND_WORKSPACE),
+    "packages:\n  - '.'\nminimumReleaseAge: 1440\nminimumReleaseAgeExclude:\n  - '@antelopejs/dms@0.20.0'\n  - '@antelopejs/*'\n",
+  );
+});
+
+test("sync keeps double quotes in a nested pnpm-workspace.yaml under a .prettierrc that sets singleQuote false, where a sync that always writes single quotes fails that folder's prettier --check", (t) => {
+  const root = nestedRepo(t);
+  put(root, `${FRONTEND}/.prettierrc`, '{ "singleQuote": false }\n');
+  syncedClean(root);
+  assert.equal(
+    read(root, FRONTEND_WORKSPACE),
+    'packages:\n  - "."\nminimumReleaseAge: 1440\nminimumReleaseAgeExclude:\n  - "@antelopejs/*"\n',
+  );
+});
+
+test("sync writes single quotes in a nested pnpm-workspace.yaml under a root .prettierrc that sets singleQuote, past a folder package.json without a prettier key, so a lookup that reads only the folder or stops at any package.json writes double quotes", (t) => {
+  const root = nestedRepo(t);
+  put(root, ".prettierrc", "singleQuote: true\n");
+  put(root, `${FRONTEND}/package.json`, '{ "private": true }\n');
+  syncedClean(root);
+  assert.equal(
+    read(root, FRONTEND_WORKSPACE),
+    "packages:\n  - '.'\nminimumReleaseAge: 1440\nminimumReleaseAgeExclude:\n  - '@antelopejs/*'\n",
+  );
+});

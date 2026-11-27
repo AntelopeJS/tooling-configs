@@ -3,6 +3,7 @@ import test from "node:test";
 import { parseDocument } from "yaml";
 
 import { CI_CALLER, CI_NODE_REF, ciWorkflow } from "./ci-workflow.ts";
+import { verdictNotes } from "./ci-verdict.ts";
 import {
   PACKAGE_ROOT,
   bin,
@@ -103,7 +104,24 @@ test("a verdict whose if reads always() without the expression braces is kept, s
   assert.equal(rewrite(bare), bare);
 });
 
-test("sync --check fails a ci.yml whose verdict misses a job, and passes once sync wrote it", (t) => {
+test("sync refuses a job that needs verdict as a scalar or a list and names it, so a sync that has the verdict need it back, or that reads only list needs, fails", () => {
+  const notify = `  notify:
+    needs: [ci, verdict]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo done
+`;
+  assert.throws(
+    () => rewrite(`${CI_CALLER}${notify}`),
+    /\.github\/workflows\/ci\.yml: job notify needs verdict/,
+  );
+  assert.throws(
+    () => rewrite(`${CI_CALLER}${notify.replace("[ci, verdict]", "verdict")}`),
+    /\.github\/workflows\/ci\.yml: job notify needs verdict/,
+  );
+});
+
+test("sync --check fails a ci.yml whose verdict misses a job, names that job, and passes once sync wrote it, so a check that reports only the drifted file fails", (t) => {
   const root = testRepo(t, false);
   assert.equal(bin(root, "sync").status, 0);
   const synced = read(root, ".github/workflows/ci.yml");
@@ -112,11 +130,33 @@ test("sync --check fails a ci.yml whose verdict misses a job, and passes once sy
   const drift = bin(root, "sync", ["--check"]);
   assert.equal(drift.status, 1);
   assert.match(drift.stdout, /Drift: \.github\/workflows\/ci\.yml/);
+  assert.match(drift.stdout, /verdict does not need e2e/);
   assert.equal(bin(root, "sync").status, 0);
   assert.deepEqual(uncovered(read(root, ".github/workflows/ci.yml")), []);
   commit(root);
   const check = bin(root, "sync", ["--check"]);
   assert.equal(check.status, 0, check.stdout);
+});
+
+test("the verdict note names no job sync renamed or added, so a note that reads the rewritten verdict alone blames the verdict for the caller renamed to ci", () => {
+  const renamed = CI_CALLER.replace("  ci:\n", "  checks:\n").replace(
+    "needs: [ci, renovate-sync]",
+    "needs: [checks]",
+  );
+  assert.notEqual(renamed, CI_CALLER);
+  const rewritten = rewrite(renamed);
+  assert.deepEqual(uncovered(rewritten), []);
+  assert.deepEqual(verdictNotes("ci.yml", renamed, rewritten), [
+    "ci.yml: verdict does not need renovate-sync, so the merge queue merges past its result. Sync adds it to the needs: of verdict.",
+  ]);
+});
+
+test("the verdict note says a ci.yml has no verdict job, so a note that lists every job as missed from a verdict that does not exist fails", () => {
+  const without = CI_CALLER.slice(0, CI_CALLER.indexOf("  verdict:"));
+  assert.notEqual(without, CI_CALLER);
+  assert.deepEqual(verdictNotes("ci.yml", without, rewrite(without)), [
+    "ci.yml: has no verdict job, so the merge queue merges past every result. Sync adds one that needs every other job.",
+  ]);
 });
 
 test("tooling-configs' own ci.yml has a verdict job needing every job with if: always(), so a job added without the verdict needing it fails", () => {

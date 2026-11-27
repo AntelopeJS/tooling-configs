@@ -48,6 +48,7 @@ import {
   sharedRefArtifacts,
 } from "./workflow.ts";
 import { CI_PATH, callerPlan, ciWorkflow, type CiPlan } from "./ci-workflow.ts";
+import { verdictNotes } from "./ci-verdict.ts";
 import { nextSyncArtifacts, releaseArtifacts } from "./release-workflow.ts";
 import { backendBoundaryArtifacts } from "./backend-boundary.ts";
 import { checkEntryOnlyConfiguration } from "./entry-only.ts";
@@ -146,15 +147,15 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
   {
     path: CI_PATH,
     profiles: ["full", "template"],
-    desired: (current, context) => ({
-      content: ciWorkflow(
+    desired: (current, context) => {
+      const content = ciWorkflow(
         current,
         current === undefined ? [] : ciNodeCallers(current),
         current === undefined ? [] : ciRenovateSyncCallers(current),
         { ...context.ci, docsFiles: context.docs },
-      ),
-      notes: [],
-    }),
+      );
+      return { content, notes: verdictNotes(CI_PATH, current, content) };
+    },
   },
   {
     path: "package.json",
