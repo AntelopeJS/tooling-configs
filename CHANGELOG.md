@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.10.11
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.10...v0.10.11)
+
+### 🚀 Enhancements
+
+- **guardrails:** Sync the hand-written jobs of ci.yml onto Blacksmith, the shared pins and the ci gate ([#516](https://github.com/AntelopeJS/tooling-configs/pull/516))
+
+### 🩹 Fixes
+
+- **deps:** Update non-major dependencies ([#517](https://github.com/AntelopeJS/tooling-configs/pull/517))
+- **guardrails:** Wire hand-written jobs into ci only for repos that opt in with gateHandJobs ([#519](https://github.com/AntelopeJS/tooling-configs/pull/519))
+
+### 🏡 Chore
+
+- **deps:** Update dependency release-it to v21 ([#518](https://github.com/AntelopeJS/tooling-configs/pull/518))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.10.10
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.9...v0.10.10)
