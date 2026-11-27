@@ -32,10 +32,10 @@ The commit hook formats and lints the staged files again. A change of Markdown o
 
 Pass the path of one test file, never a pattern that matches the suite, and never run the `test` script alone: it runs the suite. Pick the command from the runner the `test` script calls:
 
-- `ajs module test`: tests run from the build. Run `pnpm run build`, then `pnpm exec ajs module test . -f dist/<path>.test.js`.
+- `ajs module test`: tests run from the build. Run `pnpm run build`, then `pnpm exec ajs module test . --timeout 30000 -f dist/<path>.test.js`.
 - `node --test`: `node --test --test-concurrency=4 <file>`.
 - `vitest`: `pnpm exec vitest run <file> --maxWorkers=4`.
-- `mocha`: `pnpm exec mocha <file>`. Add `--parallel --jobs 4` only when the file is slow.
+- `mocha`: `pnpm exec mocha --timeout 30000 <file>`. Add `--parallel --jobs 4` only when the file is slow.
 - `playwright`: `pnpm exec playwright test <file> --workers=4`.
 
 Run at most 4 test workers. Other agents share the machine, and a runner that takes every core slows their checks and yours.
@@ -46,7 +46,7 @@ When a change touches several packages, run one test file in each package you ch
 
 Start a service only when the test file you run needs it. A test that needs a service it cannot reach fails on its connection, not on your change.
 
-- MongoDB: run the test through a lease, such as `pnpm exec antelopejs-lease run -- pnpm exec ajs module test . -f dist/<path>.test.js`. The lease starts a mongod for this worktree on its own port and sets `MONGO_URL` and `MONGO_DATABASE`. When the test reads another variable, set it from these. Run `pnpm exec antelopejs-lease down --stop` when you are done.
+- MongoDB: run the test through a lease, such as `pnpm exec antelopejs-lease run -- pnpm exec ajs module test . --timeout 30000 -f dist/<path>.test.js`. The lease starts a mongod for this worktree on its own port and sets `MONGO_URL` and `MONGO_DATABASE`. When the test reads another variable, set it from these. Run `pnpm exec antelopejs-lease down --stop` when you are done.
 - Another service of `.github/compose.yml`: start it under a project name of your own, such as `docker compose -p <worktree> -f .github/compose.yml up -d --wait <service>`. Remove it after the test with `docker compose -p <worktree> -f .github/compose.yml down`. When its port is taken, another worktree runs it: leave that test to CI.
 
 Stop only what you started. Never stop a process or a container by a pattern match: it stops the work of other agents too.
