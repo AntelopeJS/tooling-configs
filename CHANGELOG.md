@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.10.8
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.7...v0.10.8)
+
+### 🚀 Enhancements
+
+- **guardrails:** Write the caller's verdict job and forward the nightly dispatch input ([#495](https://github.com/AntelopeJS/tooling-configs/pull/495))
+- **guardrails:** Follow import aliases in refusal-message-is-key and add refusal-key-in-locales ([#505](https://github.com/AntelopeJS/tooling-configs/pull/505))
+- **guardrails:** Read refusal keys from const objects through their string literal types ([#508](https://github.com/AntelopeJS/tooling-configs/pull/508))
+
+### 🩹 Fixes
+
+- **guardrails:** Tell a nested pnpm pin to copy the root pin and name an invalid package.json ([#494](https://github.com/AntelopeJS/tooling-configs/pull/494))
+- **guardrails:** Accept a skipLibCheck true that only a git-ignored extended tsconfig sets ([#498](https://github.com/AntelopeJS/tooling-configs/pull/498))
+- **guardrails:** Accept oxlint 1.95, oxfmt 0.80 and verdict as the required check ([#499](https://github.com/AntelopeJS/tooling-configs/pull/499))
+- **garden:** Accept the admin always bypass on the own ruleset of k8s-gitops-infra ([#504](https://github.com/AntelopeJS/tooling-configs/pull/504))
+- **guardrails:** Refuse a job that needs verdict and quote pnpm-workspace.yaml as Prettier asks ([#506](https://github.com/AntelopeJS/tooling-configs/pull/506))
+- **knip:** Include .mts scripts in the default project ([#509](https://github.com/AntelopeJS/tooling-configs/pull/509))
+- **guardrails:** Write and keep the verdict job with if: ${{ !cancelled() }} ([#510](https://github.com/AntelopeJS/tooling-configs/pull/510))
+
+### 🏡 Chore
+
+- **deps:** Update dependency @typescript-eslint/parser to v8.74.0 ([#496](https://github.com/AntelopeJS/tooling-configs/pull/496))
+- **deps:** Update dependency knip to v6.48.0 ([#497](https://github.com/AntelopeJS/tooling-configs/pull/497))
+- **deps:** Land the open Renovate updates and keep fixture pnpm from fetching itself ([#507](https://github.com/AntelopeJS/tooling-configs/pull/507))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+- dada-sudo
+
 ## v0.10.7
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.6...v0.10.7)
