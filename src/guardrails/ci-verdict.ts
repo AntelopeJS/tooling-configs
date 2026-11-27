@@ -80,3 +80,49 @@ export function setVerdict(document: Document, jobs: YAMLMap): boolean {
   verdict.set("if", "${{ always() }}");
   return true;
 }
+
+/**
+ * Throws when a job of `jobs` in the workflow at `path` needs the verdict, naming each such job: the verdict needs every
+ * other job, so having it need that job back writes a cycle GitHub rejects.
+ */
+export function assertNothingNeedsVerdict(jobs: YAMLMap, path: string): void {
+  const dependents = jobs.items.flatMap(({ key, value }) =>
+    isScalar(key) &&
+    key.value !== VERDICT_JOB_ID &&
+    isMap(value) &&
+    neededIds(value).includes(VERDICT_JOB_ID)
+      ? [String(key.value)]
+      : [],
+  );
+  if (!dependents.length) return;
+  throw new Error(
+    dependents
+      .map(
+        (id) =>
+          `${path}: job ${id} needs ${VERDICT_JOB_ID}, which needs every other job, so the two would form a cycle GitHub rejects. Remove ${VERDICT_JOB_ID} from the needs: of ${id}, then rerun antelopejs-sync.`,
+      )
+      .join("\n"),
+  );
+}
+
+/** The jobs the `verdict` job of the workflow `text` needs, none when it has no verdict or does not parse. */
+function verdictNeeds(text: string): string[] {
+  const verdict = parseDocument(text).getIn(["jobs", VERDICT_JOB_ID], true);
+  return isMap(verdict) ? neededIds(verdict) : [];
+}
+
+/** A note naming the jobs the verdict of `content` needs and the verdict of `current` did not, so a drift report says which result the merge queue merged past. */
+export function verdictNotes(
+  path: string,
+  current: string | undefined,
+  content: string,
+): string[] {
+  if (current === undefined) return [];
+  const before = new Set(verdictNeeds(current));
+  const missing = verdictNeeds(content).filter((id) => !before.has(id));
+  return missing.length
+    ? [
+        `${path}: ${VERDICT_JOB_ID} does not need ${missing.join(", ")}, so the merge queue merges past ${missing.length === 1 ? "its result" : "their results"}. Sync adds ${missing.length === 1 ? "it" : "them"} to the needs: of ${VERDICT_JOB_ID}.`,
+      ]
+    : [];
+}

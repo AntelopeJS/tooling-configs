@@ -15,6 +15,7 @@ import {
 } from "./ci-aggregator.ts";
 import { setCallersDocsFiles, type DocsFilesPlan } from "./ci-docs-files.ts";
 import {
+  assertNothingNeedsVerdict,
   DISPATCH_TRIGGER,
   NIGHTLY_INPUT,
   setVerdict,
@@ -482,6 +483,7 @@ export function ciWorkflow(
   restoreEmptyValueComments(document, current);
   const caller = callers.find(({ id }) => id === CI_JOB_ID) ?? callers[0];
   assertNoClash(jobs, caller.id, syncCallers.length > 0);
+  assertNothingNeedsVerdict(jobs, CI_PATH);
   const pair = jobs.items.find(
     ({ key }) => isScalar(key) && key.value === caller.id,
   );
