@@ -26,7 +26,8 @@ import {
 import { ciNodeCallers, ciRenovateSyncCallers } from "./workflow.ts";
 
 function rewrite(text: string): string {
-  return ciWorkflow(text, ciNodeCallers(text), ciRenovateSyncCallers(text));
+  return ciWorkflow(text, ciNodeCallers(text), ciRenovateSyncCallers(text))
+    .content;
 }
 
 interface JobView {
@@ -90,7 +91,7 @@ test("the default caller reports the context ci / checks, because its job id is 
 
 test("a new caller lists the computed docs-files, so a second run that still has to add them fails", () => {
   const plan = { docsFiles: ["README.md"], exists: () => true };
-  const created = ciWorkflow(undefined, [], [], { docsFiles: plan });
+  const created = ciWorkflow(undefined, [], [], { docsFiles: plan }).content;
   assert.equal(jobs(created).ci.with?.["docs-files"], "README.md\n");
   assert.equal(
     ciWorkflow(
@@ -98,7 +99,7 @@ test("a new caller lists the computed docs-files, so a second run that still has
       ciNodeCallers(created),
       ciRenovateSyncCallers(created),
       { docsFiles: plan },
-    ),
+    ).content,
     created,
   );
 });
@@ -156,7 +157,7 @@ test("renaming the caller to ci also rewrites needs.<old-id> in if, env and run 
 });
 
 test("a conformant caller is returned byte for byte, comments and extra jobs included", () => {
-  const text = `# keep me\nname: ci\n${ciTriggers}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: true\n      docs-files: README.md # docs\n      nightly: ${NIGHTLY_INPUT}\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n  deploy:\n    needs: ci\n    runs-on: ubuntu-latest\n    steps: []\n${verdictJob(["ci", "renovate-sync", "deploy"])}`;
+  const text = `# keep me\nname: ci\n${ciTriggers}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: true\n      docs-files: README.md # docs\n      nightly: ${NIGHTLY_INPUT}\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n  deploy:\n    needs: ci\n    runs-on: blacksmith-4vcpu-ubuntu-2404\n    steps: []\n${verdictJob(["ci", "renovate-sync", "deploy"])}`;
   assert.equal(rewrite(text), text);
   assert.equal(rewrite(CI_CALLER), CI_CALLER);
 });
@@ -208,7 +209,7 @@ test("an old-shape caller with write grants is rewritten to the new shape and th
 
 test("rewriting keeps the other inputs, comments and other jobs and moves a caller pinned to a branch to the shared tag, so a rewrite that keeps the branch ref fails", () => {
   const branch = "AntelopeJS/.github/.github/workflows/ci-node.yml@fix/branch";
-  const text = `# keep me\nname: ci\non: [push, workflow_dispatch]\njobs:\n  ci:\n    uses: ${branch} # pinned\n    with:\n      docs-files: README.md\n      renovate-sync: true\n  deploy:\n    needs: ci\n    runs-on: ubuntu-latest\n    steps: []\n`;
+  const text = `# keep me\nname: ci\non: [push, workflow_dispatch]\njobs:\n  ci:\n    uses: ${branch} # pinned\n    with:\n      docs-files: README.md\n      renovate-sync: true\n  deploy:\n    needs: ci\n    runs-on: blacksmith-4vcpu-ubuntu-2404\n    steps: []\n`;
   const rewritten = rewrite(text);
   const parsed = jobs(rewritten);
   assert.equal(parsed.ci.uses, CI_NODE_REF);
@@ -221,7 +222,7 @@ test("rewriting keeps the other inputs, comments and other jobs and moves a call
   assert.deepEqual(parsed.ci.permissions, { contents: "read" });
   assert.deepEqual(parsed.deploy, {
     needs: "ci",
-    "runs-on": "ubuntu-latest",
+    "runs-on": "blacksmith-4vcpu-ubuntu-2404",
     steps: [],
   });
   assert.match(rewritten, /^# keep me\n/);

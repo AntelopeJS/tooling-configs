@@ -20,7 +20,8 @@ export function neededIds(job: YAMLMap): string[] {
   );
 }
 
-function isText(value: unknown): value is string {
+/** Whether `value` is a string. */
+export function isText(value: unknown): value is string {
   return String(value) === value;
 }
 
@@ -40,7 +41,8 @@ function expressionsOf(job: YAMLMap): string[] {
   return expressions;
 }
 
-function referencedIds(job: YAMLMap): string[] {
+/** The ids `job` reads as `needs.<id>` or `needs['<id>']` in its `if:` conditions and `${{ }}` expressions. */
+export function referencedIds(job: YAMLMap): string[] {
   return expressionsOf(job).flatMap((expression) =>
     [...expression.matchAll(NEEDS_REFERENCE)].map(
       ([, dotted, , quoted]) => dotted ?? quoted,

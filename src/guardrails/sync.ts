@@ -83,6 +83,8 @@ export interface RepoContext extends AgentsBlockContext {
 interface ArtifactContent {
   content: string;
   notes: string[];
+  /** What sync cannot fix in the file and only reports. */
+  advisories?: string[];
 }
 
 interface ManagedArtifact {
@@ -153,13 +155,17 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
     path: CI_PATH,
     profiles: ["full", "template"],
     desired: (current, context) => {
-      const content = ciWorkflow(
+      const { content, advisories } = ciWorkflow(
         current,
         current === undefined ? [] : ciNodeCallers(current),
         current === undefined ? [] : ciRenovateSyncCallers(current),
         { ...context.ci, docsFiles: context.docs },
       );
-      return { content, notes: verdictNotes(CI_PATH, current, content) };
+      return {
+        content,
+        notes: verdictNotes(CI_PATH, current, content),
+        advisories,
+      };
     },
   },
   {
@@ -222,12 +228,18 @@ export type PlannedArtifact =
   | { kind: "remove"; path: string }
   | { kind: "error"; path: string; message: string };
 
+interface PlannedSync {
+  artifacts: PlannedArtifact[];
+  advisories: string[];
+}
+
 function planSync(
   current: ReadonlyMap<string, string>,
   executables: ReadonlySet<string>,
   context: RepoContext,
-): PlannedArtifact[] {
+): PlannedSync {
   const plan: PlannedArtifact[] = [];
+  const advisories: string[] = [];
   for (const preset of PRESET_CONFIGS) {
     for (const file of preset.legacy) {
       if (current.has(file))
@@ -242,10 +254,9 @@ function planSync(
     if (!artifact.profiles.includes(context.profile)) continue;
     if (artifact.path === CI_PATH && !context.managesCi) continue;
     try {
-      const { content, notes } = artifact.desired(
-        current.get(artifact.path),
-        context,
-      );
+      const desired = artifact.desired(current.get(artifact.path), context);
+      const { content, notes } = desired;
+      advisories.push(...(desired.advisories ?? []));
       const changed =
         current.get(artifact.path) !== content ||
         (artifact.mode !== undefined &&
@@ -276,7 +287,7 @@ function planSync(
     }
   }
   plan.push(...plannedDocs(context.docs));
-  return plan;
+  return { artifacts: plan, advisories };
 }
 
 function plannedDocs(docs: DocsPlan | undefined): PlannedArtifact[] {
@@ -432,7 +443,8 @@ export function syncRepository(
     ...retiredWorkflowArtifacts(root, integrationBranch !== undefined),
     ...testTimeoutArtifacts(root),
   ];
-  const synced = [...planSync(current, executables, context), ...standalone];
+  const planned = planSync(current, executables, context);
+  const synced = [...planned.artifacts, ...standalone];
   const plan = [
     ...synced,
     ...sharedRefArtifacts(root, new Set(synced.map(({ path }) => path))),
@@ -480,6 +492,7 @@ export function syncRepository(
     errors,
     notes,
     advisories: [
+      ...planned.advisories,
       ...entryOnly.advisories,
       ...coverage.advisories,
       ...timeouts.advisories,

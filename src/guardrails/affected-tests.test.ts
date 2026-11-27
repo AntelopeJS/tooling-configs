@@ -165,11 +165,13 @@ function rewrite(text: string, affectedTests: boolean): string {
   return ciWorkflow(text, ciNodeCallers(text), ciRenovateSyncCallers(text), {
     affectedTests,
     profile: ciProfile("@antelopejs-private/cloud"),
-  });
+  }).content;
 }
 
 test("a fitting repository gets affected-tests: true on a new or existing caller, once, so a sync that never writes it or reports it as drift fails", () => {
-  const written = ciWorkflow(undefined, [], [], { affectedTests: true });
+  const written = ciWorkflow(undefined, [], [], {
+    affectedTests: true,
+  }).content;
   assert.equal(inputs(written)?.["affected-tests"], true);
   const bare = `jobs:\n  ci:\n    uses: ${CI_NODE_REF}\n`;
   const once = rewrite(bare, true);
@@ -180,11 +182,11 @@ test("a fitting repository gets affected-tests: true on a new or existing caller
 
 test("a misfitting repository gets no affected-tests input and keeps one it set, so a sync that writes it everywhere or erases a hand-set value fails", () => {
   assert.equal(
-    ciWorkflow(undefined, [], [], { affectedTests: false }),
-    ciWorkflow(undefined, [], [], {}),
+    ciWorkflow(undefined, [], [], { affectedTests: false }).content,
+    ciWorkflow(undefined, [], [], {}).content,
   );
   assert.equal(
-    inputs(ciWorkflow(undefined, [], [], {}))?.["affected-tests"],
+    inputs(ciWorkflow(undefined, [], [], {}).content)?.["affected-tests"],
     undefined,
   );
   const own = CI_CALLER.replace(
@@ -192,7 +194,7 @@ test("a misfitting repository gets no affected-tests input and keeps one it set,
     "test-job: true\n      affected-tests: true",
   );
   assert.equal(
-    ciWorkflow(own, ciNodeCallers(own), ciRenovateSyncCallers(own), {}),
+    ciWorkflow(own, ciNodeCallers(own), ciRenovateSyncCallers(own), {}).content,
     own,
   );
 });

@@ -26,7 +26,7 @@ const SLOW_TEST_PACKAGES = [
 function rewrite(text: string, profile?: CiProfile): string {
   return ciWorkflow(text, ciNodeCallers(text), ciRenovateSyncCallers(text), {
     profile,
-  });
+  }).content;
 }
 
 interface CallerView {
@@ -42,7 +42,10 @@ test("a new caller passes no secrets, so a sync that still writes NOTION_TOKEN i
   assert.equal(caller(CI_CALLER).secrets, undefined);
   const bare = `jobs:\n  ci:\n    uses: ${CI_NODE_REF}\n`;
   assert.equal(caller(rewrite(bare)).secrets, undefined);
-  assert.equal(caller(ciWorkflow(undefined, [], [])).secrets, undefined);
+  assert.equal(
+    caller(ciWorkflow(undefined, [], []).content).secrets,
+    undefined,
+  );
 });
 
 test("a caller that passed NOTION_TOKEN alone loses the secrets map and a rerun changes nothing, so a sync that keeps the token, leaves an empty map or rewrites on every run fails", () => {
@@ -69,7 +72,7 @@ test("a caller with secrets: inherit keeps it, so a sync that removes it or repl
 test("the repositories whose tests take minutes get single-job: false on a new or existing caller, so a sync that leaves them in one job or forgets one of them fails", () => {
   for (const name of SLOW_TEST_PACKAGES) {
     const profile = ciProfile(name);
-    const written = ciWorkflow(undefined, [], [], { profile });
+    const written = ciWorkflow(undefined, [], [], { profile }).content;
     assert.equal(caller(written).with?.["single-job"], false, name);
     const rewritten = rewrite(CI_CALLER, profile);
     assert.equal(caller(rewritten).with?.["single-job"], false, name);

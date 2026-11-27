@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  merge_group:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: AntelopeJS/.github/.github/workflows/ci-node.yml@v2
+    with:
+      docs-files: |
+        README.md
+        docs
+      docs-typescript-project: docs/tsconfig.json
+      cache-paths: ~/.cache/redis-binaries/8.10.2
+      cache-key-files: src/test/antelope.test.ts
+      renovate-sync: false
+      test-job: true
+      affected-tests: true
+    permissions:
+      contents: read
+
+  formal-billing-lease:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/antelopejs-formal
+          key: antelopejs-formal-${{ hashFiles('.agents/skills/formal-billing-lease/**', 'pnpm-lock.yaml') }}
+          restore-keys: antelopejs-formal-
+      - run: node .agents/skills/formal-billing-lease/check.mjs
+
+  checks:
+    if: always()
+    needs: [ci, formal-billing-lease]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        run: exit 1
+  renovate-sync:
+    if: >-
+      github.event_name == 'pull_request' && startsWith(github.head_ref, 'renovate/') && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+      actions: write
+      statuses: write
+    uses: AntelopeJS/.github/.github/workflows/ci-renovate-sync.yml@v2

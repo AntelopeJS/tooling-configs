@@ -14,6 +14,9 @@ import {
   LEGACY_AGGREGATOR_ID,
 } from "./ci-aggregator.ts";
 import { setCallersDocsFiles, type DocsFilesPlan } from "./ci-docs-files.ts";
+import { formalPlan, type FormalPlan } from "./ci-formal.ts";
+import { settleHandWritten } from "./ci-hand-written.ts";
+import { dropWindows } from "./ci-windows.ts";
 import {
   assertNothingNeedsVerdict,
   DISPATCH_TRIGGER,
@@ -157,36 +160,6 @@ function setTriggers(document: Document, profile: CiProfile): boolean {
   return true;
 }
 
-/** Whether the caller asks for Windows beyond the default: any `windows` value but an opt-out `false`, or Windows on pull requests. */
-function asksForWindows(inputs: YAMLMap, key: string): boolean {
-  return (
-    key === "windows-pull-requests" ||
-    (key === "windows" && inputs.get("windows") !== false)
-  );
-}
-
-function dropWindows(
-  jobs: YAMLMap,
-  callers: readonly { id: string }[],
-  profile: CiProfile,
-): boolean {
-  if (profile.windowsOnPullRequests) return false;
-  let changed = false;
-  for (const { id } of callers) {
-    const inputs = jobs.getIn([id, "with"], true);
-    if (!isMap(inputs)) continue;
-    const before = inputs.items.length;
-    inputs.items = inputs.items.filter(
-      ({ key }) =>
-        !(isScalar(key) && asksForWindows(inputs, String(key.value))),
-    );
-    if (inputs.items.length === before) continue;
-    if (!inputs.items.length) jobs.deleteIn([id, "with"]);
-    changed = true;
-  }
-  return changed;
-}
-
 function grants(job: YAMLMap, expected: Record<string, string>): boolean {
   const granted = job.get("permissions", true);
   const names = Object.keys(expected);
@@ -229,7 +202,7 @@ function pinCallerRefs(
   syncCallers: readonly { id: string }[],
   profile: CiProfile,
 ): boolean {
-  const windows = dropWindows(jobs, callers, profile);
+  const windows = !profile.windowsOnPullRequests && dropWindows(jobs, callers);
   const node = pinRefs(jobs, callers, CI_NODE_REF);
   return pinRefs(jobs, syncCallers, CI_RENOVATE_SYNC_REF) || node || windows;
 }
@@ -415,6 +388,12 @@ function renameCaller(
   return true;
 }
 
+/** The ci.yml text sync wants, and the findings it only reports. */
+export interface CiWorkflowResult {
+  content: string;
+  advisories: string[];
+}
+
 /** What sync knows of the repository when it plans its caller. */
 export interface CiPlan {
   docsFiles?: DocsFilesPlan;
@@ -422,9 +401,11 @@ export interface CiPlan {
   profile?: CiProfile;
   /** Whether the caller passes `affected-tests: true`, so ci-node.yml runs only the affected tests on a pull request. */
   affectedTests?: boolean;
+  /** The repository's formal skills; absent, the workflow's formal jobs and `formal-checks` input stay as they are. */
+  formal?: FormalPlan;
 }
 
-/** What the repository at `root` tells the caller: whether its `test` script only stands in for tests, the profile its name selects, and whether its affected tests fit. */
+/** What the repository at `root` tells the caller: whether its `test` script only stands in for tests, the profile its name selects, whether its affected tests fit, and its formal check skills. */
 export function callerPlan(
   root: string,
   manifest: { name?: string; scripts?: Record<string, string> },
@@ -433,6 +414,7 @@ export function callerPlan(
     placeholderTests: placeholderTestScript(manifest.scripts?.test),
     profile: ciProfile(manifest.name),
     affectedTests: affectedTestsFit(root),
+    formal: formalPlan(root),
   };
 }
 
@@ -457,13 +439,14 @@ export function callerPlan(
  * ref it had. A workflow with no caller job is repository-specific CI and is left as it is.
  * When `docsFiles` computes paths, every caller's `docs-files` input lists them first, then keeps its hand-listed paths
  * that still exist, so sync never drops coverage.
+ * The jobs with no job-level `uses` follow {@link settleHandWritten}.
  */
 export function ciWorkflow(
   current: string | undefined,
   callers: { id: string; named: boolean }[],
   syncCallers: { id: string }[],
   plan: CiPlan = {},
-): string {
+): CiWorkflowResult {
   const { docsFiles, profile = DEFAULT_PROFILE } = plan;
   const placeholderTests = plan.placeholderTests === true;
   if (current === undefined)
@@ -473,14 +456,14 @@ export function ciWorkflow(
       [{ id: RENOVATE_SYNC_JOB_ID }],
       plan,
     );
-  if (!callers.length) return current;
+  if (!callers.length) return { content: current, advisories: [] };
   const document = parseDocument(current);
   if (document.errors.length)
     throw new Error(
       `${CI_PATH}: ${document.errors.map(({ message }) => message).join("; ")}`,
     );
   const jobs = document.get("jobs", true);
-  if (!isMap(jobs)) return current;
+  if (!isMap(jobs)) return { content: current, advisories: [] };
   restoreEmptyValueComments(document, current);
   const caller = callers.find(({ id }) => id === CI_JOB_ID) ?? callers[0];
   assertNoClash(jobs, caller.id, syncCallers.length > 0);
@@ -488,7 +471,7 @@ export function ciWorkflow(
   const pair = jobs.items.find(
     ({ key }) => isScalar(key) && key.value === caller.id,
   );
-  if (!pair || !isMap(pair.value)) return current;
+  if (!pair || !isMap(pair.value)) return { content: current, advisories: [] };
   let changed = setCallersDocsFiles(document, jobs, callers, docsFiles);
   changed = pinCallerRefs(jobs, callers, syncCallers, profile) || changed;
   changed =
@@ -498,11 +481,23 @@ export function ciWorkflow(
   changed = skipRenovateSync(document, pair.value) || changed;
   changed =
     setCallerInputs(document, pair.value, placeholderTests, plan) || changed;
+  const triggers = setTriggers(document, profile);
+  const hand = settleHandWritten(
+    document,
+    jobs,
+    { id: CI_JOB_ID, job: pair.value },
+    plan.formal,
+    CI_PATH,
+  );
   const settled = settleJobs(document, jobs, syncCallers);
-  changed = setTriggers(document, profile) || settled.changed || changed;
+  changed = triggers || settled.changed || changed;
   const stale = staleNeeds(document, CI_PATH, settled.removed);
   if (stale.length) throw new Error(stale.join("\n"));
-  if (!changed) return current;
+  const { advisories } = hand;
+  if (!changed && !hand.changed) return { content: current, advisories };
   blockOverflowingFlow(document);
-  return document.toString({ lineWidth: 0, flowCollectionPadding: false });
+  return {
+    content: document.toString({ lineWidth: 0, flowCollectionPadding: false }),
+    advisories,
+  };
 }

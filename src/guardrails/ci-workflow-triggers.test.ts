@@ -15,7 +15,7 @@ import { ciNodeCallers, ciRenovateSyncCallers } from "./workflow.ts";
 function rewrite(text: string, profile?: CiProfile): string {
   return ciWorkflow(text, ciNodeCallers(text), ciRenovateSyncCallers(text), {
     profile,
-  });
+  }).content;
 }
 
 const DISPATCH = {
@@ -104,7 +104,7 @@ test("cloud keeps its develop integration branch and gets the merge_group trigge
   assert.deepEqual(triggers(rewritten), develop);
   assert.equal(rewrite(rewritten, cloud), rewritten);
   assert.deepEqual(
-    triggers(ciWorkflow(undefined, [], [], { profile: cloud })),
+    triggers(ciWorkflow(undefined, [], [], { profile: cloud }).content),
     develop,
   );
   assert.deepEqual(triggers(rewrite(CI_CALLER)), TRUNK_TRIGGERS);
@@ -168,7 +168,9 @@ test("antelopejs and cloud-sdk keep their Windows inputs and sync writes none, s
     const kept = withInputs(rewrite(WINDOWS_CALLER, profile));
     assert.equal(kept.windows, true, name);
     assert.equal(kept["windows-pull-requests"], true, name);
-    const written = withInputs(ciWorkflow(undefined, [], [], { profile }));
+    const written = withInputs(
+      ciWorkflow(undefined, [], [], { profile }).content,
+    );
     assert.equal(Object.hasOwn(written, "windows"), false, name);
     assert.equal(Object.hasOwn(written, "windows-pull-requests"), false, name);
   }
