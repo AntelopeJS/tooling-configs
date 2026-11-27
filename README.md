@@ -441,7 +441,7 @@ export default antelopeKnipConfig();
 
 The defaults declare what Knip cannot infer for an AntelopeJS module:
 
-- entry points: `src/interfaces/**/*.ts` (public API), `src/test/**` and `antelope.test.ts` (run by `ajs module test`), and `scripts/**`;
+- entry points: `src/interfaces/**/*.ts` (public API), `src/test/**` and `antelope.test.ts` (run by `ajs module test`), and `scripts/**/*.{ts,mts,mjs}`;
 - ignored: `dist/**`, `playground/**`, `.antelope/**`, and the `@antelopejs/*` dependencies, which the runtime loads by name.
 
 `entry`, `project`, `ignore`, `ignoreDependencies` and `ignoreBinaries` options are appended to the defaults. `frontend-vue/` stays out of `project`, so a repository can opt it in through Knip's `workspaces`.

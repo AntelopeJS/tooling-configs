@@ -41,10 +41,10 @@ const DEFAULT_ENTRY = [
   "src/interfaces/**/*.ts",
   "src/test/**",
   "antelope.test.ts",
-  "scripts/**/*.{ts,mjs}",
+  "scripts/**/*.{ts,mts,mjs}",
 ];
 
-const DEFAULT_PROJECT = ["src/**/*.ts", "scripts/**/*.{ts,mjs}"];
+const DEFAULT_PROJECT = ["src/**/*.ts", "scripts/**/*.{ts,mts,mjs}"];
 
 const DEFAULT_IGNORE = ["dist/**", "playground/**", ".antelope/**"];
 
