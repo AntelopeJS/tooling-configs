@@ -43,9 +43,9 @@ const OWN_POLICY: ReadonlyMap<
   readonly (typeof REQUIRED_RULES)[number][]
 > = new Map([["k8s-gitops-infra", ["required_linear_history"]]]);
 
-/** Repositories whose default branch has no merge queue, each with the reason. */
+/** Repositories whose default branch has no merge queue (cloud queues on develop), each with the reason. */
 const WITHOUT_MERGE_QUEUE: ReadonlyMap<string, string> = new Map([
-  ["cloud", "it collects changes on develop"],
+  ["cloud", "its merge queue is on develop, not on the default branch"],
   ["k8s-gitops-infra", "only a person merges there"],
   ["antelope-compliance", "an infra repository where only a person merges"],
   ["antelope-hardening", "an infra repository where only a person merges"],
