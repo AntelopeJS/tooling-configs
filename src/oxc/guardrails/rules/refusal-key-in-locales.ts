@@ -86,13 +86,20 @@ export const refusalKeyInLocalesRule = defineRule({
   createOnce(context) {
     let locales: Locales | undefined;
     const visitors = refusalVisitors(context, (message) => {
-      locales ??= packageLocales(context.filename);
-      if (locales.namespaces.size === 0) return;
-      for (const { text, exact } of messageTexts(message, context)) {
+      const owned = () => {
+        locales ??= packageLocales(context.filename);
+        return locales;
+      };
+      for (const { text, exact } of messageTexts(
+        message,
+        context,
+        () => owned().namespaces.size > 0,
+      )) {
         const key = exact ? REFUSAL_KEY.exec(text)?.[1] : undefined;
         if (key === undefined) continue;
         const [namespace = ""] = key.split(".");
-        if (locales.namespaces.has(namespace) && !locales.keys.has(key))
+        const { namespaces, keys } = owned();
+        if (namespaces.has(namespace) && !keys.has(key))
           context.report({
             node: message,
             messageId: "missing",

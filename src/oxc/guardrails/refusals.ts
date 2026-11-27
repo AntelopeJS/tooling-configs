@@ -78,7 +78,7 @@ function staticValue(
 }
 
 /** A text a refusal message can hold. */
-type Text = Extract<Static, { kind: "text" }>;
+type RefusalText = Extract<Static, { kind: "text" }>;
 
 /** What a rule's context gives the refusal helpers: the linted file and its source. */
 export interface RefusalContext {
@@ -86,7 +86,10 @@ export interface RefusalContext {
   readonly sourceCode: SourceCode;
 }
 
-function literalTypes(message: ESTree.Node, context: RefusalContext): Text[] {
+function literalTypes(
+  message: ESTree.Node,
+  context: RefusalContext,
+): RefusalText[] {
   const linted = lintedSource(context.filename, context.sourceCode.text);
   const typed = linted && typedFile(context.filename, linted.text);
   if (linted === undefined || typed === undefined) return [];
@@ -98,21 +101,23 @@ function literalTypes(message: ESTree.Node, context: RefusalContext): Text[] {
   );
   if (expression === undefined) return [];
   const type = typed.checker.getTypeAtLocation(expression);
-  return (type.isUnion() ? type.types : [type]).flatMap((member): Text[] =>
-    member.isStringLiteral()
-      ? [{ kind: "text", text: member.value, exact: true }]
-      : [],
+  return (type.isUnion() ? type.types : [type]).flatMap(
+    (member): RefusalText[] =>
+      member.isStringLiteral()
+        ? [{ kind: "text", text: member.value, exact: true }]
+        : [],
   );
 }
 
-/** The texts a refusal message can hold: its static value, otherwise each string literal its type allows, as a member of an `as const` object read from this file or another one has. Empty when neither tells. */
+/** The texts a refusal message can hold: its static value, otherwise, when `typed` allows it, each string literal its type allows, as a member of an `as const` object read from this file or another one has. Empty when neither tells. */
 export function messageTexts(
   message: ESTree.Node,
   context: RefusalContext,
-): Text[] {
+  typed: () => boolean = () => true,
+): RefusalText[] {
   const value = staticValue(message, context.sourceCode);
   if (value !== null) return value.kind === "text" ? [value] : [];
-  return literalTypes(message, context);
+  return typed() ? literalTypes(message, context) : [];
 }
 
 function messageOf(argument: ESTree.Argument | undefined): ESTree.Node | null {

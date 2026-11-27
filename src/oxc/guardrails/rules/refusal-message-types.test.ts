@@ -22,7 +22,6 @@ export type MixedKey = RefusalKey | "$dms_app.auth.forbidden";
 `;
 
 const FILES = {
-  "package.json": JSON.stringify({ name: "dms-typed-fixture" }),
   "tsconfig.json": JSON.stringify({
     compilerOptions: {
       strict: true,
@@ -43,12 +42,20 @@ const FILES = {
   "src/routes/connections.ts": "export {};\n",
 };
 
-const root = mkdtempSync(join(tmpdir(), "antelope-refusal-types-"));
-for (const [path, text] of Object.entries(FILES)) {
-  mkdirSync(dirname(join(root, path)), { recursive: true });
-  writeFileSync(join(root, path), text);
+const base = mkdtempSync(join(tmpdir(), "antelope-refusal-types-"));
+
+function project(name: string): string {
+  const root = join(base, name);
+  const files = { ...FILES, "package.json": JSON.stringify({ name }) };
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), text);
+  }
+  return join(root, "src/routes/connections.ts");
 }
-const filename = join(root, "src/routes/connections.ts");
+
+const filename = project("dms-typed-fixture");
+const nonDms = project("plain-typed-fixture");
 const imported = 'import { REFUSALS, LOOSE } from "../refusals";\n';
 const keys = 'import type { RefusalKey, MixedKey } from "../refusals";\n';
 const missing = (key: string) => ({ messageId: "missing", data: { key } });
@@ -87,7 +94,7 @@ tester.run("antelopejs/refusal-key-in-locales", refusalKeyInLocalesRule, {
   ],
   invalid: [
     {
-      name: "dms-database: a missing key read from a const object in another file",
+      name: "a missing key read from a const object in another file",
       code: `${imported}assert(ok, 404, REFUSALS.gone);`,
       filename,
       errors: [missing("dms_app.connections.gone")],
@@ -125,6 +132,11 @@ tester.run("antelopejs/refusal-message-is-key", refusalMessageIsKeyRule, {
       name: "a key read from a const object in another file",
       code: `${imported}assert(ok, 404, REFUSALS.unknown);`,
       filename,
+    },
+    {
+      name: "a non-DMS module's sentence read from a const object is its own message",
+      code: `${imported}assert(ok, 404, REFUSALS.sentence);`,
+      filename: nonDms,
     },
     {
       name: "a message typed string",
