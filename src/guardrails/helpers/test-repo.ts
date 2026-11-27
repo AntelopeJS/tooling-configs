@@ -110,10 +110,15 @@ function binEnv(env: Record<string, string | undefined>) {
     [CI_TIER_ENV]: _tier,
     ...inherited
   } = process.env;
-  return { ...inherited, CI: "1", ...env };
+  return {
+    ...inherited,
+    CI: "1",
+    npm_config_manage_package_manager_versions: "false",
+    ...env,
+  };
 }
 
-/** Runs a bin from source as CI would, without the caller's pull request base, checks skip or CI tier, plus `env`, where an `undefined` value unsets the inherited variable. */
+/** Runs a bin from source as CI would, without the caller's pull request base, checks skip or CI tier, plus `env`, where an `undefined` value unsets the inherited variable. The pnpm the bin spawns runs as itself whatever version a fixture's `packageManager` pins, so it never fetches that version from the registry a test points it at. */
 export function bin(
   root: string,
   name: string,
