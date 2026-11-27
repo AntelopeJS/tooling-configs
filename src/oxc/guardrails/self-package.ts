@@ -1,9 +1,11 @@
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-type Json = string | number | boolean | null | Json[] | JsonObject;
+/** A value `JSON.parse` returns. */
+export type Json = string | number | boolean | null | Json[] | JsonObject;
 
-interface JsonObject {
+/** A JSON object. */
+export interface JsonObject {
   [key: string]: Json;
 }
 
@@ -23,11 +25,13 @@ const DEPENDENCY_FIELDS = [
   "optionalDependencies",
 ];
 
-function isObject(value: Json | undefined): value is JsonObject {
+/** Whether a JSON value is an object, not an array or null. */
+export function isObject(value: Json | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isText(value: Json | undefined): value is string {
+/** Whether a JSON value is a string. */
+export function isText(value: Json | undefined): value is string {
   return typeof value === "string";
 }
 

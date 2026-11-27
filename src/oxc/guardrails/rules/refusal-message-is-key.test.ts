@@ -44,6 +44,11 @@ tester.run("antelopejs/refusal-message-is-key", refusalMessageIsKeyRule, {
     { code: 'new HTTPResult(404, { code: "Not here" });', filename },
     { code: 'other(ok, 403, "Forbidden sentence");', filename },
     {
+      name: "a local function named assert imported from elsewhere under another name is not the HTTP assert",
+      code: 'import { check as assert } from "./checks"; assert(ok, 404, "Not here");',
+      filename,
+    },
+    {
       name: "a non-DMS module's HTTPResult sentence is its own message",
       code: 'import { HTTPResult } from "@antelopejs/interface-api"; throw new HTTPResult(404, "User not found");',
       filename: nonDms,
@@ -122,6 +127,18 @@ tester.run("antelopejs/refusal-message-is-key", refusalMessageIsKeyRule, {
     {
       name: "HTTPResult 4xx other than the assert statuses",
       code: 'new HTTPResult(401, "Unauthorized");',
+      filename,
+      errors: [error],
+    },
+    {
+      name: "interface-dms table-view: an assert imported under another name",
+      code: 'import { assert as throwHttpAssert } from "@antelopejs/interface-api-util"; throwHttpAssert(current, 404, "Not Found");',
+      filename,
+      errors: [error],
+    },
+    {
+      name: "an HTTPResult imported under another name",
+      code: 'import { HTTPResult as Refusal } from "@antelopejs/interface-api"; throw new Refusal(404, "User not found");',
       filename,
       errors: [error],
     },
