@@ -56,6 +56,9 @@ const SKILL_FOLDER = /^formal-[\w-]+$/;
 const CHECK_LINE =
   /^node \.agents\/skills\/(formal-[\w-]+)\/check\.mjs(?:\s+(\S.*))?$/;
 const CHECK_PATH = /\.agents\/skills\/(formal-[\w-]+)\/check\.mjs/;
+const MATRIX_CHECK_PATH =
+  /\.agents\/skills\/\$\{\{\s*matrix\.[\w-]+\s*\}\}\/check\.mjs/;
+const LOCAL_WORKFLOW = /^\.\/\.github\/workflows\//;
 const SETUP_LINE = /^(?:corepack enable|pnpm install(?:\s.*)?)$/;
 const MOVABLE_JOB_KEYS = new Set([
   "name",
@@ -213,6 +216,29 @@ function skillsRunBy(job: YAMLMap): string[] {
   );
 }
 
+function runsMatrixCheck(job: YAMLMap): boolean {
+  return stepsOf(job).some((step) =>
+    MATRIX_CHECK_PATH.test(String(step.get("run") ?? "")),
+  );
+}
+
+/**
+ * Whether the repository selects its formal checks itself: a job of `jobs` calls a local reusable workflow and its id
+ * starts with `formal`, or a hand-written job runs `check.mjs` of a skill chosen by a matrix. Such a job runs checks
+ * sync cannot list, so every formal skill stays out of the input.
+ */
+function hasOwnSelector(jobs: YAMLMap): boolean {
+  return jobs.items.some(
+    ({ key, value }) =>
+      isScalar(key) &&
+      isMap(value) &&
+      (value.has("uses")
+        ? String(key.value).startsWith("formal") &&
+          LOCAL_WORKFLOW.test(String(value.get("uses") ?? ""))
+        : runsMatrixCheck(value)),
+  );
+}
+
 function readByOthers(jobs: YAMLMap, id: string): boolean {
   return jobs.items.some(
     ({ key, value }) =>
@@ -230,7 +256,11 @@ interface Absorbed {
 }
 
 function absorbJobs(jobs: YAMLMap, known: ReadonlySet<string>): Absorbed {
-  const absorbed: Absorbed = { moved: [], removed: [], kept: new Set() };
+  const absorbed: Absorbed = {
+    moved: [],
+    removed: [],
+    kept: hasOwnSelector(jobs) ? new Set(known) : new Set(),
+  };
   for (const { id, job } of handWrittenJobs(jobs)) {
     if (!isFormalJob(id, job)) continue;
     const moved = movedChecks(job, known);
@@ -373,7 +403,7 @@ function setChecks(
  * `extra-commands` line ran when it had arguments; its `paths` are the files the skill's coverage record lists, none when
  * the record names a file it cannot resolve, and those of the entry it replaces when there is no record. A formal job that
  * only sets up Node, Java and a cache and runs `check.mjs` lines, and that no other job reads, is deleted and removed from the `needs` of
- * every job, and a job it was the only need of needs `caller` instead; a formal job that does more stays and its skills stay out of the input. An `extra-commands` line that only
+ * every job, and a job it was the only need of needs `caller` instead; a formal job that does more stays and its skills stay out of the input, and a repository that selects its checks itself, through a `formal*` job calling a local reusable workflow or a job running `check.mjs` over a matrix, keeps every skill out of the input and loses the entries an earlier sync wrote. An `extra-commands` line that only
  * runs a skill's `check.mjs` is removed, and the input with it when nothing else is left. Throws when the current
  * `formal-checks` is not a JSON array of objects with a `skill` string.
  */

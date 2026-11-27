@@ -194,3 +194,39 @@ test("antelope-web: with gateHandJobs, the site build matrix joins ci's needs, s
   assert.deepEqual(ciFindings(once.content), []);
   assert.equal(syncCi(once.content, WEB).content, once.content);
 });
+
+const DMS_SKILLS = [
+  "formal-a",
+  "formal-b",
+  "formal-c",
+  "formal-d",
+  "formal-e",
+  "formal-f",
+  "formal-g",
+  "formal-h",
+  "formal-i",
+  "formal-j",
+  "formal-k",
+];
+
+test("dms: the formal and formal-generated jobs calling local workflows keep every skill out of formal-checks, and an input an earlier sync wrote is removed", () => {
+  const formal = {
+    skills: DMS_SKILLS.map((name) => ({ name, markdown: "" })),
+    files: [],
+  };
+  const before = fixture("dms-ci.yml");
+  const once = syncCi(before, { formal });
+  assert.equal(callerInputs(once.content)["formal-checks"], undefined);
+  assert.ok(jobsOf(once.content).formal.uses);
+  assert.ok(jobsOf(once.content)["formal-generated"].uses);
+  assert.equal(syncCi(once.content, { formal }).content, once.content);
+  const written = before.replace(
+    "      module-locks: true\n",
+    `      module-locks: true\n      formal-checks: |\n        [\n          {"skill": "formal-a"}\n        ]\n`,
+  );
+  assert.notEqual(written, before);
+  assert.equal(
+    callerInputs(syncCi(written, { formal }).content)["formal-checks"],
+    undefined,
+  );
+});
