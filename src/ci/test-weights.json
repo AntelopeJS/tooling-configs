@@ -135,6 +135,7 @@
   "src/guardrails/typescript7-install.test.ts": 43.8,
   "src/guardrails/typescript7.test.ts": 5,
   "src/guardrails/workspace-members.test.ts": 0,
+  "src/knip.test.ts": 0,
   "src/lease/concurrency.test.ts": 7.1,
   "src/lease/env.test.ts": 0.5,
   "src/lease/exec.test.ts": 0,
