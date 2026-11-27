@@ -17,6 +17,13 @@ const FILES = [
   ".agents/skills/formal-x/server.ts",
 ];
 
+function pathsOf(
+  ...args: Parameters<typeof coveragePaths>
+): string[] | undefined {
+  const found = coveragePaths(...args);
+  return found.kind === "paths" ? found.paths : undefined;
+}
+
 function record(heading: string, ...rows: string[]): string {
   return `# Formal check\n\n${heading}\n\n| Model | Code |\n| --- | --- |\n${rows.join("\n")}\n\nAfter.\n`;
 }
@@ -27,7 +34,7 @@ test("the files of a coverage record table are its paths, sorted and deduplicate
     "| `Init` | records.ts:24-64 and engine.ts:9 |",
     "| `Tick` | `transitions.ts`, `src/engine.ts:166-180` |",
   );
-  assert.deepEqual(coveragePaths(markdown, FILES, SKILL), [
+  assert.deepEqual(pathsOf(markdown, FILES, SKILL), [
     "src/engine.ts",
     "src/records.ts",
     "src/transitions.ts",
@@ -44,7 +51,7 @@ test("the payment-subscriptions record resolves to the five files its table name
     "src/triggers.ts",
   ];
   assert.deepEqual(
-    coveragePaths(
+    pathsOf(
       fixture("payment-subscriptions-formal-billing-lease.SKILL.md"),
       files,
       "formal-billing-lease",
@@ -65,19 +72,17 @@ test("a token with no file leaves no paths at all, so a parser that narrows to t
     "| `Init` | engine.ts:1 |",
     "| `Tick` | missing.ts:9-11 |",
   );
-  assert.equal(coveragePaths(markdown, FILES, SKILL), undefined);
+  assert.equal(pathsOf(markdown, FILES, SKILL), undefined);
 });
 
 test("a bare name that matches two files leaves no paths, and a full path or a unique suffix resolves, so a parser that takes the first match fails", () => {
   const ambiguous = record("## Coverage record", "| `A` | shared.ts:1 |");
-  assert.equal(coveragePaths(ambiguous, FILES, SKILL), undefined);
+  assert.equal(pathsOf(ambiguous, FILES, SKILL), undefined);
   const exact = record(
     "## Coverage record",
     "| `A` | src/dialect/a/shared.ts:1, a/shared.ts |",
   );
-  assert.deepEqual(coveragePaths(exact, FILES, SKILL), [
-    "src/dialect/a/shared.ts",
-  ]);
+  assert.deepEqual(pathsOf(exact, FILES, SKILL), ["src/dialect/a/shared.ts"]);
 });
 
 test("a file of the skill's own folder is left out and does not spoil the rest, so a parser that lists it or treats it as unresolved fails", () => {
@@ -86,43 +91,39 @@ test("a file of the skill's own folder is left out and does not spoil the rest, 
     "| `A` | server.ts, engine.ts |",
     "| `B` | check.mjs |",
   );
-  assert.deepEqual(coveragePaths(markdown, FILES, SKILL), ["src/engine.ts"]);
+  assert.deepEqual(pathsOf(markdown, FILES, SKILL), ["src/engine.ts"]);
   const onlyOwn = record("## Coverage record", "| `A` | server.ts |");
-  assert.equal(coveragePaths(onlyOwn, FILES, SKILL), undefined);
+  assert.equal(pathsOf(onlyOwn, FILES, SKILL), undefined);
 });
 
 test("the header and separator rows and the lines outside the table are skipped, so a parser that reads the whole section fails", () => {
   const markdown = `## Coverage record\n\nSee clock.ts in prose.\n\n| header.ts | Code |\n| --- | --- |\n| \`A\` | engine.ts |\n\n- bullet.ts\n`;
-  assert.deepEqual(coveragePaths(markdown, FILES, SKILL), ["src/engine.ts"]);
+  assert.deepEqual(pathsOf(markdown, FILES, SKILL), ["src/engine.ts"]);
 });
 
 test("Coverage record wins over Scope and assumptions, and either heading may be level 2 or 3, so a parser that reads the first table of the file fails", () => {
   const both = `## Scope and assumptions\n\n| A | B |\n| --- | --- |\n| x | clock.ts |\n\n### Coverage record\n\n| A | B |\n| --- | --- |\n| x | engine.ts |\n`;
-  assert.deepEqual(coveragePaths(both, FILES, SKILL), ["src/engine.ts"]);
+  assert.deepEqual(pathsOf(both, FILES, SKILL), ["src/engine.ts"]);
   const scope = `### Scope and assumptions\n\n| A | B |\n| --- | --- |\n| x | clock.ts |\n`;
-  assert.deepEqual(coveragePaths(scope, FILES, SKILL), ["src/clock.ts"]);
+  assert.deepEqual(pathsOf(scope, FILES, SKILL), ["src/clock.ts"]);
 });
 
 test("a section ends at the next heading of its level or above and ignores a heading inside a code fence, so a parser that reads to the end of the file fails", () => {
   const markdown = `## Coverage record\n\n| A | B |\n| --- | --- |\n| x | engine.ts |\n\n\`\`\`sh\n# not a heading\n\`\`\`\n\n| A | B |\n| --- | --- |\n| x | records.ts |\n\n## Next\n\n| A | B |\n| --- | --- |\n| x | clock.ts |\n`;
-  assert.deepEqual(coveragePaths(markdown, FILES, SKILL), [
+  assert.deepEqual(pathsOf(markdown, FILES, SKILL), [
     "src/engine.ts",
     "src/records.ts",
   ]);
 });
 
 test("a record without the heading, without a table or without a source file gives no paths, so a parser that returns an empty list fails", () => {
-  assert.equal(coveragePaths("# Only a title\n", FILES, SKILL), undefined);
+  assert.equal(pathsOf("# Only a title\n", FILES, SKILL), undefined);
   assert.equal(
-    coveragePaths("## Coverage record\n\nProse only.\n", FILES, SKILL),
+    pathsOf("## Coverage record\n\nProse only.\n", FILES, SKILL),
     undefined,
   );
   assert.equal(
-    coveragePaths(
-      record("## Coverage record", "| `A` | docs only |"),
-      FILES,
-      SKILL,
-    ),
+    pathsOf(record("## Coverage record", "| `A` | docs only |"), FILES, SKILL),
     undefined,
   );
 });
@@ -146,7 +147,7 @@ test("mysql's change-feed record resolves its folder-local names to the skill fo
     ".agents/skills/formal-other/server.ts",
   ];
   assert.deepEqual(
-    coveragePaths(
+    pathsOf(
       fixture("mysql-formal-change-feed-delivery.SKILL.md"),
       files,
       skill,
@@ -179,7 +180,7 @@ test("mysql's json-value record resolves bare names by their unique suffix next 
     ].map((name) => `${DATABASE}/${name}.ts`),
   ];
   assert.deepEqual(
-    coveragePaths(
+    pathsOf(
       fixture("mysql-formal-json-value-identity.SKILL.md"),
       files,
       "formal-json-value-identity",
@@ -190,11 +191,51 @@ test("mysql's json-value record resolves bare names by their unique suffix next 
 
 test("mysql's pipeline-chains record names no source file, so a parser that invents paths from its prose fails", () => {
   assert.equal(
-    coveragePaths(
+    pathsOf(
       fixture("mysql-formal-pipeline-chains.SKILL.md"),
       FILES,
       "formal-pipeline-chains",
     ),
     undefined,
   );
+});
+
+test("an unresolved token, a glob, a folder or a .sql file says unresolved and a missing record says none, so a parser that keeps stale paths or narrows to the source files it read fails", () => {
+  assert.deepEqual(
+    coveragePaths(
+      record(
+        "## Coverage record",
+        "| `A` | engine.ts:1 |",
+        "| `B` | gone.ts |",
+      ),
+      FILES,
+      SKILL,
+    ),
+    { kind: "unresolved" },
+  );
+  for (const cell of ["`schema.sql`", "`src/*.ts`", "`src/billing/`"])
+    assert.deepEqual(
+      coveragePaths(
+        record(
+          "## Coverage record",
+          "| `A` | engine.ts:1 |",
+          `| \`B\` | ${cell} |`,
+        ),
+        FILES,
+        SKILL,
+      ),
+      { kind: "unresolved" },
+      cell,
+    );
+  assert.deepEqual(
+    coveragePaths(
+      record("## Coverage record", "| `LIVE.open` | `src/engine.ts` |"),
+      FILES,
+      SKILL,
+    ),
+    { kind: "paths", paths: ["src/engine.ts"] },
+  );
+  assert.deepEqual(coveragePaths("# Only a title\n", FILES, SKILL), {
+    kind: "none",
+  });
 });

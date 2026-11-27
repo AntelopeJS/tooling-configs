@@ -20,7 +20,7 @@ export function settleHandWritten(
 ): Settled {
   const moved =
     formal !== undefined &&
-    moveFormalChecks(document, jobs, caller.job, formal, path);
+    moveFormalChecks(document, jobs, caller, formal, path);
   const hand = rewriteHandJobs(document, jobs, path);
   const gate = wireGate(document, jobs, caller.id, path);
   return {

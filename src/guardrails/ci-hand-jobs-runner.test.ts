@@ -17,14 +17,10 @@ function runnerOf(runsOn: string): string | undefined {
   return jobsOf(text).lint["runs-on"];
 }
 
-test("a literal label maps to the Blacksmith image of its OS, so an implementation that maps every label to Linux or keeps a self-hosted label fails", () => {
-  for (const label of [
-    "ubuntu-latest",
-    "ubuntu-22.04",
-    "macos-latest",
-    "self-hosted",
-    LINUX,
-  ])
+test("a literal label maps to the Blacksmith image of its OS and a macOS or Arm label to none, so an implementation that maps every label to Linux or keeps a self-hosted label fails", () => {
+  for (const label of ["macos-latest", "macos-14", "ubuntu-24.04-arm"])
+    assert.equal(blacksmithRunsOn(label), undefined, label);
+  for (const label of ["ubuntu-latest", "ubuntu-22.04", "self-hosted", LINUX])
     assert.equal(blacksmithRunsOn(label), LINUX, label);
   for (const label of ["windows-latest", "Windows-2022", WINDOWS])
     assert.equal(blacksmithRunsOn(label), WINDOWS, label);
@@ -140,4 +136,22 @@ test("a matrix.os that is not a literal list, or whose value an if compares, is 
     compared.advisories.filter((n) => n.startsWith("Runner:")).length,
     1,
   );
+  for (const job of [
+    "  test:\n    runs-on: ${{ matrix.os }}\n    strategy:\n      matrix:\n        os: [ubuntu-latest, windows-latest]\n    steps:\n      - shell: ${{ matrix.os == 'windows-latest' && 'pwsh' || 'bash' }}\n        run: pnpm test\n",
+    "  test:\n    runs-on: ${{ matrix.os }}\n    strategy:\n      matrix:\n        os: [ubuntu-latest, windows-latest]\n        node: [22, 24]\n        exclude:\n          - os: windows-latest\n            node: 22\n    steps:\n      - run: pnpm test\n",
+    "  test:\n    runs-on: ${{ matrix.os }}\n    strategy:\n      matrix:\n        os: [ubuntu-latest, macos-latest]\n    steps:\n      - run: pnpm test\n",
+  ]) {
+    const kept = syncCi(workflowWith(job));
+    assert.ok(
+      JSON.stringify(jobsOf(kept.content).test.strategy).includes(
+        "ubuntu-latest",
+      ),
+      job,
+    );
+    assert.equal(
+      kept.advisories.filter((n) => n.startsWith("Runner:")).length,
+      1,
+      job,
+    );
+  }
 });

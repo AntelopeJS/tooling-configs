@@ -97,17 +97,16 @@ export function isAggregator(job: YAMLMap): boolean {
   return job.has("needs") && stepsOf(job).every((step) => !step.has("uses"));
 }
 
-function runnerFor(label: string): string {
-  return /windows/i.test(label)
-    ? BLACKSMITH_RUNNERS.windows
-    : BLACKSMITH_RUNNERS.linux;
+function runnerFor(label: string): string | undefined {
+  if (/windows/i.test(label)) return BLACKSMITH_RUNNERS.windows;
+  return /macos|arm/i.test(label) ? undefined : BLACKSMITH_RUNNERS.linux;
 }
 
 /**
  * The Blacksmith runner a `runs-on` string stands for: the Windows image when the label is, or the last literal of an
  * expression is, a Windows one, else the Linux image. A literal label maps to that image, and an expression made only of
  * `vars.<name>` and `'literal'` terms joined by `||`, such as `${{ vars.RUNNER_CI || 'ubuntu-latest' }}`, maps by its
- * last literal. `undefined` for any other expression, which sync cannot resolve.
+ * last literal. `undefined` for a macOS or Arm label, which no Blacksmith 4 vCPU image stands for, and for any other expression, which sync cannot resolve.
  */
 export function blacksmithRunsOn(value: string): string | undefined {
   if (!value.includes("${{")) return runnerFor(value);
@@ -155,7 +154,8 @@ function matrixOsNodes(job: YAMLMap): Scalar<string>[] | undefined {
   if (!isMap(matrix)) return undefined;
   const os = matrix.get("os", true);
   const include = matrix.get("include", true);
-  if (os !== undefined && !isSeq(os)) return undefined;
+  if ((os !== undefined && !isSeq(os)) || matrix.has("exclude"))
+    return undefined;
   const nodes = [
     ...(isSeq(os) ? os.items : []),
     ...(isSeq(include)
@@ -170,15 +170,15 @@ function matrixOsNodes(job: YAMLMap): Scalar<string>[] | undefined {
     : undefined;
 }
 
-function testsMatrixOs(job: YAMLMap): boolean {
+function readsMatrixOs(job: YAMLMap): boolean {
+  const runsOn = job.get("runs-on", true);
   let found = false;
   visit(job, {
-    Pair(_key, pair) {
+    Scalar(key, node) {
       if (
-        isScalar(pair.key) &&
-        pair.key.value === "if" &&
-        isScalar(pair.value) &&
-        String(pair.value.value).includes("matrix.os")
+        key !== "key" &&
+        node !== runsOn &&
+        String(node.value).includes("matrix.os")
       )
         found = true;
     },
@@ -190,7 +190,7 @@ function setMatrixRunners(job: YAMLMap): boolean | undefined {
   const nodes = matrixOsNodes(job);
   if (
     nodes === undefined ||
-    testsMatrixOs(job) ||
+    readsMatrixOs(job) ||
     nodes.some(({ value }) => blacksmithRunsOn(value) === undefined)
   )
     return undefined;

@@ -9,6 +9,18 @@ const SECTION_HEADINGS = [
 const FILE_TOKEN =
   /(?<![\w./-])([\w./-]+\.(?:tsx|ts|mts|cts|js|mjs|cjs|vue))(?![\w-])(?::\d+(?:-\d+)?)?/g;
 
+const OTHER_PATH =
+  /`([^`\s]*(?:\/|\*)[^`\s]*|[^`\s]+\.(?:sql|json|jsonc|ya?ml|toml|graphql|prisma|css|scss|html|md|sh|py|go|rs))`/g;
+
+/** What a coverage record says of the files a formal check models. */
+export type CoveragePaths =
+  | { kind: "paths"; paths: string[] }
+  | { kind: "unresolved" }
+  | { kind: "none" };
+
+const FILE_ONLY =
+  /^[\w./-]+\.(?:tsx|ts|mts|cts|js|mjs|cjs|vue)(?::\d+(?:-\d+)?)?$/;
+
 const SEPARATOR_ROW = /^\|[\s:|-]*-[\s:|-]*$/;
 
 function levelOf(line: string): number {
@@ -63,17 +75,24 @@ function resolveToken(
  * that file when it is one; else to the file of the skill's own folder it names; else to the one file whose path ends
  * in `/<token>`. A token that resolves to no file or to several leaves no paths at all, since a check that runs on every
  * pull request is safer than one narrowed wrongly. Files under `.agents/skills/` are left out, because a change to the
- * skill folder always runs its check. `undefined` when the record gives no path.
+ * skill folder always runs its check. A backticked path the extractor does not read as a source file, such as a glob, a
+ * folder or a `.sql` file, leaves no paths too. `unresolved` when a token leaves no paths, `none` when there is no
+ * record or it names no file outside the skill folder.
  */
 export function coveragePaths(
   markdown: string,
   files: readonly string[],
   skill: string,
-): string[] | undefined {
+): CoveragePaths {
   const section = sectionOf(markdown.split(/\r?\n/));
-  if (section === undefined) return undefined;
+  if (section === undefined) return { kind: "none" };
+  const rows = tableRows(section);
+  const other = rows.some((row) =>
+    [...row.matchAll(OTHER_PATH)].some(([, token]) => !FILE_ONLY.test(token)),
+  );
+  if (other) return { kind: "unresolved" };
   const tokens = new Set(
-    tableRows(section).flatMap((row) =>
+    rows.flatMap((row) =>
       [...row.matchAll(FILE_TOKEN)].map(([, token]) =>
         token.replace(/^\.\//, ""),
       ),
@@ -82,8 +101,10 @@ export function coveragePaths(
   const paths = new Set<string>();
   for (const token of tokens) {
     const path = resolveToken(token, files, skill);
-    if (path === undefined) return undefined;
+    if (path === undefined) return { kind: "unresolved" };
     if (!path.startsWith(`${SKILLS_DIRECTORY}/`)) paths.add(path);
   }
-  return paths.size ? [...paths].sort() : undefined;
+  return paths.size
+    ? { kind: "paths", paths: [...paths].sort() }
+    : { kind: "none" };
 }

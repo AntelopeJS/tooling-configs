@@ -87,12 +87,14 @@ test("a formal job that only sets up and runs a check moves into formal-checks a
   );
 });
 
-test("a job whose only need was the moved job loses its needs key, so a sync that leaves an empty list fails", () => {
+test("a job whose only need was the moved formal job needs ci instead, so a sync that drops its needs and leaves it ungated fails", () => {
   const text = workflowWith(
     `${movable("formal-a", "formal-a")}  notify:\n    needs: formal-a\n    runs-on: blacksmith-4vcpu-ubuntu-2404\n    steps:\n      - uses: actions/checkout@v7\n`,
   );
   const { content } = syncCi(text, { formal: plan({ "formal-a": "" }) });
-  assert.equal(jobsOf(content).notify.needs, undefined);
+  assert.equal(jobsOf(content)["formal-a"], undefined);
+  assert.equal(jobsOf(content).notify.needs, "ci");
+  assert.deepEqual(checksOf(content), [{ skill: "formal-a" }]);
 });
 
 test("formal-checks is a block literal with one object per line in the order skill, run, paths, so a serializer that writes compact JSON or another key order fails", () => {
@@ -221,14 +223,20 @@ test("an extra-commands line of a skill without a folder stays, so a sync that r
   );
 });
 
-test("an existing entry keeps its run and its paths when the record gives none, and the record's paths replace them when it does, so a sync that rewrites every entry from scratch fails", () => {
-  const existing = `      formal-checks: |\n        [{"skill": "formal-a", "run": "custom", "paths": ["old.ts"]}, {"skill": "formal-b", "paths": ["old.ts"]}, {"skill": "formal-gone"}]\n`;
+test("an existing entry keeps its run, keeps its paths only when there is no record, loses them when the record stops resolving, and stays when no skill folder replaces it, so a sync that keeps stale paths or drops a hand-written check fails", () => {
+  const existing = `      formal-checks: |\n        [{"skill": "formal-a", "run": "custom", "paths": ["old.ts"]}, {"skill": "formal-b", "paths": ["old.ts"]}, {"skill": "formal-c", "paths": ["src/a.ts"]}, {"skill": "formal-gone", "run": "node scripts/gone.mjs"}]\n`;
   const { content } = syncCi(withInputs("", existing), {
-    formal: plan({ "formal-a": "", "formal-b": COVERAGE("a.ts") }),
+    formal: plan({
+      "formal-a": "",
+      "formal-b": COVERAGE("a.ts"),
+      "formal-c": COVERAGE("missing.ts"),
+    }),
   });
   assert.deepEqual(checksOf(content), [
     { skill: "formal-a", run: "custom", paths: ["old.ts"] },
     { skill: "formal-b", paths: ["src/a.ts"] },
+    { skill: "formal-c" },
+    { skill: "formal-gone", run: "node scripts/gone.mjs" },
   ]);
 });
 
@@ -261,13 +269,13 @@ test("a repository with no formal skill gets no input and keeps its own caller, 
   assert.equal(Object.hasOwn(callerInputs(bare), "formal-checks"), false);
 });
 
-test("a stale formal-checks goes when its last skill folder is gone, so a sync that keeps the entry fails", () => {
+test("an entry whose skill folder is gone stays, so a sync that deletes a check the repository ran fails", () => {
   const text = withInputs(
     "",
     '      formal-checks: |\n        [{"skill": "formal-gone"}]\n      renovate-sync: false\n',
   );
   const { content } = syncCi(text, { formal: plan({}) });
-  assert.equal(Object.hasOwn(callerInputs(content), "formal-checks"), false);
+  assert.deepEqual(checksOf(content), [{ skill: "formal-gone" }]);
   assert.equal(callerInputs(content)["renovate-sync"], false);
 });
 

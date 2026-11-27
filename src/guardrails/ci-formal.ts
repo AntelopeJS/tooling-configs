@@ -244,7 +244,12 @@ function absorbJobs(jobs: YAMLMap, known: ReadonlySet<string>): Absorbed {
   return absorbed;
 }
 
-function dropNeeds(jobs: YAMLMap, removed: ReadonlySet<string>): boolean {
+function dropNeeds(
+  jobs: YAMLMap,
+  removed: ReadonlySet<string>,
+  caller: YAMLMap,
+  callerId: string,
+): boolean {
   let changed = false;
   for (const { value: job } of jobs.items) {
     if (!isMap(job)) continue;
@@ -256,7 +261,8 @@ function dropNeeds(jobs: YAMLMap, removed: ReadonlySet<string>): boolean {
       needs.items = needs.items.filter(
         (entry) => !(isScalar(entry) && removed.has(String(entry.value))),
       );
-    else job.delete("needs");
+    else if (job === caller) job.delete("needs");
+    else job.set("needs", callerId);
     changed = true;
   }
   return changed;
@@ -316,18 +322,28 @@ function desiredChecks(
   moved: readonly MovedCheck[],
   kept: ReadonlySet<string>,
 ): FormalCheck[] {
-  return plan.skills
+  const planned = plan.skills
     .filter(({ name }) => !kept.has(name))
-    .toSorted((left, right) => compareNames(left.name, right.name))
     .map(({ name, markdown }) => {
       const before = existing.find(({ skill }) => skill === name);
       const run = before?.run ?? movedRun(moved, name);
-      const paths = coveragePaths(markdown, plan.files, name) ?? before?.paths;
+      const record = coveragePaths(markdown, plan.files, name);
+      const paths =
+        record.kind === "paths"
+          ? record.paths
+          : record.kind === "none"
+            ? before?.paths
+            : undefined;
       const check: FormalCheck = { skill: name };
       if (run !== undefined) check.run = run;
       if (paths !== undefined) check.paths = paths;
       return check;
     });
+  const names = new Set(plan.skills.map(({ name }) => name));
+  return [
+    ...planned,
+    ...existing.filter(({ skill }) => !names.has(skill)),
+  ].toSorted((left, right) => compareNames(left.skill, right.skill));
 }
 
 function setChecks(
@@ -352,23 +368,25 @@ function setChecks(
 /**
  * Moves the formal checks of the workflow at `path` into the `formal-checks` input of `caller`, the job calling
  * ci-node.yml, which then runs each as a Formal job. The input holds one entry per skill of `plan` that no job left in
- * the file runs, sorted by skill and written as a block literal of one JSON object per line. An entry keeps the `run` of the
- * entry it replaces, else the full line a moved job or an `extra-commands` line ran when it had arguments; its `paths`
- * are the files the skill's coverage record lists, else those of the entry it replaces. A formal job that only sets up
- * Node, Java and a cache and runs `check.mjs` lines, and that no other job reads, is deleted and removed from the `needs` of
- * every job; a formal job that does more stays and its skills stay out of the input. An `extra-commands` line that only
+ * the file runs, plus each existing entry no skill of `plan` replaces, sorted by skill and written as a block literal of one
+ * JSON object per line. An entry keeps the `run` of the entry it replaces, else the full line a moved job or an
+ * `extra-commands` line ran when it had arguments; its `paths` are the files the skill's coverage record lists, none when
+ * the record names a file it cannot resolve, and those of the entry it replaces when there is no record. A formal job that
+ * only sets up Node, Java and a cache and runs `check.mjs` lines, and that no other job reads, is deleted and removed from the `needs` of
+ * every job, and a job it was the only need of needs `caller` instead; a formal job that does more stays and its skills stay out of the input. An `extra-commands` line that only
  * runs a skill's `check.mjs` is removed, and the input with it when nothing else is left. Throws when the current
  * `formal-checks` is not a JSON array of objects with a `skill` string.
  */
 export function moveFormalChecks(
   document: Document,
   jobs: YAMLMap,
-  caller: YAMLMap,
+  caller: { id: string; job: YAMLMap },
   plan: FormalPlan,
   path: string,
 ): boolean {
+  const { id: callerId, job: callerJob } = caller;
   const known = new Set(plan.skills.map(({ name }) => name));
-  const withInputs = caller.get("with", true);
+  const withInputs = callerJob.get("with", true);
   const inputs = isMap(withInputs) ? withInputs : undefined;
   const existing = existingChecks(inputs, path);
   const absorbed = absorbJobs(jobs, known);
@@ -380,10 +398,10 @@ export function moveFormalChecks(
     absorbed.kept,
   );
   for (const id of absorbed.removed) jobs.delete(id);
-  const needs = dropNeeds(jobs, new Set(absorbed.removed));
+  const needs = dropNeeds(jobs, new Set(absorbed.removed), callerJob, callerId);
   const lines = extra.moved.length > 0;
   extra.apply();
-  const input = setChecks(document, caller, inputs, checks);
-  if ((lines || input) && inputs?.items.length === 0) caller.delete("with");
+  const input = setChecks(document, callerJob, inputs, checks);
+  if ((lines || input) && inputs?.items.length === 0) callerJob.delete("with");
   return absorbed.removed.length > 0 || needs || lines || input;
 }
