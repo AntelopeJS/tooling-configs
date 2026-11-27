@@ -176,7 +176,7 @@ test("a repository with its own verify-* skill gets no verify-changes, and the G
   assert.equal(bin(root, "sync", ["--check"]).status, 0);
 });
 
-test("a verify-* skill added after sync retires verify-changes: --check names its files as drift, and sync removes them", (t) => {
+test("a verify-* skill added after sync retires verify-changes: --check names its files as drift, and sync removes them and their folder, so a sync that leaves an empty .agents/skills/verify-changes fails", (t) => {
   const root = fullRepo(t);
   assert.equal(bin(root, "sync").status, 0);
   put(root, ".agents/skills/verify-api/SKILL.md", "own\n");
@@ -188,7 +188,11 @@ test("a verify-* skill added after sync retires verify-changes: --check names it
       check.stdout,
     );
   assert.equal(bin(root, "sync").status, 0);
-  for (const path of [skillPath(VERIFY), linkPath(VERIFY)])
+  for (const path of [
+    skillPath(VERIFY),
+    `.agents/skills/${VERIFY}`,
+    linkPath(VERIFY),
+  ])
     assert.equal(
       lstatSync(join(root, path), { throwIfNoEntry: false }),
       undefined,
