@@ -3,7 +3,7 @@ import test, { type TestContext } from "node:test";
 
 import { parseManifest } from "./package.ts";
 import { bin, commit, put, read, testRepo } from "./helpers/test-repo.ts";
-import { checkTestTimeouts } from "./test-timeout.ts";
+import { checkTestTimeouts, timedScript } from "./test-timeout.ts";
 
 function withScripts(
   root: string,
@@ -97,10 +97,117 @@ test("a workspace member's hand-set limit fails under its own path, as dms-media
   ]);
 });
 
-test("sync --check fails on a hand-set limit and a write run prints it as a Note and exits 0; a sync that never runs the check passes the repository, and one that fails the write run blocks it from syncing", (t) => {
+test("sync puts each run the check reads on the shared timeout and keeps the rest of the script; a rewrite that only appends the flag, or edits one runner's flags, leaves these failing", (t) => {
+  const scripts = {
+    "dms-database": [
+      '([ -n "$DMS_PREBUILT" ] || pnpm run build) && DMS_PREBUILT=1 ajs module test . --timeout 30000 && ajs module test . --timeout 10000',
+      '([ -n "$DMS_PREBUILT" ] || pnpm run build) && DMS_PREBUILT=1 ajs module test . --timeout 30000 && ajs module test . --timeout 30000',
+    ],
+    rethinkdb: [
+      "pnpm run build && ajs module test . --timeout 10000",
+      "pnpm run build && ajs module test . --timeout 30000",
+    ],
+    "cloud integration": [
+      "pnpm run build && ajs module test .",
+      "pnpm run build && ajs module test . --timeout 30000",
+    ],
+    "cloud infra": [
+      "mocha scripts/test-infra.cjs",
+      "mocha scripts/test-infra.cjs --timeout 30000",
+    ],
+    "dms-media": [
+      '[ -n "$DMS_PREBUILT" ] || pnpm run build && DMS_MEDIA_TEST_DIR=dist/test/unit ajs module test . --timeout 10000',
+      '[ -n "$DMS_PREBUILT" ] || pnpm run build && DMS_MEDIA_TEST_DIR=dist/test/unit ajs module test . --timeout 30000',
+    ],
+    inline: [
+      "ajs module test . --timeout=10000 -f dist/a.test.js",
+      "ajs module test . --timeout=30000 -f dist/a.test.js",
+    ],
+    "every flag": [
+      "mocha --timeout 30000 -t 5000",
+      "mocha --timeout 30000 -t 30000",
+    ],
+    "ajs short flag": [
+      "ajs module test . -t 30000",
+      "ajs module test . -t 30000 --timeout 30000",
+    ],
+    "manager bin": [
+      "pnpm mocha 'dist/**/*.test.js'",
+      "pnpm mocha 'dist/**/*.test.js' --timeout 30000",
+    ],
+    "exec in a member": [
+      "pnpm --filter a exec mocha",
+      "pnpm --filter a exec mocha --timeout 30000",
+    ],
+    wrapped: [
+      "c8 --reporter text ajs module test .",
+      "c8 --reporter text ajs module test . --timeout 30000",
+    ],
+    "in a group": [
+      "(cd packages/a && mocha) || true",
+      "(cd packages/a && mocha --timeout 30000) || true",
+    ],
+    "node bin": [
+      "node ./node_modules/mocha/bin/mocha.js",
+      "node ./node_modules/mocha/bin/mocha.js --timeout 30000",
+    ],
+    "rethinkdb external": [
+      "RETHINK_TEST_MODE=external ajs module test . $(for file in dist/test-external/*.test.js; do printf -- '-f %s ' \"$file\"; done)",
+      "RETHINK_TEST_MODE=external ajs module test --timeout 30000 . $(for file in dist/test-external/*.test.js; do printf -- '-f %s ' \"$file\"; done)",
+    ],
+    redirected: ["mocha > mocha.log", "mocha --timeout 30000 > mocha.log"],
+    continued: ["mocha \\\n  dist", "mocha --timeout 30000 \\\n  dist"],
+    "no test run": [
+      "pnpm run build && node --test && vitest run",
+      "pnpm run build && node --test && vitest run",
+    ],
+  } satisfies Record<string, [string, string]>;
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(scripts).map(([name, [script]]) => [
+        name,
+        timedScript(script),
+      ]),
+    ),
+    Object.fromEntries(
+      Object.entries(scripts).map(([name, [, timed]]) => [name, timed]),
+    ),
+  );
+  assert.deepEqual(
+    errorsFor(
+      t,
+      Object.fromEntries(
+        Object.entries(scripts).map(([name, [, timed]]) => [name, timed]),
+      ),
+    ),
+    [],
+  );
+});
+
+test("a run in shell syntax the parser does not read is left as it is; a rewrite that edits every recognised run breaks these scripts", () => {
+  for (const script of [
+    'sh -c "pnpm build && mocha"',
+    "mocha --timeout 10000 > mocha.log",
+    "SPECS=$(cat specs) mocha",
+    "mocha --timeout",
+    "mocha -- --timeout 10000",
+  ])
+    assert.equal(timedScript(script), script);
+});
+
+test("sync --check fails on a hand-set limit and a write run sets the shared timeout in the root and member manifests, printing a Note only for a run it cannot rewrite; a sync that never runs the check passes the repository, and one that only reports leaves the limit", (t) => {
   const root = testRepo(t);
   assert.equal(bin(root, "sync").status, 0);
-  withScripts(root, { test: "ajs module test . --timeout 10000" });
+  put(root, "pnpm-workspace.yaml", "packages:\n  - packages/*\n");
+  withScripts(root, {
+    test: "ajs module test . --timeout 10000",
+    log: "mocha --timeout 10000 > mocha.log",
+  });
+  withScripts(
+    root,
+    { test: "pnpm run build && ajs module test ." },
+    "packages/member/package.json",
+  );
   commit(root);
   const finding =
     /^package\.json script "test" runs ajs module test with its own --timeout 10000/m;
@@ -111,8 +218,17 @@ test("sync --check fails on a hand-set limit and a write run prints it as a Note
 
   const write = bin(root, "sync");
   assert.equal(write.status, 0, write.stderr);
+  assert.equal(
+    parseManifest(read(root, "package.json")).scripts?.test,
+    "ajs module test . --timeout 30000",
+  );
+  assert.equal(
+    parseManifest(read(root, "packages/member/package.json")).scripts?.test,
+    "pnpm run build && ajs module test . --timeout 30000",
+  );
+  assert.doesNotMatch(write.stdout, finding);
   assert.match(
     write.stdout,
-    new RegExp(`^Note: ${finding.source.slice(1)}`, "m"),
+    /^Note: package\.json script "log" runs mocha with its own --timeout 10000/m,
   );
 });

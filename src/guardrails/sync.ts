@@ -56,7 +56,11 @@ import { planDocs, type DocsPlan } from "./docs-compat.ts";
 import { isTemplateSource, planWritingSkills } from "./template-agent-layer.ts";
 import { applyDocsSkillActions, verifySkillFolders } from "./docs-skills.ts";
 import { checkTypecheckCoverage } from "./typecheck-coverage.ts";
-import { checkTestTimeouts } from "./test-timeout.ts";
+import {
+  checkTestTimeouts,
+  testTimeoutArtifacts,
+  timedManifest,
+} from "./test-timeout.ts";
 
 export interface RepoContext extends AgentsBlockContext {
   manager: PackageManager;
@@ -162,10 +166,11 @@ export const MANAGED_ARTIFACTS: readonly ManagedArtifact[] = [
     path: "package.json",
     profiles: ["full", "template"],
     desired: (current, context) => {
-      const content =
+      const content = timedManifest(
         context.profile === "full"
           ? managedPackage(current, context.versions, context)
-          : templatePackage(current, context.versions, context);
+          : templatePackage(current, context.versions, context),
+      );
       return { content, notes: droppedChecksSteps(current, content) };
     },
   },
@@ -425,6 +430,7 @@ export function syncRepository(
     ...releaseArtifacts(root),
     ...(profile === "full" ? nextSyncArtifacts(root, integrationBranch) : []),
     ...retiredWorkflowArtifacts(root, integrationBranch !== undefined),
+    ...testTimeoutArtifacts(root),
   ];
   const synced = [...planSync(current, executables, context), ...standalone];
   const plan = [
@@ -436,9 +442,8 @@ export function syncRepository(
     .map(({ message }) => message);
   const entryOnly = checkEntryOnlyConfiguration(root);
   const coverage = checkTypecheckCoverage(root, Boolean(options.check));
-  const timeouts = checkTestTimeouts(root, Boolean(options.check));
   errors.push(...entryOnly.errors, ...writing.errors);
-  errors.push(...coverage.errors, ...timeouts.errors);
+  errors.push(...coverage.errors);
   const notes = plan.flatMap((artifact) =>
     artifact.kind === "migrated" ? artifact.notes : [],
   );
@@ -454,6 +459,8 @@ export function syncRepository(
     removeArtifacts(root, removals);
     applyDocsSkillActions(root, actions);
   }
+  const timeouts = checkTestTimeouts(root, Boolean(options.check));
+  errors.push(...timeouts.errors);
   const templateDependencies = ["knip"];
   if (context.typeAware) templateDependencies.push("oxlint-tsgolint");
   const dependenciesAdded =
