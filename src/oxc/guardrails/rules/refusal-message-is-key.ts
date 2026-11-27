@@ -1,14 +1,8 @@
 import { defineRule } from "@oxlint/plugins";
 
-import type { ESTree, SourceCode } from "@oxlint/plugins";
-import { isDmsPackage, refusalVisitors, staticValue } from "../refusals.ts";
+import { isDmsPackage, messageTexts, refusalVisitors } from "../refusals.ts";
 
 const TRANSLATION_KEY = /^\$?[A-Za-z0-9_-]+(\.[A-Za-z0-9_]+)+$/;
-
-function isSentence(node: ESTree.Node, source: SourceCode): boolean {
-  const value = staticValue(node, source);
-  return value?.kind === "text" && !TRANSLATION_KEY.test(value.text);
-}
 
 /** A 4xx refusal reaches the DMS error presenter, which reads its message as a translation key, so a sentence there shows untranslated. */
 export const refusalMessageIsKeyRule = defineRule({
@@ -26,7 +20,12 @@ export const refusalMessageIsKeyRule = defineRule({
   createOnce(context) {
     let dms = false;
     const visitors = refusalVisitors(context, (message) => {
-      if (dms && isSentence(message, context.sourceCode))
+      if (
+        dms &&
+        messageTexts(message, context).some(
+          ({ text }) => !TRANSLATION_KEY.test(text),
+        )
+      )
         context.report({ node: message, messageId: "sentence" });
     });
     return {
