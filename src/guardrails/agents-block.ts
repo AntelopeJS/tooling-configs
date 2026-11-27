@@ -3,16 +3,22 @@ export interface AgentsBlockContext {
   profile: "full" | "template";
   /** Repository-relative path of GLOSSARY.md, when one exists. */
   glossary: string | undefined;
+  /** Repository-relative folder of each verification skill the full block points to. */
+  verifySkills: readonly string[];
 }
 
 export const AGENTS_BLOCK_START = "<!-- antelopejs-guardrails:start -->";
 export const AGENTS_BLOCK_END = "<!-- antelopejs-guardrails:end -->";
 
-const ITERATION = `CI runs \`pnpm run checks\` in full on every pull request and reports what failed. The commit hook formats and lints the staged files. Locally, run only the fast check for what you touched:
-
-- \`pnpm run typecheck\` after you change types or signatures.
-- \`pnpm exec oxlint <files>\` and \`pnpm exec oxfmt <files>\` on the files you changed.
-- One test file, not the suite. In a module that tests with \`ajs module test\`: \`pnpm run build\`, then \`pnpm exec ajs module test . -f dist/<path>.test.js\`.`;
+function iteration(context: AgentsBlockContext): string {
+  const skills = new Intl.ListFormat("en", { type: "conjunction" }).format(
+    context.verifySkills.map(
+      (folder) =>
+        `[\`${folder.slice(folder.lastIndexOf("/") + 1)}\`](${folder}/SKILL.md)`,
+    ),
+  );
+  return `CI runs \`pnpm run checks\` in full on every pull request and reports what failed. The commit hook formats and lints the staged files. Locally, check only what you touched, one test file and not the suite, as the ${skills} skill${context.verifySkills.length > 1 ? "s say" : " says"}.`;
+}
 
 const COMMENTS = `### Comments
 
@@ -51,7 +57,7 @@ function sections(...parts: string[]): string[] {
 function fullBody(context: AgentsBlockContext): string[] {
   return sections(
     "## Guardrails",
-    ITERATION,
+    iteration(context),
     ...pointers(context),
     COMMENTS,
     TESTS,
