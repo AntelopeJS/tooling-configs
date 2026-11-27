@@ -36,11 +36,16 @@ test("the garden reports a bare repository's missing workflow, Renovate config a
   ]);
 });
 
-test("one --init run leaves a bare repository with no conformance finding; a run that skips the devDependency, the ignore file or the gh write leaves one", async (t) => {
+test("one --init run leaves a bare repository with no conformance finding and says the push reports the verdict job it wrote; a run that skips the devDependency, the ignore file or the gh write leaves one, and advice naming only ci / checks misses the check the ruleset moves to", async (t) => {
   const root = bareRepo(t);
   const tools = fakeTools(t);
   const result = bin(root, "sync", ["--init"], tools.env);
   assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.match(
+    result.stdout,
+    /^Commit and push to the default branch so verdict and ci \/ checks are reported\.$/m,
+  );
+  assert.match(read(root, ".github/workflows/ci.yml"), /^ {2}verdict:$/m);
   const api = pushedWorld(root, tools.patched());
   assert.deepEqual(subjects(await conformance.run(api.context())), []);
   assert.deepEqual(subjects(await deleteBranchOnMerge.run(api.context())), []);

@@ -30,6 +30,13 @@ export const CI_PATH = ".github/workflows/ci.yml";
 export const CI_JOB_ID = "ci";
 /** The status context GitHub derives from the caller job id and the shared workflow's `checks` job. */
 export const CI_CONTEXT = `${CI_JOB_ID} / checks`;
+/**
+ * The status contexts a default branch may require, the caller's unnamed `verdict` job first. `ci / checks` stays
+ * accepted until the Required CI ruleset requires `verdict`.
+ */
+export const REQUIRED_CONTEXTS = [VERDICT_JOB_ID, CI_CONTEXT] as const;
+/** {@link REQUIRED_CONTEXTS} as prose, for findings and messages. */
+export const REQUIRED_CONTEXTS_TEXT = REQUIRED_CONTEXTS.join(" or ");
 const RENOVATE_SYNC_JOB_ID = "renovate-sync";
 const RENOVATE_SYNC_GRANTS = {
   contents: "write",

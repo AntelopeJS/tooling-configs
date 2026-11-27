@@ -2,7 +2,7 @@
 import { parseArgs } from "node:util";
 
 import { runCli } from "../guardrails/cli.ts";
-import { CI_CONTEXT, CI_PATH } from "../guardrails/ci-workflow.ts";
+import { CI_PATH, REQUIRED_CONTEXTS } from "../guardrails/ci-workflow.ts";
 import { repositoryRoot } from "../guardrails/files.ts";
 import { ENABLE_BRANCH_CLEANUP, initRepository } from "../guardrails/init.ts";
 import {
@@ -86,7 +86,7 @@ function init(): number {
     );
   else
     process.stdout.write(
-      `Commit and push to the default branch so ${CI_CONTEXT} is reported.\n`,
+      `Commit and push to the default branch so ${REQUIRED_CONTEXTS.join(" and ")} are reported.\n`,
     );
   const cleanup = result.branchCleanup;
   if (cleanup.kind === "enabled")

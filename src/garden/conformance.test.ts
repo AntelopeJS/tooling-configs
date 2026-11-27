@@ -277,6 +277,24 @@ test("a red ci / checks on the newest push and a repository still reporting the 
   ]);
 });
 
+test("a branch that reports verdict is judged by verdict, where a check that reads only ci / checks calls a verdict-only branch the legacy context and misses a red verdict", async () => {
+  const verdictOnly = conformant(world()).ci(
+    "mongodb",
+    [run(1, "success", 2)],
+    [checkRun("verdict", "success")],
+  );
+  assert.deepEqual(subjects(await conformance.run(verdictOnly.context())), []);
+  const red = conformant(world()).ci(
+    "mongodb",
+    [run(1, "failure", 2)],
+    [checkRun("ci / checks", "success"), checkRun("verdict", "failure")],
+  );
+  const result = await conformance.run(red.context());
+  assert.deepEqual(subjects(result), ["checks-red"]);
+  if (result.kind === "findings")
+    assert.match(result.findings[0].evidence, /^verdict on main is failure/);
+});
+
 test("the newest nightly run's checks are judged, so a check that reads only push runs falls back to the branch head", async () => {
   const nightly = conformant(world())
     .ci(
