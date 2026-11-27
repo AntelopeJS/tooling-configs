@@ -92,11 +92,12 @@ export const ciTriggers = `on:
     - cron: "17 2 * * *"
 ${DISPATCH_TRIGGER}`;
 
-/** The triggers of a repository with an integration branch: pull requests (label changes included, so `ci:full` applies), pushes to `branch`, a nightly run and manual dispatch; a push to `main` runs nothing. */
+/** The triggers of a repository with an integration branch: pull requests (label changes included, so `ci:full` applies), the `merge_group` run of the integration branch's merge queue, pushes to `branch`, a nightly run and manual dispatch; a push to `main` runs nothing. */
 function integrationTriggers(branch: string): string {
   return `on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  merge_group:
   push:
     branches: [${branch}]
   schedule:
@@ -449,7 +450,7 @@ export function callerPlan(
  * reports `ci / checks` and each `needs` hop adds to the critical path. A gate that also covers repository-specific
  * jobs is kept. The caller forwards the dispatch `nightly` input, and a `verdict` job needs every other job.
  * The workflow declares exactly the `ciTriggers` of the trunk-based CI: pull requests, the merge queue, pushes to `main`, the nightly run and dispatch;
- * a profile with an `integrationBranch` pushes on that branch instead and has no merge queue. Unless
+ * a profile with an `integrationBranch` pushes on that branch instead of `main`, and keeps the merge queue's `merge_group` run, which its integration branch has. Unless
  * `profile.windowsOnPullRequests` lets the repository ask for Windows on pull requests, no caller passes
  * `windows-pull-requests` or a `windows` other than the opt-out `false`. Sync writes neither input.
  * Every job calling ci-node.yml or ci-renovate-sync.yml calls it at `CI_NODE_REF` or `CI_RENOVATE_SYNC_REF`, whatever

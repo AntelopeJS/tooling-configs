@@ -194,7 +194,7 @@ test("a repository outside the Required CI packs still needs the four rules, not
   ]);
 });
 
-test("a default branch with every rule but the merge queue is a normal finding, except in cloud, which has no queue", async () => {
+test("a default branch with every rule but the merge queue is a normal finding, except in cloud, whose queue is on develop", async () => {
   const rules = PROTECTED.filter((entry) => entry.type !== "merge_queue");
   assert.deepEqual(
     subjects(await branchGovernance.run(repoWorld(rules, ORG_SETS).context())),
