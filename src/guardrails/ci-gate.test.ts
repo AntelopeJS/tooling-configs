@@ -27,6 +27,10 @@ function advisoriesOf(text: string): string[] {
   return gated(text).advisories.filter((note) => note.startsWith("Gate:"));
 }
 
+function defaultNotes(text: string): string[] {
+  return syncCi(text).advisories.filter((note) => note.startsWith("Gate:"));
+}
+
 test("every hand-written job that does not need ci joins the caller's needs in file order, so a gate that wires only the first job or sorts them fails", () => {
   const { content } = gated(
     workflowWith(
@@ -132,7 +136,7 @@ test("a workflow whose hand-written jobs all need ci leaves the caller without n
 
 test("without gateHandJobs the caller needs no hand-written job and one advisory names the aggregator that needs them all with ci, so a sync that still wires them, or reports one advisory per job, fails", () => {
   const text = workflowWith(
-    `${job("select")}${usesJob("e2e", "    needs: select\n")}${job("ubuntu", "    needs: [select, ci, e2e]\n")}`,
+    `${job("select")}${usesJob("e2e", "    needs: select\n")}${job("ubuntu", "    needs: [select, ci, e2e]\n    if: always()\n")}`,
   );
   const { content, advisories } = syncCi(text);
   assert.equal(jobsOf(content).ci.needs, undefined);
@@ -148,7 +152,7 @@ test("without gateHandJobs the caller needs no hand-written job and one advisory
 
 test("without gateHandJobs an aggregator that misses a job is not named and the verdict is, so a sync that names the first aggregator needing ci fails", () => {
   const text = workflowWith(
-    `${job("e2e")}${usesJob("report", "    needs: e2e\n")}${job("ubuntu", "    needs: [ci, e2e]\n")}`,
+    `${job("e2e")}${usesJob("report", "    needs: e2e\n")}${job("ubuntu", "    needs: [ci, e2e]\n    if: always()\n")}`,
   );
   const notes = syncCi(text).advisories.filter((note) =>
     note.startsWith("Gate:"),
@@ -164,4 +168,32 @@ test("without gateHandJobs a workflow whose hand-written jobs are all aggregator
     advisories.filter((note) => note.startsWith("Gate:")),
     [],
   );
+});
+
+test("without gateHandJobs an aggregator that a failed need would skip is not named and the verdict is, since a skipped required job reports success, so a sync that names any aggregator needing ci and the jobs fails", () => {
+  const text = workflowWith(
+    `${usesJob("e2e")}${job("ubuntu", "    needs: [ci, e2e]\n")}`,
+  );
+  assert.deepEqual(defaultNotes(text), [
+    "Gate: .github/workflows/ci.yml job e2e runs beside the ci caller, so ci / checks passes when it fails. verdict needs it with ci, so require verdict in the ruleset, or set gateHandJobs in the repository's CI profile to have ci need them.",
+  ]);
+});
+
+test("without gateHandJobs a job that needs ci is reported without the gateHandJobs fix, which would leave it unwired, so a sync that offers it anyway fails", () => {
+  const notes = defaultNotes(
+    workflowWith(`${usesJob("deploy", "    needs: ci\n")}`),
+  );
+  assert.deepEqual(notes, [
+    "Gate: .github/workflows/ci.yml job deploy runs beside the ci caller, so ci / checks passes when it fails. verdict needs it with ci, so require verdict in the ruleset.",
+  ]);
+});
+
+test("without gateHandJobs a job ci already needs is left out of the advisory, so a sync that lists every hand-written job fails", () => {
+  const text = workflowWith(`${usesJob("lint")}${usesJob("docs")}`).replace(
+    "    uses: AntelopeJS/.github/.github/workflows/ci-node.yml@v2\n",
+    "    needs: [lint]\n    uses: AntelopeJS/.github/.github/workflows/ci-node.yml@v2\n",
+  );
+  const notes = defaultNotes(text);
+  assert.equal(notes.length, 1);
+  assert.match(notes[0], /: \.github\/workflows\/ci\.yml job docs runs beside/);
 });
