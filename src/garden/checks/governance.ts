@@ -106,24 +106,58 @@ const REQUIREMENTS: readonly Requirement[] = [
   },
 ];
 
+interface BypassActor {
+  readonly type: string;
+  readonly id: number;
+  readonly mode: string;
+}
+
 /** Actors that may bypass a default branch ruleset, as the organization rulesets set them: the admin repository role through a pull request only, and the `antelopejs-release` GitHub App always, which pushes release commits and tags to `main` and runs next-sync and the module-locks refresh. */
-const ALLOWED_BYPASS: readonly {
-  type: string;
-  id: number;
-  mode: string;
-}[] = [
+const ALLOWED_BYPASS: readonly BypassActor[] = [
   { type: "RepositoryRole", id: ADMIN_ROLE, mode: "pull_request" },
   { type: "Integration", id: 5854792, mode: "always" },
 ];
 
-function mayBypass(actor: JsonObject): boolean {
+const ALLOWED_BYPASS_TEXT =
+  "the admin repository role (pull_request mode) and the antelopejs-release GitHub App (always mode)";
+
+/** Actors a repository's own ruleset may let bypass besides {@link ALLOWED_BYPASS}, each with the words that name it in a finding and the reason it is accepted. An organization ruleset gets no exception. */
+const OWN_RULESET_BYPASS: ReadonlyMap<
+  string,
+  readonly (BypassActor & { readonly who: string; readonly reason: string })[]
+> = new Map([
+  [
+    "k8s-gitops-infra",
+    [
+      {
+        type: "RepositoryRole",
+        id: ADMIN_ROLE,
+        mode: "always",
+        who: "the admin repository role (always mode)",
+        reason:
+          "argocd-image-updater and the platform automation push straight to main through it, which the pull_request mode would refuse",
+      },
+    ],
+  ],
+]);
+
+function mayBypass(
+  actor: JsonObject,
+  allowed: readonly BypassActor[],
+): boolean {
   const type = optStr(actor, "actor_type");
   const id = optNum(actor, "actor_id");
   const mode = optStr(actor, "bypass_mode");
-  return ALLOWED_BYPASS.some(
-    (allowed) =>
-      allowed.type === type && allowed.id === id && allowed.mode === mode,
+  return allowed.some(
+    (entry) => entry.type === type && entry.id === id && entry.mode === mode,
   );
+}
+
+function allowedBypassText(repo: GardenRepo): string {
+  const own = OWN_RULESET_BYPASS.get(repo.name);
+  return own
+    ? `${ALLOWED_BYPASS_TEXT}, and in the repository's own ruleset ${own.map(({ who }) => who).join(" and ")},`
+    : ALLOWED_BYPASS_TEXT;
 }
 
 function describeActor(actor: JsonObject): string {
@@ -135,6 +169,7 @@ interface RulesetRef {
   readonly key: string;
   readonly path: string;
   readonly label: string;
+  readonly organization: boolean;
 }
 
 function rulesetRef(repo: GardenRepo, rule: JsonObject): RulesetRef {
@@ -144,6 +179,7 @@ function rulesetRef(repo: GardenRepo, rule: JsonObject): RulesetRef {
     key: organization ? `${ORG}:${id}` : `${ORG}/${repo.name}:${id}`,
     path: `/repos/${ORG}/${repo.name}/rulesets/${id}`,
     label: `${organization ? "organization" : "repository"} ruleset ${id}`,
+    organization,
   };
 }
 
@@ -159,8 +195,13 @@ function rulesetReader(context: GardenContext): RulesetReader {
 
 async function bypassOffenders(
   read: RulesetReader,
+  repo: GardenRepo,
   refs: readonly RulesetRef[],
 ): Promise<string[]> {
+  const inOwnRuleset = [
+    ...ALLOWED_BYPASS,
+    ...(OWN_RULESET_BYPASS.get(repo.name) ?? []),
+  ];
   const offenders: string[] = [];
   for (const ref of refs) {
     const set = await read(ref);
@@ -170,9 +211,10 @@ async function bypassOffenders(
       throw new Error(
         `${name} returned no bypass list; the Gardener token must belong to an administrator.`,
       );
+    const allowed = ref.organization ? ALLOWED_BYPASS : inOwnRuleset;
     const actors = list(listed, "bypass_actors")
       .map((actor) => object(actor, "bypass_actors"))
-      .filter((actor) => !mayBypass(actor));
+      .filter((actor) => !mayBypass(actor, allowed));
     if (actors.length)
       offenders.push(`${name}: ${actors.map(describeActor).join(", ")}`);
   }
@@ -216,18 +258,19 @@ async function scanBranch(
       entry.severity,
     ),
   );
-  const offenders = await bypassOffenders(read, [
+  const offenders = await bypassOffenders(read, repo, [
     ...new Map(
       rules.map((rule) => rulesetRef(repo, rule)).map((ref) => [ref.key, ref]),
     ).values(),
   ]);
+  const who = allowedBypassText(repo);
   return offenders.length
     ? [
         ...unmet,
         report(
           "bypass",
-          `Rulesets on ${branch} let actors bypass them that only the admin repository role (pull_request mode) and the antelopejs-release GitHub App (always mode) may: ${offenders.join("; ")}.`,
-          `Only the admin repository role (pull_request mode) and the antelopejs-release GitHub App (always mode) can bypass the rulesets on ${branch}.`,
+          `Rulesets on ${branch} let actors bypass them that only ${who} may: ${offenders.join("; ")}.`,
+          `Only ${who} can bypass the rulesets on ${branch}.`,
           "urgent",
         ),
       ]
