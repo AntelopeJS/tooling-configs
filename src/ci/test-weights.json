@@ -27,6 +27,7 @@
   "src/garden/flaky-tests.test.ts": 0,
   "src/garden/garden.test.ts": 0,
   "src/garden/governance-evidence.test.ts": 0,
+  "src/garden/governance-verdict.test.ts": 0,
   "src/garden/governance.test.ts": 0,
   "src/garden/line-endings.test.ts": 0,
   "src/garden/semver.test.ts": 0,

@@ -1,4 +1,7 @@
-import { CI_CONTEXT } from "../../guardrails/ci-workflow.ts";
+import {
+  REQUIRED_CONTEXTS,
+  REQUIRED_CONTEXTS_TEXT,
+} from "../../guardrails/ci-workflow.ts";
 import { ApiError } from "../api.ts";
 import { PartialFailure, perRepo, scanEach, type Check } from "../check.ts";
 import { GardenContext, Memo, ORG, type GardenRepo } from "../context.ts";
@@ -70,8 +73,9 @@ function requiresCi(rules: readonly JsonObject[]): boolean {
       optStr(rule, "type") === "required_status_checks" &&
       children(child(rule, "parameters"), "required_status_checks").some(
         (entry) =>
-          optStr(entry, "context") === CI_CONTEXT &&
-          optNum(entry, "integration_id") === ACTIONS_APP,
+          REQUIRED_CONTEXTS.some(
+            (context) => context === optStr(entry, "context"),
+          ) && optNum(entry, "integration_id") === ACTIONS_APP,
       ),
   );
 }
@@ -87,7 +91,7 @@ const REQUIREMENTS: readonly Requirement[] = [
   {
     subject: "checks",
     severity: "normal",
-    need: `${CI_CONTEXT} from GitHub Actions as a required status check`,
+    need: `${REQUIRED_CONTEXTS_TEXT} from GitHub Actions as a required status check`,
     article: "",
     applies: (repo) => CI_PACKS.some((pack) => pack === repo.pack),
     met: requiresCi,
@@ -364,7 +368,7 @@ const ORG_RULESETS: readonly {
           ),
       },
       {
-        what: `required status check ${CI_CONTEXT} from integration ${ACTIONS_APP}`,
+        what: `required status check ${REQUIRED_CONTEXTS_TEXT} from integration ${ACTIONS_APP}`,
         holds: (set) => requiresCi(children(set, "rules")),
       },
     ],

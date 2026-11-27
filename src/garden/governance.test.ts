@@ -478,13 +478,13 @@ test("two organization rulesets with the same name are urgent", async () => {
   ]);
 });
 
-test("Required CI that lost its ci / checks requirement is urgent", async () => {
+test("Required CI that lost its ci / checks requirement is urgent and names both accepted checks", async () => {
   const api = orgWorld([protection(), requiredCi({ rules: [] })]);
   const result = await orgChecksRuleset.run(api.context());
   assert.deepEqual(subjects(result), ["ruleset:Required CI:urgent"]);
   assert.equal(result.kind, "findings");
   if (result.kind === "findings")
-    assert.match(result.findings[0].evidence, /ci \/ checks/);
+    assert.match(result.findings[0].evidence, /verdict or ci \/ checks/);
 });
 
 test("Required CI that no longer targets the template pack is urgent", async () => {

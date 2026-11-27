@@ -4,6 +4,8 @@ import {
   CI_NODE_REF,
   CI_PATH,
   CI_RENOVATE_SYNC_REF,
+  REQUIRED_CONTEXTS,
+  REQUIRED_CONTEXTS_TEXT,
 } from "../../guardrails/ci-workflow.ts";
 import {
   ciNodeCallers,
@@ -228,15 +230,21 @@ async function checksStatus(
   const [latest] = (await context.branchRuns(repo, "ci.yml", branch)) ?? [];
   const runs = (
     await context.checkRuns(repo, latest?.headSha || branch)
-  ).filter(({ name }) => name === CI_CONTEXT || name === "checks");
-  const reported = runs.find(({ name }) => name === CI_CONTEXT);
+  ).filter(
+    ({ name }) =>
+      name === "checks" ||
+      REQUIRED_CONTEXTS.some((context) => context === name),
+  );
+  const reported = REQUIRED_CONTEXTS.map((context) =>
+    runs.find(({ name }) => name === context),
+  ).find((run) => run !== undefined);
   if (reported === undefined)
     return [
       problem(
         repo,
         "checks-context",
-        `${branch} reports ${runs.length ? runs.map(({ name }) => name).join(", ") : "no checks"} instead of ${CI_CONTEXT}.`,
-        `The latest run on ${branch} reports ${CI_CONTEXT}.`,
+        `${branch} reports ${runs.length ? runs.map(({ name }) => name).join(", ") : "no checks"} instead of ${REQUIRED_CONTEXTS_TEXT}.`,
+        `The latest run on ${branch} reports ${REQUIRED_CONTEXTS_TEXT}.`,
       ),
     ];
   return reported.conclusion === "success"
@@ -245,8 +253,8 @@ async function checksStatus(
         problem(
           repo,
           "checks-red",
-          `${CI_CONTEXT} on ${branch} is ${reported.conclusion ?? "pending"}: ${reported.url}`,
-          `${CI_CONTEXT} is green on ${branch}.`,
+          `${reported.name} on ${branch} is ${reported.conclusion ?? "pending"}: ${reported.url}`,
+          `${reported.name} is green on ${branch}.`,
         ),
       ];
 }

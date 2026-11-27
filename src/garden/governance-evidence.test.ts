@@ -27,8 +27,8 @@ const UNMET = [
   ],
   [
     "checks",
-    "The rules in force on main hold no ci / checks from GitHub Actions as a required status check.",
-    "The rules in force on main hold ci / checks from GitHub Actions as a required status check.",
+    "The rules in force on main hold no verdict or ci / checks from GitHub Actions as a required status check.",
+    "The rules in force on main hold verdict or ci / checks from GitHub Actions as a required status check.",
   ],
   [
     "rule:merge_queue",
