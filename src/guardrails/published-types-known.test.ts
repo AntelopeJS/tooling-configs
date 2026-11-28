@@ -10,7 +10,7 @@ import { KNOWN_FAILURES_FILE, readKnownFailures } from "./known-failures.ts";
 import { shimInvocation } from "./run-command.ts";
 
 const OTHER_STEPS =
-  "typecheck,lint,format:check,knip,test,size,suppressions,sync:check,git:identity,lockfile:singletons,pnpm:release-age";
+  "typecheck,lint,format:check,knip,test,size,suppressions,sync:check,git:identity,lockfile:singletons,lockfile:antelopejs-peers,pnpm:release-age";
 
 const BROKEN = "export declare const value: Missing;\n";
 const SOUND = "export declare const value: number;\n";

@@ -497,7 +497,7 @@ test("an exact pin on a preview of the minor a DMS release implements passes che
       "queue",
     );
     assert.equal(result.status, 0, `${field}: ${result.stdout}`);
-    assert.match(result.stdout, /Checks: 13 passed, 0 failed\./);
+    assert.match(result.stdout, /Checks: 14 passed, 0 failed\./);
   }
 });
 

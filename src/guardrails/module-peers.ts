@@ -9,6 +9,7 @@ import {
   validRange,
 } from "semver";
 import ts from "typescript";
+import type { YAMLMap } from "yaml";
 
 import {
   isObject,
@@ -288,33 +289,43 @@ function installedModules(root: string): ConfigModules {
   };
 }
 
-/** The version `importer` of each document of the lockfile at `path` locks each direct dependency at, without its peer suffix; a `file:` tarball resolves to the version its package entry records. A lockfile with no importer `.` is read as importer `.` itself. */
+/** The version `importer` of a lockfile document locks each direct dependency at, without its peer suffix; a `file:` tarball resolves to the version its package entry records. A document with no importer `.` is read as importer `.` itself. */
+export function documentLockedVersions(
+  document: YAMLMap,
+  importer: string,
+): Map<string, string> {
+  const locked = new Map<string, string>();
+  const entry =
+    mapping(mapping(document, "importers"), importer) ??
+    (importer === "." ? document : undefined);
+  const packages = mapping(document, "packages");
+  for (const field of LOCKED_FIELDS) {
+    const entries = mapping(entry, field);
+    for (const name of keys(entries)) {
+      const reference = (
+        scalar(mapping(entries, name), "version") ?? scalar(entries, name)
+      )?.split("(")[0];
+      if (reference === undefined) continue;
+      const version =
+        valid(reference) ??
+        scalar(mapping(packages, `${name}@${reference}`), "version");
+      if (version !== undefined && valid(version) !== null)
+        locked.set(name, version);
+    }
+  }
+  return locked;
+}
+
+/** The version `importer` of each document of the lockfile at `path` locks each direct dependency at, as `documentLockedVersions` reads one document. */
 export function lockedVersions(
   path: string,
   importer = ".",
 ): Map<string, string> {
-  const locked = new Map<string, string>();
-  for (const document of lockfileDocuments(path)) {
-    const entry =
-      mapping(mapping(document, "importers"), importer) ??
-      (importer === "." ? document : undefined);
-    const packages = mapping(document, "packages");
-    for (const field of LOCKED_FIELDS) {
-      const entries = mapping(entry, field);
-      for (const name of keys(entries)) {
-        const reference = (
-          scalar(mapping(entries, name), "version") ?? scalar(entries, name)
-        )?.split("(")[0];
-        if (reference === undefined) continue;
-        const version =
-          valid(reference) ??
-          scalar(mapping(packages, `${name}@${reference}`), "version");
-        if (version !== undefined && valid(version) !== null)
-          locked.set(name, version);
-      }
-    }
-  }
-  return locked;
+  return new Map(
+    lockfileDocuments(path).flatMap((document) => [
+      ...documentLockedVersions(document, importer),
+    ]),
+  );
 }
 
 /**
@@ -389,7 +400,7 @@ async function declaredRanges(
  * it, as it is outside the `<1.25.0-0` that `~1.24.x` stands for, unless semver's default prerelease rule, the one pnpm
  * applies, admits it in the same comparator set, as in `<1.25.0 >=1.25.0-next.1` or `<1.25.0 1.25.0-next.1`.
  */
-const admits = (
+export const admits = (
   range: string,
   version: string,
   releaseLine: boolean,
