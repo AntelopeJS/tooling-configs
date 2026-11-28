@@ -4,6 +4,7 @@ import { lt, minVersion, validRange } from "semver";
 
 import { TEST_TIMEOUT_MS } from "../test-timeout.ts";
 import { workspaceDirectories } from "./docs-compat.ts";
+import { lockedVersions } from "./module-peers.ts";
 import { type Manifest, parseManifest, serializeManifest } from "./package.ts";
 import {
   commandParts,
@@ -172,11 +173,36 @@ const CORE_WITH_TIMEOUT = "1.23.1";
 const CORE = "@antelopejs/core";
 
 function coreSpec(manifest: Manifest): string | undefined {
-  return (
-    manifest.devDependencies?.[CORE] ??
-    manifest.dependencies?.[CORE] ??
-    manifest.peerDependencies?.[CORE]
-  );
+  return manifest.devDependencies?.[CORE] ?? manifest.dependencies?.[CORE];
+}
+
+/** The core the root `pnpm-lock.yaml` locks for `importer`, or `undefined` when there is no such lockfile or it cannot be read. */
+function lockedCore(root: string, importer: string): string | undefined {
+  const lock = join(root, "pnpm-lock.yaml");
+  if (!existsSync(lock)) return undefined;
+  try {
+    return lockedVersions(lock, importer).get(CORE);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Where the core a manifest runs comes from and the release it may run: the locked one, else the floor of its range. */
+function coreRelease(
+  root: string,
+  directory: string,
+  manifest: Manifest,
+  rootManifest: Manifest,
+): { source: string; release: string } | undefined {
+  const locked = lockedCore(root, directory || ".");
+  if (locked !== undefined)
+    return { source: `pnpm-lock.yaml locks "${CORE}" at`, release: locked };
+  const spec = coreSpec(manifest) ?? coreSpec(rootManifest);
+  const floor =
+    spec === undefined || validRange(spec) === null ? null : minVersion(spec);
+  return floor === null
+    ? undefined
+    : { source: `"${CORE}" "${spec}" admits`, release: floor.version };
 }
 
 function readManifest(root: string, path: string): Manifest | undefined {
@@ -189,9 +215,10 @@ function readManifest(root: string, path: string): Manifest | undefined {
 }
 
 /**
- * A failure for each manifest whose scripts run `ajs module test`, which sync gives `--timeout`, while the
- * `@antelopejs/core` it declares, or the root declares when it declares none, admits a release before
- * {@link CORE_WITH_TIMEOUT}. A range that is not semver, such as `workspace:*`, passes.
+ * A failure for each manifest whose scripts run `ajs module test`, which sync gives `--timeout`, while its
+ * `@antelopejs/core` is before {@link CORE_WITH_TIMEOUT}: the version the root `pnpm-lock.yaml` locks for it, else the
+ * floor of the range it declares, or the root declares when it declares none. A range that is not semver, such as
+ * `workspace:*`, passes.
  */
 export function checkTimeoutCore(root: string): string[] {
   const rootManifest = readManifest(root, "package.json");
@@ -205,13 +232,11 @@ export function checkTimeoutCore(root: string): string[] {
         (step) => step.kind === "test" && step.runner === "ajs module test",
       ),
     );
-    const spec = coreSpec(manifest) ?? coreSpec(rootManifest);
-    if (!runsModuleTest || spec === undefined || validRange(spec) === null)
-      return [];
-    const floor = minVersion(spec);
-    if (floor === null || !lt(floor, CORE_WITH_TIMEOUT)) return [];
+    if (!runsModuleTest) return [];
+    const core = coreRelease(root, directory, manifest, rootManifest);
+    if (core === undefined || !lt(core.release, CORE_WITH_TIMEOUT)) return [];
     return [
-      `${path} runs ajs module test, which sync gives --timeout ${WANTED}, and "${CORE}" "${spec}" admits ${floor.version}, whose ajs module test rejects --timeout. Set "${CORE}" to ">=${CORE_WITH_TIMEOUT}" or later, run \`pnpm install\`, then run antelopejs-sync.`,
+      `${path} runs ajs module test, which sync gives --timeout ${WANTED}, and ${core.source} ${core.release}, whose ajs module test rejects --timeout. Set "${CORE}" to ">=${CORE_WITH_TIMEOUT}" or later, run \`pnpm install\`, then run antelopejs-sync.`,
     ];
   });
 }

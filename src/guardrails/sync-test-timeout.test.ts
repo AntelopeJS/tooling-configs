@@ -289,3 +289,25 @@ test("a core range from 1.23.1, a non-semver core spec or a repository running o
     );
   }
 });
+
+const LOCK = (core: string) =>
+  `lockfileVersion: '9.0'\n\nimporters:\n\n  .:\n    devDependencies:\n      '@antelopejs/core':\n        specifier: ^1.23.0\n        version: ${core}\n`;
+
+test("the core pnpm-lock.yaml locks decides over the range floor: ^1.23.0 locked at 1.24.9 passes and locked at 1.23.0 fails naming the lock, where a check that reads only the range fails the first", (t) => {
+  for (const [core, status] of [
+    ["1.24.9", 0],
+    ["1.23.0", 1],
+  ] as const) {
+    const root = testRepo(t);
+    assert.equal(bin(root, "sync").status, 0);
+    withCore(root, "^1.23.0");
+    withScripts(root, { test: "ajs module test ." });
+    put(root, "pnpm-lock.yaml", LOCK(core));
+    commit(root);
+    const check = bin(root, "sync");
+    assert.equal(check.status, status, check.stderr);
+    const locked = `package.json runs ajs module test, which sync gives --timeout 30000, and pnpm-lock.yaml locks "@antelopejs/core" at ${core}, whose ajs module test rejects --timeout.`;
+    if (status === 1) assert.ok(check.stderr.includes(locked), check.stderr);
+    else assert.doesNotMatch(check.stderr, /@antelopejs\/core/u);
+  }
+});
