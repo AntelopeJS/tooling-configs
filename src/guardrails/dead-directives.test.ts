@@ -264,6 +264,11 @@ const RUNTIME = (extra: string[]) =>
     "  // oxlint-disable-next-line typescript/no-implied-eval -- the query console compiles the admin's own query text",
     "  return new Function(source);",
     "}",
+    "",
+    "export function compileLegacy(source: string): unknown {",
+    "  // eslint-disable-next-line @typescript-eslint/no-implied-eval -- the legacy console compiles the same query text",
+    "  return new Function(source);",
+    "}",
     ...extra,
     "",
   ].join("\n");
@@ -284,11 +289,15 @@ function ungeneratedRepo(t: TestContext, extra: string[] = []): string {
       }),
       "frontend-vue/app/runtime.ts": RUNTIME(extra),
     },
-    { "typescript/no-implied-eval": 1, "eslint/no-console": 1 },
+    {
+      "typescript/no-implied-eval": 1,
+      "@typescript-eslint/no-implied-eval": 1,
+      "eslint/no-console": 1,
+    },
   );
 }
 
-test("dms-database#260: a needed type-aware directive under a tsconfig that cannot load is not judged, and the check says why, where a check that drops oxlint's tsconfig error calls the directive dead", (t) => {
+test("dms-database#260: needed type-aware directives under a tsconfig that cannot load, in the oxlint and @typescript-eslint spellings, are not judged, and the check says why, where a check that drops oxlint's tsconfig error or matches only oxlint's rule names calls them dead", (t) => {
   const root = ungeneratedRepo(t);
   const { staged, full } = bothModes(root, () =>
     put(root, "frontend-vue/app/runtime.ts", `${RUNTIME([])}\n`),
@@ -297,7 +306,7 @@ test("dms-database#260: a needed type-aware directive under a tsconfig that cann
     assert.equal(result.status, 0, result.stderr);
     assert.match(
       result.stdout,
-      /frontend-vue\/tsconfig\.json cannot load \(.*\.dms-types.*\), so oxlint ran no type-aware rule on the files under it\. Not judged: frontend-vue\/app\/runtime\.ts:2 `oxlint-disable-next-line typescript\/no-implied-eval`\./u,
+      /frontend-vue\/tsconfig\.json cannot load \(.*\.dms-types.*\), so oxlint ran no type-aware rule on the files it covers\. Not judged: frontend-vue\/app\/runtime\.ts:2 `oxlint-disable-next-line typescript\/no-implied-eval`, frontend-vue\/app\/runtime\.ts:7 `eslint-disable-next-line @typescript-eslint\/no-implied-eval`\./u,
     );
   }
 });
@@ -311,7 +320,7 @@ test("under a tsconfig that cannot load, a dead directive for a rule that ran st
     assert.equal(result.status, 1, result.stderr);
     assert.match(
       result.stderr,
-      /frontend-vue\/app\/runtime\.ts:5: `oxlint-disable-next-line eslint\/no-console` suppresses nothing\. Fix: delete the directive\./u,
+      /frontend-vue\/app\/runtime\.ts:10: `oxlint-disable-next-line eslint\/no-console` suppresses nothing\. Fix: delete the directive\./u,
     );
     assert.doesNotMatch(result.stderr, /no-implied-eval/u);
   }

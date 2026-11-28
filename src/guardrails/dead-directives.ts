@@ -110,22 +110,17 @@ function deadFailure(directive: Directive, dead: Set<string>): string[] {
   );
 }
 
-/** The tsconfig, among those oxlint cannot load, whose directory holds `file`. */
-function untypedConfig(
-  untyped: UntypedConfig[],
-  file: string,
-): UntypedConfig | undefined {
-  return untyped.find(({ tsconfig }) => {
-    const directory = posix.dirname(tsconfig);
-    return directory === "." || file.startsWith(`${directory}/`);
-  });
+/** The `typescript/` name oxlint also accepts as `@typescript-eslint/`. */
+function oxlintName(rule: string): string {
+  return rule.replace(/^@typescript-eslint\//u, "typescript/");
 }
 
 /**
- * Removes from `dead` the rules oxlint could not have run on their file: a
- * type-aware rule, or any rule for a directive naming none, under a tsconfig
- * oxlint cannot load. Returns one note per such tsconfig naming the
- * directives left unjudged.
+ * Removes from `dead` the rules oxlint may not have run once a tsconfig
+ * failed to load: a type-aware rule, or any rule for a directive naming
+ * none. A tsconfig's `references` reach files outside its directory, so
+ * every file of the run counts. Returns a note naming the tsconfigs and
+ * the directives left unjudged.
  */
 function withoutUntyped(
   root: string,
@@ -134,25 +129,25 @@ function withoutUntyped(
 ): string[] {
   if (untyped.length === 0) return [];
   const typeAware = typeAwareRules(root);
-  const unjudged = new Map<UntypedConfig, string[]>();
+  const unjudged: string[] = [];
   for (const [directive, rules] of dead) {
-    const config = untypedConfig(untyped, directive.file);
-    if (config === undefined) continue;
     const skipped = [...rules].filter(
-      (rule) => rule === "*" || typeAware.has(rule),
+      (rule) => rule === "*" || typeAware.has(oxlintName(rule)),
     );
     if (skipped.length === 0) continue;
     for (const rule of skipped) rules.delete(rule);
     if (rules.size === 0) dead.delete(directive);
-    unjudged.set(config, [
-      ...(unjudged.get(config) ?? []),
+    unjudged.push(
       `${directive.file}:${directive.line} ${written(directive, skipped)}`,
-    ]);
+    );
   }
-  return [...unjudged].map(
-    ([{ tsconfig, reason }, listed]) =>
-      `${tsconfig} cannot load (${reason}), so oxlint ran no type-aware rule on the files under it. Not judged: ${listed.join(", ")}.`,
+  if (unjudged.length === 0) return [];
+  const configs = untyped.map(
+    ({ tsconfig, reason }) => `${tsconfig} cannot load (${reason})`,
   );
+  return [
+    `${configs.join("; ")}, so oxlint ran no type-aware rule on the files it covers. Not judged: ${unjudged.join(", ")}.`,
+  ];
 }
 
 /** What the dead-directive check found: the failures, and notes on what it could not judge. */
@@ -166,9 +161,9 @@ export interface DeadDirectiveReport {
  * under the repository's own lint configuration. Directives in other files
  * are left alone, so adopting the check changes no existing file until a
  * change touches it. `eslint-` directives under an ESLint config
- * are left to ESLint, and `.vue` files are not linted by oxlint. Under a
- * tsconfig oxlint cannot load, the directives for rules that need type
- * information are not judged, and a note says so.
+ * are left to ESLint, and `.vue` files are not linted by oxlint. When a
+ * tsconfig cannot load, the directives for rules that need type information
+ * are not judged, and a note says so.
  */
 export function deadDirectiveReport(
   root: string,

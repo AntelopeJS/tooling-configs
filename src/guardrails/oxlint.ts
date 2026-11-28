@@ -169,7 +169,7 @@ interface UnreadableFile {
   message: string;
 }
 
-/** A tsconfig oxlint cannot load, so it ran no type-aware rule on the files under it. */
+/** A tsconfig oxlint cannot load, so it ran no type-aware rule on the files it covers. */
 export interface UntypedConfig {
   tsconfig: string;
   reason: string;
