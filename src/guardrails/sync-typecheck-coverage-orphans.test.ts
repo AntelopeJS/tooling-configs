@@ -162,3 +162,115 @@ test("a tsconfig a script or a workflow names as a word counts, as the projects 
     [],
   );
 });
+
+test("a run step without its own working-directory starts in its job's or workflow's defaults.run.working-directory; a check that reads only the step's key reports both projects", (t) => {
+  assert.deepEqual(
+    orphans(
+      findingsFor(t, TYPECHECK, {
+        "tsconfig.json": ROOT,
+        "web/tsconfig.json": ROOT,
+        "web/tests/tsconfig.json": ROOT,
+        "api/tsconfig.json": ROOT,
+        ".github/workflows/types.yml": [
+          "defaults:",
+          "  run:",
+          "    working-directory: api",
+          "jobs:",
+          "  web:",
+          "    defaults:",
+          "      run:",
+          "        working-directory: web",
+          "    steps:",
+          "      - run: |",
+          "          npx vue-tsc --noEmit",
+          "          npx vue-tsc --noEmit -p tests",
+          "  api:",
+          "    steps:",
+          "      - run: npx tsc --noEmit",
+        ].join("\n"),
+      }),
+    ),
+    [],
+  );
+});
+
+test("a run step in another working-directory does not read the root project, and a paths filter naming a tsconfig reads nothing; a check that also reads every workflow string from the root passes both orphans", (t) => {
+  assert.deepEqual(
+    orphans(
+      findingsFor(
+        t,
+        { lint: "oxlint" },
+        {
+          "tsconfig.json": ROOT,
+          "site/tsconfig.json": ROOT,
+          "tools/tsconfig.json": ROOT,
+          ".github/workflows/types.yml": [
+            "on:",
+            "  push:",
+            "    paths: [tools/tsconfig.json]",
+            "jobs:",
+            "  site:",
+            "    steps:",
+            "      - run: npx tsc --noEmit",
+            "        working-directory: site",
+          ].join("\n"),
+        },
+      ),
+    ),
+    [orphan("tools/tsconfig.json"), orphan("tsconfig.json")],
+  );
+});
+
+test("a cd inside a subshell does not move the runs after it, and a script run with -C in a package outside the workspace is read; a check that keeps the cd or reads only workspace members reports the root and the nested projects", (t) => {
+  assert.deepEqual(
+    orphans(
+      findingsFor(
+        t,
+        {
+          typecheck:
+            "(cd web && vue-tsc --noEmit) && tsc --noEmit && pnpm -C app run typecheck",
+        },
+        {
+          "tsconfig.json": ROOT,
+          "web/tsconfig.json": ROOT,
+          "app/package.json": JSON.stringify({
+            name: "app",
+            scripts: { typecheck: "vue-tsc --noEmit -p tsconfig.app.json" },
+          }),
+          "app/tsconfig.app.json": ROOT,
+        },
+      ),
+    ),
+    [],
+  );
+});
+
+test("a run step of a composite action counts, and a launcher path ending in .mjs, .cjs or .ts is a tsc run; a check that reads only workflows or strips only .js reports these", (t) => {
+  assert.deepEqual(
+    orphans(
+      findingsFor(
+        t,
+        {
+          "typecheck:a": "node bin/tsc.mjs --noEmit",
+          "typecheck:b": "node bin/tsc.cjs -b b",
+          "typecheck:c": "node src/bin/tsc.ts --noEmit -p c",
+        },
+        {
+          "tsconfig.json": ROOT,
+          "b/tsconfig.json": ROOT,
+          "c/tsconfig.json": ROOT,
+          "e2e/tsconfig.json": ROOT,
+          ".github/actions/types/action.yml": [
+            "runs:",
+            "  using: composite",
+            "  steps:",
+            "    - run: npx tsc --noEmit",
+            "      shell: bash",
+            "      working-directory: e2e",
+          ].join("\n"),
+        },
+      ),
+    ),
+    [],
+  );
+});
