@@ -1,9 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { lt, minVersion, validRange } from "semver";
 
 import { TEST_TIMEOUT_MS } from "../test-timeout.ts";
 import { workspaceDirectories } from "./docs-compat.ts";
-import { parseManifest, serializeManifest } from "./package.ts";
+import { lockedVersions } from "./module-peers.ts";
+import { type Manifest, parseManifest, serializeManifest } from "./package.ts";
 import {
   commandParts,
   commandSteps,
@@ -163,6 +165,80 @@ function manifestFindings(root: string, directory: string): string[] {
       return found === undefined ? [] : [found];
     }),
   );
+}
+
+/** The first `@antelopejs/core` whose `ajs module test` accepts `--timeout`: 1.23.0 rejects it as an unknown option. */
+const CORE_WITH_TIMEOUT = "1.23.1";
+
+const CORE = "@antelopejs/core";
+
+function coreSpec(manifest: Manifest): string | undefined {
+  return manifest.devDependencies?.[CORE] ?? manifest.dependencies?.[CORE];
+}
+
+/** The core the root `pnpm-lock.yaml` locks for `importer`, or `undefined` when there is no such lockfile or it cannot be read. */
+function lockedCore(root: string, importer: string): string | undefined {
+  const lock = join(root, "pnpm-lock.yaml");
+  if (!existsSync(lock)) return undefined;
+  try {
+    return lockedVersions(lock, importer).get(CORE);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Where the core a manifest runs comes from and the release it may run: the locked one, else the floor of its range. */
+function coreRelease(
+  root: string,
+  directory: string,
+  manifest: Manifest,
+  rootManifest: Manifest,
+): { source: string; release: string } | undefined {
+  const locked = lockedCore(root, directory || ".");
+  if (locked !== undefined)
+    return { source: `pnpm-lock.yaml locks "${CORE}" at`, release: locked };
+  const spec = coreSpec(manifest) ?? coreSpec(rootManifest);
+  const floor =
+    spec === undefined || validRange(spec) === null ? null : minVersion(spec);
+  return floor === null
+    ? undefined
+    : { source: `"${CORE}" "${spec}" admits`, release: floor.version };
+}
+
+function readManifest(root: string, path: string): Manifest | undefined {
+  if (!existsSync(join(root, path))) return undefined;
+  try {
+    return parseManifest(readFileSync(join(root, path), "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A failure for each manifest whose scripts run `ajs module test`, which sync gives `--timeout`, while its
+ * `@antelopejs/core` is before {@link CORE_WITH_TIMEOUT}: the version the root `pnpm-lock.yaml` locks for it, else the
+ * floor of the range it declares, or the root declares when it declares none. A range that is not semver, such as
+ * `workspace:*`, passes.
+ */
+export function checkTimeoutCore(root: string): string[] {
+  const rootManifest = readManifest(root, "package.json");
+  if (rootManifest === undefined) return [];
+  return ["", ...workspaceDirectories(root)].flatMap((directory) => {
+    const path = directory ? `${directory}/package.json` : "package.json";
+    const manifest = directory ? readManifest(root, path) : rootManifest;
+    if (manifest === undefined) return [];
+    const runsModuleTest = Object.values(manifest.scripts ?? {}).some((text) =>
+      stepsOf(text).some(
+        (step) => step.kind === "test" && step.runner === "ajs module test",
+      ),
+    );
+    if (!runsModuleTest) return [];
+    const core = coreRelease(root, directory, manifest, rootManifest);
+    if (core === undefined || !lt(core.release, CORE_WITH_TIMEOUT)) return [];
+    return [
+      `${path} runs ajs module test, which sync gives --timeout ${WANTED}, and ${core.source} ${core.release}, whose ajs module test rejects --timeout. Set "${CORE}" to ">=${CORE_WITH_TIMEOUT}" or later, run \`pnpm install\`, then run antelopejs-sync.`,
+    ];
+  });
 }
 
 /** Every `ajs module test` and `mocha` run in the scripts of the root package and the workspace members must pass `--timeout` with the shared {@link TEST_TIMEOUT_MS}. Under `check` a run without it is an error; otherwise it is a `Note:` advisory. */

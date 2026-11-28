@@ -232,3 +232,82 @@ test("sync --check fails on a hand-set limit and a write run sets the shared tim
     /^Note: package\.json script "log" runs mocha with its own --timeout 10000/m,
   );
 });
+
+function withCore(root: string, spec: string): void {
+  const manifest = parseManifest(read(root, "package.json"));
+  manifest.devDependencies = {
+    ...manifest.devDependencies,
+    "@antelopejs/core": spec,
+  };
+  put(root, "package.json", `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+test("auth-jwt: sync fails and writes nothing while a manifest running ajs module test lets @antelopejs/core resolve to 1.23.0, which rejects --timeout, naming the manifest, the range and the fix, where a sync that only adds the flag breaks the test script", (t) => {
+  const root = testRepo(t);
+  assert.equal(bin(root, "sync").status, 0);
+  put(root, "pnpm-workspace.yaml", "packages:\n  - packages/*\n");
+  withCore(root, "^1.23.0");
+  withScripts(root, { test: "ajs module test ." });
+  withScripts(
+    root,
+    { test: "pnpm run build && ajs module test ." },
+    "packages/member/package.json",
+  );
+  commit(root);
+  const before = read(root, "package.json");
+
+  for (const args of [["--check"], []]) {
+    const result = bin(root, "sync", args);
+    assert.equal(result.status, 1, result.stdout);
+    for (const path of ["package.json", "packages/member/package.json"])
+      assert.ok(
+        result.stderr.includes(
+          `${path} runs ajs module test, which sync gives --timeout 30000, and "@antelopejs/core" "^1.23.0" admits 1.23.0, whose ajs module test rejects --timeout. Set "@antelopejs/core" to ">=1.23.1" or later, run \`pnpm install\`, then run antelopejs-sync.`,
+        ),
+        result.stderr,
+      );
+  }
+  assert.equal(read(root, "package.json"), before);
+});
+
+test("a core range from 1.23.1, a non-semver core spec or a repository running only mocha passes and gets the shared timeout, where a check that flags every declared core fails them", (t) => {
+  for (const [spec, script] of [
+    ["^1.23.1", "ajs module test ."],
+    ["workspace:*", "ajs module test ."],
+    ["1.23.0", "mocha"],
+  ]) {
+    const root = testRepo(t);
+    assert.equal(bin(root, "sync").status, 0);
+    withCore(root, spec);
+    withScripts(root, { test: script });
+    commit(root);
+    const write = bin(root, "sync");
+    assert.equal(write.status, 0, write.stderr);
+    assert.equal(
+      parseManifest(read(root, "package.json")).scripts?.test,
+      `${script} --timeout 30000`,
+    );
+  }
+});
+
+const LOCK = (core: string) =>
+  `lockfileVersion: '9.0'\n\nimporters:\n\n  .:\n    devDependencies:\n      '@antelopejs/core':\n        specifier: ^1.23.0\n        version: ${core}\n`;
+
+test("the core pnpm-lock.yaml locks decides over the range floor: ^1.23.0 locked at 1.24.9 passes and locked at 1.23.0 fails naming the lock, where a check that reads only the range fails the first", (t) => {
+  for (const [core, status] of [
+    ["1.24.9", 0],
+    ["1.23.0", 1],
+  ] as const) {
+    const root = testRepo(t);
+    assert.equal(bin(root, "sync").status, 0);
+    withCore(root, "^1.23.0");
+    withScripts(root, { test: "ajs module test ." });
+    put(root, "pnpm-lock.yaml", LOCK(core));
+    commit(root);
+    const check = bin(root, "sync");
+    assert.equal(check.status, status, check.stderr);
+    const locked = `package.json runs ajs module test, which sync gives --timeout 30000, and pnpm-lock.yaml locks "@antelopejs/core" at ${core}, whose ajs module test rejects --timeout.`;
+    if (status === 1) assert.ok(check.stderr.includes(locked), check.stderr);
+    else assert.doesNotMatch(check.stderr, /@antelopejs\/core/u);
+  }
+});

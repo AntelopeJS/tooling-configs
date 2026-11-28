@@ -275,14 +275,19 @@ function installedModules(root: string): ConfigModules {
   };
 }
 
-/** The version importer `.` of each document of the lockfile at `path` locks each direct dependency at, without its peer suffix; a `file:` tarball resolves to the version its package entry records. */
-function lockedVersions(path: string): Map<string, string> {
+/** The version `importer` of each document of the lockfile at `path` locks each direct dependency at, without its peer suffix; a `file:` tarball resolves to the version its package entry records. A lockfile with no importer `.` is read as importer `.` itself. */
+export function lockedVersions(
+  path: string,
+  importer = ".",
+): Map<string, string> {
   const locked = new Map<string, string>();
   for (const document of lockfileDocuments(path)) {
-    const importer = mapping(mapping(document, "importers"), ".") ?? document;
+    const entry =
+      mapping(mapping(document, "importers"), importer) ??
+      (importer === "." ? document : undefined);
     const packages = mapping(document, "packages");
     for (const field of LOCKED_FIELDS) {
-      const entries = mapping(importer, field);
+      const entries = mapping(entry, field);
       for (const name of keys(entries)) {
         const reference = (
           scalar(mapping(entries, name), "version") ?? scalar(entries, name)

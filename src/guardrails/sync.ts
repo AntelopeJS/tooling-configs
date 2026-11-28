@@ -58,6 +58,7 @@ import { applyDocsSkillActions, verifySkillFolders } from "./docs-skills.ts";
 import { checkTypecheckCoverage } from "./typecheck-coverage.ts";
 import {
   checkTestTimeouts,
+  checkTimeoutCore,
   testTimeoutArtifacts,
   timedManifest,
 } from "./test-timeout.ts";
@@ -454,7 +455,11 @@ export function syncRepository(
     .map(({ message }) => message);
   const entryOnly = checkEntryOnlyConfiguration(root);
   const coverage = checkTypecheckCoverage(root, Boolean(options.check));
-  errors.push(...entryOnly.errors, ...writing.errors);
+  errors.push(
+    ...entryOnly.errors,
+    ...writing.errors,
+    ...checkTimeoutCore(root),
+  );
   errors.push(...coverage.errors);
   const notes = plan.flatMap((artifact) =>
     artifact.kind === "migrated" ? artifact.notes : [],
