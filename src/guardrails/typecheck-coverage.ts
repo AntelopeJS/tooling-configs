@@ -13,6 +13,7 @@ import {
   withReferences,
 } from "./tsconfig-chain.ts";
 import { ROOT_PROGRAM, tscRun, type TscRun } from "./tsc-invocation.ts";
+import { orphanProgramErrors } from "./typecheck-orphans.ts";
 
 const MAX_DEPTH = 5;
 
@@ -145,7 +146,7 @@ function scriptsOf(files: CoverageFiles): Scripts | undefined {
   }
 }
 
-/** The package.json and tsconfig facts that keep `typecheck` the lib check no other script skips: `build` skips the lib check only over a program `typecheck` checks in full, no tsconfig a script uses or the root one sets `skipLibCheck: true`, and `release` runs `typecheck`. Under `check` a broken fact is an error; otherwise it is a `Note:` advisory. A file that cannot be read yields a `Note:` advisory and never an error. */
+/** The package.json and tsconfig facts that keep `typecheck` the lib check no other script skips: `build` skips the lib check only over a program `typecheck` checks in full, no tsconfig a script uses or the root one sets `skipLibCheck: true`, `release` runs `typecheck`, and some script or workflow typechecks every tracked tsconfig that defines a program. Under `check` a broken fact is an error; otherwise it is a `Note:` advisory. A file that cannot be read yields a `Note:` advisory and never an error. */
 export function checkTypecheckCoverage(root: string, check: boolean) {
   const files = coverageFiles(root);
   const scripts = scriptsOf(files);
@@ -156,6 +157,7 @@ export function checkTypecheckCoverage(root: string, check: boolean) {
           ...skipCoverageErrors(scripts),
           ...skipLibCheckErrors(files, scripts),
           ...releaseErrors(files, scripts),
+          ...orphanProgramErrors(files),
         ];
   const notes = check
     ? unreadableNotes(files)

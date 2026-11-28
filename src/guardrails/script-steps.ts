@@ -1,7 +1,7 @@
 const SEPARATORS = /&&|\|\||[;|\n]|(?<![>&])&(?!&)/u;
 const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/u;
-/** The compilers a script runs by name: TypeScript's `tsc` and the pack's `antelopejs-tsc`, which takes the same arguments. */
-const TSC_COMMANDS = ["tsc", "antelopejs-tsc"] as const;
+/** The compilers a script runs by name: TypeScript's `tsc`, and the pack's `antelopejs-tsc` and Vue's `vue-tsc`, which take the same arguments. */
+const TSC_COMMANDS = ["tsc", "antelopejs-tsc", "vue-tsc"] as const;
 
 /** A command that runs a compiler of {@link TSC_COMMANDS}. */
 export type TscCommand = (typeof TSC_COMMANDS)[number];
@@ -132,9 +132,12 @@ function skipOptions(
   return { index, targets };
 }
 
-/** The compiler `word` runs: its name or a path to it, with or without `.js`. */
+/** The compiler `word` runs: its name or a path to it, with or without a script extension (`.js`, `.mjs`, `.cjs`, `.ts`). */
 function tscCommand(word: string): TscCommand | undefined {
-  const name = word.split(/[\\/]/u).at(-1)?.replace(/\.js$/u, "");
+  const name = word
+    .split(/[\\/]/u)
+    .at(-1)
+    ?.replace(/\.(?:[cm]?js|ts)$/u, "");
   return TSC_COMMANDS.find((command) => command === name);
 }
 
