@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, dirname, join } from "node:path";
 
+import { docsPointer, ruleDocPath } from "../oxc/rule-docs.ts";
 import { repositoryPath } from "./files.ts";
 
 function resolveOxlint(root: string): string {
@@ -27,6 +28,8 @@ interface OxlintDiagnostic {
   filename?: string;
   message: string;
   help?: string;
+  /** The page oxlint documents a built-in rule on. */
+  url?: string;
   severity?: "error" | "warning" | "advice";
   labels?: { span: OxlintSpan }[];
 }
@@ -275,4 +278,146 @@ export function lintStaged(root: string, files: string[]): StagedLintReport {
       report.failed = true;
   }
   return report;
+}
+
+/** One diagnostic of a lint run, parsed once for the summary's three blocks. */
+interface Finding {
+  file: string | undefined;
+  line: number;
+  column: number;
+  /** `file:line:column`, the file alone without a span, or undefined without a file. */
+  location: string | undefined;
+  /** `plugin/name`, or `oxlint` for a diagnostic with no rule, such as a parse error. */
+  rule: string;
+  message: string;
+  /** The page that documents the rule, when the message or oxlint names one. */
+  doc: string | undefined;
+  failing: boolean;
+}
+
+/** What `antelopejs-lint-summary` prints and whether any finding is an error. */
+interface LintSummary {
+  lines: string[];
+  failed: boolean;
+}
+
+const RULE_CODE = /^(?<plugin>[^(]+)\((?<name>.+)\)$/u;
+
+function oneLine(text: string): string {
+  return text.replaceAll(/\s+/gu, " ").trim();
+}
+
+interface RuleParts {
+  rule: string;
+  name?: string;
+}
+
+interface DocumentedMessage {
+  message: string;
+  doc: string | undefined;
+}
+
+/** The `plugin/name` of an oxlint `plugin(name)` code and the bare `name`, or `oxlint` for a diagnostic with no rule. */
+function ruleOf(code: string | undefined): RuleParts {
+  const parts = code === undefined ? null : RULE_CODE.exec(code);
+  const name = parts?.groups?.name;
+  if (name === undefined) return { rule: code ?? "oxlint" };
+  return { rule: `${parts?.groups?.plugin}/${name}`, name };
+}
+
+/** The message without the docs pointer of rule `name`, with the page the pointer names, or the page oxlint gives. */
+function documented(
+  item: OxlintDiagnostic,
+  name: string | undefined,
+): DocumentedMessage {
+  const pointer = name === undefined ? "" : docsPointer(name);
+  if (name === undefined || !item.message.endsWith(pointer))
+    return { message: item.message, doc: item.url };
+  return {
+    message: item.message.slice(0, -pointer.length),
+    doc: ruleDocPath(name),
+  };
+}
+
+function toFinding(root: string, item: OxlintDiagnostic): Finding {
+  const file =
+    item.filename === undefined
+      ? undefined
+      : repositoryPath(root, item.filename);
+  const span = item.labels?.[0]?.span;
+  const { rule, name } = ruleOf(item.code);
+  const { message, doc } = documented(item, name);
+  const help = item.help === undefined ? "" : ` ${item.help}`;
+  return {
+    file,
+    line: span?.line ?? 0,
+    column: span?.column ?? 0,
+    location:
+      span && file !== undefined ? `${file}:${span.line}:${span.column}` : file,
+    rule,
+    message: oneLine(`${message}${help}`),
+    doc,
+    failing: item.severity !== "warning" && item.severity !== "advice",
+  };
+}
+
+function compareFindings(a: Finding, b: Finding): number {
+  return (
+    (a.file ?? "").localeCompare(b.file ?? "") ||
+    a.line - b.line ||
+    a.column - b.column
+  );
+}
+
+/** `key`s of `findings` with their counts and the first `doc` seen, most frequent first, then by name. */
+function countBy(
+  findings: Finding[],
+  key: (finding: Finding) => string | undefined,
+): { name: string; count: number; doc: string | undefined }[] {
+  const counts = new Map<string, { count: number; doc: string | undefined }>();
+  for (const finding of findings) {
+    const name = key(finding);
+    if (name === undefined) continue;
+    const entry = counts.get(name) ?? { count: 0, doc: finding.doc };
+    entry.count += 1;
+    counts.set(name, entry);
+  }
+  return [...counts]
+    .map(([name, { count, doc }]) => ({ name, count, doc }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+/**
+ * Lints `files`, or the repository as configured when none are named, and
+ * summarises it as one line per finding sorted by file, line and column, then
+ * the count per rule with the page that documents it, then the count per file,
+ * the blocks separated by one blank line. No finding gives no line.
+ */
+export function lintSummary(root: string, files: string[]): LintSummary {
+  const findings = runOxlint(
+    root,
+    undefined,
+    files.length === 0 ? undefined : files,
+    [],
+  )
+    .map((item) => toFinding(root, item))
+    .sort(compareFindings);
+  if (findings.length === 0) return { lines: [], failed: false };
+  const rules = countBy(findings, ({ rule }) => rule).map(
+    ({ name, count, doc }) =>
+      `${count} ${name}${doc === undefined ? "" : ` ${doc}`}`,
+  );
+  const perFile = countBy(findings, ({ file }) => file).map(
+    ({ name, count }) => `${count} ${name}`,
+  );
+  const lines = [
+    ...findings.map(
+      ({ location, rule, message }) =>
+        `${location === undefined ? "" : `${location} `}${rule} ${message}`,
+    ),
+    "",
+    ...rules,
+  ];
+  if (perFile.length > 0) lines.push("", ...perFile);
+  return { lines, failed: findings.some(({ failing }) => failing) };
 }

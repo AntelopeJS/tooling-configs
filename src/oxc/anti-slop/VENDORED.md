@@ -6,6 +6,7 @@ The upstream project is meant to be vendored, not installed from npm. The `effec
 
 ## Local edits
 
+- `index.ts` wraps the rules in `withRuleDocs` (`../rule-docs.ts`), so every message ends with the path of the rule's page under `docs/rules`.
 - `rules/require-safety-comment-for-type-assertion.ts` exports `DEFAULT_SAFETY_MARKERS` and `markerPattern`, so the guardrails suppression counter counts exactly the `SAFETY:` comments this rule accepts.
 - `rules/no-runtime-typeof.ts` also reports `x.constructor === String` (and `Number`, `Boolean`, `BigInt`, `Symbol`, `Function`), a `typeof` check in another form, with the same `allowInTypeGuards` exemption. A `typeof` in the text of a thrown or logged message is reported too: one file cannot see what catches or records the message.
 - `shared/type-guards.ts` holds the type-guard detection `no-runtime-typeof` had inline, so `no-unsafe-dictionary-type` reuses it. In a `.js`, `.mjs` or `.cjs` file, a function whose JSDoc block declares `@returns {x is T}` for one of its parameters is a type guard too, so `allowInTypeGuards` covers plain JavaScript guards.
