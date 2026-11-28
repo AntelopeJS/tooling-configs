@@ -444,16 +444,18 @@ export const noInheritedKeyLookupRule = defineRule({
     ): void => {
       if (environment === null) return;
       const kind = tableKind(object, environment);
-      const parameterKey =
-        isModuleLiteralTable(object, environment.source) &&
-        isOpenStringParameter(key, environment.source, environment.types);
-      if (
-        !parameterKey &&
-        (kind === null || (kind === "literal" && key.type !== "TSAsExpression"))
-      )
+      const openTable =
+        kind === "dictionary" ||
+        (kind === "literal" && key.type === "TSAsExpression");
+      if (!openTable && !isModuleLiteralTable(object, environment.source))
         return;
       const table = context.sourceCode.getText(object);
-      if (isKnownKey(key, table, context.sourceCode)) return;
+      if (
+        isKnownKey(key, table, context.sourceCode) ||
+        (!openTable &&
+          !isOpenStringParameter(key, environment.source, context.filename))
+      )
+        return;
       report({
         node,
         messageId: "lookup",

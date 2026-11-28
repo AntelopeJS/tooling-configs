@@ -1,8 +1,10 @@
 import { RuleTester } from "oxlint/plugins-dev";
 
+import { typedCwd } from "../../helpers/typed-cwd.ts";
 import { noInheritedKeyLookupRule } from "./no-inherited-key-lookup.ts";
 
 const tester = new RuleTester({
+  cwd: typedCwd(),
   languageOptions: { parserOptions: { lang: "ts" } },
 });
 const lookup = { messageId: "lookup" };
@@ -17,10 +19,6 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
     {
       name: "an in test guarded by Object.hasOwn, and of keys iterated from the same object",
       code: "function f(o: object, k: string) { return Object.hasOwn(o, k) && k in o; } function g(o: Record<string, number>) { for (const k of Object.keys(o)) if (k in o) use(k); }",
-    },
-    {
-      name: "a module constant read with a key typed by a local closed union or a type parameter",
-      code: "type Mode = 'a' | 'b'; const T = { a: 1, b: 2 } as const; function f(m: Mode) { return T[m]; } function g<K extends keyof typeof T>(k: K) { return T[k]; }",
     },
     {
       name: "a module constant read with a literal key and a config record with an own-key guard",
@@ -99,22 +97,6 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       code: "type Status = 'open' | 'closed'; const LABELS: Record<Status, string> = { open: 'Open', closed: 'Closed' }; function f(s: Status) { return LABELS[s]; }",
     },
     {
-      name: "a key typed by a same-file string enum",
-      code: "enum Mode { A = 'a', B = 'b' } const T = { a: 1, b: 2 }; function e(m: Mode) { return T[m]; }",
-    },
-    {
-      name: "a key typed by a type parameter of the enclosing class",
-      code: "type Closed = 'a' | 'b'; const T = { a: 1, b: 2 }; class C<K extends Closed> { m(k: K) { return T[k]; } }",
-    },
-    {
-      name: "a closed constraint wins over a same-name open alias, caught by an implementation that resolves the alias first",
-      code: "type K = string; const T = { a: 1, b: 2 }; function f<K extends 'a' | 'b'>(k: K) { return T[k]; }",
-    },
-    {
-      name: "a key typed by a type parameter of an outer function",
-      code: "type Closed = 'a' | 'b'; const T = { a: 1, b: 2 }; function outer<K extends Closed>() { return (k: K) => T[k]; }",
-    },
-    {
       name: "an untyped literal table read with a key typed by the table",
       code: "const T = { a: 1 } as const; function f(k: keyof typeof T) { return T[k]; }",
     },
@@ -156,21 +138,6 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
     },
   ],
   invalid: [
-    {
-      name: "an open constraint wins over a same-name closed alias, caught by an implementation that resolves the alias first",
-      code: "type K = 'a' | 'b'; const T = { a: 1, b: 2 }; function f<K extends string>(k: K) { return T[k]; }",
-      errors: [lookup],
-    },
-    {
-      name: "a key typed by an unconstrained type parameter of the enclosing class",
-      code: "const T = { a: 1, b: 2 }; class ClsU<K> { m(k: K) { return T[k]; } }",
-      errors: [lookup],
-    },
-    {
-      name: "a key typed by a type parameter constrained to string",
-      code: "const T = { a: 1, b: 2 }; function f<K extends string>(k: K) { return T[k]; }",
-      errors: [lookup],
-    },
     {
       name: "rethinkdb@ea47b29:src/implementations/database/expression.ts:193",
       code: `

@@ -1,9 +1,8 @@
 import type { ESTree, Scope, SourceCode, Variable } from "@oxlint/plugins";
 import { argumentParameters } from "../anti-slop/shared/function-parameters.ts";
 
-/** The type aliases, interfaces and enums a file declares at its top level, by name. */
+/** The type aliases and interfaces a file declares at its top level, by name. */
 export interface LocalTypes {
-  enums: Set<string>;
   aliases: Map<string, ESTree.TSType>;
   interfaces: Map<string, ESTree.TSInterfaceDeclaration[]>;
 }
@@ -14,7 +13,6 @@ type FunctionNode = ESTree.ArrowFunctionExpression | ESTree.Function;
 export function collectLocalTypes(program: ESTree.Program): LocalTypes {
   const types: LocalTypes = {
     aliases: new Map(),
-    enums: new Set(),
     interfaces: new Map(),
   };
   for (const statement of program.body) {
@@ -24,8 +22,6 @@ export function collectLocalTypes(program: ESTree.Program): LocalTypes {
         : statement;
     if (declaration?.type === "TSTypeAliasDeclaration")
       types.aliases.set(declaration.id.name, declaration.typeAnnotation);
-    if (declaration?.type === "TSEnumDeclaration")
-      types.enums.add(declaration.id.name);
     if (declaration?.type === "TSInterfaceDeclaration") {
       const merged = types.interfaces.get(declaration.id.name) ?? [];
       merged.push(declaration);
