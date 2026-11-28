@@ -108,7 +108,7 @@ test("an unknown ANTELOPEJS_CHECKS_SKIP name fails and names the valid steps ins
   assert.match(result.stdout, /Unknown step "tset"/);
   assert.match(
     result.stdout,
-    /Valid steps: typecheck, lint, format:check, knip, test, size, suppressions, sync:check, lockfile:singletons, lockfile:antelopejs-peers, lockfile:module-peers, pnpm:release-age, dependency:ranges, dependency:one-range, git:identity, readme:version, published:types\./,
+    /Valid steps: typecheck, lint, format:check, knip, test, size, suppressions, sync:check, lockfile:frozen, lockfile:singletons, lockfile:antelopejs-peers, lockfile:module-peers, pnpm:release-age, dependency:ranges, dependency:one-range, git:identity, readme:version, published:types\./,
   );
 });
 

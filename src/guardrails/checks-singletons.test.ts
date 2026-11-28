@@ -84,13 +84,15 @@ const TWO_CORES = stringify({
 test("a lockfile holding two copies of an interface package fails checks and names who pulls each, caught by a run that never reads resolved rows", (t) => {
   const root = passingRepo(t);
   put(root, "pnpm-lock.yaml", TWO_CORES);
-  const result = bin(root, "checks");
+  const result = bin(root, "checks", [], {
+    ANTELOPEJS_CHECKS_SKIP: "lockfile:frozen",
+  });
   assert.equal(result.status, 1, result.stdout);
   assert.match(
     result.stdout,
     /\[lockfile:singletons\]\npnpm-lock\.yaml resolves "@antelopejs\/interface-core" at 2 versions, and an interface package must load once:\n {2}0\.1\.1, pulled by importer "\.", @antelopejs\/interface-api@0\.1\.0\n {2}0\.2\.6, pulled by @antelopejs\/core@1\.17\.2\n/,
   );
-  assert.match(result.stdout, /Checks: 11 passed, 1 failed\./);
+  assert.match(result.stdout, /Checks: 11 passed, 1 failed, 1 skipped\./);
 });
 
 test("one interface copy under two peer contexts and two copies of a package that is not an interface pass, caught by counting snapshot keys or flagging any duplicate", (t) => {
