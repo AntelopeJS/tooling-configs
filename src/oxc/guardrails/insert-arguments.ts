@@ -3,6 +3,19 @@ import type { ESTree, SourceCode } from "@oxlint/plugins";
 import { resolveVariable } from "./local-types.ts";
 import { callName } from "./shared.ts";
 
+/** A plain or quoted property key, never a computed one, such as `conflict` or `"conflict"`. */
+function isProperty(
+  property: ESTree.ObjectExpression["properties"][number],
+  name: string,
+): property is ESTree.ObjectProperty {
+  return (
+    property.type === "Property" &&
+    !property.computed &&
+    ((property.key.type === "Identifier" && property.key.name === name) ||
+      (property.key.type === "Literal" && property.key.value === name))
+  );
+}
+
 /** Whether an options argument sets `conflict` to anything but `"error"`, which makes the insert an upsert. */
 export function isUpsert(node: ESTree.CallExpression): boolean {
   return node.arguments
@@ -12,12 +25,7 @@ export function isUpsert(node: ESTree.CallExpression): boolean {
         argument.type === "ObjectExpression" &&
         argument.properties.some(
           (property) =>
-            property.type === "Property" &&
-            !property.computed &&
-            ((property.key.type === "Identifier" &&
-              property.key.name === "conflict") ||
-              (property.key.type === "Literal" &&
-                property.key.value === "conflict")) &&
+            isProperty(property, "conflict") &&
             !(
               property.value.type === "Literal" &&
               property.value.value === "error"
@@ -61,15 +69,7 @@ export function naturalKey(
   for (const element of rows) {
     if (element?.type !== "ObjectExpression") continue;
     for (const property of element.properties) {
-      if (
-        property.type !== "Property" ||
-        property.computed ||
-        !(
-          (property.key.type === "Identifier" && property.key.name === "_id") ||
-          (property.key.type === "Literal" && property.key.value === "_id")
-        )
-      )
-        continue;
+      if (!isProperty(property, "_id")) continue;
       const { value } = property;
       if (
         value.type === "MemberExpression" ||
