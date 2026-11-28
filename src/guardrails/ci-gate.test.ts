@@ -54,6 +54,16 @@ test("unwiring keeps a need the caller reads and the gate if with it, so a sync 
   assert.equal(jobsOf(content).ci.if, GATE_CONDITION);
 });
 
+test("unwiring keeps a need on a job that calls a workflow and the gate if with it, since the gate never wired such a job, so a sync that drops every need the caller does not read fails", () => {
+  const text = withCaller(
+    `${job("e2e")}  preview:\n    uses: AntelopeJS/.github/.github/workflows/module-locks-renovate.yml@v2\n`,
+    `    needs: [e2e, preview]\n    if: ${GATE_CONDITION}\n`,
+  );
+  const { content } = syncCi(text);
+  assert.deepEqual(jobsOf(content).ci.needs, ["preview"]);
+  assert.equal(jobsOf(content).ci.if, GATE_CONDITION);
+});
+
 test("a caller with needs under its own if keeps both, so a sync that unwires every caller with needs drops a repository's own wiring", () => {
   const text = withCaller(
     job("lint"),
