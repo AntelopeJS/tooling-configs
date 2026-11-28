@@ -5,27 +5,30 @@ import { resolveVariable, unwrapExpression } from "./local-types.ts";
 import { nodeAt, typedFile } from "./type-checker.ts";
 import { lintedSource } from "./vue-script.ts";
 
-/** The key types that name no key outside the ones they list: string literals, and numbers, enums, `undefined` and `null`, which never convert to the name of an `Object.prototype` property. */
+/** The key types that name no key outside the ones they list: string literals, and the primitives that never convert to the name of an `Object.prototype` property. */
 const CLOSED_KEY =
   ts.TypeFlags.StringLiteral |
   ts.TypeFlags.NumberLike |
+  ts.TypeFlags.BigIntLike |
+  ts.TypeFlags.BooleanLike |
+  ts.TypeFlags.ESSymbolLike |
   ts.TypeFlags.Undefined |
-  ts.TypeFlags.Null;
+  ts.TypeFlags.Null |
+  ts.TypeFlags.Never;
 
-/** Whether the checker types `key` with a union member outside {@link CLOSED_KEY}, a type parameter standing for its base constraint and one with no constraint for any value. */
+/** Whether the parameter `key` reads is declared with a union member outside {@link CLOSED_KEY}, each type parameter standing for its base constraint and one with no constraint for any value. A narrowing at the read is not trusted: a type predicate such as `k is keyof typeof T` built on `k in T` also holds for `constructor`. */
 function isOpenKeyType(checker: ts.TypeChecker, key: ts.Identifier): boolean {
-  const declared = checker.getTypeAtLocation(key);
-  const type = declared.isTypeParameter()
-    ? checker.getBaseConstraintOfType(declared)
-    : declared;
-  if (type === undefined) return true;
+  const parameter = checker.getSymbolAtLocation(key);
+  if (parameter === undefined) return true;
+  const declared = checker.getTypeOfSymbol(parameter);
+  const type = checker.getBaseConstraintOfType(declared) ?? declared;
   const members = type.isUnion() ? type.types : [type];
   return members.some((member) => (member.flags & CLOSED_KEY) === 0);
 }
 
 /**
- * A key read from an annotated parameter whose type, as the program of the
- * file's tsconfig checks it, can hold a string outside a closed set of
+ * A key read from an annotated parameter whose declared type, as the program
+ * of the file's tsconfig checks it, can hold a string outside a closed set of
  * literals. False in a file no tsconfig lists.
  */
 export function isOpenStringParameter(

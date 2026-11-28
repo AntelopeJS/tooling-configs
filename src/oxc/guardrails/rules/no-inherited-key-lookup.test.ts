@@ -121,8 +121,12 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       code: "import type { Mode } from './modes.ts'; const T = { a: 1, b: 2 }; function f(m: Mode) { return T[m]; }",
     },
     {
-      name: "a number key and an optional closed key, caught by an implementation that calls every member but a literal open",
-      code: "type Mode = 'a' | 'b'; const T = { a: 1, b: 2 }; function f(i: number, m?: Mode) { return [T[i], T[m]]; }",
+      name: "number, bigint, boolean, symbol and optional closed keys, caught by an implementation that calls every member but a literal open",
+      code: "type Mode = 'a' | 'b'; const T = { a: 1, b: 2 }; function f(i: number, n: bigint, b: boolean, s: symbol, m?: Mode) { return [T[i], T[n], T[b], T[s], T[m]]; }",
+    },
+    {
+      name: "a closed type parameter in a union, caught by an implementation that resolves the constraint of a bare type parameter only",
+      code: "type Closed = 'a' | 'b'; const T = { a: 1, b: 2 }; function f<K extends Closed>(k: K | 'a') { return T[k]; }",
     },
     {
       name: "an untyped literal table read with a key typed by the table",
@@ -185,6 +189,11 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       name: "keys typed by keyof any and a template literal, caught by an implementation that knows only string and PropertyKey as open",
       code: "const T = { a: 1, b: 2 }; function f(k: keyof any, t: `on${string}`) { return [T[k], T[t]]; }",
       errors: [lookup, lookup],
+    },
+    {
+      name: "a string key narrowed by a type predicate built on in, caught by an implementation that trusts the type narrowed at the read",
+      code: "const T = { a: 1, b: 2 }; const isKey = (k: string): k is keyof typeof T => k in T; function f(k: string) { if (isKey(k)) return T[k]; }",
+      errors: [lookup],
     },
     {
       name: "rethinkdb@ea47b29:src/implementations/database/expression.ts:193",
