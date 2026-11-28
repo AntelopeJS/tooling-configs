@@ -129,8 +129,9 @@ export async function implementingRelease(
 /** How long one tarball download may take before it counts as failed. */
 const TARBALL_TIMEOUT_MS = 30_000;
 
-/** A published release as the abbreviated packument lists it: the ranges it declares under `peerDependencies` and its tarball URL. */
+/** A published release as the abbreviated packument lists it: the ranges it declares under `dependencies` and `peerDependencies` and its tarball URL. */
 export interface ListedRelease {
+  dependencies: ReadonlyMap<string, string>;
   peerDependencies: ReadonlyMap<string, string>;
   tarball: string | undefined;
 }
@@ -155,6 +156,7 @@ export async function packument(name: string): Promise<Packument | undefined> {
   ))
     if (isObject(release))
       releases.set(version, {
+        dependencies: stringValues(optChild(release, "dependencies")),
         peerDependencies: stringValues(optChild(release, "peerDependencies")),
         tarball: optStr(optChild(release, "dist") ?? {}, "tarball"),
       });
