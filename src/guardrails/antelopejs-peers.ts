@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { validRange } from "semver";
 import type { YAMLMap } from "yaml";
 
 import { Unreadable, keys, mapping, scalar } from "./lockfile-reading.ts";
@@ -23,8 +24,7 @@ function importerReport(
     .filter(([name]) => ANTELOPEJS.test(name))
     .flatMap(([name, version]) => {
       const peers = mapping(
-        mapping(packages, `${name}@${version}`) ??
-          mapping(packages, `/${name}@${version}`),
+        mapping(packages, `${name}@${version}`),
         "peerDependencies",
       );
       return keys(peers).flatMap((peer) => {
@@ -32,6 +32,7 @@ function importerReport(
         const at = locked.get(peer);
         return range === undefined ||
           at === undefined ||
+          validRange(range) === null ||
           admits(range, at, false)
           ? []
           : [
@@ -54,12 +55,12 @@ export function checkAntelopejsPeers(root: string): string {
     .map((file) => {
       try {
         return lockfileDocuments(join(root, file))
-          .flatMap((document) =>
-            (mapping(document, "importers")
-              ? keys(mapping(document, "importers"))
-              : ["."]
-            ).map((importer) => importerReport(file, document, importer)),
-          )
+          .flatMap((document) => {
+            const importers = mapping(document, "importers");
+            return (importers ? keys(importers) : ["."]).map((importer) =>
+              importerReport(file, document, importer),
+            );
+          })
           .join("");
       } catch (error) {
         if (error instanceof Unreadable)

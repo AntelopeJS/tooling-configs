@@ -104,3 +104,32 @@ test("a workspace importer locking a peer outside the range is named, while the 
     'pnpm-lock.yaml importer "packages/a" locks "oxlint" at 1.95.0, outside "1.81.0 || 1.94.0", the range @antelopejs/tooling-configs@0.10.7 declares in peerDependencies. Keep oxlint at a version in that range, or move @antelopejs/tooling-configs to a release that lists 1.95.0.\n',
   );
 });
+
+test("a peer range semver cannot parse is left alone, where a check that hands every range to semver throws and stops the checks run", (t) => {
+  const root = testRepo(t);
+  put(
+    root,
+    "pnpm-lock.yaml",
+    stringify({
+      lockfileVersion: "9.0",
+      importers: {
+        ".": {
+          dependencies: {
+            "@antelopejs/tooling-configs": {
+              specifier: "^0.10.7",
+              version: "0.10.7(oxlint@1.95.0)",
+            },
+            oxlint: { specifier: "1.95.0", version: "1.95.0" },
+          },
+        },
+      },
+      packages: {
+        "@antelopejs/tooling-configs@0.10.7": {
+          peerDependencies: { oxlint: "latest" },
+        },
+        "oxlint@1.95.0": {},
+      },
+    }),
+  );
+  assert.equal(checkAntelopejsPeers(root), "");
+});
