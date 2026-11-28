@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { parseDocument } from "yaml";
 
-import { GATE_CONDITION } from "./ci-gate.ts";
 import { CANCEL_IN_PROGRESS } from "./ci-hand-jobs.ts";
 import {
   CI_CALLER,
@@ -78,8 +77,6 @@ concurrency:
 
 jobs:
   ci:
-    needs: [formal, deploy]
-    if: ${GATE_CONDITION}
     permissions:
       contents: read
     uses: ${CI_NODE_REF}
