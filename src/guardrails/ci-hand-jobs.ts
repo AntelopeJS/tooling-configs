@@ -101,7 +101,7 @@ const WHOLE_EXPRESSION = /^\$\{\{([\s\S]*)\}\}$/;
 const MATRIX_OS = /^\$\{\{\s*matrix\.os\s*\}\}$/;
 const MATRIX_KEY = /^\$\{\{\s*matrix\.os\s*==\s*'([^']+)'\s*&&/;
 const SIMPLE_TERNARY =
-  /^\$\{\{\s*matrix\.os\s*==\s*'[^']+'\s*&&\s*[^()|&]+?\s*\|\|\s*[^()|&]+?\s*\}\}$/;
+  /^\$\{\{\s*matrix\.os\s*==\s*'[^']+'\s*&&\s*(?:'([^']*)'|vars\.\w+)\s*\|\|\s*(?:'([^']*)'|vars\.\w+)\s*\}\}$/;
 
 /** A job of `jobs` that calls no workflow: it has no job-level `uses`. */
 export interface HandJob {
@@ -223,7 +223,7 @@ function matrixListRunsOn(job: YAMLMap): string | undefined {
     windows: new Set(),
   };
   for (const { value } of nodes) {
-    const os = osOf(value);
+    const os = value.includes("${{") ? undefined : osOf(value);
     if (os === undefined) return undefined;
     labels[os].add(value);
   }
@@ -234,7 +234,8 @@ function matrixListRunsOn(job: YAMLMap): string | undefined {
 
 /**
  * Has a matrix job run on {@link matrixRunsOn}: a `${{ matrix.os }}` job by {@link matrixListRunsOn}, and a ternary on
- * `matrix.os` against a Windows label whose branches are literals or variables by the expression ternary on that label.
+ * `matrix.os` against a Windows label by the expression ternary on that label, when its branches are a Windows and a Linux
+ * literal or variables and its matrix `os` is generated or a list whose one Windows label is that label.
  * `undefined` when sync cannot do either.
  */
 function setMatrixRunner(
@@ -248,9 +249,22 @@ function setMatrixRunner(
   const label = MATRIX_KEY.exec(runsOn.value)?.[1];
   if (label === undefined || osOf(label) !== "windows") return undefined;
   if (runsOn.value === matrixRunsOn(label)) return false;
-  return SIMPLE_TERNARY.test(runsOn.value)
-    ? setText(runsOn, matrixRunsOn(label))
-    : undefined;
+  const branches = SIMPLE_TERNARY.exec(runsOn.value);
+  if (
+    branches === null ||
+    (branches[1] !== undefined && osOf(branches[1]) !== "windows") ||
+    (branches[2] !== undefined && osOf(branches[2]) !== "linux") ||
+    !keysOnList(job, label)
+  )
+    return undefined;
+  return setText(runsOn, matrixRunsOn(label));
+}
+
+/** Whether the matrix of `job` has an `os` that a ternary on `label` covers: a generated one, or a literal list whose one Windows label is `label`. */
+function keysOnList(job: YAMLMap, label: string): boolean {
+  const os = job.getIn(["strategy", "matrix", "os"], true);
+  if (isTextScalar(os)) return os.value.includes("${{");
+  return isSeq(os) && matrixListRunsOn(job) === matrixRunsOn(label);
 }
 
 /** Moves the `runs-on` of `job` to a {@link RUNS_ON} expression or {@link matrixRunsOn}; the advisory names a runner sync cannot resolve. */

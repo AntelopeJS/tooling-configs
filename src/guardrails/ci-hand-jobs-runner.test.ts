@@ -292,12 +292,18 @@ test("the Windows ternary of an earlier sync becomes the expression ternary on t
   assert.equal(syncCi(text.content).content, text.content);
 });
 
-test("a matrix sync cannot read is reported and untouched, so an implementation that rewrites a generated list, keys one ternary on two Windows labels or moves macOS to Linux fails", () => {
+test("a matrix sync cannot read is reported and untouched, so an implementation that rewrites a generated list or item, keys one ternary on two Windows labels, drops a ternary branch that names another runner, or moves macOS to Linux fails", () => {
   for (const job of [
     "  test:\n    runs-on: ${{ matrix.os }}\n    strategy:\n      matrix:\n        os: ${{ fromJSON(vars.OSES) }}\n    steps:\n      - run: pnpm test\n",
     "  test:\n    runs-on: ${{ matrix.os }}\n    strategy:\n      matrix:\n        os: [windows-2022, windows-latest]\n    steps:\n      - run: pnpm win\n",
     "  test:\n    runs-on: ${{ matrix.os }}\n    strategy:\n      matrix:\n        os: [ubuntu-latest, macos-latest]\n    steps:\n      - run: pnpm test\n",
     "  test:\n    runs-on: ${{ matrix.os == 'macos-latest' && 'a' || 'b' }}\n    steps:\n      - run: pnpm test\n",
+    "  test:\n    runs-on: ${{ matrix.os == 'windows-latest' && 'blacksmith-4vcpu-windows-2025' || matrix.os }}\n    strategy:\n      matrix:\n        os: [ubuntu-latest, macos-latest, windows-latest]\n    steps:\n      - run: pnpm test\n",
+    "  test:\n    runs-on: ${{ matrix.os == 'windows-latest' && 'windows-latest' || 'macos-latest' }}\n    strategy:\n      matrix:\n        os: [macos-latest, windows-latest]\n    steps:\n      - run: pnpm test\n",
+    "  test:\n    runs-on: ${{ matrix.os == 'windows-latest' && inputs.win || inputs.lin }}\n    strategy:\n      matrix:\n        os: [ubuntu-latest, windows-latest]\n    steps:\n      - run: pnpm test\n",
+    "  test:\n    runs-on: ${{ matrix.os == 'windows-latest' && 'windows-latest' || 'ubuntu-latest' }}\n    steps:\n      - run: pnpm test\n",
+    "  test:\n    runs-on: ${{ matrix.os == 'windows-latest' && 'windows-latest' || 'ubuntu-latest' }}\n    strategy:\n      matrix:\n        os: [ubuntu-latest, windows-2022]\n    steps:\n      - run: pnpm test\n",
+    "  test:\n    runs-on: ${{ matrix.os }}\n    strategy:\n      matrix:\n        os: [ubuntu-latest, '${{ inputs.os }}']\n    steps:\n      - run: pnpm test\n",
   ]) {
     const kept = syncCi(workflowWith(job));
     assert.notEqual(jobsOf(kept.content).test["runs-on"], MATRIX, job);
