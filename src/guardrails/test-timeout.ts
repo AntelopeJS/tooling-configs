@@ -1,9 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { lt, minVersion, validRange } from "semver";
 
 import { TEST_TIMEOUT_MS } from "../test-timeout.ts";
 import { workspaceDirectories } from "./docs-compat.ts";
-import { parseManifest, serializeManifest } from "./package.ts";
+import { type Manifest, parseManifest, serializeManifest } from "./package.ts";
 import {
   commandParts,
   commandSteps,
@@ -163,6 +164,56 @@ function manifestFindings(root: string, directory: string): string[] {
       return found === undefined ? [] : [found];
     }),
   );
+}
+
+/** The first `@antelopejs/core` whose `ajs module test` accepts `--timeout`: 1.23.0 rejects it as an unknown option. */
+const CORE_WITH_TIMEOUT = "1.23.1";
+
+const CORE = "@antelopejs/core";
+
+function coreSpec(manifest: Manifest): string | undefined {
+  return (
+    manifest.devDependencies?.[CORE] ??
+    manifest.dependencies?.[CORE] ??
+    manifest.peerDependencies?.[CORE]
+  );
+}
+
+function readManifest(root: string, path: string): Manifest | undefined {
+  if (!existsSync(join(root, path))) return undefined;
+  try {
+    return parseManifest(readFileSync(join(root, path), "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A failure for each manifest whose scripts run `ajs module test`, which sync gives `--timeout`, while the
+ * `@antelopejs/core` it declares, or the root declares when it declares none, admits a release before
+ * {@link CORE_WITH_TIMEOUT}. A range that is not semver, such as `workspace:*`, passes.
+ */
+export function checkTimeoutCore(root: string): string[] {
+  const rootManifest = readManifest(root, "package.json");
+  if (rootManifest === undefined) return [];
+  return ["", ...workspaceDirectories(root)].flatMap((directory) => {
+    const path = directory ? `${directory}/package.json` : "package.json";
+    const manifest = directory ? readManifest(root, path) : rootManifest;
+    if (manifest === undefined) return [];
+    const runsModuleTest = Object.values(manifest.scripts ?? {}).some((text) =>
+      stepsOf(text).some(
+        (step) => step.kind === "test" && step.runner === "ajs module test",
+      ),
+    );
+    const spec = coreSpec(manifest) ?? coreSpec(rootManifest);
+    if (!runsModuleTest || spec === undefined || validRange(spec) === null)
+      return [];
+    const floor = minVersion(spec);
+    if (floor === null || !lt(floor, CORE_WITH_TIMEOUT)) return [];
+    return [
+      `${path} runs ajs module test, which sync gives --timeout ${WANTED}, and "${CORE}" "${spec}" admits ${floor.version}, whose ajs module test rejects --timeout. Set "${CORE}" to ">=${CORE_WITH_TIMEOUT}" or later, run \`pnpm install\`, then run antelopejs-sync.`,
+    ];
+  });
 }
 
 /** Every `ajs module test` and `mocha` run in the scripts of the root package and the workspace members must pass `--timeout` with the shared {@link TEST_TIMEOUT_MS}. Under `check` a run without it is an error; otherwise it is a `Note:` advisory. */

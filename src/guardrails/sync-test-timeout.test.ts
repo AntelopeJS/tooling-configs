@@ -232,3 +232,60 @@ test("sync --check fails on a hand-set limit and a write run sets the shared tim
     /^Note: package\.json script "log" runs mocha with its own --timeout 10000/m,
   );
 });
+
+function withCore(root: string, spec: string): void {
+  const manifest = parseManifest(read(root, "package.json"));
+  manifest.devDependencies = {
+    ...manifest.devDependencies,
+    "@antelopejs/core": spec,
+  };
+  put(root, "package.json", `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+test("auth-jwt: sync fails and writes nothing while a manifest running ajs module test lets @antelopejs/core resolve to 1.23.0, which rejects --timeout, naming the manifest, the range and the fix, where a sync that only adds the flag breaks the test script", (t) => {
+  const root = testRepo(t);
+  assert.equal(bin(root, "sync").status, 0);
+  put(root, "pnpm-workspace.yaml", "packages:\n  - packages/*\n");
+  withCore(root, "^1.23.0");
+  withScripts(root, { test: "ajs module test ." });
+  withScripts(
+    root,
+    { test: "pnpm run build && ajs module test ." },
+    "packages/member/package.json",
+  );
+  commit(root);
+  const before = read(root, "package.json");
+
+  for (const args of [["--check"], []]) {
+    const result = bin(root, "sync", args);
+    assert.equal(result.status, 1, result.stdout);
+    for (const path of ["package.json", "packages/member/package.json"])
+      assert.ok(
+        result.stderr.includes(
+          `${path} runs ajs module test, which sync gives --timeout 30000, and "@antelopejs/core" "^1.23.0" admits 1.23.0, whose ajs module test rejects --timeout. Set "@antelopejs/core" to ">=1.23.1" or later, run \`pnpm install\`, then run antelopejs-sync.`,
+        ),
+        result.stderr,
+      );
+  }
+  assert.equal(read(root, "package.json"), before);
+});
+
+test("a core range from 1.23.1, a non-semver core spec or a repository running only mocha passes and gets the shared timeout, where a check that flags every declared core fails them", (t) => {
+  for (const [spec, script] of [
+    ["^1.23.1", "ajs module test ."],
+    ["workspace:*", "ajs module test ."],
+    ["1.23.0", "mocha"],
+  ]) {
+    const root = testRepo(t);
+    assert.equal(bin(root, "sync").status, 0);
+    withCore(root, spec);
+    withScripts(root, { test: script });
+    commit(root);
+    const write = bin(root, "sync");
+    assert.equal(write.status, 0, write.stderr);
+    assert.equal(
+      parseManifest(read(root, "package.json")).scripts?.test,
+      `${script} --timeout 30000`,
+    );
+  }
+});
