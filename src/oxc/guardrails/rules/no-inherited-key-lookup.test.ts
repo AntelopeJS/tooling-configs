@@ -4,7 +4,7 @@ import { typedCwd } from "../../helpers/typed-cwd.ts";
 import { noInheritedKeyLookupRule } from "./no-inherited-key-lookup.ts";
 
 const tester = new RuleTester({
-  cwd: typedCwd(),
+  cwd: typedCwd({ "modes.ts": "export type Mode = 'a' | 'b';\n" }),
   languageOptions: { parserOptions: { lang: "ts" } },
 });
 const lookup = { messageId: "lookup" };
@@ -117,6 +117,14 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       code: "type Closed = 'a' | 'b'; const T = { a: 1, b: 2 }; function outer<K extends Closed>() { return (k: K) => T[k]; }",
     },
     {
+      name: "a key typed by an imported closed union, caught by an implementation that resolves only the types its file declares",
+      code: "import type { Mode } from './modes.ts'; const T = { a: 1, b: 2 }; function f(m: Mode) { return T[m]; }",
+    },
+    {
+      name: "a number key and an optional closed key, caught by an implementation that calls every member but a literal open",
+      code: "type Mode = 'a' | 'b'; const T = { a: 1, b: 2 }; function f(i: number, m?: Mode) { return [T[i], T[m]]; }",
+    },
+    {
       name: "an untyped literal table read with a key typed by the table",
       code: "const T = { a: 1 } as const; function f(k: keyof typeof T) { return T[k]; }",
     },
@@ -172,6 +180,11 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       name: "a key typed by a type parameter constrained to string",
       code: "const T = { a: 1, b: 2 }; function f<K extends string>(k: K) { return T[k]; }",
       errors: [lookup],
+    },
+    {
+      name: "keys typed by keyof any and a template literal, caught by an implementation that knows only string and PropertyKey as open",
+      code: "const T = { a: 1, b: 2 }; function f(k: keyof any, t: `on${string}`) { return [T[k], T[t]]; }",
+      errors: [lookup, lookup],
     },
     {
       name: "rethinkdb@ea47b29:src/implementations/database/expression.ts:193",

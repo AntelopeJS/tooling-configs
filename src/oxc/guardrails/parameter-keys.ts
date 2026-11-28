@@ -5,12 +5,14 @@ import { resolveVariable, unwrapExpression } from "./local-types.ts";
 import { nodeAt, typedFile } from "./type-checker.ts";
 import { lintedSource } from "./vue-script.ts";
 
+/** The key types that name no key outside the ones they list: string literals, and numbers, enums, `undefined` and `null`, which never convert to the name of an `Object.prototype` property. */
 const CLOSED_KEY =
   ts.TypeFlags.StringLiteral |
-  ts.TypeFlags.NumberLiteral |
-  ts.TypeFlags.EnumLiteral;
+  ts.TypeFlags.NumberLike |
+  ts.TypeFlags.Undefined |
+  ts.TypeFlags.Null;
 
-/** Whether the checker types `key` as anything but a union of string, number and enum literals, a type parameter standing for its base constraint and one with no constraint for any value. */
+/** Whether the checker types `key` with a union member outside {@link CLOSED_KEY}, a type parameter standing for its base constraint and one with no constraint for any value. */
 function isOpenKeyType(checker: ts.TypeChecker, key: ts.Identifier): boolean {
   const declared = checker.getTypeAtLocation(key);
   const type = declared.isTypeParameter()
