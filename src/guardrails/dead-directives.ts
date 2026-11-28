@@ -110,9 +110,12 @@ function deadFailure(directive: Directive, dead: Set<string>): string[] {
   );
 }
 
-/** The `typescript/` name oxlint also accepts as `@typescript-eslint/`. */
+/** The `typescript/` name oxlint also accepts as `@typescript-eslint/`, `typescript-eslint/` or `eslint-plugin-typescript/`. */
 function oxlintName(rule: string): string {
-  return rule.replace(/^@typescript-eslint\//u, "typescript/");
+  return rule.replace(
+    /^(?:@typescript-eslint|typescript-eslint|eslint-plugin-typescript)\//u,
+    "typescript/",
+  );
 }
 
 /**

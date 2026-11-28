@@ -311,6 +311,44 @@ test("dms-database#260: needed type-aware directives under a tsconfig that canno
   }
 });
 
+const ALIASED = (alias: string, note: string) =>
+  [
+    "export function compile(source: string): unknown {",
+    `  // eslint-disable-next-line ${alias}/no-implied-eval -- the query console compiles the admin's own query text${note}`,
+    "  return new Function(source);",
+    "}",
+    "",
+  ].join("\n");
+
+for (const alias of ["typescript-eslint", "eslint-plugin-typescript"]) {
+  test(`a needed type-aware directive spelled ${alias}/ under a tsconfig that cannot load is not judged, where a check that maps only the typescript/ and @typescript-eslint/ spellings calls it dead`, (t) => {
+    const root = presetRepo(
+      t,
+      {
+        "frontend-vue/tsconfig.json": JSON.stringify({
+          extends: "./.dms-types/tsconfig.json",
+          include: ["**/*.ts"],
+        }),
+        "frontend-vue/app/runtime.ts": ALIASED(alias, ""),
+      },
+      { [`${alias}/no-implied-eval`]: 1 },
+    );
+    const { staged, full } = bothModes(root, () =>
+      put(root, "frontend-vue/app/runtime.ts", ALIASED(alias, ".")),
+    );
+    for (const result of [staged, full]) {
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(
+        result.stdout,
+        new RegExp(
+          `Not judged: frontend-vue/app/runtime\\.ts:2 \`eslint-disable-next-line ${alias}/no-implied-eval\`\\.`,
+          "u",
+        ),
+      );
+    }
+  });
+}
+
 test("under a tsconfig that cannot load, a dead directive for a rule that ran still fails, where a check that skips the whole file passes it", (t) => {
   const root = ungeneratedRepo(t, DEAD_CONSOLE);
   const { staged, full } = bothModes(root, () =>
