@@ -89,6 +89,17 @@ test("test starts only after every other step finished, so its time limits never
   assert.equal(result.stdout, "Checks: 9 passed, 0 failed.\n");
 });
 
+test("suppressions starts only after lint finished, so a lint that regenerates the types a tsconfig extends never empties them under its oxlint run", (t) => {
+  const root = repoWith(t, {
+    lint: "node -e \"Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 400); require('node:fs').writeFileSync('lint.done', '')\"",
+    suppressions:
+      "node -e \"process.exit(require('node:fs').existsSync('lint.done') ? 0 : 1)\"",
+  });
+  const result = bin(root, "checks", ["--no-services"]);
+  assert.equal(result.status, 0, result.stdout);
+  assert.equal(result.stdout, "Checks: 9 passed, 0 failed.\n");
+});
+
 test("failures are listed in step order even when a later step fails first", (t) => {
   const root = repoWith(t, {
     lint: meets("lint", "knip", "fail-late"),
