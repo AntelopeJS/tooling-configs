@@ -216,7 +216,7 @@ test("a workspace package using a type its unpublished sibling adds passes check
   });
   const result = checks(root);
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 11 skipped.\n");
+  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 12 skipped.\n");
 });
 
 test("checks reports an error in a file a wildcard export reaches and none in a shipped file no export reaches, caught by an implementation that checks every shipped declaration or skips wildcard subpaths", (t) => {
@@ -355,7 +355,7 @@ test("workspace packages that depend on each other pass checks, caught by an imp
   });
   const result = checks(root);
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 11 skipped.\n");
+  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 12 skipped.\n");
 });
 
 test("a broken declaration behind a types condition listed after import and require fails checks, caught by an implementation that stops at the first matching condition", (t) => {
