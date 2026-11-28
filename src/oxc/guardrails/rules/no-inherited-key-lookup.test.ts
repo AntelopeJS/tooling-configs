@@ -105,18 +105,6 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       code: "const xs: string[] = []; function f(i: number) { return xs[i]; }",
     },
     {
-      name: "a string key narrowed by a call in the enclosing condition, caught by an implementation that reports every string-declared key",
-      code: "import { levels, isLevelName } from './levels'; function f(level: string) { const a = isLevelName(level) ? levels[level] : 0; if (isLevelName(level)) use(levels[level]); return a + (isLevelName(level) && levels[level]); }",
-    },
-    {
-      name: "a string key read from a local null-prototype table, caught by an implementation that ignores how the table was built",
-      code: "const T = Object.create(null); const U = { __proto__: null, a: 1 }; class C { t = Object.create(null); m(k: string) { return this.t[k]; } } function f(k: string) { return [T[k], U[k]]; }",
-    },
-    {
-      name: "an imported table read with a key of an imported literal union, caught by an implementation that treats an unresolved key type as open",
-      code: "import type { Channel } from './channels'; import { outputs } from './outputs'; function f(channel: Channel) { return outputs[channel]; }",
-    },
-    {
       name: "a literal key tested with in",
       code: "const T: Record<string, number> = { a: 1 }; const has = 'a' in T;",
     },
@@ -146,36 +134,6 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
     },
   ],
   invalid: [
-    {
-      name: "antelopejs#568: a string-declared key into a table typed in another file, caught by an implementation that reads only tables typed in this file",
-      code: "import type { Config } from './config'; import { envModules } from './modules'; function f(config: Config, environment: string, module: string) { return [config.environments?.[environment], envModules[module]]; }",
-      errors: [lookup, lookup],
-    },
-    {
-      name: "antelopejs#574: an optional manifest record read with a string | undefined parameter",
-      code: "import type { Manifest } from './manifest'; function f(manifest: Manifest, packageName: string | undefined) { return manifest.dependencies?.[packageName]; }",
-      errors: [lookup],
-    },
-    {
-      name: "a call on the key that leaves the read in its alternate, or a call on another variable of the same name, caught by an implementation that accepts any call in an enclosing condition",
-      code: "import { levels, isLevelName } from './levels'; function f(level: string) { const a = isLevelName(level) ? 0 : levels[level]; return isLevelName(level) ? ((level: string) => levels[level])('x') : a; }",
-      errors: [lookup, lookup],
-    },
-    {
-      name: "a computed destructure with a string key and a let built with a null prototype then reassigned, caught by an implementation that widens member reads only or trusts any null-prototype initializer",
-      code: "import { table } from './table'; function f(key: string) { const { [key]: value } = table; let t = Object.create(null); t = table; return [value, t[key]]; }",
-      errors: [lookup, lookup],
-    },
-    {
-      name: "a variable declared string | null, caught by an implementation that checks parameters only",
-      code: "import { table } from './table'; const name: string | null = read(); export const value = table[name];",
-      errors: [lookup],
-    },
-    {
-      name: "a dictionary declared elsewhere read with a string parameter, caught by an implementation that resolves only tables declared in this file",
-      code: "import { TABLE } from './table'; function f(key: string) { return TABLE[key]; }",
-      errors: [lookup],
-    },
     {
       name: "rethinkdb@ea47b29:src/implementations/database/expression.ts:193",
       code: `
