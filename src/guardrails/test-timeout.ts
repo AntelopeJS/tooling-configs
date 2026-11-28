@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { lt, minVersion, validRange } from "semver";
+import { lt, minVersion, valid, validRange } from "semver";
 
 import { TEST_TIMEOUT_MS } from "../test-timeout.ts";
 import { workspaceDirectories } from "./docs-compat.ts";
@@ -187,7 +187,21 @@ function lockedCore(root: string, importer: string): string | undefined {
   }
 }
 
-/** Where the core a manifest runs comes from and the release it may run: the locked one, else the floor of its range. */
+/** The core installed in the `node_modules` of `directory`, else of the root, as Node resolves it from the manifest; `undefined` when neither holds one with a semver `version`. */
+function installedCore(
+  root: string,
+  directory: string,
+): { path: string; version: string } | undefined {
+  for (const folder of new Set([directory, ""])) {
+    const path = join(folder, "node_modules", CORE, "package.json");
+    const version = readManifest(root, path)?.version;
+    if (version !== undefined && valid(version) !== null)
+      return { path: path.replaceAll("\\", "/"), version };
+  }
+  return undefined;
+}
+
+/** Where the core a manifest runs comes from and the release it may run: the locked one, else the installed one, else the floor of its range. */
 function coreRelease(
   root: string,
   directory: string,
@@ -197,6 +211,9 @@ function coreRelease(
   const locked = lockedCore(root, directory || ".");
   if (locked !== undefined)
     return { source: `pnpm-lock.yaml locks "${CORE}" at`, release: locked };
+  const installed = installedCore(root, directory);
+  if (installed !== undefined)
+    return { source: `${installed.path} is`, release: installed.version };
   const spec = coreSpec(manifest) ?? coreSpec(rootManifest);
   const floor =
     spec === undefined || validRange(spec) === null ? null : minVersion(spec);
@@ -217,8 +234,8 @@ function readManifest(root: string, path: string): Manifest | undefined {
 /**
  * A failure for each manifest whose scripts run `ajs module test`, which sync gives `--timeout`, while its
  * `@antelopejs/core` is before {@link CORE_WITH_TIMEOUT}: the version the root `pnpm-lock.yaml` locks for it, else the
- * floor of the range it declares, or the root declares when it declares none. A range that is not semver, such as
- * `workspace:*`, passes.
+ * one installed in its `node_modules` or the root's, else the floor of the range it declares, or the root declares when
+ * it declares none. A range that is not semver, such as `workspace:*`, passes.
  */
 export function checkTimeoutCore(root: string): string[] {
   const rootManifest = readManifest(root, "package.json");
