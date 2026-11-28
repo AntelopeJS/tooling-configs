@@ -364,7 +364,11 @@ async function declaredRanges(
     : { requirements: [...peers, ...frontend.requirements] };
 }
 
-/** Whether `range` admits `version`; with `releaseLine`, a prerelease counts as the release it leads to, as `ajs-dms build` judges a frontend's range. */
+/**
+ * Whether `range` admits `version`. A prerelease is ordered among releases, so `1.24.10-next.1` is inside `~1.24.x` and
+ * `1.0.0-rc.1` is below `>=1.0.0`; with `releaseLine`, a prerelease counts as the release it leads to, as `ajs-dms build`
+ * judges a frontend's range.
+ */
 const admits = (
   range: string,
   version: string,
@@ -373,6 +377,7 @@ const admits = (
   satisfies(
     releaseLine ? (coerce(version)?.version ?? version) : version,
     range,
+    { includePrerelease: true },
   );
 
 async function moduleReport(

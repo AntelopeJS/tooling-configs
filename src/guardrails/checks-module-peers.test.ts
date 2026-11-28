@@ -141,6 +141,32 @@ test("a prerelease locked below a peerDependencies floor fails, caught by an imp
   );
 });
 
+const corePeer = (range: string): StubModuleRelease => ({
+  peerDependencies: { "@antelopejs/core": range },
+});
+
+test("a -next core inside a stable module's peer range passes, and one past it fails, caught by an implementation where no prerelease satisfies a range", async (t) => {
+  const inside = template(t, literalSource(ASSISTANT, "0.2.6"), {
+    "@antelopejs/core": "1.24.10-next.572.gf974e0f",
+  });
+  const passed = await checks(t, inside, {
+    [ASSISTANT]: { "0.2.6": corePeer("~1.24.x") },
+  });
+  assert.equal(passed.status, 0, passed.stdout);
+
+  const past = template(t, literalSource(ASSISTANT, "0.2.6"), {
+    "@antelopejs/core": "1.25.0-next.1",
+  });
+  const failed = await checks(t, past, {
+    [ASSISTANT]: { "0.2.6": corePeer("~1.24.x") },
+  });
+  assert.equal(failed.status, 1, failed.stdout);
+  assert.match(
+    failed.stdout,
+    /locks "@antelopejs\/core" at 1\.25\.0-next\.1, outside "~1\.24\.x"/,
+  );
+});
+
 test("a source a local function builds with `as const` is read at each call, caught by an implementation that reads only object literals whose fields are strings", async (t) => {
   const config = `function moduleSource(name: string, version: string) {\n  return { type: "package" as const, package: name, version };\n}\n\nexport default {\n  modules: {\n    api: { source: { type: "local", path: "." } },\n    assistant: { source: moduleSource("${ASSISTANT}", "^0.2.1") },\n  },\n};\n`;
   const root = template(t, config, { "@openai/codex": "0.170.0" });
