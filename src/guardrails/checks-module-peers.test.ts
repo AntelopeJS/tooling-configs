@@ -320,7 +320,7 @@ test("a root package.json interface range no range a configured module release d
   assert.equal(clash.status, 1, clash.stdout);
   assert.equal(
     clash.stdout,
-    '[lockfile:module-peers]\n@antelopejs/interface-dms: package.json requires ">=0.17.0 <0.18.0" and @antelopejs/dms@0.23.0 (antelope.config.ts: ">=0.23.0 <0.24.0") requires "^0.16.0"; no copy satisfies both, so the project stops at boot with "Incompatible interface package resolution". Move one of them to a release whose range meets the other.\nChecks: 0 passed, 1 failed, 13 skipped.\n',
+    '[lockfile:module-peers]\n@antelopejs/interface-dms: package.json requires ">=0.17.0 <0.18.0" and @antelopejs/dms@0.23.0 (antelope.config.ts: ">=0.23.0 <0.24.0") requires "^0.16.0"; no copy satisfies both, so the project stops at boot with "Incompatible interface package resolution". Move one of them to a release whose range meets the other.\nChecks: 0 passed, 1 failed, 14 skipped.\n',
   );
   const met = await checks(t, project(), {
     "@antelopejs/dms": { "0.23.0": dms("^0.17.2") },
