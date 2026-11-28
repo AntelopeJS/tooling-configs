@@ -104,6 +104,7 @@
   "src/guardrails/docs-node.test.ts": 13.6,
   "src/guardrails/docs-skills.test.ts": 8.5,
   "src/guardrails/installed-typescript.test.ts": 64.5,
+  "src/guardrails/lint-summary.test.ts": 3,
   "src/guardrails/one-range.test.ts": 2.3,
   "src/guardrails/plugin-errors.test.ts": 0.7,
   "src/guardrails/published-types-known.test.ts": 17.5,
