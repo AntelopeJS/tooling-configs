@@ -311,3 +311,26 @@ test("the core pnpm-lock.yaml locks decides over the range floor: ^1.23.0 locked
     else assert.doesNotMatch(check.stderr, /@antelopejs\/core/u);
   }
 });
+
+test("with no lockfile entry for core, the installed core decides over the range floor: >=1.20 with 1.24.9 installed passes and with 1.23.0 installed fails naming it, where a check that reads only the range fails an npm or yarn repository on a newer core", (t) => {
+  for (const [core, status] of [
+    ["1.24.9", 0],
+    ["1.23.0", 1],
+  ] as const) {
+    const root = testRepo(t);
+    assert.equal(bin(root, "sync").status, 0);
+    withCore(root, ">=1.20");
+    withScripts(root, { test: "ajs module test ." });
+    put(
+      root,
+      "node_modules/@antelopejs/core/package.json",
+      JSON.stringify({ name: "@antelopejs/core", version: core }),
+    );
+    commit(root);
+    const check = bin(root, "sync");
+    assert.equal(check.status, status, check.stderr);
+    const installed = `package.json runs ajs module test, which sync gives --timeout 30000, and node_modules/@antelopejs/core/package.json is ${core}, whose ajs module test rejects --timeout.`;
+    if (status === 1) assert.ok(check.stderr.includes(installed), check.stderr);
+    else assert.doesNotMatch(check.stderr, /@antelopejs\/core/u);
+  }
+});

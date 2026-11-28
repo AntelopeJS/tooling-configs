@@ -267,6 +267,30 @@ function siblingsOf(
   );
 }
 
+/** The directories of a chain of siblings that leads back to its first, `a → b → a`, or `undefined` when the runtime dependencies hold no cycle. */
+function siblingCycle(
+  siblings: ReadonlyMap<string, readonly ReleasePackage[]>,
+): string[] | undefined {
+  const done = new Set<string>();
+  const visit = (path: string[]): string[] | undefined => {
+    const directory = path.at(-1) ?? "";
+    const start = path.indexOf(directory);
+    if (start < path.length - 1) return path.slice(start);
+    if (done.has(directory)) return undefined;
+    for (const sibling of siblings.get(directory) ?? []) {
+      const cycle = visit([...path, sibling.directory]);
+      if (cycle) return cycle;
+    }
+    done.add(directory);
+    return undefined;
+  };
+  for (const directory of siblings.keys()) {
+    const cycle = visit([directory]);
+    if (cycle) return cycle;
+  }
+  return undefined;
+}
+
 /** The `needs` and `if` of a job among several: it waits for the siblings it depends on, and runs when none of them failed, so a skipped sibling leaves it free. */
 function gate(release: ReleasePackage, siblings: ReleasePackage[]): string[] {
   const condition = `github.event_name != 'workflow_dispatch' || ${dispatched(release.directory)}`;
@@ -387,10 +411,17 @@ export function releaseArtifacts(root: string): PlannedArtifact[] {
       message,
     }));
   if (!found.packages.length) return [];
-  const content = releaseCaller(
-    found.packages,
-    siblingsOf(root, found.packages),
-  );
+  const siblings = siblingsOf(root, found.packages);
+  const cycle = siblingCycle(siblings);
+  if (cycle)
+    return [
+      {
+        kind: "error",
+        path: RELEASE_PATH,
+        message: `${RELEASE_PATH}: the released packages ${cycle.join(" → ")} depend on each other through dependencies, peerDependencies or optionalDependencies, so their release jobs would need each other, a cycle GitHub rejects. Move one of these dependencies to devDependencies, then rerun antelopejs-sync.`,
+      },
+    ];
+  const content = releaseCaller(found.packages, siblings);
   const removed = [...found.files.keys()].filter(
     (file) => file !== RELEASE_PATH,
   );

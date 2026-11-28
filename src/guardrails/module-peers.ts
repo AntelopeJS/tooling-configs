@@ -1,6 +1,13 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { coerce, maxSatisfying, satisfies, valid, validRange } from "semver";
+import {
+  Range,
+  coerce,
+  maxSatisfying,
+  satisfies,
+  valid,
+  validRange,
+} from "semver";
 import ts from "typescript";
 
 import {
@@ -372,18 +379,31 @@ async function declaredRanges(
 /**
  * Whether `range` admits `version`. A prerelease is ordered among releases, so `1.24.10-next.1` is inside `~1.24.x` and
  * `1.0.0-rc.1` is below `>=1.0.0`; with `releaseLine`, a prerelease counts as the release it leads to, as `ajs-dms build`
- * judges a frontend's range.
+ * judges a frontend's range. A hand-written `<1.25.0` excludes the release line it names, so `1.25.0-next.1` is outside
+ * it, as it is outside the `<1.25.0-0` that `~1.24.x` stands for.
  */
 const admits = (
   range: string,
   version: string,
   releaseLine: boolean,
-): boolean =>
-  satisfies(
-    releaseLine ? (coerce(version)?.version ?? version) : version,
-    range,
-    { includePrerelease: true },
+): boolean => {
+  if (releaseLine)
+    return satisfies(coerce(version)?.version ?? version, range, {
+      includePrerelease: true,
+    });
+  const release = coerce(version)?.version;
+  return new Range(range, { includePrerelease: true }).set.some((comparators) =>
+    comparators.every(
+      (comparator) =>
+        comparator.test(version) &&
+        !(
+          comparator.operator === "<" &&
+          comparator.semver.prerelease.length === 0 &&
+          comparator.semver.version === release
+        ),
+    ),
   );
+};
 
 async function moduleReport(
   module: Installed,

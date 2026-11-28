@@ -104,3 +104,25 @@ test("a preview dispatch that names no package runs every job of a workspace, ea
   assert.equal(formatCheck(root, [RELEASE_PATH]).status, 0);
   assert.equal(syncRepository(root, { check: true }).paths.length, 0);
 });
+
+test("two released packages that depend on each other at runtime stop sync and --check with the cycle named and release.yml untouched, so a sync that writes jobs needing each other, which GitHub rejects at dispatch, fails", (t) => {
+  const root = testRepo(t);
+  const files = {
+    "package.json": JSON.stringify({ name: "workspace", type: "module" }),
+    [RELEASE_PATH]: caller("packages/a"),
+    ".github/workflows/release-b.yml": caller("packages/b"),
+    "packages/a/package.json": JSON.stringify({
+      name: "@antelopejs/a",
+      dependencies: { "@antelopejs/b": "workspace:^" },
+    }),
+    "packages/b/package.json": JSON.stringify({
+      name: "@antelopejs/b",
+      peerDependencies: { "@antelopejs/a": "workspace:^" },
+    }),
+  };
+  for (const [path, content] of Object.entries(files)) put(root, path, content);
+  const cycle = /packages\/a → packages\/b → packages\/a depend on each other/;
+  assert.match(syncRepository(root, { check: true }).errors.join("\n"), cycle);
+  assert.match(syncRepository(root).errors.join("\n"), cycle);
+  assert.equal(read(root, RELEASE_PATH), caller("packages/a"));
+});
