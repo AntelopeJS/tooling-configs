@@ -214,3 +214,72 @@ test("a ternary already in the expression form, a ternary of variables, or a mat
     ["ubuntu-latest", "windows-latest"],
   );
 });
+
+test("an os key spelled in another case, in an include item or the matrix itself, or a merge key there, leaves the job alone with the reason, so a sync that reads only the exact key os and moves the include's windows-latest leg to Linux fails", () => {
+  for (const [matrix, why] of [
+    [
+      "        os: [ubuntu-latest]\n        include:\n          - OS: windows-latest\n",
+      /OS/,
+    ],
+    [
+      "        os: [ubuntu-latest]\n        include:\n          - Os: windows-latest\n            node: 22\n",
+      /Os/,
+    ],
+    ["        os: [ubuntu-latest]\n        OS: [windows-latest]\n", /OS/],
+    [
+      "        os: [ubuntu-latest]\n        include:\n          - <<: { os: windows-latest }\n            node: 22\n",
+      /merge key/,
+    ],
+  ] as const) {
+    const text = syncCi(workflowWith(matrixJob("${{ matrix.os }}", matrix)));
+    assert.equal(
+      jobsOf(text.content).backend["runs-on"],
+      "${{ matrix.os }}",
+      matrix,
+    );
+    const advisories = runnerAdvisories(text.advisories);
+    assert.equal(advisories.length, 1, matrix);
+    assert.match(advisories[0], why, matrix);
+  }
+});
+
+test("a ternary on a matrix whose os key is spelled in another case is left alone, and an exclude item's key never adds a leg so it keeps the rewrite, so a sync that keys a ternary on an unread include or refuses an exclude fails", () => {
+  const ternary = syncCi(
+    workflowWith(
+      matrixJob(
+        "${{ matrix.os == 'windows-latest' && 'blacksmith-4vcpu-windows-2025' || 'blacksmith-4vcpu-ubuntu-2404' }}",
+        "        os: [ubuntu-latest, windows-latest]\n        include:\n          - OS: windows-2022\n",
+      ),
+    ),
+  );
+  assert.equal(runnerAdvisories(ternary.advisories).length, 1);
+  assert.match(
+    String(jobsOf(ternary.content).backend["runs-on"]),
+    /'blacksmith-4vcpu-windows-2025' \|\|/,
+  );
+  const excluded = syncCi(
+    workflowWith(
+      matrixJob(
+        "${{ matrix.os }}",
+        "        os: [ubuntu-latest, windows-latest]\n        node: [22, 24]\n        exclude:\n          - OS: windows-latest\n            node: 22\n",
+      ),
+    ),
+  );
+  assert.deepEqual(runnerAdvisories(excluded.advisories), []);
+  assertEachLegKeepsItsOs(String(jobsOf(excluded.content).backend["runs-on"]), [
+    "ubuntu-latest",
+    "windows-latest",
+  ]);
+  for (const runsOn of [
+    "${{ matrix.OS }}",
+    "${{ matrix.OS == 'windows-latest' && 'a' || 'b' }}",
+  ]) {
+    const text = syncCi(
+      workflowWith(
+        matrixJob(runsOn, "        os: [ubuntu-latest, windows-latest]\n"),
+      ),
+    );
+    assert.equal(jobsOf(text.content).backend["runs-on"], runsOn, runsOn);
+    assert.equal(runnerAdvisories(text.advisories).length, 1, runsOn);
+  }
+});
