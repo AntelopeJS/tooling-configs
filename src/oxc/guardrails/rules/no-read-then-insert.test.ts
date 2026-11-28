@@ -293,3 +293,185 @@ if (!existing) await model.insertOne(row);`,
     },
   ],
 });
+
+const keyed = (key: string) => ({
+  message: `Insert keyed on _id: ${key} races any concurrent writer of the same key: catch the duplicate and read the row back, or upsert with { conflict: "update" }.`,
+});
+
+tester.run("antelopejs/no-read-then-insert", noReadThenInsertRule, {
+  valid: [
+    {
+      name: "fails on a rule that skips no conflict option: an upsert keyed on tenantId cannot lose",
+      code: `async function seed(model, tenantId) {
+  await model.insert({ _id: tenantId }, { conflict: "update" });
+}`,
+    },
+    {
+      name: "fails on a rule that ignores the catch: a duplicate is caught and read back",
+      code: `async function seed(model, tenantId) {
+  try {
+    await model.insert({ _id: tenantId });
+  } catch (error) {
+    if (!isDuplicateKeyError(error)) throw error;
+    return model.get(tenantId);
+  }
+}`,
+    },
+    {
+      name: "fails on a rule that keys on any _id: a fresh randomUUID cannot collide",
+      code: `import { randomUUID } from "node:crypto";
+async function begin(model) {
+  const tenantId = randomUUID();
+  await model.insert({ _id: tenantId });
+}`,
+    },
+    {
+      name: "fails on a rule that keys on any _id: crypto.randomUUID is fresh too",
+      code: `async function begin(model) {
+  const id = crypto.randomUUID();
+  await model.insert([{ _id: id }]);
+}`,
+    },
+    {
+      name: "fails on a rule that reads call keys: the key comes from a call",
+      code: `async function seed(model, tenantId) {
+  await model.insert({ _id: roleId(tenantId, "owner") });
+}`,
+    },
+    {
+      name: "fails on a rule that reads any row: a row built elsewhere carries no visible key",
+      code: `async function seed(model, row) {
+  await model.insert(row);
+}`,
+    },
+    {
+      name: "fails on a rule that reads string keys: a literal _id is not a natural key from a caller",
+      code: `async function seed(model) {
+  await model.insert({ _id: "settings" });
+}`,
+    },
+    {
+      name: "fails on a rule that reads computed keys: [_id] names whatever _id holds",
+      code: `async function seed(model, _id, tenantId) {
+  await model.insert({ [_id]: tenantId });
+}`,
+    },
+    {
+      name: "fails on a rule that reads any key: _id nested in another field",
+      code: `async function seed(model, tenantId) {
+  await model.insert({ owner: { _id: tenantId } });
+}`,
+    },
+  ],
+  invalid: [
+    {
+      name: "fails on a rule that needs a read: a first-row insert keyed on tenantId",
+      code: `async function createTenant(model, tenantId) {
+  await model.insert({ _id: tenantId, createdAt: new Date() });
+}`,
+      errors: [keyed("tenantId")],
+    },
+    {
+      name: "fails on a rule that skips arrays: the keyed row is in an array",
+      code: `async function createTenant(model, input) {
+  await GetModel(TenantModel).insert([{ _id: input.tenantId, name: input.name }]);
+}`,
+      errors: [keyed("input.tenantId")],
+    },
+    {
+      name: "fails on a rule that skips member keys: a webhook keys on creditNote.id",
+      code: `async function store(model, creditNote) {
+  await model.insert({ _id: creditNote.id, amount: creditNote.amount });
+}`,
+      errors: [keyed("creditNote.id")],
+    },
+    {
+      name: "fails on a rule that takes any catch: a catch that rethrows every error",
+      code: `async function seed(model, tenantId) {
+  try {
+    await model.insert({ _id: tenantId });
+  } catch (error) {
+    log(error);
+    throw error;
+  }
+}`,
+      errors: [keyed("tenantId")],
+    },
+    {
+      name: "fails on a rule that takes a catch in a caller: the try is in another function",
+      code: `async function insertTenant(model, tenantId) {
+  await model.insert({ _id: tenantId });
+}
+async function seed(model, tenantId) {
+  try {
+    await insertTenant(model, tenantId);
+  } catch {
+    return;
+  }
+}`,
+      errors: [keyed("tenantId")],
+    },
+    {
+      name: "fails on a rule that exempts every name: a reassigned randomUUID binding",
+      code: `async function seed(model, given) {
+  let id = randomUUID();
+  if (given) id = given;
+  await model.insert({ _id: id });
+}`,
+      errors: [keyed("id")],
+    },
+    {
+      name: "fails on a rule that takes conflict error for an upsert",
+      code: `async function seed(table, tenantId) {
+  await table.insert({ _id: tenantId }, { conflict: "error" }).run();
+}`,
+      errors: [keyed("tenantId")],
+    },
+    {
+      name: "fails on a rule that reads only plain members: the key sits under ?., ! and as",
+      code: `async function seed(model, input, t) {
+  await model.insert({ _id: input?.tenantId });
+  await model.insert({ _id: input.tenantId! });
+  await model.insert({ _id: t as string });
+}`,
+      errors: [keyed("input?.tenantId"), keyed("input.tenantId"), keyed("t")],
+    },
+    {
+      name: "fails on a rule that reads only the first row: the keyed row is the second",
+      code: `async function seed(model, tenantId) {
+  await model.insert([{ _id: "settings" }, { _id: tenantId }]);
+}`,
+      errors: [keyed("tenantId")],
+    },
+    {
+      name: "fails on a rule that reads only identifier keys: a quoted _id key",
+      code: `async function seed(model, tenantId) {
+  await model.insert({ "_id": tenantId });
+}`,
+      errors: [keyed("tenantId")],
+    },
+    {
+      name: "fails on a rule that skips shorthand properties: { _id }",
+      code: `async function seed(model, _id) {
+  await model.insert({ _id });
+}`,
+      errors: [keyed("_id")],
+    },
+    {
+      name: "fails on a rule that matches any name ending in randomUUID: myrandomUUID is not fresh",
+      code: `async function seed(model) {
+  const id = myrandomUUID();
+  await model.insert({ _id: id });
+}`,
+      errors: [keyed("id")],
+    },
+    {
+      name: "fails on a rule that reports one insert twice: a read then a keyed insert reports the read",
+      code: `async function seed(model, tenantId) {
+  if (await model.get(tenantId)) return;
+  await model.insert({ _id: tenantId });
+}`,
+      errors: [{ messageId: "readThenInsert" }],
+    },
+  ],
+});
