@@ -6,6 +6,7 @@ import { GATE_CONDITION } from "./ci-gate.ts";
 import { ciProfile } from "./ci-profile.ts";
 import { ciFindings } from "./helpers/ci-audit.ts";
 import { callerInputs, fixture, jobsOf, syncCi } from "./helpers/ci-text.ts";
+import { RUNS_ON } from "./ci-hand-jobs.ts";
 
 const CLOUD = { profile: ciProfile("@antelopejs/dms-antelope-cloud") };
 const WEB = { profile: ciProfile("antelope-web") };
@@ -99,7 +100,7 @@ test("dms-lang: select, e2e and e2e-report get Blacksmith runners and pinned act
   const once = syncCi(before, { profile: ciProfile("@antelopejs/dms-lang") });
   const jobs = jobsOf(once.content);
   for (const id of ["select", "e2e", "e2e-report"])
-    assert.equal(jobs[id]["runs-on"], "blacksmith-4vcpu-ubuntu-2404", id);
+    assert.equal(jobs[id]["runs-on"], RUNS_ON.linux, id);
   assert.equal(jobs.ci.needs, undefined);
   assert.equal(jobs.ci.if, undefined);
   assert.deepEqual(jobs.ubuntu.needs, ["select", "ci", "e2e"]);
@@ -151,7 +152,7 @@ test("dms-antelope-cloud: the ci an earlier sync wired to tier, backend, e2e, e2
   assert.equal(jobs.ci.needs, undefined);
   assert.equal(jobs.ci.if, undefined);
   for (const id of ["tier", "backend", "e2e", "e2e-report", "leaks", "ubuntu"])
-    assert.equal(jobs[id]["runs-on"], "blacksmith-4vcpu-ubuntu-2404", id);
+    assert.equal(jobs[id]["runs-on"], RUNS_ON.linux, id);
   assert.deepEqual(jobs["module-locks"], jobsOf(before)["module-locks"]);
   assert.deepEqual(jobs.ubuntu.needs, jobsOf(before).ubuntu.needs);
   assert.ok(
@@ -176,7 +177,7 @@ test("antelope-web: the ci an earlier sync wired to the site build matrix needs 
   const jobs = jobsOf(once.content);
   assert.equal(jobs.ci.needs, undefined);
   assert.equal(jobs.ci.if, undefined);
-  assert.equal(jobs.build["runs-on"], "blacksmith-4vcpu-ubuntu-2404");
+  assert.equal(jobs.build["runs-on"], RUNS_ON.linux);
   const concurrency = parseDocument(once.content).toJS().concurrency;
   assert.deepEqual(concurrency, {
     group: "ci-${{ github.ref }}",

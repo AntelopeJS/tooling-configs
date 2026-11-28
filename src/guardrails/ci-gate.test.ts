@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { GATE_CONDITION } from "./ci-gate.ts";
+import { RUNS_ON } from "./ci-hand-jobs.ts";
 import { jobsOf, syncCi, workflowWith } from "./helpers/ci-text.ts";
 
-const RUNNER = "runs-on: blacksmith-4vcpu-ubuntu-2404";
+const RUNNER = `runs-on: ${RUNS_ON.linux}`;
 const CALLER =
   "    uses: AntelopeJS/.github/.github/workflows/ci-node.yml@v2\n";
 

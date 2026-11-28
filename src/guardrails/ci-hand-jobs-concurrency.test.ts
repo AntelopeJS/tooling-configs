@@ -2,12 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { isMap, parseDocument } from "yaml";
 
-import { CANCEL_IN_PROGRESS, rewriteHandJobs } from "./ci-hand-jobs.ts";
+import {
+  CANCEL_IN_PROGRESS,
+  rewriteHandJobs,
+  RUNS_ON,
+} from "./ci-hand-jobs.ts";
 import { CI_PATH } from "./ci-workflow.ts";
 import { syncCi, workflowWith } from "./helpers/ci-text.ts";
 
 const LINT = `  lint:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${RUNS_ON.linux}
     steps:
       - run: pnpm lint
 `;
@@ -44,7 +48,7 @@ test("the block is written once and a second run changes nothing, so a sync that
 
 test("only callers and aggregators leave the workflow without concurrency, so a sync that adds it for any workflow fails", () => {
   assert.equal(concurrencyOf(syncCi(workflowWith("")).content), undefined);
-  const aggregator = `  gate:\n    needs: [ci]\n    runs-on: blacksmith-4vcpu-ubuntu-2404\n    steps:\n      - run: exit 0\n`;
+  const aggregator = `  gate:\n    needs: [ci]\n    runs-on: ${RUNS_ON.linux}\n    steps:\n      - run: exit 0\n`;
   assert.equal(
     concurrencyOf(syncCi(workflowWith(aggregator)).content),
     undefined,

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { parseDocument } from "yaml";
 
-import { CANCEL_IN_PROGRESS } from "./ci-hand-jobs.ts";
+import { CANCEL_IN_PROGRESS, RUNS_ON } from "./ci-hand-jobs.ts";
 import {
   CI_CALLER,
   CI_NODE_REF,
@@ -92,7 +92,7 @@ jobs:
       statuses: write
     uses: ${CI_RENOVATE_SYNC_REF}
 ${RENOVATE_SYNC_SECRETS_YAML}  formal:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${RUNS_ON.linux}
     strategy:
       matrix:
         check: [a, b]
@@ -101,7 +101,7 @@ ${RENOVATE_SYNC_SECRETS_YAML}  formal:
   deploy:
     needs: formal
     if: needs.formal.result == 'success'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${RUNS_ON.linux}
     env:
       FORMAL: \${{ needs['formal'].outputs.report }}
     steps:
@@ -109,7 +109,7 @@ ${RENOVATE_SYNC_SECRETS_YAML}  formal:
   ubuntu:
     if: always()
     needs: [ci, formal, deploy]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${RUNS_ON.linux}
     steps:
       - if: contains(needs.*.result, 'failure') || needs.ci.result == 'skipped' || needs.deploy.result == 'skipped'
         run: exit 1

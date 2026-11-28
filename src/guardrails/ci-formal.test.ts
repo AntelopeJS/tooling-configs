@@ -10,6 +10,7 @@ import {
   workflowWith,
 } from "./helpers/ci-text.ts";
 import { commit, put, testRepo } from "./helpers/test-repo.ts";
+import { RUNS_ON } from "./ci-hand-jobs.ts";
 
 const COVERAGE = (...files: string[]) =>
   `## Coverage record\n\n| Model | Code |\n| --- | --- |\n${files.map((file) => `| \`A\` | ${file} |`).join("\n")}\n`;
@@ -52,7 +53,7 @@ function movable(id: string, skill: string, args = ""): string {
 
 const DEPLOY = `  deploy:
     needs: [ci, formal-a]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${RUNS_ON.linux}
     steps:
       - uses: actions/checkout@v7
 `;
@@ -89,7 +90,7 @@ test("a formal job that only sets up and runs a check moves into formal-checks a
 
 test("a job whose only need was the moved formal job needs ci instead, so a sync that drops its needs and leaves it ungated fails", () => {
   const text = workflowWith(
-    `${movable("formal-a", "formal-a")}  notify:\n    needs: formal-a\n    runs-on: blacksmith-4vcpu-ubuntu-2404\n    steps:\n      - uses: actions/checkout@v7\n`,
+    `${movable("formal-a", "formal-a")}  notify:\n    needs: formal-a\n    runs-on: ${RUNS_ON.linux}\n    steps:\n      - uses: actions/checkout@v7\n`,
   );
   const { content } = syncCi(text, { formal: plan({ "formal-a": "" }) });
   assert.equal(jobsOf(content)["formal-a"], undefined);
@@ -158,7 +159,7 @@ test("a formal job with anything beyond setup stays and its skill stays out of f
   );
   for (const [name, vary] of variants) {
     const text = workflowWith(
-      `${vary(movable("formal-a", "formal-a"))}  other:\n    runs-on: blacksmith-4vcpu-ubuntu-2404\n    steps:\n      - run: pnpm lint\n`,
+      `${vary(movable("formal-a", "formal-a"))}  other:\n    runs-on: ${RUNS_ON.linux}\n    steps:\n      - run: pnpm lint\n`,
     );
     const { content } = syncCi(text, {
       formal: plan({ "formal-a": "", "formal-b": "" }),
@@ -170,7 +171,7 @@ test("a formal job with anything beyond setup stays and its skill stays out of f
 
 test("a formal job that another job reads through needs.<id> stays, so a sync that moves it breaks the reader's condition", () => {
   const text = workflowWith(
-    `${movable("formal-a", "formal-a")}  report:\n    needs: formal-a\n    if: needs.formal-a.result == 'success'\n    runs-on: blacksmith-4vcpu-ubuntu-2404\n    steps:\n      - uses: actions/checkout@v7\n`,
+    `${movable("formal-a", "formal-a")}  report:\n    needs: formal-a\n    if: needs.formal-a.result == 'success'\n    runs-on: ${RUNS_ON.linux}\n    steps:\n      - uses: actions/checkout@v7\n`,
   );
   const { content } = syncCi(text, { formal: plan({ "formal-a": "" }) });
   assert.notEqual(jobsOf(content)["formal-a"], undefined);

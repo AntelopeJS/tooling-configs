@@ -5,18 +5,47 @@ import {
   isSeq,
   parseDocument,
   Scalar,
-  visit,
   type Document,
   type YAMLMap,
 } from "yaml";
 
 import { isText } from "./workflow-needs.ts";
 
-/** The only runners a hand-written job may use: Blacksmith's four-vCPU Linux and Windows images. */
-export const BLACKSMITH_RUNNERS = {
-  linux: "blacksmith-4vcpu-ubuntu-2404",
-  windows: "blacksmith-4vcpu-windows-2025",
+/**
+ * The runner of each OS a hand-written job runs on, chosen at run time: the repository variable when it is set, else
+ * GitHub's runner for a public repository and Blacksmith's four-vCPU image for any other or an event without the
+ * visibility. The shared workflows choose theirs the same way.
+ */
+const RUNNERS = {
+  linux: {
+    variable: "RUNNER_CI",
+    public: "ubuntu-latest",
+    private: "blacksmith-4vcpu-ubuntu-2404",
+  },
+  windows: {
+    variable: "RUNNER_CI_WINDOWS",
+    public: "windows-latest",
+    private: "blacksmith-4vcpu-windows-2025",
+  },
 } as const;
+
+type Os = keyof typeof RUNNERS;
+
+function runnerChoice(os: Os): string {
+  const { variable, public: open, private: closed } = RUNNERS[os];
+  return `vars.${variable} || (github.event.repository.visibility == 'public' && '${open}' || '${closed}')`;
+}
+
+/** The `runs-on` sync writes for a hand-written job of each OS. */
+export const RUNS_ON: Readonly<Record<Os, string>> = {
+  linux: `\${{ ${runnerChoice("linux")} }}`,
+  windows: `\${{ ${runnerChoice("windows")} }}`,
+};
+
+/** The `runs-on` of a job whose matrix `os` names GitHub's labels: the Windows choice for `windowsLabel`, the Linux one otherwise. */
+export function matrixRunsOn(windowsLabel: string): string {
+  return `\${{ matrix.os == '${windowsLabel}' && (${runnerChoice("windows")}) || (${runnerChoice("linux")}) }}`;
+}
 
 /** The commit and the release an action is pinned to. */
 export interface ActionPin {
@@ -70,6 +99,9 @@ export const CANCEL_IN_PROGRESS = "${{ github.event_name == 'pull_request' }}";
 const CONCURRENCY_GROUP = "${{ github.workflow }}-${{ github.ref }}";
 const WHOLE_EXPRESSION = /^\$\{\{([\s\S]*)\}\}$/;
 const MATRIX_OS = /^\$\{\{\s*matrix\.os\s*\}\}$/;
+const MATRIX_KEY = /^\$\{\{\s*matrix\.os\s*==\s*'([^']+)'\s*&&/;
+const SIMPLE_TERNARY =
+  /^\$\{\{\s*matrix\.os\s*==\s*'[^']+'\s*&&\s*(?:'([^']*)'|vars\.\w+)\s*\|\|\s*(?:'([^']*)'|vars\.\w+)\s*\}\}$/;
 
 /** A job of `jobs` that calls no workflow: it has no job-level `uses`. */
 export interface HandJob {
@@ -97,28 +129,37 @@ export function isAggregator(job: YAMLMap): boolean {
   return job.has("needs") && stepsOf(job).every((step) => !step.has("uses"));
 }
 
-function runnerFor(label: string): string | undefined {
-  if (/windows/i.test(label)) return BLACKSMITH_RUNNERS.windows;
-  return /macos|arm/i.test(label) ? undefined : BLACKSMITH_RUNNERS.linux;
+function osOf(label: string): Os | undefined {
+  if (/windows/i.test(label)) return "windows";
+  return /macos|arm/i.test(label) ? undefined : "linux";
 }
 
-/**
- * The Blacksmith runner a `runs-on` string stands for: the Windows image when the label is, or the last literal of an
- * expression is, a Windows one, else the Linux image. A literal label maps to that image, and an expression made only of
- * `vars.<name>` and `'literal'` terms joined by `||`, such as `${{ vars.RUNNER_CI || 'ubuntu-latest' }}`, maps by its
- * last literal. `undefined` for a macOS or Arm label, which no Blacksmith 4 vCPU image stands for, and for any other expression, which sync cannot resolve.
- */
-export function blacksmithRunsOn(value: string): string | undefined {
-  if (!value.includes("${{")) return runnerFor(value);
-  const expression = WHOLE_EXPRESSION.exec(value.trim())?.[1];
-  if (expression === undefined) return undefined;
+function osOfChain(expression: string): Os | undefined {
   const literals: string[] = [];
   for (const term of expression.split("||").map((part) => part.trim())) {
     const literal = /^'([^']*)'$/.exec(term);
     if (literal) literals.push(literal[1]);
     else if (!/^vars\.\w+$/.test(term)) return undefined;
   }
-  return runnerFor(literals.at(-1) ?? "");
+  return osOf(literals.at(-1) ?? "");
+}
+
+/**
+ * The {@link RUNS_ON} expression a `runs-on` string stands for: the Windows one when the label is, or the last literal of
+ * an expression is, a Windows one, else the Linux one. A literal label maps by itself, an expression sync writes stays,
+ * and an expression made only of `vars.<name>` and `'literal'` terms joined by `||`, such as
+ * `${{ vars.RUNNER_CI || 'ubuntu-latest' }}`, maps by its last literal. `undefined` for a macOS or Arm label, which no
+ * runner of {@link RUNS_ON} stands for, and for any other expression, which sync cannot resolve.
+ */
+export function runsOnFor(value: string): string | undefined {
+  if (value === RUNS_ON.linux || value === RUNS_ON.windows) return value;
+  const expression = WHOLE_EXPRESSION.exec(value.trim())?.[1];
+  const os = !value.includes("${{")
+    ? osOf(value)
+    : expression === undefined
+      ? undefined
+      : osOfChain(expression);
+  return os === undefined ? undefined : RUNS_ON[os];
 }
 
 /** What a step over the hand-written jobs changed, and the findings it only reports. */
@@ -136,15 +177,14 @@ function unresolved(path: string, id: string, value: string): Settled {
   return {
     changed: false,
     advisories: [
-      `Runner: ${path} job ${id} runs on ${value}, which sync cannot resolve to ${BLACKSMITH_RUNNERS.linux} or ${BLACKSMITH_RUNNERS.windows}. Use a literal label.`,
+      `Runner: ${path} job ${id} runs on ${value}, which sync cannot resolve to a Linux or Windows runner. Use a literal label.`,
     ],
   };
 }
 
-function setRunner(node: Scalar<string>): boolean {
-  const runner = blacksmithRunsOn(node.value);
-  if (runner === undefined || runner === node.value) return false;
-  node.value = runner;
+function setText(node: Scalar<string>, value: string): boolean {
+  if (node.value === value) return false;
+  node.value = value;
   node.type = Scalar.PLAIN;
   return true;
 }
@@ -154,8 +194,7 @@ function matrixOsNodes(job: YAMLMap): Scalar<string>[] | undefined {
   if (!isMap(matrix)) return undefined;
   const os = matrix.get("os", true);
   const include = matrix.get("include", true);
-  if ((os !== undefined && !isSeq(os)) || matrix.has("exclude"))
-    return undefined;
+  if (os !== undefined && !isSeq(os)) return undefined;
   const nodes = [
     ...(isSeq(os) ? os.items : []),
     ...(isSeq(include)
@@ -170,34 +209,65 @@ function matrixOsNodes(job: YAMLMap): Scalar<string>[] | undefined {
     : undefined;
 }
 
-function readsMatrixOs(job: YAMLMap): boolean {
-  const runsOn = job.get("runs-on", true);
-  let found = false;
-  visit(job, {
-    Scalar(key, node) {
-      if (
-        key !== "key" &&
-        node !== runsOn &&
-        String(node.value).includes("matrix.os")
-      )
-        found = true;
-    },
-  });
-  return found;
+/**
+ * The `runs-on` a `${{ matrix.os }}` job gets from its literal `os` list, which stays as it is so every comparison and
+ * `exclude` on its labels keeps matching: {@link matrixRunsOn} keyed on the list's Windows label, or the Linux
+ * {@link RUNS_ON} for a list with none. `undefined` for a list sync cannot read, a label of no Linux or Windows runner, or
+ * more than one distinct label of one OS.
+ */
+function matrixListRunsOn(job: YAMLMap): string | undefined {
+  const nodes = matrixOsNodes(job);
+  if (nodes === undefined) return undefined;
+  const labels: Record<Os, Set<string>> = {
+    linux: new Set(),
+    windows: new Set(),
+  };
+  for (const { value } of nodes) {
+    const os = value.includes("${{") ? undefined : osOf(value);
+    if (os === undefined) return undefined;
+    labels[os].add(value);
+  }
+  if (labels.linux.size > 1 || labels.windows.size > 1) return undefined;
+  const [windows] = labels.windows;
+  return windows === undefined ? RUNS_ON.linux : matrixRunsOn(windows);
 }
 
-function setMatrixRunners(job: YAMLMap): boolean | undefined {
-  const nodes = matrixOsNodes(job);
+/**
+ * Has a matrix job run on {@link matrixRunsOn}: a `${{ matrix.os }}` job by {@link matrixListRunsOn}, and a ternary on
+ * `matrix.os` against a Windows label by the expression ternary on that label, when its branches are a Windows and a Linux
+ * literal or variables and its matrix `os` is generated or a list whose one Windows label is that label.
+ * `undefined` when sync cannot do either.
+ */
+function setMatrixRunner(
+  job: YAMLMap,
+  runsOn: Scalar<string>,
+): boolean | undefined {
+  if (MATRIX_OS.test(runsOn.value)) {
+    const runner = matrixListRunsOn(job);
+    return runner === undefined ? undefined : setText(runsOn, runner);
+  }
+  const label = MATRIX_KEY.exec(runsOn.value)?.[1];
+  if (label === undefined || osOf(label) !== "windows") return undefined;
+  if (runsOn.value === matrixRunsOn(label)) return false;
+  const branches = SIMPLE_TERNARY.exec(runsOn.value);
   if (
-    nodes === undefined ||
-    readsMatrixOs(job) ||
-    nodes.some(({ value }) => blacksmithRunsOn(value) === undefined)
+    branches === null ||
+    (branches[1] !== undefined && osOf(branches[1]) !== "windows") ||
+    (branches[2] !== undefined && osOf(branches[2]) !== "linux") ||
+    !keysOnList(job, label)
   )
     return undefined;
-  return nodes.map(setRunner).includes(true);
+  return setText(runsOn, matrixRunsOn(label));
 }
 
-/** Maps the `runs-on` of `job` to a Blacksmith label; the advisory names a runner sync cannot resolve. */
+/** Whether the matrix of `job` has an `os` that a ternary on `label` covers: a generated one, or a literal list whose one Windows label is `label`. */
+function keysOnList(job: YAMLMap, label: string): boolean {
+  const os = job.getIn(["strategy", "matrix", "os"], true);
+  if (isTextScalar(os)) return os.value.includes("${{");
+  return isSeq(os) && matrixListRunsOn(job) === matrixRunsOn(label);
+}
+
+/** Moves the `runs-on` of `job` to a {@link RUNS_ON} expression or {@link matrixRunsOn}; the advisory names a runner sync cannot resolve. */
 function rewriteRunner(
   document: Document,
   path: string,
@@ -211,15 +281,16 @@ function rewriteRunner(
       id,
       isNode(runsOn) ? JSON.stringify(runsOn.toJS(document)) : String(runsOn),
     );
-  if (MATRIX_OS.test(runsOn.value)) {
-    const changed = setMatrixRunners(job);
+  if (MATRIX_OS.test(runsOn.value) || MATRIX_KEY.test(runsOn.value)) {
+    const changed = setMatrixRunner(job, runsOn);
     return changed === undefined
       ? unresolved(path, id, runsOn.value)
       : { changed, advisories: [] };
   }
-  if (blacksmithRunsOn(runsOn.value) === undefined)
-    return unresolved(path, id, runsOn.value);
-  return { changed: setRunner(runsOn), advisories: [] };
+  const runner = runsOnFor(runsOn.value);
+  return runner === undefined
+    ? unresolved(path, id, runsOn.value)
+    : { changed: setText(runsOn, runner), advisories: [] };
 }
 
 function pinStep(step: YAMLMap): boolean {
@@ -285,7 +356,7 @@ function setConcurrency(document: Document): boolean {
 }
 
 /**
- * Gives every hand-written job of the workflow at `path` a Blacksmith runner and the pinned actions of {@link ACTION_PINS},
+ * Gives every hand-written job of the workflow at `path` the runner {@link RUNS_ON} chooses from the visibility and the pinned actions of {@link ACTION_PINS},
  * each `uses: <name>@<sha>` with the release as its trailing comment, and a pull request workflow with a hand-written job
  * that is not an aggregator a top-level `concurrency` whose `cancel-in-progress` is {@link CANCEL_IN_PROGRESS}. A missing
  * `concurrency` is inserted before `jobs:`, a wrong `cancel-in-progress` is the only key set, and a right one stays. A
