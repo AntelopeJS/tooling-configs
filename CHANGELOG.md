@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.10.14
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.13...v0.10.14)
+
+### 🚀 Enhancements
+
+- **guardrails:** Forward the release app secrets to the renovate-sync job ([#534](https://github.com/AntelopeJS/tooling-configs/pull/534))
+
+### 🩹 Fixes
+
+- **guardrails:** Judge no type-aware directive spelled typescript-eslint/ or eslint-plugin-typescript/ under a tsconfig oxlint cannot load ([#528](https://github.com/AntelopeJS/tooling-configs/pull/528))
+- **guardrails:** Accept a locked prerelease inside a module's peer range in lockfile:module-peers ([#529](https://github.com/AntelopeJS/tooling-configs/pull/529))
+- **lease:** Give a live mongod 120 s to listen, so a cold first start on Windows is not reported as dead ([#532](https://github.com/AntelopeJS/tooling-configs/pull/532))
+- **guardrails:** Fail sync while a manifest running ajs module test admits a core that rejects --timeout ([#530](https://github.com/AntelopeJS/tooling-configs/pull/530))
+- **guardrails:** Take gateHandJobs out of the gate and unwire the ci callers it wired ([#531](https://github.com/AntelopeJS/tooling-configs/pull/531))
+- **guardrails:** Run every package of a workspace release.yml on a bare preview dispatch, siblings first ([#533](https://github.com/AntelopeJS/tooling-configs/pull/533))
+
+### 🏡 Chore
+
+- **deps:** Update dependency node to v26 ([#523](https://github.com/AntelopeJS/tooling-configs/pull/523))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.10.13
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.12...v0.10.13)
