@@ -351,6 +351,12 @@ async function begin(model) {
 }`,
     },
     {
+      name: "fails on a rule that reads computed keys: [_id] names whatever _id holds",
+      code: `async function seed(model, _id, tenantId) {
+  await model.insert({ [_id]: tenantId });
+}`,
+    },
+    {
       name: "fails on a rule that reads any key: _id nested in another field",
       code: `async function seed(model, tenantId) {
   await model.insert({ owner: { _id: tenantId } });
@@ -420,6 +426,44 @@ async function seed(model, tenantId) {
   await table.insert({ _id: tenantId }, { conflict: "error" }).run();
 }`,
       errors: [keyed("tenantId")],
+    },
+    {
+      name: "fails on a rule that reads only plain members: the key sits under ?., ! and as",
+      code: `async function seed(model, input, t) {
+  await model.insert({ _id: input?.tenantId });
+  await model.insert({ _id: input.tenantId! });
+  await model.insert({ _id: t as string });
+}`,
+      errors: [keyed("input?.tenantId"), keyed("input.tenantId"), keyed("t")],
+    },
+    {
+      name: "fails on a rule that reads only the first row: the keyed row is the second",
+      code: `async function seed(model, tenantId) {
+  await model.insert([{ _id: "settings" }, { _id: tenantId }]);
+}`,
+      errors: [keyed("tenantId")],
+    },
+    {
+      name: "fails on a rule that reads only identifier keys: a quoted _id key",
+      code: `async function seed(model, tenantId) {
+  await model.insert({ "_id": tenantId });
+}`,
+      errors: [keyed("tenantId")],
+    },
+    {
+      name: "fails on a rule that skips shorthand properties: { _id }",
+      code: `async function seed(model, _id) {
+  await model.insert({ _id });
+}`,
+      errors: [keyed("_id")],
+    },
+    {
+      name: "fails on a rule that matches any name ending in randomUUID: myrandomUUID is not fresh",
+      code: `async function seed(model) {
+  const id = myrandomUUID();
+  await model.insert({ _id: id });
+}`,
+      errors: [keyed("id")],
     },
     {
       name: "fails on a rule that reports one insert twice: a read then a keyed insert reports the read",

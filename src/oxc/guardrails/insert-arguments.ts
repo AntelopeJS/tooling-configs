@@ -54,6 +54,21 @@ function isFreshId(
   );
 }
 
+/** The value under `?.`, `!`, `as`, `satisfies`, `<T>` and parentheses, which change neither the key nor who else holds it. */
+function keyValue(node: ESTree.Expression): ESTree.Expression {
+  let current = node;
+  while (
+    current.type === "ChainExpression" ||
+    current.type === "ParenthesizedExpression" ||
+    current.type === "TSNonNullExpression" ||
+    current.type === "TSAsExpression" ||
+    current.type === "TSSatisfiesExpression" ||
+    current.type === "TSTypeAssertion"
+  )
+    current = current.expression;
+  return current;
+}
+
 /** The `_id` an inserted object literal takes from a name or a member, such as `tenantId` or `creditNote.id`, which another request can hold too. */
 export function naturalKey(
   source: SourceCode,
@@ -70,7 +85,7 @@ export function naturalKey(
     if (element?.type !== "ObjectExpression") continue;
     for (const property of element.properties) {
       if (!isProperty(property, "_id")) continue;
-      const { value } = property;
+      const value = keyValue(property.value);
       if (
         value.type === "MemberExpression" ||
         (value.type === "Identifier" && !isFreshId(source, value))
