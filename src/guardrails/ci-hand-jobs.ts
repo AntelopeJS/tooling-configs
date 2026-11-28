@@ -232,15 +232,20 @@ function isExpression(node: unknown): boolean {
 }
 
 /**
- * Why sync cannot read the legs a matrix or an include item `map` declares, if it cannot: a merge key, which can bring
- * any key in, or a key spelled `os` in another case, which GitHub reads as `matrix.os` and sync would miss.
+ * Why sync cannot read the legs a matrix or an include item `map` declares, if it cannot: a key that is not a plain
+ * scalar, such as an alias, a merge key, which can bring any key in, or a key spelled `os` or `include` in another case,
+ * which GitHub reads as that key and sync would miss.
  */
 function unreadableKey(map: YAMLMap, where: string): string | undefined {
   for (const { key } of map.items) {
-    const name = isScalar(key) ? String(key.value) : "";
+    if (!isScalar(key)) return `${where} has a key sync cannot read`;
+    const name = String(key.value);
     if (name === "<<") return `${where} has a merge key`;
-    if (name !== "os" && name.toLowerCase() === "os")
-      return `${where} has the key ${name}, which GitHub reads as matrix.os`;
+    const spelled = ["os", "include"].find(
+      (read) => name !== read && name.toLowerCase() === read,
+    );
+    if (spelled !== undefined)
+      return `${where} has the key ${name}, which GitHub reads as matrix.${spelled}`;
   }
   return undefined;
 }
