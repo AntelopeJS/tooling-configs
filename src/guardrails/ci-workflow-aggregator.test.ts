@@ -6,6 +6,7 @@ import {
   CI_CALLER,
   CI_NODE_REF,
   CI_RENOVATE_SYNC_REF,
+  RENOVATE_SYNC_SECRETS_YAML,
   ciTriggers,
   ciWorkflow,
 } from "./ci-workflow.ts";
@@ -52,7 +53,7 @@ jobs:
       actions: write
       statuses: write
     uses: ${CI_RENOVATE_SYNC_REF}
-`;
+${RENOVATE_SYNC_SECRETS_YAML}`;
 
 const REDIS_CALLER = `${HEAD}${AGGREGATOR}`;
 
