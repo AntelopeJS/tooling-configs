@@ -16,7 +16,12 @@ import {
   type WindowsProcess,
 } from "./windows.ts";
 
-const READY_TIMEOUT_MS = 30_000;
+/**
+ * How long a mongod that still runs on the lease's dbpath may take to listen. {@link ready} gives up as soon as none
+ * runs, so only a live, slow mongod waits this long, such as the first launch of mongod.exe on a loaded 4 vCPU Windows
+ * runner.
+ */
+const READY_TIMEOUT_MS = 120_000;
 const KILL_WAIT_MS = 2_000;
 const POLL_MS = 50;
 const STAT_START = 19;
