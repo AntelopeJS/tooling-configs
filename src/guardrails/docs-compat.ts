@@ -207,7 +207,8 @@ function globExpression(pattern: string): RegExp {
             .replaceAll("?", "[^/]"),
     )
     .join("/")
-    .replaceAll("(?:.*)/", "(?:.*/)?");
+    .replaceAll("(?:.*)/", "(?:.*/)?")
+    .replace(/\/\(\?:\.\*\)$/, "(?:/.*)?");
   return new RegExp(`^${source}$`);
 }
 
