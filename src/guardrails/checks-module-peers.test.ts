@@ -293,3 +293,58 @@ test("the draft, fast and full tiers skip lockfile:module-peers because it reads
   assert.equal(queued.status, 1, queued.stdout);
   assert.match(queued.stdout, /^\[lockfile:module-peers\]\n/);
 });
+
+test("a root package.json interface range no range a configured module release depends on meets fails and names both, and a release whose range meets it passes, caught by an implementation that reads only peerDependencies or compares range strings", async (t) => {
+  const dms = (interfaceRange: string): StubModuleRelease => ({
+    dependencies: { "@antelopejs/interface-dms": interfaceRange },
+  });
+  const project = (): string => {
+    const root = template(
+      t,
+      literalSource("@antelopejs/dms", ">=0.23.0 <0.24.0"),
+      {},
+    );
+    put(
+      root,
+      "package.json",
+      JSON.stringify({
+        packageManager: "pnpm@10.2.0",
+        dependencies: { "@antelopejs/interface-dms": ">=0.17.0 <0.18.0" },
+      }),
+    );
+    return root;
+  };
+  const clash = await checks(t, project(), {
+    "@antelopejs/dms": { "0.23.0": dms("^0.16.0") },
+  });
+  assert.equal(clash.status, 1, clash.stdout);
+  assert.equal(
+    clash.stdout,
+    '[lockfile:module-peers]\n@antelopejs/interface-dms: package.json requires ">=0.17.0 <0.18.0" and @antelopejs/dms@0.23.0 (antelope.config.ts: ">=0.23.0 <0.24.0") requires "^0.16.0"; no copy satisfies both, so the project stops at boot with "Incompatible interface package resolution". Move one of them to a release whose range meets the other.\nChecks: 0 passed, 1 failed, 13 skipped.\n',
+  );
+  const met = await checks(t, project(), {
+    "@antelopejs/dms": { "0.23.0": dms("^0.17.2") },
+  });
+  assert.equal(met.status, 0, met.stdout);
+});
+
+test("two configured module releases whose interface ranges do not meet fail with no root range, and a prerelease pin inside a prerelease range passes, caught by an implementation that compares only against package.json or intersects without prereleases", async (t) => {
+  const depending = (range: string): StubModuleRelease => ({
+    dependencies: { "@antelopejs/interface-dms": range },
+  });
+  const config = `export default {\n  modules: {\n    dms: { source: { type: "package", package: "@antelopejs/dms", version: "0.23.0" } },\n    assistant: { source: { type: "package", package: "${ASSISTANT}", version: "0.3.4" } },\n  },\n};\n`;
+  const clash = await checks(t, template(t, config, {}), {
+    "@antelopejs/dms": { "0.23.0": depending("^0.16.0") },
+    [ASSISTANT]: { "0.3.4": depending(">=0.17.0 <0.18.0") },
+  });
+  assert.equal(clash.status, 1, clash.stdout);
+  assert.match(
+    clash.stdout,
+    /@antelopejs\/interface-dms: @antelopejs\/dms@0\.23\.0 \(antelope\.config\.ts: "0\.23\.0"\) requires "\^0\.16\.0" and @antelopejs\/dms-assistant@0\.3\.4 \(antelope\.config\.ts: "0\.3\.4"\) requires ">=0\.17\.0 <0\.18\.0"/,
+  );
+  const prerelease = await checks(t, template(t, config, {}), {
+    "@antelopejs/dms": { "0.23.0": depending("^0.17.0-0") },
+    [ASSISTANT]: { "0.3.4": depending("0.17.0-next.1") },
+  });
+  assert.equal(prerelease.status, 0, prerelease.stdout);
+});

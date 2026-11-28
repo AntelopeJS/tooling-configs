@@ -6,8 +6,9 @@ import { freePort } from "./free-port.ts";
 
 const TAR_BLOCK = 512;
 
-/** A published module release: the `peerDependencies` of its manifest and the `frontend-vue/package.json` its tarball holds, if any. */
+/** A published module release: the `dependencies` and `peerDependencies` of its manifest and the `frontend-vue/package.json` its tarball holds, if any. */
 export interface StubModuleRelease {
+  dependencies?: Readonly<Record<string, string>>;
   peerDependencies?: Readonly<Record<string, string>>;
   frontend?: {
     peerDependencies?: Readonly<Record<string, string>>;
@@ -71,6 +72,7 @@ export async function stubModuleRegistry(
           {
             name,
             version,
+            dependencies: release.dependencies,
             peerDependencies: release.peerDependencies,
             dist: { tarball: `${url}${path}` },
           },

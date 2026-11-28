@@ -17,6 +17,12 @@ import {
   parseJson,
   stringValues,
 } from "../garden/json.ts";
+import {
+  type InterfaceRange,
+  interfaceClashes,
+  interfaceRanges,
+  rootInterfaceRanges,
+} from "./interface-ranges.ts";
 import { Unreadable, keys, mapping, scalar } from "./lockfile-reading.ts";
 import {
   type ListedRelease,
@@ -409,13 +415,22 @@ const admits = (
   );
 };
 
+/** What the check of one installed module found: its failure lines, and the interface ranges its release depends on. */
+interface ModuleReport {
+  report: string;
+  interfaces: InterfaceRange[];
+}
+
 async function moduleReport(
   module: Installed,
   listing: Packument | undefined,
   locked: ReadonlyMap<string, string>,
-): Promise<string> {
+): Promise<ModuleReport> {
   if (listing === undefined)
-    return `${module.from} names "${module.name}", which could not be read from ${registry()}.\n`;
+    return {
+      report: `${module.from} names "${module.name}", which could not be read from ${registry()}.\n`,
+      interfaces: [],
+    };
   const version =
     module.recorded ??
     listing.tags.get(module.pick) ??
@@ -424,11 +439,21 @@ async function moduleReport(
       : maxSatisfying([...listing.releases.keys()], module.pick));
   const release = version === null ? undefined : listing.releases.get(version);
   if (version === null || release === undefined)
-    return `${module.from} names "${module.name}", which has no release in "${module.pick}" on ${registry()}.\n`;
+    return {
+      report: `${module.from} names "${module.name}", which has no release in "${module.pick}" on ${registry()}.\n`,
+      interfaces: [],
+    };
+  const interfaces = interfaceRanges(
+    release.dependencies,
+    `${module.name}@${version} (${module.from})`,
+  );
   const declared = await declaredRanges(release, locked);
   if ("failure" in declared)
-    return `The tarball of ${module.name}@${version} ${declared.failure}.\n`;
-  return declared.requirements
+    return {
+      report: `The tarball of ${module.name}@${version} ${declared.failure}.\n`,
+      interfaces,
+    };
+  const report = declared.requirements
     .flatMap(({ peer, range, where, releaseLine }) => {
       const at = locked.get(peer);
       return at === undefined ||
@@ -440,6 +465,7 @@ async function moduleReport(
           ];
     })
     .join("");
+  return { report, interfaces };
 }
 
 /** Whether the repository has a root `pnpm-lock.yaml` and an `antelope.config.ts`. */
@@ -455,9 +481,10 @@ export function hasModulePeers(root: string): boolean {
  * `ajs-dms build` holds the dashboard's renderer to. The installed release of each `antelope.config.ts` source is the one
  * a build installs: the highest `antelope-lock/` version its range admits, else the newest release on the registry its
  * range, exact version or dist-tag admits. Reads each release's packument from the registry, and its tarball when the
- * root lockfile locks the renderer. Returns what
- * failed, naming the module, the dependency, the range, the locked version and the fix; empty when every range admits
- * its locked version.
+ * root lockfile locks the renderer. Also fails when two ranges on one `@antelopejs/interface-*` package, from the root
+ * `package.json` and the `dependencies` of each installed release, admit no version together. Returns what failed,
+ * naming the module, the dependency, the ranges, the locked version and the fix; empty when every range admits its
+ * locked version and every two interface ranges meet.
  */
 export async function checkModulePeers(root: string): Promise<string> {
   let locked: Map<string, string>;
@@ -480,5 +507,12 @@ export async function checkModulePeers(root: string): Promise<string> {
       moduleReport(module, await listing(module.name), locked),
     ),
   );
-  return failure + reports.join("");
+  return (
+    failure +
+    reports.map(({ report }) => report).join("") +
+    interfaceClashes([
+      ...rootInterfaceRanges(root, LOCKED_FIELDS),
+      ...reports.flatMap(({ interfaces }) => interfaces),
+    ])
+  );
 }
