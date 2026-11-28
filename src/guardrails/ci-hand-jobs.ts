@@ -231,6 +231,25 @@ function isExpression(node: unknown): boolean {
   return isTextScalar(node) && node.value.includes("${{");
 }
 
+/**
+ * Why sync cannot read the legs a matrix or an include item `map` declares, if it cannot: a key that is not a plain
+ * scalar, such as an alias, a merge key, which can bring any key in, or a key spelled `os` or `include` in another case,
+ * which GitHub reads as that key and sync would miss.
+ */
+function unreadableKey(map: YAMLMap, where: string): string | undefined {
+  for (const { key } of map.items) {
+    if (!isScalar(key)) return `${where} has a key sync cannot read`;
+    const name = String(key.value);
+    if (name === "<<") return `${where} has a merge key`;
+    const spelled = ["os", "include"].find(
+      (read) => name !== read && name.toLowerCase() === read,
+    );
+    if (spelled !== undefined)
+      return `${where} has the key ${name}, which GitHub reads as matrix.${spelled}`;
+  }
+  return undefined;
+}
+
 /** The `os` values every include item of `matrix` adds, or why sync cannot read one. */
 function includedLabels(
   matrix: YAMLMap,
@@ -243,6 +262,8 @@ function includedLabels(
   for (const item of include.items) {
     if (!isMap(item))
       return { kind: "unknown", why: "an include item is generated" };
+    const why = unreadableKey(item, "an include item");
+    if (why !== undefined) return { kind: "unknown", why };
     if (item.has("os")) nodes.push(item.get("os", true));
   }
   return { kind: "nodes", nodes };
@@ -251,11 +272,14 @@ function includedLabels(
 /**
  * Every label the matrix `os` of `job` takes, its literal list and the `os` of each include item together, grouped by
  * OS. `generated` when the list is an expression and no include item can add a leg; `unknown`, with the reason, when an
- * include is generated, an item or a label is an expression, or a label names no Linux or Windows runner.
+ * include is generated, an item or a label is an expression, a label names no Linux or Windows runner, or the matrix or
+ * an include item has a key {@link unreadableKey} refuses. An `exclude` only removes legs, so its keys are not read.
  */
 function matrixLegs(job: YAMLMap): MatrixLegs {
   const matrix = job.getIn(["strategy", "matrix"], true);
   if (!isMap(matrix)) return { kind: "unknown", why: "it has no matrix" };
+  const why = unreadableKey(matrix, "its matrix");
+  if (why !== undefined) return { kind: "unknown", why };
   const included = includedLabels(matrix);
   if (included.kind === "unknown") return included;
   const os = matrix.get("os", true);
