@@ -10,6 +10,7 @@ import {
   CI_CONTEXT,
   CI_NODE_REF,
   CI_RENOVATE_SYNC_REF,
+  RENOVATE_SYNC_SECRETS_YAML,
   ciTriggers,
   ciWorkflow,
 } from "./ci-workflow.ts";
@@ -157,7 +158,7 @@ test("renaming the caller to ci also rewrites needs.<old-id> in if, env and run 
 });
 
 test("a conformant caller is returned byte for byte, comments and extra jobs included", () => {
-  const text = `# keep me\nname: ci\n${ciTriggers}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: true\n      docs-files: README.md # docs\n      nightly: ${NIGHTLY_INPUT}\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n  deploy:\n    needs: ci\n    runs-on: blacksmith-4vcpu-ubuntu-2404\n    steps: []\n${verdictJob(["ci", "renovate-sync", "deploy"])}`;
+  const text = `# keep me\nname: ci\n${ciTriggers}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: true\n      docs-files: README.md # docs\n      nightly: ${NIGHTLY_INPUT}\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n${RENOVATE_SYNC_SECRETS_YAML}  deploy:\n    needs: ci\n    runs-on: blacksmith-4vcpu-ubuntu-2404\n    steps: []\n${verdictJob(["ci", "renovate-sync", "deploy"])}`;
   assert.equal(rewrite(text), text);
   assert.equal(rewrite(CI_CALLER), CI_CALLER);
 });
@@ -242,7 +243,7 @@ test("a caller without the test-job input gets test-job: true, with or without a
 });
 
 test("a caller that sets test-job itself keeps its value, so a repository can opt out", () => {
-  const optOut = `${ciTriggers}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: false\n      nightly: ${NIGHTLY_INPUT}\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n${verdictJob(["ci", "renovate-sync"])}`;
+  const optOut = `${ciTriggers}jobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n      test-job: false\n      nightly: ${NIGHTLY_INPUT}\n  renovate-sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n${RENOVATE_SYNC_SECRETS_YAML}${verdictJob(["ci", "renovate-sync"])}`;
   assert.equal(rewrite(optOut), optOut);
 });
 
@@ -259,6 +260,31 @@ test("an existing renovate-sync caller keeps its id and condition, moves to the 
     actions: "write",
     statuses: "write",
   });
+});
+
+test("a renovate-sync caller forwards RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY, keeps a secret of its own and secrets: inherit, and a second run changes nothing, so a sync that leaves the push on GITHUB_TOKEN, which starts no checks on the Renovate pull request, or overwrites the caller's secrets fails", () => {
+  const caller = (secrets: string) =>
+    `name: ci\non: [workflow_dispatch]\njobs:\n  ci:\n    permissions:\n      contents: read\n    uses: ${CI_NODE_REF}\n    with:\n      renovate-sync: false\n  sync:\n    permissions:\n      contents: write\n      actions: write\n      statuses: write\n    uses: ${CI_RENOVATE_SYNC_REF}\n${secrets}`;
+  const forwarded = {
+    RELEASE_APP_ID: "${{ secrets.RELEASE_APP_ID }}",
+    RELEASE_APP_PRIVATE_KEY: "${{ secrets.RELEASE_APP_PRIVATE_KEY }}",
+  };
+  const bare = rewrite(caller(""));
+  assert.deepEqual(parseDocument(bare).toJS().jobs.sync.secrets, forwarded);
+  assert.equal(rewrite(bare), bare);
+  const own = rewrite(
+    caller("    secrets:\n      OTHER: ${{ secrets.OTHER }}\n"),
+  );
+  assert.deepEqual(parseDocument(own).toJS().jobs.sync.secrets, {
+    OTHER: "${{ secrets.OTHER }}",
+    ...forwarded,
+  });
+  const inherit = rewrite(caller("    secrets: inherit\n"));
+  assert.equal(parseDocument(inherit).toJS().jobs.sync.secrets, "inherit");
+  assert.deepEqual(
+    parseDocument(CI_CALLER).toJS().jobs["renovate-sync"].secrets,
+    forwarded,
+  );
 });
 
 test("a renovate-sync job that does not call ci-renovate-sync.yml blocks the sync instead of being overwritten", () => {

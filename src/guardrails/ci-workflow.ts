@@ -50,6 +50,17 @@ const RENOVATE_SYNC_GRANTS = {
 };
 export const CI_NODE_REF = sharedWorkflow("ci-node.yml");
 export const CI_RENOVATE_SYNC_REF = sharedWorkflow("ci-renovate-sync.yml");
+/** The secrets the `renovate-sync` job forwards, so ci-renovate-sync.yml pushes with the release app's token and the push starts the pull request's checks. */
+const RENOVATE_SYNC_SECRETS = {
+  RELEASE_APP_ID: "${{ secrets.RELEASE_APP_ID }}",
+  RELEASE_APP_PRIVATE_KEY: "${{ secrets.RELEASE_APP_PRIVATE_KEY }}",
+};
+/** {@link RENOVATE_SYNC_SECRETS} as the `secrets:` block of the `renovate-sync` job in `ci.yml`. */
+export const RENOVATE_SYNC_SECRETS_YAML = `    secrets:\n${Object.entries(
+  RENOVATE_SYNC_SECRETS,
+)
+  .map(([name, value]) => `      ${name}: ${value}\n`)
+  .join("")}`;
 
 /**
  * The triggers of the trunk-based CI: ci-node.yml picks the tier from the event, so a caller declares pull requests
@@ -110,7 +121,7 @@ jobs:
       actions: write
       statuses: write
     uses: ${CI_RENOVATE_SYNC_REF}
-${verdictJob([CI_JOB_ID, RENOVATE_SYNC_JOB_ID])}`;
+${RENOVATE_SYNC_SECRETS_YAML}${verdictJob([CI_JOB_ID, RENOVATE_SYNC_JOB_ID])}`;
 
 function triggersOf(document: Document): string {
   const node = document.get("on", true);
@@ -284,6 +295,21 @@ function canonicalSyncJob(): Node {
   return job;
 }
 
+/** Has `job` forward each of {@link RENOVATE_SYNC_SECRETS} it does not pass yet; `secrets: inherit` already passes them. */
+function forwardSyncSecrets(document: Document, job: YAMLMap): boolean {
+  const secrets = job.get("secrets", true);
+  if (isScalar(secrets) && secrets.value === "inherit") return false;
+  if (!isMap(secrets)) {
+    job.set("secrets", document.createNode(RENOVATE_SYNC_SECRETS));
+    return true;
+  }
+  const missing = Object.entries(RENOVATE_SYNC_SECRETS).filter(
+    ([name]) => !secrets.has(name),
+  );
+  for (const [name, value] of missing) secrets.set(name, value);
+  return missing.length > 0;
+}
+
 function ensureSyncJob(
   document: Document,
   jobs: YAMLMap,
@@ -296,8 +322,9 @@ function ensureSyncJob(
   let changed = false;
   for (const { id } of syncCallers) {
     const job = jobs.get(id, true);
-    if (isMap(job))
-      changed = grant(document, job, RENOVATE_SYNC_GRANTS) || changed;
+    if (!isMap(job)) continue;
+    changed = grant(document, job, RENOVATE_SYNC_GRANTS) || changed;
+    changed = forwardSyncSecrets(document, job) || changed;
   }
   return changed;
 }
