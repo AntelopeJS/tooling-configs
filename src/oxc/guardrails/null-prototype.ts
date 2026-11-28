@@ -59,6 +59,8 @@ export function isNullPrototypeTable(
   const [definition] = resolveVariable(source, value)?.defs ?? [];
   return (
     definition?.type === "Variable" &&
+    definition.parent?.type === "VariableDeclaration" &&
+    definition.parent.kind === "const" &&
     definition.node.type === "VariableDeclarator" &&
     definition.node.init !== null &&
     isNullPrototype(definition.node.init)

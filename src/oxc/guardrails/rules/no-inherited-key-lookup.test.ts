@@ -157,12 +157,22 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       errors: [lookup],
     },
     {
+      name: "a call on the key that leaves the read in its alternate, or a call on another variable of the same name, caught by an implementation that accepts any call in an enclosing condition",
+      code: "import { levels, isLevelName } from './levels'; function f(level: string) { const a = isLevelName(level) ? 0 : levels[level]; return isLevelName(level) ? ((level: string) => levels[level])('x') : a; }",
+      errors: [lookup, lookup],
+    },
+    {
+      name: "a computed destructure with a string key and a let built with a null prototype then reassigned, caught by an implementation that widens member reads only or trusts any null-prototype initializer",
+      code: "import { table } from './table'; function f(key: string) { const { [key]: value } = table; let t = Object.create(null); t = table; return [value, t[key]]; }",
+      errors: [lookup, lookup],
+    },
+    {
       name: "a variable declared string | null, caught by an implementation that checks parameters only",
       code: "import { table } from './table'; const name: string | null = read(); export const value = table[name];",
       errors: [lookup],
     },
     {
-      name: "a dictionary declared elsewhere read with a string parameter",
+      name: "a dictionary declared elsewhere read with a string parameter, caught by an implementation that resolves only tables declared in this file",
       code: "import { TABLE } from './table'; function f(key: string) { return TABLE[key]; }",
       errors: [lookup],
     },

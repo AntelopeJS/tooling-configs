@@ -80,12 +80,12 @@ function versions(packument: JsonValue): string[] {
 }
 
 function tarball(packument: JsonValue, version: string): string | undefined {
-  const versions = object(
+  const byVersion = object(
     object(packument, "packument").versions ?? {},
     "versions",
   );
-  const entry = Object.hasOwn(versions, version)
-    ? versions[version]
+  const entry = Object.hasOwn(byVersion, version)
+    ? byVersion[version]
     : undefined;
   return entry === undefined
     ? undefined

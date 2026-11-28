@@ -1,4 +1,4 @@
-import type { ESTree, SourceCode } from "@oxlint/plugins";
+import type { ESTree, SourceCode, Variable } from "@oxlint/plugins";
 import ts from "../../typescript6.ts";
 
 import { resolveVariable, unwrapExpression } from "./local-types.ts";
@@ -85,8 +85,14 @@ function isDeclaredStringKey(key: ESTree.Node, source: SourceCode): boolean {
   return annotation != null && isPlainStringAnnotation(annotation);
 }
 
-/** A call that takes `key` as an argument, alone or on either side of `&&`. */
-function callsWithKey(test: ESTree.Node, key: string): boolean {
+/** The key variable a narrowing call must take, and the source that resolves its arguments. */
+interface KeyBinding {
+  variable: Variable;
+  source: SourceCode;
+}
+
+/** A call that takes the key variable as an argument, alone or on either side of `&&`. */
+function callsWithKey(test: ESTree.Node, key: KeyBinding): boolean {
   if (test.type === "ParenthesizedExpression")
     return callsWithKey(test.expression, key);
   if (test.type === "LogicalExpression" && test.operator === "&&")
@@ -94,13 +100,15 @@ function callsWithKey(test: ESTree.Node, key: string): boolean {
   return (
     test.type === "CallExpression" &&
     test.arguments.some(
-      (argument) => argument.type === "Identifier" && argument.name === key,
+      (argument) =>
+        argument.type === "Identifier" &&
+        resolveVariable(key.source, argument) === key.variable,
     )
   );
 }
 
 /** Whether a call on `key` decides a conditional, `if` or `&&` whose branch holds `node`, as in `isLevelName(level) ? map[level] : fallback`. */
-function isNarrowedByCall(node: ESTree.Node, key: string): boolean {
+function isNarrowedByCall(node: ESTree.Node, key: KeyBinding): boolean {
   let child = node;
   let parent: ESTree.Node | null = node.parent;
   while (parent !== null) {
@@ -128,11 +136,16 @@ export function isUnnarrowedStringKey(
   key: ESTree.Node,
   source: SourceCode,
 ): boolean {
+  if (
+    key.type !== "Identifier" ||
+    source.getText(object) === "Object.prototype" ||
+    !isDeclaredStringKey(key, source)
+  )
+    return false;
+  const variable = resolveVariable(source, key);
   return (
-    key.type === "Identifier" &&
-    source.getText(object) !== "Object.prototype" &&
-    isDeclaredStringKey(key, source) &&
-    !isNarrowedByCall(node, key.name) &&
+    variable !== null &&
+    !isNarrowedByCall(node, { variable, source }) &&
     !isNullPrototypeTable(object, source)
   );
 }
