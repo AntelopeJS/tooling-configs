@@ -457,7 +457,7 @@ export function ciWorkflow(
     document,
     jobs,
     { id: CI_JOB_ID, job: pair.value },
-    { formal: plan.formal, gate: profile.gateHandJobs },
+    plan.formal,
     CI_PATH,
   );
   const settled = settleJobs(document, jobs, syncCallers);

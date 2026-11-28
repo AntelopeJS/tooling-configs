@@ -2,12 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { parseDocument } from "yaml";
 
+import { GATE_CONDITION } from "./ci-gate.ts";
 import { ciProfile } from "./ci-profile.ts";
 import { ciFindings } from "./helpers/ci-audit.ts";
 import { callerInputs, fixture, jobsOf, syncCi } from "./helpers/ci-text.ts";
-
-const GATE_IF =
-  "${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}";
 
 const CLOUD = { profile: ciProfile("@antelopejs/dms-antelope-cloud") };
 const WEB = { profile: ciProfile("antelope-web") };
@@ -39,10 +37,6 @@ const MYSQL_SKILLS = [
 
 function checksOf(text: string): { skill: string; paths?: string[] }[] {
   return JSON.parse(String(callerInputs(text)["formal-checks"]));
-}
-
-function advisoryKinds(advisories: string[]): string[] {
-  return advisories.map((note) => note.split(":")[0]);
 }
 
 test("payment-subscriptions: the formal job and the checks aggregator are replaced by a formal-checks entry, no finding is left and a rerun changes nothing", () => {
@@ -111,7 +105,7 @@ test("dms-lang: select, e2e and e2e-report get Blacksmith runners and pinned act
   assert.deepEqual(jobs.ubuntu.needs, ["select", "ci", "e2e"]);
   assert.equal(jobs.ubuntu.if, "always()");
   assert.deepEqual(once.advisories, [
-    "Gate: .github/workflows/ci.yml jobs select, e2e, e2e-report run beside the ci caller, so ci / checks passes when one fails. verdict needs them with ci, so require verdict in the ruleset, or set gateHandJobs in the repository's CI profile to have ci need them.",
+    "Gate: .github/workflows/ci.yml jobs select, e2e, e2e-report run beside the ci caller, so ci / checks passes when one fails. verdict needs them with ci, so require verdict in the ruleset.",
   ]);
   assert.ok(
     once.content.includes(
@@ -131,18 +125,31 @@ test("dms-lang: select, e2e and e2e-report get Blacksmith runners and pinned act
   assert.equal(syncCi(once.content).content, once.content);
 });
 
-test("dms-antelope-cloud: with gateHandJobs, tier, backend, e2e, e2e-report and leaks are wired into ci, every runner is a literal, the pins are applied and module-locks is untouched", () => {
-  const before = fixture("dms-antelope-cloud-ci.yml");
-  const once = syncCi(before, CLOUD);
-  const jobs = jobsOf(once.content);
-  assert.deepEqual(jobs.ci.needs, [
+const CALLER_USES =
+  "    uses: AntelopeJS/.github/.github/workflows/ci-node.yml@v2\n";
+
+/** `name` as the earlier sync with gateHandJobs wrote it: ci needs `needs` under the gate if. */
+function gatedFixture(name: string, needs: readonly string[]): string {
+  const text = fixture(name);
+  assert.equal(text.split(CALLER_USES).length, 2, name);
+  return text.replace(
+    CALLER_USES,
+    `    needs: [${needs.join(", ")}]\n    if: ${GATE_CONDITION}\n${CALLER_USES}`,
+  );
+}
+
+test("dms-antelope-cloud: the ci an earlier sync wired to tier, backend, e2e, e2e-report and leaks needs none of them again and one advisory names ubuntu, every runner is a literal, the pins are applied and module-locks is untouched, so a sync that keeps ci waiting behind the e2e jobs, or skipped with ci / checks unreported when one fails, fails", () => {
+  const before = gatedFixture("dms-antelope-cloud-ci.yml", [
     "tier",
     "backend",
     "e2e",
     "e2e-report",
     "leaks",
   ]);
-  assert.equal(jobs.ci.if, GATE_IF);
+  const once = syncCi(before, CLOUD);
+  const jobs = jobsOf(once.content);
+  assert.equal(jobs.ci.needs, undefined);
+  assert.equal(jobs.ci.if, undefined);
   for (const id of ["tier", "backend", "e2e", "e2e-report", "leaks", "ubuntu"])
     assert.equal(jobs[id]["runs-on"], "blacksmith-4vcpu-ubuntu-2404", id);
   assert.deepEqual(jobs["module-locks"], jobsOf(before)["module-locks"]);
@@ -152,7 +159,9 @@ test("dms-antelope-cloud: with gateHandJobs, tier, backend, e2e, e2e-report and 
       "uses: AntelopeJS/.github/.github/actions/ci-tier@v2\n",
     ),
   );
-  assert.deepEqual(advisoryKinds(once.advisories), []);
+  assert.deepEqual(once.advisories, [
+    "Gate: .github/workflows/ci.yml jobs tier, backend, e2e, e2e-report, leaks run beside the ci caller, so ci / checks passes when one fails. ubuntu needs them with ci, so require ubuntu in the ruleset.",
+  ]);
   assert.deepEqual(ciFindings(once.content), []);
   assert.equal(syncCi(once.content, CLOUD).content, once.content);
   assert.equal(
@@ -161,28 +170,12 @@ test("dms-antelope-cloud: with gateHandJobs, tier, backend, e2e, e2e-report and 
   );
 });
 
-test("dms-antelope-cloud: a job that needs ci and is not an aggregator is reported and left out of ci's needs, so a sync that wires it into a cycle or stays silent fails", () => {
-  const before = `${fixture("dms-antelope-cloud-ci.yml")}  deploy:\n    needs: [ci]\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n`;
-  const once = syncCi(before, CLOUD);
-  assert.deepEqual(jobsOf(once.content).ci.needs, [
-    "tier",
-    "backend",
-    "e2e",
-    "e2e-report",
-    "leaks",
-  ]);
-  assert.deepEqual(once.advisories, [
-    "Gate: .github/workflows/ci.yml job deploy runs beside the ci caller, so ci / checks passes when it fails. It needs ci, so ci cannot need it. Move it into an input of ci-node.yml, or have the ci job need it.",
-  ]);
-  assert.equal(syncCi(once.content, CLOUD).content, once.content);
-});
-
-test("antelope-web: with gateHandJobs, the site build matrix joins ci's needs, so ci / checks waits for Build (dms); its runner and pins move and cancel-in-progress true becomes the pull-request-only expression, so a sync that leaves build beside ci or cancels a merge queue run fails", () => {
-  const before = fixture("antelope-web-ci.yml");
+test("antelope-web: the ci an earlier sync wired to the site build matrix needs it no longer, so ci / checks reports without waiting for Build (dms); its runner and pins move and cancel-in-progress true becomes the pull-request-only expression, so a sync that keeps build in ci's needs or cancels a merge queue run fails", () => {
+  const before = gatedFixture("antelope-web-ci.yml", ["build"]);
   const once = syncCi(before, WEB);
   const jobs = jobsOf(once.content);
-  assert.deepEqual(jobs.ci.needs, ["build"]);
-  assert.equal(jobs.ci.if, GATE_IF);
+  assert.equal(jobs.ci.needs, undefined);
+  assert.equal(jobs.ci.if, undefined);
   assert.equal(jobs.build["runs-on"], "blacksmith-4vcpu-ubuntu-2404");
   const concurrency = parseDocument(once.content).toJS().concurrency;
   assert.deepEqual(concurrency, {
@@ -190,7 +183,9 @@ test("antelope-web: with gateHandJobs, the site build matrix joins ci's needs, s
     "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
   });
   assert.doesNotMatch(once.content, /# v4/);
-  assert.deepEqual(advisoryKinds(once.advisories), []);
+  assert.deepEqual(once.advisories, [
+    "Gate: .github/workflows/ci.yml job build runs beside the ci caller, so ci / checks passes when it fails. verdict needs it with ci, so require verdict in the ruleset.",
+  ]);
   assert.deepEqual(ciFindings(once.content), []);
   assert.equal(syncCi(once.content, WEB).content, once.content);
 });
