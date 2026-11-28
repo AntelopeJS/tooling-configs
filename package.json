@@ -37,7 +37,8 @@
   },
   "files": [
     "assets",
-    "dist"
+    "dist",
+    "docs/rules"
   ],
   "type": "module",
   "exports": {

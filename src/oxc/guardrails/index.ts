@@ -1,5 +1,7 @@
 import { eslintCompatPlugin } from "@oxlint/plugins";
 
+import { withRuleDocs } from "../rule-docs.ts";
+
 import { noCommentsRule } from "./rules/no-comments.ts";
 import { noConstantValueAssertionRule } from "./rules/no-constant-value-assertion.ts";
 import { noFsReadInTestsRule } from "./rules/no-fs-read-in-tests.ts";
@@ -24,7 +26,7 @@ export { ASSERTION_FUNCTION_NAMES, TEST_FILE_GLOBS } from "./shared.ts";
 /** AntelopeJS rules that reject comments, inherited-key lookups, instanceof against an interface package class, presence-only type guards, 4xx refusals whose message is a sentence or a key no locale file holds, inserts that follow a read of the same table or that a called function makes once an awaited read found nothing, unrun interface-database queries an awaited function returns, unchecked Object.assign writes, low-evidence tests, fast-check properties under a mocha timeout, files no tsconfig lists, tsconfigs that list no `types` and vitest configs off the shared test timeout. */
 const guardrailsPlugin = eslintCompatPlugin({
   meta: { name: "antelopejs" },
-  rules: {
+  rules: withRuleDocs({
     "no-comments": noCommentsRule,
     "no-fs-read-in-tests": noFsReadInTestsRule,
     "no-inherited-key-lookup": noInheritedKeyLookupRule,
@@ -43,7 +45,7 @@ const guardrailsPlugin = eslintCompatPlugin({
     "require-tsconfig-include": requireTsconfigIncludeRule,
     "require-tsconfig-types": requireTsconfigTypesRule,
     "shared-test-timeout": sharedTestTimeoutRule,
-  },
+  }),
 });
 
 export default guardrailsPlugin;
