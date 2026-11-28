@@ -73,7 +73,7 @@ test("an advisory reaches the CLI under sync and under --check and never fails e
   put(root, CI_PATH, text);
   commit(root);
   const advisory =
-    /Runner: \.github\/workflows\/ci\.yml job lint runs on \["self-hosted","linux"\], which sync cannot resolve to blacksmith-4vcpu-ubuntu-2404 or blacksmith-4vcpu-windows-2025\. Use a literal label\./;
+    /Runner: \.github\/workflows\/ci\.yml job lint runs on \["self-hosted","linux"\], which sync cannot resolve to a Linux or Windows runner\. Use a literal label\./;
   const check = bin(root, "sync", ["--check"]);
   assert.match(check.stdout, advisory);
   const sync = bin(root, "sync");

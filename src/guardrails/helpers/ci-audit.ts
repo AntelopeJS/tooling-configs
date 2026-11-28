@@ -1,6 +1,6 @@
 import { parseDocument } from "yaml";
 
-import { ACTION_PINS, BLACKSMITH_RUNNERS } from "../ci-hand-jobs.ts";
+import { ACTION_PINS, matrixRunsOn, RUNS_ON } from "../ci-hand-jobs.ts";
 import { isText } from "../workflow-needs.ts";
 
 interface AuditJob {
@@ -48,7 +48,10 @@ function actionFinding(id: string, uses: string | undefined): string[] {
 }
 
 function jobFindings(id: string, job: AuditJob): string[] {
-  const allowed: readonly string[] = Object.values(BLACKSMITH_RUNNERS);
+  const allowed: readonly string[] = [
+    ...Object.values(RUNS_ON),
+    matrixRunsOn("windows-latest"),
+  ];
   return [
     ...runnersOf(job)
       .filter((runner) => !allowed.includes(runner))
@@ -59,7 +62,7 @@ function jobFindings(id: string, job: AuditJob): string[] {
 
 /**
  * The runner, action-version and concurrency findings the org's /ci audit would report on the workflow `text`, one line
- * each: a hand-written job off the two Blacksmith runners or on an unpinned action, and a pull request workflow with a
+ * each: a hand-written job off the runner expressions sync writes or on an unpinned action, and a pull request workflow with a
  * hand-written job and no `cancel-in-progress` expression.
  */
 export function ciFindings(text: string): string[] {

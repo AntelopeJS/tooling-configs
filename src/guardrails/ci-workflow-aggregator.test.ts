@@ -13,6 +13,7 @@ import {
 import { NIGHTLY_INPUT, verdictJob } from "./ci-verdict.ts";
 import { bin, commit, put, read, testRepo } from "./helpers/test-repo.ts";
 import { ciNodeCallers, ciRenovateSyncCallers } from "./workflow.ts";
+import { RUNS_ON } from "./ci-hand-jobs.ts";
 
 function rewrite(text: string): string {
   return ciWorkflow(text, ciNodeCallers(text), ciRenovateSyncCallers(text))
@@ -26,7 +27,7 @@ function jobIds(text: string): string[] {
 const AGGREGATOR = `  checks:
     if: always()
     needs: [ci]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${RUNS_ON.linux}
     timeout-minutes: 5
     steps:
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
@@ -62,7 +63,7 @@ const NL = `      nightly: ${NIGHTLY_INPUT}\n`;
 const VERDICT = verdictJob(["ci", "renovate-sync"]);
 
 const E2E = `  e2e:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${RUNS_ON.linux}
     steps:
       - run: pnpm run e2e
 `;

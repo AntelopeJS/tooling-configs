@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ACTION_PINS } from "./ci-hand-jobs.ts";
+import { ACTION_PINS, RUNS_ON } from "./ci-hand-jobs.ts";
 import { syncCi, workflowWith } from "./helpers/ci-text.ts";
 
 const CHECKOUT_PIN =
@@ -9,7 +9,7 @@ const CHECKOUT_PIN =
 
 function stepsWith(...uses: string[]): string {
   const steps = uses.map((use) => `      - uses: ${use}\n`).join("");
-  return `  lint:\n    runs-on: blacksmith-4vcpu-ubuntu-2404\n    steps:\n${steps}      - run: pnpm lint\n`;
+  return `  lint:\n    runs-on: ${RUNS_ON.linux}\n    steps:\n${steps}      - run: pnpm lint\n`;
 }
 
 test("every pin of the table is a 40-hex commit with a release, so a table entry with a tag or a missing version fails", () => {

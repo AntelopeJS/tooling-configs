@@ -6,7 +6,7 @@ import {
   type YAMLMap,
 } from "yaml";
 
-import { BLACKSMITH_RUNNERS } from "./ci-hand-jobs.ts";
+import { RUNS_ON } from "./ci-hand-jobs.ts";
 import { neededIds } from "./workflow-needs.ts";
 
 /** The caller job the merge queue waits for: it needs every other job of the file, so none is a result the queue merges past. */
@@ -29,7 +29,7 @@ export function verdictJob(needs: readonly string[]): string {
   return `  ${VERDICT_JOB_ID}:
     needs: [${needs.join(", ")}]
     if: \${{ !cancelled() }}
-    runs-on: ${BLACKSMITH_RUNNERS.linux}
+    runs-on: ${RUNS_ON.linux}
     timeout-minutes: 5
     permissions: {}
     steps:
