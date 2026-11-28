@@ -43,6 +43,7 @@ tester.run("antelopejs/property-test-timeout", propertyTestTimeoutRule, {
     'it("adds", async function () { this.timeout(60000); await add(1, 2); });',
     'describe("outer", function () { this.timeout(0); describe("inner", () => { it("holds", () => { fc.assert(property); }); }); });',
     'it("holds", function () { this.timeout(0); const run = () => fc.assert(property); run(); });',
+    'it("holds", function () { [1].forEach(() => { this.timeout(0); }); fc.assert(property); });',
     'it.skip("holds", () => { fc.assert(property); });',
     'import { it } from "vitest"; it("holds", () => { fc.assert(property); });',
     'import { test } from "node:test"; test("holds", () => { fc.assert(property); });',
@@ -98,6 +99,11 @@ tester.run("antelopejs/property-test-timeout", propertyTestTimeoutRule, {
     {
       name: "a timeout a nested function sets is that function's",
       code: 'it("holds", async () => { const helper = function () { this.timeout(0); }; helper(); await fc.assert(property); });',
+      errors: [timed("the default")],
+    },
+    {
+      name: "an arrow test's this is not the test's",
+      code: 'describe("outer", () => { it("holds", () => { this.timeout(0); fc.assert(property); }); });',
       errors: [timed("the default")],
     },
     {
