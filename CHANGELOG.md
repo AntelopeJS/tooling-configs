@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.10.12
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.11...v0.10.12)
+
+### 🩹 Fixes
+
+- **guardrails:** Keep formal skills out of formal-checks when the repo selects its own checks ([#520](https://github.com/AntelopeJS/tooling-configs/pull/520))
+
+### 🤖 CI
+
+- Pin hand-written jobs to the shared versions, add verify-tooling-configs ([#521](https://github.com/AntelopeJS/tooling-configs/pull/521))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.10.11
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.10...v0.10.11)
