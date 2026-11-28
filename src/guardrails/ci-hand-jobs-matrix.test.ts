@@ -283,3 +283,49 @@ test("a ternary on a matrix whose os key is spelled in another case is left alon
     assert.equal(runnerAdvisories(text.advisories).length, 1, runsOn);
   }
 });
+
+test("a matrix or include item key that is an alias, or an include key spelled in another case, leaves the job alone with the reason, so a sync that reads past a key it cannot name and moves the windows-latest leg to Linux fails", () => {
+  const anchored = (job: string) =>
+    workflowWith(
+      `  anchors:\n    runs-on: ${LINUX}\n    env:\n      K: &k os\n    steps:\n      - run: echo\n${job}`,
+    );
+  for (const [text, why] of [
+    [
+      anchored(
+        matrixJob(
+          "${{ matrix.os }}",
+          "        os: [ubuntu-latest]\n        include:\n          - *k : windows-latest\n",
+        ),
+      ),
+      /key sync cannot read/,
+    ],
+    [
+      anchored(
+        matrixJob(
+          "${{ matrix.os }}",
+          "        os: [ubuntu-latest]\n        *k : [windows-latest]\n",
+        ),
+      ),
+      /key sync cannot read/,
+    ],
+    [
+      workflowWith(
+        matrixJob(
+          "${{ matrix.os }}",
+          "        os: [ubuntu-latest]\n        Include:\n          - os: windows-latest\n",
+        ),
+      ),
+      /Include/,
+    ],
+  ] as const) {
+    const result = syncCi(text);
+    assert.equal(
+      jobsOf(result.content).backend["runs-on"],
+      "${{ matrix.os }}",
+      text,
+    );
+    const advisories = runnerAdvisories(result.advisories);
+    assert.equal(advisories.length, 1, text);
+    assert.match(advisories[0], why, text);
+  }
+});
