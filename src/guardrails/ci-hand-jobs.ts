@@ -103,7 +103,7 @@ const WHOLE_EXPRESSION = /^\$\{\{([\s\S]*)\}\}$/;
 const MATRIX_OS = /^\$\{\{\s*matrix\.os\s*\}\}$/;
 const MATRIX_KEY = /^\$\{\{\s*matrix\.os\s*==\s*'([^']+)'\s*&&/;
 const SIMPLE_TERNARY =
-  /^\$\{\{\s*matrix\.os\s*==\s*'[^']+'\s*&&\s*(?:'([^']*)'|vars\.\w+)\s*\|\|\s*(?:'([^']*)'|vars\.\w+)\s*\}\}$/;
+  /^\$\{\{\s*matrix\.os\s*==\s*'[^']+'\s*&&\s*('[^']*'|vars\.\w+)\s*\|\|\s*('[^']*'|vars\.\w+)\s*\}\}$/;
 
 /** A job of `jobs` that calls no workflow: it has no job-level `uses`. */
 export interface HandJob {
@@ -134,6 +134,22 @@ export function isAggregator(job: YAMLMap): boolean {
 function osOf(label: string): Os | undefined {
   if (/windows/i.test(label)) return "windows";
   return /macos|arm/i.test(label) ? undefined : "linux";
+}
+
+/** The OS of a matrix label, read only from a name that says it: a Windows, or an Ubuntu or Linux one that is not Arm. */
+function legOsOf(label: string): Os | undefined {
+  if (/arm/i.test(label)) return undefined;
+  if (/windows/i.test(label)) return "windows";
+  return /ubuntu|linux/i.test(label) ? "linux" : undefined;
+}
+
+/** The OS a ternary branch runs on: a label by {@link legOsOf}, the variable of an OS of {@link RUNNERS}, else none. */
+function branchOsOf(term: string): Os | undefined {
+  const literal = /^'([^']*)'$/.exec(term)?.[1];
+  if (literal !== undefined) return legOsOf(literal);
+  const variable = term.slice("vars.".length);
+  if (variable === RUNNERS.linux.variable) return "linux";
+  return variable === RUNNERS.windows.variable ? "windows" : undefined;
 }
 
 function osOfChain(expression: string): Os | undefined {
@@ -261,7 +277,7 @@ function matrixLegs(job: YAMLMap): MatrixLegs {
   for (const node of nodes) {
     if (!isTextScalar(node) || isExpression(node))
       return { kind: "unknown", why: "a matrix os value is an expression" };
-    const leg = osOf(node.value);
+    const leg = legOsOf(node.value);
     if (leg === undefined)
       return {
         kind: "unknown",
@@ -299,8 +315,9 @@ function matrixListRunsOn(
  * `exclude` on its labels keeps matching. A `${{ matrix.os }}` job keys the ternary on its one Windows label, or takes the
  * Linux {@link RUNS_ON} when it has none, when {@link matrixLegs} lists every leg with one label per OS. A ternary on
  * `matrix.os` against a label, Windows or Linux, becomes the expression ternary on that label when its first branch is a
- * literal of that label's OS or a variable and its second one of the other OS, and its matrix `os` is generated or names
- * that label as the one label of its OS. A ternary keeps every leg on the OS it had, whatever entries the matrix gains.
+ * literal of that label's OS or that OS's variable of {@link RUNNERS} and its second one of the other OS, and its matrix
+ * `os` is generated or names that label as the one label of its OS. The expression ternary sync writes is checked against
+ * the matrix the same way. A ternary keeps every leg on the OS it had, whatever entries the matrix gains.
  */
 function setMatrixRunner(
   job: YAMLMap,
@@ -313,20 +330,20 @@ function setMatrixRunner(
       : { kind: "set", changed: setText(runsOn, runner.runsOn) };
   }
   const label = MATRIX_KEY.exec(runsOn.value)?.[1] ?? "";
-  const os = osOf(label);
+  const os = legOsOf(label);
   if (os === undefined)
     return {
       kind: "unknown",
       why: `${label} names no Linux or Windows runner`,
     };
   const runner = matrixRunsOn(label, os);
-  if (runsOn.value === runner) return { kind: "set", changed: false };
   const other: Os = os === "windows" ? "linux" : "windows";
   const branches = SIMPLE_TERNARY.exec(runsOn.value);
   if (
-    branches === null ||
-    (branches[1] !== undefined && osOf(branches[1]) !== os) ||
-    (branches[2] !== undefined && osOf(branches[2]) !== other)
+    runsOn.value !== runner &&
+    (branches === null ||
+      branchOsOf(branches[1]) !== os ||
+      branchOsOf(branches[2]) !== other)
   )
     return {
       kind: "unknown",
