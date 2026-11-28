@@ -222,7 +222,9 @@ export class FakeApi implements GardenApi {
 
   async pages(path: string, key?: string): Promise<JsonValue[]> {
     const body = this.lookup(path);
-    const page = key !== undefined && isObject(body) ? body[key] : body;
+    if (key === undefined || !isObject(body))
+      return Array.isArray(body) ? body : [];
+    const page = Object.hasOwn(body, key) ? body[key] : undefined;
     return Array.isArray(page) ? page : [];
   }
 

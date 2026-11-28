@@ -1,7 +1,8 @@
-import type { ESTree, SourceCode } from "@oxlint/plugins";
+import type { ESTree, SourceCode, Variable } from "@oxlint/plugins";
 import ts from "../../typescript6.ts";
 
 import { resolveVariable, unwrapExpression } from "./local-types.ts";
+import { isNullPrototypeTable } from "./null-prototype.ts";
 import { nodeAt, typedFile } from "./type-checker.ts";
 import { lintedSource } from "./vue-script.ts";
 
@@ -54,6 +55,99 @@ export function isOpenStringParameter(
     ts.isIdentifier,
   );
   return node !== undefined && isOpenKeyType(typed.checker, node);
+}
+
+function isPlainStringAnnotation(type: ESTree.TSType): boolean {
+  if (type.type === "TSStringKeyword") return true;
+  return (
+    type.type === "TSUnionType" &&
+    type.types.some((member) => member.type === "TSStringKeyword") &&
+    type.types.every(
+      (member) =>
+        member.type === "TSStringKeyword" ||
+        member.type === "TSUndefinedKeyword" ||
+        member.type === "TSNullKeyword",
+    )
+  );
+}
+
+/** A key read from a parameter or variable annotated `string`, `string | undefined` or `string | null`, whatever the table it reads. */
+function isDeclaredStringKey(key: ESTree.Node, source: SourceCode): boolean {
+  if (key.type !== "Identifier") return false;
+  const [definition] = resolveVariable(source, key)?.defs ?? [];
+  if (definition?.type !== "Parameter" && definition?.type !== "Variable")
+    return false;
+  const name = definition.name;
+  const annotation =
+    name.type === "Identifier" && "typeAnnotation" in name
+      ? name.typeAnnotation?.typeAnnotation
+      : undefined;
+  return annotation != null && isPlainStringAnnotation(annotation);
+}
+
+/** The key variable a narrowing call must take, and the source that resolves its arguments. */
+interface KeyBinding {
+  variable: Variable;
+  source: SourceCode;
+}
+
+/** A call that takes the key variable as an argument, alone or on either side of `&&`. */
+function callsWithKey(test: ESTree.Node, key: KeyBinding): boolean {
+  if (test.type === "ParenthesizedExpression")
+    return callsWithKey(test.expression, key);
+  if (test.type === "LogicalExpression" && test.operator === "&&")
+    return callsWithKey(test.left, key) || callsWithKey(test.right, key);
+  return (
+    test.type === "CallExpression" &&
+    test.arguments.some(
+      (argument) =>
+        argument.type === "Identifier" &&
+        resolveVariable(key.source, argument) === key.variable,
+    )
+  );
+}
+
+/** Whether a call on `key` decides a conditional, `if` or `&&` whose branch holds `node`, as in `isLevelName(level) ? map[level] : fallback`. */
+function isNarrowedByCall(node: ESTree.Node, key: KeyBinding): boolean {
+  let child = node;
+  let parent: ESTree.Node | null = node.parent;
+  while (parent !== null) {
+    if (
+      ((parent.type === "ConditionalExpression" ||
+        parent.type === "IfStatement") &&
+        child === parent.consequent &&
+        callsWithKey(parent.test, key)) ||
+      (parent.type === "LogicalExpression" &&
+        parent.operator === "&&" &&
+        child === parent.right &&
+        callsWithKey(parent.left, key))
+    )
+      return true;
+    child = parent;
+    parent = parent.parent;
+  }
+  return false;
+}
+
+/** A key declared as a plain string that no enclosing call narrows, read from a table other than `Object.prototype` and not built with a null prototype. */
+export function isUnnarrowedStringKey(
+  node: ESTree.Node,
+  object: ESTree.Expression,
+  key: ESTree.Node,
+  source: SourceCode,
+): boolean {
+  if (
+    key.type !== "Identifier" ||
+    source.getText(object) === "Object.prototype" ||
+    !isDeclaredStringKey(key, source)
+  )
+    return false;
+  const variable = resolveVariable(source, key);
+  return (
+    variable !== null &&
+    !isNarrowedByCall(node, { variable, source }) &&
+    !isNullPrototypeTable(object, source)
+  );
 }
 
 function hasNullPrototype(object: ESTree.ObjectExpression): boolean {

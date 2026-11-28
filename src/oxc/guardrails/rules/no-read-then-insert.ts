@@ -10,6 +10,7 @@ import {
   readBinding,
   type ReadSubject,
 } from "../read-decision.ts";
+import { isUpsert, naturalKey } from "../insert-arguments.ts";
 import { memberName } from "../shared.ts";
 import { argumentParameters } from "../../anti-slop/shared/function-parameters.ts";
 
@@ -153,28 +154,6 @@ function calledMember(
   if (node.callee.type !== "MemberExpression") return null;
   const name = memberName(node.callee);
   return name !== null && methods.test(name) ? node.callee : null;
-}
-
-function isUpsert(node: ESTree.CallExpression): boolean {
-  return node.arguments
-    .slice(1)
-    .some(
-      (argument) =>
-        argument.type === "ObjectExpression" &&
-        argument.properties.some(
-          (property) =>
-            property.type === "Property" &&
-            !property.computed &&
-            ((property.key.type === "Identifier" &&
-              property.key.name === "conflict") ||
-              (property.key.type === "Literal" &&
-                property.key.value === "conflict")) &&
-            !(
-              property.value.type === "Literal" &&
-              property.value.value === "error"
-            ),
-        ),
-    );
 }
 
 /** What one file's traversal collected, read once it ends. */
@@ -444,17 +423,19 @@ function collectCall(facts: Facts, node: ESTree.CallExpression): void {
 const RACE =
   'Two replicas that start on an empty table both read nothing and both insert, so one writes a duplicate row or fails on the key. Key the row by a stable id, wrap the insert in try/catch, read the row back in the catch, and rethrow only when it is still missing, or upsert with `insert(row, { conflict: "update" })`.';
 
-/** Writing a row that a startup read found missing races every other replica that read the same, whether the insert sits in the reading function or in a function of the file it calls only when the read found nothing. A catch that rethrows nothing, recognises a duplicate in a condition, or reads the row back and branches, tolerates the lost race, and so does an upsert or a helper handed the table. */
+/** Writing a row that a startup read found missing races every other replica that read the same, whether the insert sits in the reading function or in a function of the file it calls only when the read found nothing. An insert of a row keyed on a natural `_id`, such as `tenantId`, races any concurrent writer of that key wherever its read sits. A catch that rethrows nothing, recognises a duplicate in a condition, or reads the row back and branches, tolerates the lost race, and so does an upsert or a helper handed the table. */
 export const noReadThenInsertRule = defineRule({
   meta: {
     type: "problem",
     docs: {
       description:
-        "Reject an insert that follows a read of the same table, or that a called function makes when a read found nothing, unless a catch tolerates losing it.",
+        "Reject an insert that follows a read of the same table, that a called function makes when a read found nothing, or that keys its row on a natural `_id`, unless a catch tolerates losing it.",
     },
     messages: {
       readThenInsert: `\`{{receiver}}\` is read and then inserted into. ${RACE}`,
       readThenCalledInsert: `\`{{read}}\` found nothing, so \`{{call}}\` runs and inserts into \`{{receiver}}\`. ${RACE}`,
+      keyedInsert:
+        'Insert keyed on _id: {{key}} races any concurrent writer of the same key: catch the duplicate and read the row back, or upsert with { conflict: "update" }.',
     },
   },
   createOnce(context) {
@@ -536,6 +517,20 @@ export const noReadThenInsertRule = defineRule({
               call: site.name,
               receiver: insert.receiver,
             },
+          });
+        }
+        for (const insert of facts.inserts) {
+          if (reported.has(insert)) continue;
+          const key = naturalKey(facts.source, insert.call);
+          if (
+            key === null ||
+            isGuarded(facts, insert, insert.call, insert.scope, null)
+          )
+            continue;
+          context.report({
+            node: insert.callee,
+            messageId: "keyedInsert",
+            data: { key: facts.text(key) },
           });
         }
       },

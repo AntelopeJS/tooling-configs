@@ -80,10 +80,13 @@ function versions(packument: JsonValue): string[] {
 }
 
 function tarball(packument: JsonValue, version: string): string | undefined {
-  const entry = object(
+  const byVersion = object(
     object(packument, "packument").versions ?? {},
     "versions",
-  )[version];
+  );
+  const entry = Object.hasOwn(byVersion, version)
+    ? byVersion[version]
+    : undefined;
   return entry === undefined
     ? undefined
     : optStr(object(object(entry, version).dist ?? {}, "dist"), "tarball");

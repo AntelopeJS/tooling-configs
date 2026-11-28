@@ -13,7 +13,7 @@ export function resolve(
   const body = expression.replace(/^\$\{\{\s*|\s*\}\}$/g, "");
   const js = body
     .replace(/vars\.(\w+)/g, (_m, name: string) =>
-      JSON.stringify(vars[name] ?? ""),
+      JSON.stringify(Object.hasOwn(vars, name) ? vars[name] : ""),
     )
     .replace(
       /github\.event\.repository\.visibility/g,

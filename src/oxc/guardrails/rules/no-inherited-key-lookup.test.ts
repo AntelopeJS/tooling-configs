@@ -105,10 +105,6 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       code: "const xs: string[] = []; function f(i: number) { return xs[i]; }",
     },
     {
-      name: "a dictionary declared elsewhere is not resolved",
-      code: "import { TABLE } from './table'; function f(key: string) { return TABLE[key]; }",
-    },
-    {
       name: "a literal key tested with in",
       code: "const T: Record<string, number> = { a: 1 }; const has = 'a' in T;",
     },
@@ -121,8 +117,8 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       code: "function f(table: Record<string, unknown>, key: string) { if (!Object.hasOwn(table, key)) return; const { [key]: value } = table; return value; }",
     },
     {
-      name: "a computed destructure with a literal key, and of a table that is not string-keyed",
-      code: "function f(table: Record<string, unknown>, other: Options, key: string) { const { ['a']: a } = table; const { [key]: b } = other; return [a, b]; }",
+      name: "a computed destructure with a literal key",
+      code: "function f(table: Record<string, unknown>) { const { ['a']: a } = table; return a; }",
     },
     {
       name: "an unknown-annotated alias guarded by Object.hasOwn",
@@ -130,7 +126,7 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
     },
     {
       name: "a let alias is not followed, and an alias annotated with a closed type keeps that type",
-      code: "function f(table: Record<string, unknown>, key: string) { let holder: unknown = table; holder = other; const options: Options = table; return [isRecord(holder) ? holder[key] : undefined, options[key]]; }",
+      code: "import type { Key } from './key'; function f(table: Record<string, unknown>, key: Key) { let holder: unknown = table; holder = other; const options: Options = table; return [isRecord(holder) ? holder[key] : undefined, options[key]]; }",
     },
     {
       name: "a shadowing Map binding",
