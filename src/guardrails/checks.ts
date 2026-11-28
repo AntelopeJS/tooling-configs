@@ -149,10 +149,12 @@ export function droppedChecksSteps(
 }
 
 /**
- * The steps that run after the others, each alone and in this order: tests often hold time limits that CPU contention
- * would break, and `published:types` packs each package, whose `prepack` rebuilds the output other steps and tests read.
+ * The steps that run after the others, each alone and in this order: `suppressions` lints with type information, which
+ * a step regenerating the types a tsconfig extends, as a DMS `lint` does, would empty under it; tests often hold time limits
+ * that CPU contention would break; and `published:types` packs each package, whose `prepack` rebuilds the output other
+ * steps and tests read.
  */
-const RUNS_ALONE = ["test", "published:types"];
+const RUNS_ALONE = ["suppressions", "test", "published:types"];
 
 /** The step that runs before the others when it writes files, such as a workspace package's `dist`, that they read. */
 const RUNS_FIRST = "typecheck";
@@ -294,7 +296,7 @@ function summary(
 /**
  * Runs the `checks:prepare` package script first when it exists and a step will run, and stops there if it fails.
  * Then runs `typecheck` first when it writes files the other steps read (see `typecheckWrites`), every other check step
- * except `test` and `published:types` at the same time, then each of those alone, and reports only what failed, each step's
+ * except `suppressions`, `test` and `published:types` at the same time, then each of those alone, and reports only what failed, each step's
  * output buffered and listed in step order whichever step finishes first. `skipSetting` is the comma-separated value of
  * `ANTELOPEJS_CHECKS_SKIP`: the steps it names are not run and are counted as skipped, never as passed, and a name that
  * is not a step fails the run before any step starts so a typo cannot skip nothing. On the `draft`, `fast` and `full` tiers of

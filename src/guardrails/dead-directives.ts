@@ -3,7 +3,12 @@ import { readdirSync } from "node:fs";
 import { join, posix } from "node:path";
 
 import { changedFiles } from "./files.ts";
-import { directiveReport, type UnusedDirective } from "./oxlint.ts";
+import {
+  directiveReport,
+  typeAwareRules,
+  type UnusedDirective,
+  type UntypedConfig,
+} from "./oxlint.ts";
 import {
   inWorktree,
   suppressionsIn,
@@ -105,14 +110,65 @@ function deadFailure(directive: Directive, dead: Set<string>): string[] {
   );
 }
 
+/** The `typescript/` name oxlint also accepts as `@typescript-eslint/`. */
+function oxlintName(rule: string): string {
+  return rule.replace(/^@typescript-eslint\//u, "typescript/");
+}
+
+/**
+ * Removes from `dead` the rules oxlint may not have run once a tsconfig
+ * failed to load: a type-aware rule, or any rule for a directive naming
+ * none. A tsconfig's `references` reach files outside its directory, so
+ * every file of the run counts. Returns a note naming the tsconfigs and
+ * the directives left unjudged.
+ */
+function withoutUntyped(
+  root: string,
+  untyped: UntypedConfig[],
+  dead: Map<Directive, Set<string>>,
+): string[] {
+  if (untyped.length === 0) return [];
+  const typeAware = typeAwareRules(root);
+  const unjudged: string[] = [];
+  for (const [directive, rules] of dead) {
+    const skipped = [...rules].filter(
+      (rule) => rule === "*" || typeAware.has(oxlintName(rule)),
+    );
+    if (skipped.length === 0) continue;
+    for (const rule of skipped) rules.delete(rule);
+    if (rules.size === 0) dead.delete(directive);
+    unjudged.push(
+      `${directive.file}:${directive.line} ${written(directive, skipped)}`,
+    );
+  }
+  if (unjudged.length === 0) return [];
+  const configs = untyped.map(
+    ({ tsconfig, reason }) => `${tsconfig} cannot load (${reason})`,
+  );
+  return [
+    `${configs.join("; ")}, so oxlint ran no type-aware rule on the files it covers. Not judged: ${unjudged.join(", ")}.`,
+  ];
+}
+
+/** What the dead-directive check found: the failures, and notes on what it could not judge. */
+export interface DeadDirectiveReport {
+  failures: string[];
+  notes: string[];
+}
+
 /**
  * Fails, in each of `files`, every lint directive that suppresses nothing
  * under the repository's own lint configuration. Directives in other files
  * are left alone, so adopting the check changes no existing file until a
  * change touches it. `eslint-` directives under an ESLint config
- * are left to ESLint, and `.vue` files are not linted by oxlint.
+ * are left to ESLint, and `.vue` files are not linted by oxlint. When a
+ * tsconfig cannot load, the directives for rules that need type information
+ * are not judged, and a note says so.
  */
-export function deadDirectiveFailures(root: string, files: string[]): string[] {
+export function deadDirectiveReport(
+  root: string,
+  files: string[],
+): DeadDirectiveReport {
   const directives = inWorktree(root, directivesIn, files);
   const readByOxlint = directives.filter(
     ({ file, directive }) =>
@@ -120,9 +176,9 @@ export function deadDirectiveFailures(root: string, files: string[]): string[] {
       !(directive.startsWith("eslint-") && lintedByEslint(root, file)),
   );
   const lintable = [...new Set(readByOxlint.map(({ file }) => file))];
-  const { unused, unreadable } = lintable.length
+  const { unused, unreadable, untyped } = lintable.length
     ? directiveReport(root, lintable)
-    : { unused: [], unreadable: [] };
+    : { unused: [], unreadable: [], untyped: [] };
   const dead = new Map<Directive, Set<string>>();
   const unplaced = unreadable.map(
     ({ location, message }) =>
@@ -140,13 +196,17 @@ export function deadDirectiveFailures(root: string, files: string[]): string[] {
     for (const rule of item.rules ?? directive.rules) rules.add(rule);
     dead.set(directive, rules);
   }
-  return [
-    ...unplaced,
-    ...directives.flatMap((directive) => {
-      const rules = dead.get(directive);
-      return rules === undefined ? [] : deadFailure(directive, rules);
-    }),
-  ];
+  const notes = withoutUntyped(root, untyped, dead);
+  return {
+    failures: [
+      ...unplaced,
+      ...directives.flatMap((directive) => {
+        const rules = dead.get(directive);
+        return rules === undefined ? [] : deadFailure(directive, rules);
+      }),
+    ],
+    notes,
+  };
 }
 
 function mergeBase(root: string, revision: string): string {

@@ -258,6 +258,74 @@ test("an eslint-disable directive under an ESLint config is left to ESLint, whic
   assert.equal(full.status, 0, full.stderr);
 });
 
+const RUNTIME = (extra: string[]) =>
+  [
+    "export function compile(source: string): unknown {",
+    "  // oxlint-disable-next-line typescript/no-implied-eval -- the query console compiles the admin's own query text",
+    "  return new Function(source);",
+    "}",
+    "",
+    "export function compileLegacy(source: string): unknown {",
+    "  // eslint-disable-next-line @typescript-eslint/no-implied-eval -- the legacy console compiles the same query text",
+    "  return new Function(source);",
+    "}",
+    ...extra,
+    "",
+  ].join("\n");
+
+const DEAD_CONSOLE = [
+  "// oxlint-disable-next-line eslint/no-console -- the probe logs its result",
+  "export const probe = 1;",
+];
+
+/** A DMS frontend whose tsconfig extends the generated `.dms-types`, absent as while `prepare-types` rewrites it. */
+function ungeneratedRepo(t: TestContext, extra: string[] = []): string {
+  return presetRepo(
+    t,
+    {
+      "frontend-vue/tsconfig.json": JSON.stringify({
+        extends: "./.dms-types/tsconfig.json",
+        include: ["**/*.ts"],
+      }),
+      "frontend-vue/app/runtime.ts": RUNTIME(extra),
+    },
+    {
+      "typescript/no-implied-eval": 1,
+      "@typescript-eslint/no-implied-eval": 1,
+      "eslint/no-console": 1,
+    },
+  );
+}
+
+test("dms-database#260: needed type-aware directives under a tsconfig that cannot load, in the oxlint and @typescript-eslint spellings, are not judged, and the check says why, where a check that drops oxlint's tsconfig error or matches only oxlint's rule names calls them dead", (t) => {
+  const root = ungeneratedRepo(t);
+  const { staged, full } = bothModes(root, () =>
+    put(root, "frontend-vue/app/runtime.ts", `${RUNTIME([])}\n`),
+  );
+  for (const result of [staged, full]) {
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(
+      result.stdout,
+      /frontend-vue\/tsconfig\.json cannot load \(.*\.dms-types.*\), so oxlint ran no type-aware rule on the files it covers\. Not judged: frontend-vue\/app\/runtime\.ts:2 `oxlint-disable-next-line typescript\/no-implied-eval`, frontend-vue\/app\/runtime\.ts:7 `eslint-disable-next-line @typescript-eslint\/no-implied-eval`\./u,
+    );
+  }
+});
+
+test("under a tsconfig that cannot load, a dead directive for a rule that ran still fails, where a check that skips the whole file passes it", (t) => {
+  const root = ungeneratedRepo(t, DEAD_CONSOLE);
+  const { staged, full } = bothModes(root, () =>
+    put(root, "frontend-vue/app/runtime.ts", `${RUNTIME(DEAD_CONSOLE)}\n`),
+  );
+  for (const result of [staged, full]) {
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(
+      result.stderr,
+      /frontend-vue\/app\/runtime\.ts:10: `oxlint-disable-next-line eslint\/no-console` suppresses nothing\. Fix: delete the directive\./u,
+    );
+    assert.doesNotMatch(result.stderr, /no-implied-eval/u);
+  }
+});
+
 const PARSER = (body: string) =>
   [
     "// oxlint-disable-next-line eslint/no-console -- the parser probe logs its own input",
