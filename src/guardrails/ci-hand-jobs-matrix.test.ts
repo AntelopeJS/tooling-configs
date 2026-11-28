@@ -161,3 +161,56 @@ test("every matrix expression sync writes keeps each leg on its own OS for a pub
     assertEachLegKeepsItsOs(written, legs);
   }
 });
+
+test("a ternary already in the expression form, a ternary of variables, or a matrix label of no known OS is left alone when a leg would land on another OS, so a sync that trusts the canonical form, any variable or a Linux default fails", () => {
+  const linuxKeyed = String(
+    jobsOf(
+      syncCi(
+        workflowWith(
+          matrixJob(
+            "${{ matrix.os == 'ubuntu-latest' && 'blacksmith-4vcpu-ubuntu-2404' || 'blacksmith-4vcpu-windows-2025' }}",
+            "        os: ${{ fromJSON(needs.select.outputs.os) }}\n",
+          ),
+        ),
+      ).content,
+    ).backend["runs-on"],
+  );
+  for (const [runsOn, matrix] of [
+    [linuxKeyed, "        os: [ubuntu-22.04, windows-latest]\n"],
+    [
+      "${{ matrix.os == 'ubuntu-latest' && vars.RUNNER_CI_WINDOWS || vars.RUNNER_CI }}",
+      "        os: [ubuntu-latest, windows-latest]\n",
+    ],
+    [
+      "${{ matrix.os == 'windows-latest' && vars.RUNNER_CI || vars.RUNNER_CI_WINDOWS }}",
+      "        os: [ubuntu-latest, windows-latest]\n",
+    ],
+    ["${{ matrix.os }}", "        os: [win-2022]\n"],
+    ["${{ matrix.os }}", "        os: [self-hosted, windows-latest]\n"],
+  ] as const) {
+    const text = syncCi(workflowWith(matrixJob(runsOn, matrix)));
+    assert.equal(
+      jobsOf(text.content).backend["runs-on"],
+      runsOn,
+      `${runsOn} ${matrix}`,
+    );
+    assert.equal(
+      runnerAdvisories(text.advisories).length,
+      1,
+      `${runsOn} ${matrix}`,
+    );
+  }
+  const variables = syncCi(
+    workflowWith(
+      matrixJob(
+        "${{ matrix.os == 'windows-latest' && vars.RUNNER_CI_WINDOWS || vars.RUNNER_CI }}",
+        "        os: [ubuntu-latest, windows-latest]\n",
+      ),
+    ),
+  );
+  assert.deepEqual(runnerAdvisories(variables.advisories), []);
+  assertEachLegKeepsItsOs(
+    String(jobsOf(variables.content).backend["runs-on"]),
+    ["ubuntu-latest", "windows-latest"],
+  );
+});
