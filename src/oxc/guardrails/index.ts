@@ -11,6 +11,7 @@ import { noSelfImportInTestsRule } from "./rules/no-self-import-in-tests.ts";
 import { noTypeofFunctionOnlyTestRule } from "./rules/no-typeof-function-only-test.ts";
 import { noUnrunQueryRule } from "./rules/no-unrun-query.ts";
 import { noUnsafeObjectAssignRule } from "./rules/no-unsafe-object-assign.ts";
+import { propertyTestTimeoutRule } from "./rules/property-test-timeout.ts";
 import { refusalKeyInLocalesRule } from "./rules/refusal-key-in-locales.ts";
 import { refusalMessageIsKeyRule } from "./rules/refusal-message-is-key.ts";
 import { requireAssertionRule } from "./rules/require-assertion.ts";
@@ -20,7 +21,7 @@ import { sharedTestTimeoutRule } from "./rules/shared-test-timeout.ts";
 
 export { ASSERTION_FUNCTION_NAMES, TEST_FILE_GLOBS } from "./shared.ts";
 
-/** AntelopeJS rules that reject comments, inherited-key lookups, instanceof against an interface package class, presence-only type guards, 4xx refusals whose message is a sentence or a key no locale file holds, inserts that follow a read of the same table or that a called function makes once an awaited read found nothing, unrun interface-database queries an awaited function returns, unchecked Object.assign writes, low-evidence tests, files no tsconfig lists, tsconfigs that list no `types` and vitest configs off the shared test timeout. */
+/** AntelopeJS rules that reject comments, inherited-key lookups, instanceof against an interface package class, presence-only type guards, 4xx refusals whose message is a sentence or a key no locale file holds, inserts that follow a read of the same table or that a called function makes once an awaited read found nothing, unrun interface-database queries an awaited function returns, unchecked Object.assign writes, low-evidence tests, fast-check properties under a mocha timeout, files no tsconfig lists, tsconfigs that list no `types` and vitest configs off the shared test timeout. */
 const guardrailsPlugin = eslintCompatPlugin({
   meta: { name: "antelopejs" },
   rules: {
@@ -35,6 +36,7 @@ const guardrailsPlugin = eslintCompatPlugin({
     "no-typeof-function-only-test": noTypeofFunctionOnlyTestRule,
     "no-unrun-query": noUnrunQueryRule,
     "no-unsafe-object-assign": noUnsafeObjectAssignRule,
+    "property-test-timeout": propertyTestTimeoutRule,
     "refusal-key-in-locales": refusalKeyInLocalesRule,
     "refusal-message-is-key": refusalMessageIsKeyRule,
     "require-assertion": requireAssertionRule,

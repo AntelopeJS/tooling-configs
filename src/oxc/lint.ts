@@ -192,6 +192,7 @@ export function guardrailsRules() {
           "antelopejs/no-constant-value-assertion": "error",
           "antelopejs/no-self-import-in-tests": "error",
           "antelopejs/no-typeof-function-only-test": "error",
+          "antelopejs/property-test-timeout": "error",
           "antelopejs/require-assertion": "error",
         },
       },
