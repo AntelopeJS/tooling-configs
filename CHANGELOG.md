@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.10.15
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.14...v0.10.15)
+
+### 🚀 Enhancements
+
+- **guardrails:** Choose each owned job's runner from the repository visibility ([#538](https://github.com/AntelopeJS/tooling-configs/pull/538))
+
+### 🩹 Fixes
+
+- **guardrails:** Close three edges of 0.10.14 in module-peers, the --timeout core guard and release.yml ([#535](https://github.com/AntelopeJS/tooling-configs/pull/535))
+- **guardrails:** Let module-peers admit a prerelease its comparator set names past a bare '<X.Y.Z' ([#536](https://github.com/AntelopeJS/tooling-configs/pull/536))
+- **guardrails:** Let module-peers skip the bare '<X.Y.Z' veto when semver's default rule admits the prerelease ([#537](https://github.com/AntelopeJS/tooling-configs/pull/537))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.10.14
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.13...v0.10.14)
