@@ -85,8 +85,8 @@ importers:
         specifier: ^0.23.0
         version: 0.23.7(oxc-resolver@11.24.2)(typescript@6.0.3)
       typescript5:
-        specifier: npm:typescript@^5.9.3
-        version: typescript@5.9.3
+        specifier: npm:typescript@^7.0.0
+        version: typescript@7.0.2
       typescript7:
         specifier: npm:typescript@~7.0.2
         version: typescript@7.0.2
@@ -3657,11 +3657,6 @@ packages:
     resolution: {integrity: sha512-TeTSQ6H5YHvpqVwBRcnLDCBnDOHWYu7IvGbHT6N8AOymcr9PJGjc1GTtiWZTYg0NCgYwvnYWEkVChQAr9bjfwA==}
     engines: {node: '>=16'}
 
-  typescript@5.9.3:
-    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
-    engines: {node: '>=14.17'}
-    hasBin: true
-
   typescript@6.0.3:
     resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
     engines: {node: '>=14.17'}
@@ -7001,8 +6996,6 @@ snapshots:
   type-fest@2.19.0: {}
 
   type-fest@4.41.0: {}
-
-  typescript@5.9.3: {}
 
   typescript@6.0.3: {}
 
