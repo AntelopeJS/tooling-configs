@@ -128,6 +128,7 @@
   "src/guardrails/sync-pnpm-workspace.test.ts": 23.5,
   "src/guardrails/sync-prepare.test.ts": 13.5,
   "src/guardrails/sync-release-caller.test.ts": 1.2,
+  "src/guardrails/sync-release-preview.test.ts": 0.6,
   "src/guardrails/sync-release-workflow.test.ts": 9.4,
   "src/guardrails/sync-renovate.test.ts": 7.6,
   "src/guardrails/sync-safety.test.ts": 33.9,

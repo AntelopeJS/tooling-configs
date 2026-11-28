@@ -266,11 +266,11 @@ test("a workspace with an interface caller in another file gets one release.yml 
     ),
     {
       "release-packages-dms-mailing": [
-        "github.event_name != 'workflow_dispatch' || inputs.package-directory == 'packages/dms-mailing'",
+        "github.event_name != 'workflow_dispatch' || inputs.package-directory == 'packages/dms-mailing' || inputs.preview == true && inputs.package-directory == ''",
         "packages/dms-mailing",
       ],
       "release-packages-interface-dms-mailing": [
-        "github.event_name != 'workflow_dispatch' || inputs.package-directory == 'packages/interface-dms-mailing'",
+        "github.event_name != 'workflow_dispatch' || inputs.package-directory == 'packages/interface-dms-mailing' || inputs.preview == true && inputs.package-directory == ''",
         "packages/interface-dms-mailing",
       ],
     },
