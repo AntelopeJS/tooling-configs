@@ -149,7 +149,11 @@ export function toolingVersions() {
     readFileSync(join(toolingRoot(), "package.json"), "utf8"),
   );
   const dev = (name: string): string => {
-    const range = manifest.devDependencies?.[name];
+    const devDependencies = manifest.devDependencies;
+    const range =
+      devDependencies && Object.hasOwn(devDependencies, name)
+        ? devDependencies[name]
+        : undefined;
     if (!range)
       throw new Error(
         `tooling-configs must declare ${name} in devDependencies.`,

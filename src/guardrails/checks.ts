@@ -228,7 +228,8 @@ async function runSteps(
         notes: notes && `[${step}]\n${notes}`,
       };
     }
-    if (!manifest.scripts?.[step])
+    const scripts = manifest.scripts;
+    if (!scripts || !Object.hasOwn(scripts, step) || !scripts[step])
       return {
         failure: `[${step}] Missing package.json script "${step}". Run antelopejs-sync.\n`,
         notes: "",

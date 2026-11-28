@@ -105,8 +105,16 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       code: "const xs: string[] = []; function f(i: number) { return xs[i]; }",
     },
     {
-      name: "a dictionary declared elsewhere is not resolved",
-      code: "import { TABLE } from './table'; function f(key: string) { return TABLE[key]; }",
+      name: "a string key narrowed by a call in the enclosing condition, caught by an implementation that reports every string-declared key",
+      code: "import { levels, isLevelName } from './levels'; function f(level: string) { const a = isLevelName(level) ? levels[level] : 0; if (isLevelName(level)) use(levels[level]); return a + (isLevelName(level) && levels[level]); }",
+    },
+    {
+      name: "a string key read from a local null-prototype table, caught by an implementation that ignores how the table was built",
+      code: "const T = Object.create(null); const U = { __proto__: null, a: 1 }; class C { t = Object.create(null); m(k: string) { return this.t[k]; } } function f(k: string) { return [T[k], U[k]]; }",
+    },
+    {
+      name: "an imported table read with a key of an imported literal union, caught by an implementation that treats an unresolved key type as open",
+      code: "import type { Channel } from './channels'; import { outputs } from './outputs'; function f(channel: Channel) { return outputs[channel]; }",
     },
     {
       name: "a literal key tested with in",
@@ -121,8 +129,8 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
       code: "function f(table: Record<string, unknown>, key: string) { if (!Object.hasOwn(table, key)) return; const { [key]: value } = table; return value; }",
     },
     {
-      name: "a computed destructure with a literal key, and of a table that is not string-keyed",
-      code: "function f(table: Record<string, unknown>, other: Options, key: string) { const { ['a']: a } = table; const { [key]: b } = other; return [a, b]; }",
+      name: "a computed destructure with a literal key",
+      code: "function f(table: Record<string, unknown>) { const { ['a']: a } = table; return a; }",
     },
     {
       name: "an unknown-annotated alias guarded by Object.hasOwn",
@@ -130,7 +138,7 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
     },
     {
       name: "a let alias is not followed, and an alias annotated with a closed type keeps that type",
-      code: "function f(table: Record<string, unknown>, key: string) { let holder: unknown = table; holder = other; const options: Options = table; return [isRecord(holder) ? holder[key] : undefined, options[key]]; }",
+      code: "import type { Key } from './key'; function f(table: Record<string, unknown>, key: Key) { let holder: unknown = table; holder = other; const options: Options = table; return [isRecord(holder) ? holder[key] : undefined, options[key]]; }",
     },
     {
       name: "a shadowing Map binding",
@@ -138,6 +146,26 @@ tester.run("antelopejs/no-inherited-key-lookup", noInheritedKeyLookupRule, {
     },
   ],
   invalid: [
+    {
+      name: "antelopejs#568: a string-declared key into a table typed in another file, caught by an implementation that reads only tables typed in this file",
+      code: "import type { Config } from './config'; import { envModules } from './modules'; function f(config: Config, environment: string, module: string) { return [config.environments?.[environment], envModules[module]]; }",
+      errors: [lookup, lookup],
+    },
+    {
+      name: "antelopejs#574: an optional manifest record read with a string | undefined parameter",
+      code: "import type { Manifest } from './manifest'; function f(manifest: Manifest, packageName: string | undefined) { return manifest.dependencies?.[packageName]; }",
+      errors: [lookup],
+    },
+    {
+      name: "a variable declared string | null, caught by an implementation that checks parameters only",
+      code: "import { table } from './table'; const name: string | null = read(); export const value = table[name];",
+      errors: [lookup],
+    },
+    {
+      name: "a dictionary declared elsewhere read with a string parameter",
+      code: "import { TABLE } from './table'; function f(key: string) { return TABLE[key]; }",
+      errors: [lookup],
+    },
     {
       name: "rethinkdb@ea47b29:src/implementations/database/expression.ts:193",
       code: `
