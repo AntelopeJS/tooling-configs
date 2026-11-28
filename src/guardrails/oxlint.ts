@@ -330,12 +330,8 @@ function documented(
   item: OxlintDiagnostic,
   name: string | undefined,
 ): DocumentedMessage {
-  const pointer = name === undefined ? undefined : docsPointer(name);
-  if (
-    name === undefined ||
-    pointer === undefined ||
-    !item.message.endsWith(pointer)
-  )
+  const pointer = name === undefined ? "" : docsPointer(name);
+  if (name === undefined || !item.message.endsWith(pointer))
     return { message: item.message, doc: item.url };
   return {
     message: item.message.slice(0, -pointer.length),

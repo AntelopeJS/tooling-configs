@@ -211,6 +211,6 @@
   "src/oxc/lint-unrun-query.test.ts": 30.9,
   "src/oxc/lint-vitest-config.test.ts": 0.8,
   "src/oxc/lint.test.ts": 3.9,
-  "src/oxc/rule-docs.test.ts": 2.5,
+  "src/oxc/rule-docs.test.ts": 2.8,
   "src/triage/triage.test.ts": 0
 }

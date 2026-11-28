@@ -62,9 +62,11 @@ function lintVariant(variant: Variant) {
         project.write(`${name}/${file.path}`, file.source);
   const { diagnostics }: { diagnostics: Diagnostic[] } = project.run();
   const reported = new Set<string>();
-  for (const { code, filename } of diagnostics)
-    if (code !== undefined && filename !== undefined)
-      reported.add(`${code} ${filename.split(/[\\/]/u)[0]}`);
+  for (const { code, filename } of diagnostics) {
+    const segments = filename?.split(/[\\/]/u) ?? [];
+    if (code !== undefined && !segments.includes("node_modules"))
+      reported.add(`${code} ${segments[0]}`);
+  }
   return reported;
 }
 
