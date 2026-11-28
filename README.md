@@ -77,7 +77,7 @@ src/b.ts:4:7 antelopejs/no-comments Comments rot. …
 1 src/b.ts
 ```
 
-It prints nothing and exits 0 when oxlint reports nothing. It exits 1 when any finding is an error, and 0 when every finding is a warning. If oxlint cannot run, it prints the error on stderr and exits 1.
+It prints nothing and exits 0 when oxlint reports nothing. It exits 1 when any finding is an error, and 0 when every finding is a warning. If oxlint cannot run, or a named path does not exist, it prints the error on stderr and exits 1. Paths are read from the current directory.
 
 ## antelopejs-triage
 

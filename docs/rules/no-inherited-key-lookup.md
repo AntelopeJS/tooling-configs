@@ -6,7 +6,7 @@ A plain object also answers the keys it inherits from `Object.prototype`, so a l
 
 - `table[key]`, `table[key] += 1` or `const { [key]: value } = table` with a computed key, where the same file declares `table` as a string-keyed object: `Record<string, V>`, `Record<PropertyKey, V>`, a string index signature, `Readonly` or `Partial` of one, a union of one with `undefined` or `null`, a class field read as `this.field[key]`, or a record property of a parameter whose type the file declares (`config.storages[name]`).
 - A module-level `const` object literal, `as const` included, read with a parameter whose declared type can hold any string: `string`, `PropertyKey`, `keyof any`, a template literal, or a type parameter with no constraint or constrained to `string`. A key narrowed by a type predicate still counts as open.
-- `key in obj` with a non-literal key, whatever the type of `obj`.
+- `key in obj` with a non-literal key, whatever the type of `obj`, unless `key` is the parameter the enclosing type predicate narrows.
 
 These pass:
 

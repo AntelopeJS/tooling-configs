@@ -125,3 +125,17 @@ test("lints only the named paths", (t) => {
   assert.ok(!stdout.includes("src/a.ts"), stdout);
   assert.ok(stdout.includes("3 src/b.ts"), stdout);
 });
+
+test("reads a named path from the directory it runs in", (t) => {
+  const root = findingsRepo(t);
+  const { stdout } = bin(join(root, "src"), "lint-summary", ["b.ts"]);
+  assert.ok(stdout.includes("3 src/b.ts"), stdout);
+});
+
+test("fails on a named path that does not exist instead of printing nothing", (t) => {
+  const root = findingsRepo(t);
+  const result = bin(root, "lint-summary", [join("src", "c.ts")]);
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /c\.ts does not exist/u);
+});

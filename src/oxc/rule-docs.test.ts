@@ -50,6 +50,7 @@ describe("rule pages", () => {
 interface Diagnostic {
   code?: string;
   filename?: string;
+  message: string;
 }
 
 /** One project per variant, each rule's example files under a directory named after it. */
@@ -62,21 +63,29 @@ function lintVariant(variant: Variant) {
         project.write(`${name}/${file.path}`, file.source);
   const { diagnostics }: { diagnostics: Diagnostic[] } = project.run();
   const reported = new Set<string>();
-  for (const { code, filename } of diagnostics) {
+  const unparsed: string[] = [];
+  for (const { code, filename, message } of diagnostics) {
     const segments = filename?.split(/[\\/]/u) ?? [];
-    if (code !== undefined && !segments.includes("node_modules"))
-      reported.add(`${code} ${segments[0]}`);
+    if (segments.includes("node_modules")) continue;
+    if (code === undefined) unparsed.push(`${filename}: ${message}`);
+    else reported.add(`${code} ${segments[0]}`);
   }
-  return reported;
+  return { reported, unparsed };
 }
 
 describe("rule page examples", () => {
   const flagged = lintVariant("flagged");
   const fixed = lintVariant("fixed");
+  test("every example parses", () => {
+    assert.deepEqual([...flagged.unparsed, ...fixed.unparsed], []);
+  });
   for (const { plugin, name } of rules)
     test(`${plugin}/${name} reports its flagged example and passes its fixed one`, () => {
       const key = `${plugin}(${name}) ${name}`;
-      assert.ok(flagged.has(key), "the flagged example is not reported");
-      assert.ok(!fixed.has(key), "the fixed example is reported");
+      assert.ok(
+        flagged.reported.has(key),
+        "the flagged example is not reported",
+      );
+      assert.ok(!fixed.reported.has(key), "the fixed example is reported");
     });
 });

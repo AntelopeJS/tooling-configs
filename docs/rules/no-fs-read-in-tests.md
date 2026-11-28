@@ -7,13 +7,13 @@ A test that reads source files asserts the text of the code, so it passes while 
 In a test file (`*.test.*`, `*.spec.*`, or a file under `test/`, `tests/` or `__tests__/`):
 
 - A `readFileSync` or `readdirSync` imported from `fs` or `node:fs`, such as `import { readFileSync } from "node:fs"`.
-- A call through an `fs` namespace or default import, or through `require("fs")`, such as `fs.readFileSync(...)`.
+- `readFileSync` or `readdirSync` called through an `fs` namespace or default import, or through `require("fs")`, such as `fs.readFileSync(...)`.
 - `readFileSync` or `readdirSync` destructured from `require("node:fs")`.
 
 These pass:
 
 - Files under `fixtures/`, `helpers/` and `locales/`, which may read files.
-- `import type` from `fs`, and the `fs` functions a test uses to set up a temporary directory, such as `mkdtempSync` and `writeFileSync`.
+- `import type` from `fs`, and every other `fs` function, such as `mkdtempSync`, `writeFileSync`, `fs.readFile` or `node:fs/promises`.
 
 ## Fix
 
