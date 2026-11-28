@@ -190,21 +190,40 @@ test("a prerelease of the release a hand-written '<' bound excludes fails, and o
   );
 });
 
-test("a range whose set also names a prerelease of the release a '<' bound excludes admits that prerelease, and one without it does not, caught by an implementation that vetoes every prerelease of a bare '<X.Y.Z' whatever its set holds", async (t) => {
-  for (const [range, core, status] of [
-    ["<1.25.0 >=1.25.0-next.1", "1.25.0-next.1", 0],
-    [">=1.20.0 <1.25.0 || >=1.25.0-next.0 <1.25.0", "1.25.0-next.1", 0],
-    [">=1.24.0 <1.25.0", "1.25.0-next.1", 1],
+test("a prerelease past a bare '<X.Y.Z' passes exactly when its comparator set admits it under semver's default prerelease rule, as pnpm judges it, caught by an implementation that vetoes an exact pin of that prerelease or lists the comparators that may name it", async (t) => {
+  const next = "1.25.0-next.1";
+  const cases: readonly (readonly [string, string, 0 | 1])[] = [
+    ["<1.25.0 1.25.0-next.1", next, 0],
+    ["<1.25.0 =1.25.0-next.1", next, 0],
+    [">=1.24.0 <1.25.0", next, 1],
     ["<2.0.0", "2.0.0-rc.1", 1],
-  ] as const) {
+    ["<1.25.0 >=1.25.0-next.1", next, 0],
+    [">=1.20.0 <1.25.0 || >=1.25.0-next.0 <1.25.0", next, 0],
+    ["<1.25.0 >=1.25.0-next.5", next, 1],
+    ["<1.25.0 >1.25.0-next.1", next, 1],
+    ["<1.25.0 >=1.24.0-next.1", next, 1],
+    ["<1.25.0 || >=1.25.0-next.5", next, 1],
+    ["<1.25.0 <1.25.0-next.9", next, 0],
+    ["<1.25.0 >=1.25.0-alpha", next, 0],
+    ["<1.25.0 >=1.25.0-next.1", "1.25.0-alpha.1", 1],
+    ["^1.24.0", next, 0],
+    ["<=1.25.0", next, 0],
+    ["~1.24.x", next, 1],
+    ["<1.25", next, 1],
+    ["<1.25.0-0", next, 1],
+  ];
+  const wrong: string[] = [];
+  for (const [range, core, status] of cases) {
     const root = template(t, literalSource(ASSISTANT, "0.2.6"), {
       "@antelopejs/core": core,
     });
     const result = await checks(t, root, {
       [ASSISTANT]: { "0.2.6": corePeer(range) },
     });
-    assert.equal(result.status, status, `${range} ${core}: ${result.stdout}`);
+    if (result.status !== status)
+      wrong.push(`"${range}" with ${core} exited ${result.status}`);
   }
+  assert.deepEqual(wrong, []);
 });
 
 test("a source a local function builds with `as const` is read at each call, caught by an implementation that reads only object literals whose fields are strings", async (t) => {
