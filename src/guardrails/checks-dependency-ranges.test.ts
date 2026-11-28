@@ -60,6 +60,7 @@ function checks(root: string, url: string, tier?: string) {
     npm_config_registry: url,
     NPM_CONFIG_REGISTRY: url,
     ANTELOPEJS_CI_TIER: tier,
+    ANTELOPEJS_CHECKS_SKIP: "lockfile:frozen",
   });
 }
 
@@ -497,7 +498,7 @@ test("an exact pin on a preview of the minor a DMS release implements passes che
       "queue",
     );
     assert.equal(result.status, 0, `${field}: ${result.stdout}`);
-    assert.match(result.stdout, /Checks: 14 passed, 0 failed\./);
+    assert.match(result.stdout, /Checks: 14 passed, 0 failed, 1 skipped\./);
   }
 });
 

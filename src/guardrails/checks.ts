@@ -7,6 +7,7 @@ import {
   hasDependencyRanges,
 } from "./dependency-ranges-sync.ts";
 import { checkAntelopejsPeers } from "./antelopejs-peers.ts";
+import { checkFrozenLockfiles, frozenLockRoots } from "./frozen-lockfiles.ts";
 import { checkGitIdentity, isGitCheckout } from "./git-identity.ts";
 import { checkModulePeers, hasModulePeers } from "./module-peers.ts";
 import { checkOneRange } from "./one-range.ts";
@@ -32,6 +33,7 @@ const CHECK_STEPS = [
   "size",
   "suppressions",
   "sync:check",
+  "lockfile:frozen",
   "lockfile:singletons",
   "lockfile:antelopejs-peers",
   "lockfile:module-peers",
@@ -65,6 +67,7 @@ function failureOnly(
 
 /** Steps `antelopejs-checks` runs itself, no package.json script behind them. */
 const OWN_STEPS = new Map<string, OwnStep>([
+  ["lockfile:frozen", failureOnly(checkFrozenLockfiles)],
   [
     "lockfile:singletons",
     failureOnly((root) => Promise.resolve(checkSingletonPackages(root))),
@@ -89,6 +92,7 @@ const OWN_STEPS = new Map<string, OwnStep>([
 ]);
 
 function hasWork(root: string, step: string): boolean {
+  if (step === "lockfile:frozen") return frozenLockRoots(root).length > 0;
   if (step === "lockfile:singletons" || step === "lockfile:antelopejs-peers")
     return pnpmLockfiles(root).length > 0;
   if (step === "lockfile:module-peers") return hasModulePeers(root);

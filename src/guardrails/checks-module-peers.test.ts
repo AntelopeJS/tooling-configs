@@ -10,7 +10,7 @@ import { binAsync, put, testRepo } from "./helpers/test-repo.ts";
 
 /** Every step but `lockfile:module-peers`, so it alone decides the run. */
 const OTHER_STEPS =
-  "typecheck,lint,format:check,knip,test,size,suppressions,sync:check,lockfile:singletons,lockfile:antelopejs-peers,pnpm:release-age,dependency:ranges,dependency:one-range,git:identity,readme:version,published:types";
+  "typecheck,lint,format:check,knip,test,size,suppressions,sync:check,lockfile:frozen,lockfile:singletons,lockfile:antelopejs-peers,pnpm:release-age,dependency:ranges,dependency:one-range,git:identity,readme:version,published:types";
 
 const ASSISTANT = "@antelopejs/dms-assistant";
 
@@ -86,7 +86,7 @@ test("a lockfile holding a renderer below the frontend range of the newest relea
   assert.equal(result.status, 1, result.stdout);
   assert.equal(
     result.stdout,
-    '[lockfile:module-peers]\npnpm-lock.yaml locks "@antelopejs/dms-frontend" at 0.11.4, outside ">=0.11.6 <0.12.0", the range @antelopejs/dms-assistant@0.2.6 (antelope.config.ts: ">=0.2.1 <0.3.0") declares in frontend-vue/package.json engines.\n  Set "@antelopejs/dms-frontend" in package.json to a version in ">=0.11.6 <0.12.0", then run `pnpm install`.\nChecks: 0 passed, 1 failed, 12 skipped.\n',
+    '[lockfile:module-peers]\npnpm-lock.yaml locks "@antelopejs/dms-frontend" at 0.11.4, outside ">=0.11.6 <0.12.0", the range @antelopejs/dms-assistant@0.2.6 (antelope.config.ts: ">=0.2.1 <0.3.0") declares in frontend-vue/package.json engines.\n  Set "@antelopejs/dms-frontend" in package.json to a version in ">=0.11.6 <0.12.0", then run `pnpm install`.\nChecks: 0 passed, 1 failed, 13 skipped.\n',
   );
 });
 
@@ -255,7 +255,7 @@ test("locked versions inside every range pass, and a frontend-vue peerDependency
     },
   });
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 12 skipped.\n");
+  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 13 skipped.\n");
 });
 
 test("a package source whose package is not a string fails and names its line, caught by an implementation that skips a source it cannot read", async (t) => {
@@ -320,7 +320,7 @@ test("a root package.json interface range no range a configured module release d
   assert.equal(clash.status, 1, clash.stdout);
   assert.equal(
     clash.stdout,
-    '[lockfile:module-peers]\n@antelopejs/interface-dms: package.json requires ">=0.17.0 <0.18.0" and @antelopejs/dms@0.23.0 (antelope.config.ts: ">=0.23.0 <0.24.0") requires "^0.16.0"; no copy satisfies both, so the project stops at boot with "Incompatible interface package resolution". Move one of them to a release whose range meets the other.\nChecks: 0 passed, 1 failed, 14 skipped.\n',
+    '[lockfile:module-peers]\n@antelopejs/interface-dms: package.json requires ">=0.17.0 <0.18.0" and @antelopejs/dms@0.23.0 (antelope.config.ts: ">=0.23.0 <0.24.0") requires "^0.16.0"; no copy satisfies both, so the project stops at boot with "Incompatible interface package resolution". Move one of them to a release whose range meets the other.\nChecks: 0 passed, 1 failed, 15 skipped.\n',
   );
   const met = await checks(t, project(), {
     "@antelopejs/dms": { "0.23.0": dms("^0.17.2") },
