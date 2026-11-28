@@ -112,6 +112,48 @@ function runOxlint(
   }
 }
 
+/** One entry of `oxlint --rules -f json`. */
+interface OxlintRule {
+  scope: string;
+  value: string;
+  type_aware: boolean;
+}
+
+function isOxlintRule(value: unknown): value is OxlintRule {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "scope" in value &&
+    typeof value.scope === "string" &&
+    "value" in value &&
+    typeof value.value === "string" &&
+    "type_aware" in value &&
+    typeof value.type_aware === "boolean"
+  );
+}
+
+/** The `scope/name` of every rule oxlint runs only with type information. */
+export function typeAwareRules(root: string): Set<string> {
+  const result = spawnSync(
+    process.execPath,
+    [resolveOxlint(root), "--rules", "-f", "json"],
+    { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0)
+    throw new Error(
+      `oxlint --rules failed (${result.status ?? result.signal}): ${result.stderr || result.stdout}`,
+    );
+  const rules: unknown = JSON.parse(result.stdout);
+  if (!Array.isArray(rules) || !rules.every(isOxlintRule))
+    throw new Error("oxlint --rules did not return a JSON array of rules.");
+  return new Set(
+    rules
+      .filter((rule) => rule.type_aware)
+      .map((rule) => `${rule.scope}/${rule.value}`),
+  );
+}
+
 /** A lint directive oxlint reports as suppressing nothing: the rules it names as dead, or none named when the whole directive is dead. */
 export interface UnusedDirective {
   file: string;
@@ -127,11 +169,20 @@ interface UnreadableFile {
   message: string;
 }
 
+/** A tsconfig oxlint cannot load, so it ran no type-aware rule on the files under it. */
+export interface UntypedConfig {
+  tsconfig: string;
+  reason: string;
+}
+
 /** What oxlint reports about the directives in a set of files. */
 export interface DirectiveReport {
   unused: UnusedDirective[];
   unreadable: UnreadableFile[];
+  untyped: UntypedConfig[];
 }
+
+const TSCONFIG_ERROR = "typescript(tsconfig-error)";
 
 const UNUSED_RULES = /\(no problems were reported from (.+)\)/u;
 
@@ -150,15 +201,20 @@ export function directiveReport(
   root: string,
   files: string[],
 ): DirectiveReport {
-  const report: DirectiveReport = { unused: [], unreadable: [] };
+  const report: DirectiveReport = { unused: [], unreadable: [], untyped: [] };
   for (const item of runOxlint(root, undefined, files, [
     "--report-unused-disable-directives",
   ])) {
-    if (item.code !== undefined) continue;
     const file =
       item.filename === undefined
         ? undefined
         : repositoryPath(root, item.filename);
+    if (item.code === TSCONFIG_ERROR && file !== undefined)
+      report.untyped.push({
+        tsconfig: file,
+        reason: item.help ?? item.message,
+      });
+    if (item.code !== undefined) continue;
     const span = item.labels?.[0]?.span;
     if (file !== undefined && isUnusedDirective(item.message))
       report.unused.push({
@@ -188,8 +244,6 @@ interface StagedLintReport {
   /** Whether any of the findings is an error. */
   failed: boolean;
 }
-
-const TSCONFIG_ERROR = "typescript(tsconfig-error)";
 
 /**
  * Lints `files` as configured, reporting a tsconfig that cannot load, such as

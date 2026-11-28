@@ -2,7 +2,7 @@
 import { parseArgs } from "node:util";
 
 import {
-  deadDirectiveFailures,
+  deadDirectiveReport,
   touchedFiles,
 } from "../guardrails/dead-directives.ts";
 import { runCli } from "../guardrails/cli.ts";
@@ -17,13 +17,23 @@ import {
   stagedSuppressions,
 } from "../guardrails/suppression-budget.ts";
 
-function fullCheck(root: string, update?: boolean, base?: string): string[] {
+function fullCheck(root: string, update?: boolean, base?: string) {
   const failures = checkSuppressions(root, update);
   const revision = suppressionBase(root, base);
-  const dead = deadDirectiveFailures(root, touchedFiles(root, revision));
-  return revision === undefined
-    ? [...failures, ...dead]
-    : [...raisedCeilings(root, revision), ...failures, ...dead];
+  const dead = deadDirectiveReport(root, touchedFiles(root, revision));
+  const raised = revision === undefined ? [] : raisedCeilings(root, revision);
+  return {
+    failures: [...raised, ...failures, ...dead.failures],
+    notes: dead.notes,
+  };
+}
+
+function stagedCheck(root: string) {
+  const dead = deadDirectiveReport(root, stagedNames(root, "ACMR"));
+  return {
+    failures: [...stagedSuppressions(root), ...dead.failures],
+    notes: dead.notes,
+  };
 }
 
 runCli(() => {
@@ -38,12 +48,10 @@ runCli(() => {
   if (values.staged && (values.update || values.base !== undefined))
     throw new Error("--staged cannot be combined with --update or --base.");
   const root = repositoryRoot();
-  const failures = values.staged
-    ? [
-        ...stagedSuppressions(root),
-        ...deadDirectiveFailures(root, stagedNames(root, "ACMR")),
-      ]
+  const { failures, notes } = values.staged
+    ? stagedCheck(root)
     : fullCheck(root, values.update, values.base);
+  for (const note of notes) process.stdout.write(`${note}\n`);
   for (const failure of failures) process.stderr.write(`${failure}\n`);
   return failures.length ? 1 : 0;
 });
