@@ -138,6 +138,7 @@
   "src/guardrails/sync-template-scripts.test.ts": 4.7,
   "src/guardrails/sync-test-job.test.ts": 4.3,
   "src/guardrails/sync-test-timeout.test.ts": 1.5,
+  "src/guardrails/sync-typecheck-coverage-orphans.test.ts": 0.8,
   "src/guardrails/sync-typecheck-coverage-scripts.test.ts": 3.5,
   "src/guardrails/sync-typecheck-coverage-tsconfig.test.ts": 5.2,
   "src/guardrails/sync-typecheck-coverage.test.ts": 9.5,

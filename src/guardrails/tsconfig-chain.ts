@@ -18,7 +18,11 @@ interface TsconfigFacts {
   parents: string[];
   /** The tsconfig files of the project `references`. */
   references: string[];
+  /** Whether the file itself sets `include`, `files` or `references`. */
+  definesProgram: boolean;
 }
+
+const PROGRAM_KEYS = ["include", "files", "references"] as const;
 
 /** A resolved `compilerOptions.skipLibCheck`. */
 export interface SkipLibCheckSetting {
@@ -93,6 +97,9 @@ function readFacts(
     references: referencePaths(object).flatMap((path) =>
       resolve(referencedFile(files, file, path)),
     ),
+    definesProgram: PROGRAM_KEYS.some(
+      (key) => propertyNamed(object, key) !== undefined,
+    ),
   };
 }
 
@@ -125,19 +132,39 @@ export function skipLibCheckSetting(
   return undefined;
 }
 
-/** `programs` and, for `tsc -b`, the projects they reference, to any depth. */
-export function withReferences(
-  files: CoverageFiles,
+function closure(
   programs: readonly string[],
+  next: (file: string) => readonly string[],
 ): string[] {
   const seen = new Set<string>();
   const queue = [...programs];
   for (const file of queue) {
     if (seen.has(file)) continue;
     seen.add(file);
-    queue.push(...(factsOf(files, file)?.references ?? []));
+    queue.push(...next(file));
   }
   return [...seen];
+}
+
+/** `programs` and, for `tsc -b`, the projects they reference, to any depth. */
+export function withReferences(
+  files: CoverageFiles,
+  programs: readonly string[],
+): string[] {
+  return closure(programs, (file) => factsOf(files, file)?.references ?? []);
+}
+
+/** `programs` and the local files they extend, to any depth: every tsconfig a tsc run over them reads. */
+export function withExtends(
+  files: CoverageFiles,
+  programs: readonly string[],
+): string[] {
+  return closure(programs, (file) => factsOf(files, file)?.parents ?? []);
+}
+
+/** Whether `file` sets `include`, `files` or `references` itself, so it is a project tsc can check and not only a base to extend. */
+export function definesProgram(files: CoverageFiles, file: string): boolean {
+  return factsOf(files, file)?.definesProgram ?? false;
 }
 
 /** The file that sets a `true` setting, when git tracks it. Nothing when git ignores it (a generated file such as Nuxt's `.nuxt/tsconfig.json` or the `.dms-types` tree of `ajs dms prepare-types`): the repository cannot edit it, and a tsconfig that only extends it is not refused. */
