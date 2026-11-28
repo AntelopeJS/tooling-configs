@@ -29,7 +29,8 @@ const RUNNERS = {
   },
 } as const;
 
-type Os = keyof typeof RUNNERS;
+/** An OS sync has a runner for. */
+export type Os = keyof typeof RUNNERS;
 
 function runnerChoice(os: Os): string {
   const { variable, public: open, private: closed } = RUNNERS[os];
@@ -42,9 +43,10 @@ export const RUNS_ON: Readonly<Record<Os, string>> = {
   windows: `\${{ ${runnerChoice("windows")} }}`,
 };
 
-/** The `runs-on` of a job whose matrix `os` names GitHub's labels: the Windows choice for `windowsLabel`, the Linux one otherwise. */
-export function matrixRunsOn(windowsLabel: string): string {
-  return `\${{ matrix.os == '${windowsLabel}' && (${runnerChoice("windows")}) || (${runnerChoice("linux")}) }}`;
+/** The `runs-on` of a job on a matrix `os`: the choice of `os` for the leg whose `matrix.os` is `label`, the other OS's for every other leg. */
+export function matrixRunsOn(label: string, os: Os): string {
+  const other: Os = os === "windows" ? "linux" : "windows";
+  return `\${{ matrix.os == '${label}' && (${runnerChoice(os)}) || (${runnerChoice(other)}) }}`;
 }
 
 /** The commit and the release an action is pinned to. */
@@ -182,6 +184,20 @@ function unresolved(path: string, id: string, value: string): Settled {
   };
 }
 
+function leftAlone(
+  path: string,
+  id: string,
+  value: string,
+  why: string,
+): Settled {
+  return {
+    changed: false,
+    advisories: [
+      `Runner: ${path} job ${id} runs on ${value}, which sync leaves alone: ${why}, so a rewrite could move a leg to a runner of another OS.`,
+    ],
+  };
+}
+
 function setText(node: Scalar<string>, value: string): boolean {
   if (node.value === value) return false;
   node.value = value;
@@ -189,82 +205,144 @@ function setText(node: Scalar<string>, value: string): boolean {
   return true;
 }
 
-function matrixOsNodes(job: YAMLMap): Scalar<string>[] | undefined {
-  const matrix = job.getIn(["strategy", "matrix"], true);
-  if (!isMap(matrix)) return undefined;
-  const os = matrix.get("os", true);
+/** The labels of each OS a matrix `os` takes, or why sync cannot list every leg. */
+type MatrixLegs =
+  | { kind: "labels"; labels: Record<Os, Set<string>> }
+  | { kind: "generated" }
+  | { kind: "unknown"; why: string };
+
+function isExpression(node: unknown): boolean {
+  return isTextScalar(node) && node.value.includes("${{");
+}
+
+/** The `os` values every include item of `matrix` adds, or why sync cannot read one. */
+function includedLabels(
+  matrix: YAMLMap,
+): { kind: "nodes"; nodes: unknown[] } | { kind: "unknown"; why: string } {
   const include = matrix.get("include", true);
-  if (os !== undefined && !isSeq(os)) return undefined;
-  const nodes = [
-    ...(isSeq(os) ? os.items : []),
-    ...(isSeq(include)
-      ? include.items.flatMap((entry) =>
-          isMap(entry) ? [entry.get("os", true)] : [],
-        )
-      : []),
-  ];
-  const scalars = nodes.filter(isTextScalar);
-  return scalars.length > 0 && scalars.length === nodes.length
-    ? scalars
-    : undefined;
+  if (include === undefined) return { kind: "nodes", nodes: [] };
+  if (!isSeq(include))
+    return { kind: "unknown", why: "its matrix include is generated" };
+  const nodes: unknown[] = [];
+  for (const item of include.items) {
+    if (!isMap(item))
+      return { kind: "unknown", why: "an include item is generated" };
+    if (item.has("os")) nodes.push(item.get("os", true));
+  }
+  return { kind: "nodes", nodes };
 }
 
 /**
- * The `runs-on` a `${{ matrix.os }}` job gets from its literal `os` list, which stays as it is so every comparison and
- * `exclude` on its labels keeps matching: {@link matrixRunsOn} keyed on the list's Windows label, or the Linux
- * {@link RUNS_ON} for a list with none. `undefined` for a list sync cannot read, a label of no Linux or Windows runner, or
- * more than one distinct label of one OS.
+ * Every label the matrix `os` of `job` takes, its literal list and the `os` of each include item together, grouped by
+ * OS. `generated` when the list is an expression and no include item can add a leg; `unknown`, with the reason, when an
+ * include is generated, an item or a label is an expression, or a label names no Linux or Windows runner.
  */
-function matrixListRunsOn(job: YAMLMap): string | undefined {
-  const nodes = matrixOsNodes(job);
-  if (nodes === undefined) return undefined;
+function matrixLegs(job: YAMLMap): MatrixLegs {
+  const matrix = job.getIn(["strategy", "matrix"], true);
+  if (!isMap(matrix)) return { kind: "unknown", why: "it has no matrix" };
+  const included = includedLabels(matrix);
+  if (included.kind === "unknown") return included;
+  const os = matrix.get("os", true);
+  if (isExpression(os))
+    return included.nodes.length
+      ? {
+          kind: "unknown",
+          why: "its matrix os is generated and an include item adds to it",
+        }
+      : { kind: "generated" };
+  if (os !== undefined && !isSeq(os))
+    return { kind: "unknown", why: "its matrix os is not a list" };
+  const nodes = [...(isSeq(os) ? os.items : []), ...included.nodes];
+  if (!nodes.length) return { kind: "unknown", why: "its matrix has no os" };
   const labels: Record<Os, Set<string>> = {
     linux: new Set(),
     windows: new Set(),
   };
-  for (const { value } of nodes) {
-    const os = value.includes("${{") ? undefined : osOf(value);
-    if (os === undefined) return undefined;
-    labels[os].add(value);
+  for (const node of nodes) {
+    if (!isTextScalar(node) || isExpression(node))
+      return { kind: "unknown", why: "a matrix os value is an expression" };
+    const leg = osOf(node.value);
+    if (leg === undefined)
+      return {
+        kind: "unknown",
+        why: `${node.value} names no Linux or Windows runner`,
+      };
+    labels[leg].add(node.value);
   }
-  if (labels.linux.size > 1 || labels.windows.size > 1) return undefined;
-  const [windows] = labels.windows;
-  return windows === undefined ? RUNS_ON.linux : matrixRunsOn(windows);
+  return { kind: "labels", labels };
+}
+
+/** The `runs-on` a `${{ matrix.os }}` job gets from {@link matrixLegs}, or why sync leaves it alone. */
+function matrixListRunsOn(
+  job: YAMLMap,
+): { kind: "runsOn"; runsOn: string } | { kind: "unknown"; why: string } {
+  const legs = matrixLegs(job);
+  if (legs.kind === "generated")
+    return { kind: "unknown", why: "its matrix os is generated" };
+  if (legs.kind === "unknown") return legs;
+  const { linux, windows } = legs.labels;
+  if (linux.size > 1 || windows.size > 1)
+    return {
+      kind: "unknown",
+      why: "its matrix names more than one label of one OS",
+    };
+  const [label] = windows;
+  return {
+    kind: "runsOn",
+    runsOn:
+      label === undefined ? RUNS_ON.linux : matrixRunsOn(label, "windows"),
+  };
 }
 
 /**
- * Has a matrix job run on {@link matrixRunsOn}: a `${{ matrix.os }}` job by {@link matrixListRunsOn}, and a ternary on
- * `matrix.os` against a Windows label by the expression ternary on that label, when its branches are a Windows and a Linux
- * literal or variables and its matrix `os` is generated or a list whose one Windows label is that label.
- * `undefined` when sync cannot do either.
+ * Has a matrix job run on {@link matrixRunsOn}, the list of its matrix `os` left as it is so every comparison and
+ * `exclude` on its labels keeps matching. A `${{ matrix.os }}` job keys the ternary on its one Windows label, or takes the
+ * Linux {@link RUNS_ON} when it has none, when {@link matrixLegs} lists every leg with one label per OS. A ternary on
+ * `matrix.os` against a label, Windows or Linux, becomes the expression ternary on that label when its first branch is a
+ * literal of that label's OS or a variable and its second one of the other OS, and its matrix `os` is generated or names
+ * that label as the one label of its OS. A ternary keeps every leg on the OS it had, whatever entries the matrix gains.
  */
 function setMatrixRunner(
   job: YAMLMap,
   runsOn: Scalar<string>,
-): boolean | undefined {
+): { kind: "set"; changed: boolean } | { kind: "unknown"; why: string } {
   if (MATRIX_OS.test(runsOn.value)) {
     const runner = matrixListRunsOn(job);
-    return runner === undefined ? undefined : setText(runsOn, runner);
+    return runner.kind === "unknown"
+      ? runner
+      : { kind: "set", changed: setText(runsOn, runner.runsOn) };
   }
-  const label = MATRIX_KEY.exec(runsOn.value)?.[1];
-  if (label === undefined || osOf(label) !== "windows") return undefined;
-  if (runsOn.value === matrixRunsOn(label)) return false;
+  const label = MATRIX_KEY.exec(runsOn.value)?.[1] ?? "";
+  const os = osOf(label);
+  if (os === undefined)
+    return {
+      kind: "unknown",
+      why: `${label} names no Linux or Windows runner`,
+    };
+  const runner = matrixRunsOn(label, os);
+  if (runsOn.value === runner) return { kind: "set", changed: false };
+  const other: Os = os === "windows" ? "linux" : "windows";
   const branches = SIMPLE_TERNARY.exec(runsOn.value);
   if (
     branches === null ||
-    (branches[1] !== undefined && osOf(branches[1]) !== "windows") ||
-    (branches[2] !== undefined && osOf(branches[2]) !== "linux") ||
-    !keysOnList(job, label)
+    (branches[1] !== undefined && osOf(branches[1]) !== os) ||
+    (branches[2] !== undefined && osOf(branches[2]) !== other)
   )
-    return undefined;
-  return setText(runsOn, matrixRunsOn(label));
-}
-
-/** Whether the matrix of `job` has an `os` that a ternary on `label` covers: a generated one, or a literal list whose one Windows label is `label`. */
-function keysOnList(job: YAMLMap, label: string): boolean {
-  const os = job.getIn(["strategy", "matrix", "os"], true);
-  if (isTextScalar(os)) return os.value.includes("${{");
-  return isSeq(os) && matrixListRunsOn(job) === matrixRunsOn(label);
+    return {
+      kind: "unknown",
+      why: `its branches are not a ${os} and a ${other} runner`,
+    };
+  const legs = matrixLegs(job);
+  if (legs.kind === "unknown") return legs;
+  if (
+    legs.kind === "labels" &&
+    !(legs.labels[os].size === 1 && legs.labels[os].has(label))
+  )
+    return {
+      kind: "unknown",
+      why: `its matrix does not name ${label} as its one ${os} label`,
+    };
+  return { kind: "set", changed: setText(runsOn, runner) };
 }
 
 /** Moves the `runs-on` of `job` to a {@link RUNS_ON} expression or {@link matrixRunsOn}; the advisory names a runner sync cannot resolve. */
@@ -282,10 +360,10 @@ function rewriteRunner(
       isNode(runsOn) ? JSON.stringify(runsOn.toJS(document)) : String(runsOn),
     );
   if (MATRIX_OS.test(runsOn.value) || MATRIX_KEY.test(runsOn.value)) {
-    const changed = setMatrixRunner(job, runsOn);
-    return changed === undefined
-      ? unresolved(path, id, runsOn.value)
-      : { changed, advisories: [] };
+    const result = setMatrixRunner(job, runsOn);
+    return result.kind === "unknown"
+      ? leftAlone(path, id, runsOn.value, result.why)
+      : { changed: result.changed, advisories: [] };
   }
   const runner = runsOnFor(runsOn.value);
   return runner === undefined

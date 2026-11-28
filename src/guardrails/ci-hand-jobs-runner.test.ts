@@ -50,7 +50,7 @@ function resolve(
 test("the Linux and Windows expressions are the shared workflows' shape, so a sync that writes a literal label or another variable fails", () => {
   assert.equal(RUNS_ON.linux, LINUX);
   assert.equal(RUNS_ON.windows, WINDOWS);
-  assert.equal(matrixRunsOn("windows-latest"), MATRIX);
+  assert.equal(matrixRunsOn("windows-latest", "windows"), MATRIX);
 });
 
 test("each expression picks GitHub's runner for a public repository, Blacksmith for a private or internal one or an event without the visibility, and the variable when set, so an expression that lands on an empty label or ignores the override fails", () => {

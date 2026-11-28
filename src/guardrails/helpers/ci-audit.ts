@@ -50,7 +50,7 @@ function actionFinding(id: string, uses: string | undefined): string[] {
 function jobFindings(id: string, job: AuditJob): string[] {
   const allowed: readonly string[] = [
     ...Object.values(RUNS_ON),
-    matrixRunsOn("windows-latest"),
+    matrixRunsOn("windows-latest", "windows"),
   ];
   return [
     ...runnersOf(job)
