@@ -6,7 +6,6 @@ import { resolveVariable, unwrapExpression } from "./local-types.ts";
 import { nodeAt, typedFile } from "./type-checker.ts";
 import { lintedSource } from "./vue-script.ts";
 
-const ASSERT_STATUSES = new Set([403, 404, 409, 422]);
 const DMS_PACKAGE = /^(@[^/]+\/)?(interface-)?dms(-|$)/;
 
 /** Whether the package around `file` is a DMS module: its name or one of its dependencies is `dms-*`, `interface-dms` or `@scope/dms-*`. */
@@ -152,7 +151,7 @@ function calleeName(callee: ESTree.Node, source: SourceCode): string | null {
     : String(imported.value);
 }
 
-/** Visitors that call `onRefusal` with the message of each `assert(cond, 403|404|409|422, message)` and `new HTTPResult(4xx, message)`, aliased imports included. */
+/** Visitors that call `onRefusal` with the message of each `assert(cond, 4xx, message)` and `new HTTPResult(4xx, message)`, aliased imports included. */
 export function refusalVisitors(
   context: RefusalContext,
   onRefusal: (message: ESTree.Node) => void,
@@ -160,27 +159,21 @@ export function refusalVisitors(
   function check(
     status: ESTree.Argument | undefined,
     message: ESTree.Node | null,
-    accepts: (code: number) => boolean,
   ) {
     if (message === null) return;
     if (status === undefined || status.type === "SpreadElement") return;
     const code = staticValue(status, context.sourceCode);
-    if (code?.kind === "number" && accepts(code.value)) onRefusal(message);
+    if (code?.kind === "number" && code.value >= 400 && code.value < 500)
+      onRefusal(message);
   }
   return {
     CallExpression(node: ESTree.CallExpression) {
       if (calleeName(node.callee, context.sourceCode) !== "assert") return;
-      check(node.arguments[1], messageOf(node.arguments[2]), (code) =>
-        ASSERT_STATUSES.has(code),
-      );
+      check(node.arguments[1], messageOf(node.arguments[2]));
     },
     NewExpression(node: ESTree.NewExpression) {
       if (calleeName(node.callee, context.sourceCode) !== "HTTPResult") return;
-      check(
-        node.arguments[0],
-        messageOf(node.arguments[1]),
-        (code) => code >= 400 && code < 500,
-      );
+      check(node.arguments[0], messageOf(node.arguments[1]));
     },
   };
 }
