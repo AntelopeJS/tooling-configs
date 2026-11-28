@@ -16,7 +16,7 @@ concurrency:
 jobs:
   verify:
     name: verify${{ matrix.os == 'windows-latest' && ' on Windows' || '' }}
-    runs-on: ${{ matrix.os == 'windows-latest' && 'blacksmith-4vcpu-windows-2025' || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ matrix.os == 'windows-latest' && (vars.RUNNER_CI_WINDOWS || (github.event.repository.visibility == 'public' && 'windows-latest' || 'blacksmith-4vcpu-windows-2025')) || (vars.RUNNER_CI || (github.event.repository.visibility == 'public' && 'ubuntu-latest' || 'blacksmith-4vcpu-ubuntu-2404')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -47,7 +47,7 @@ jobs:
 
   test:
     name: test (${{ matrix.shard }})${{ matrix.os == 'windows-latest' && ' on Windows' || '' }}
-    runs-on: ${{ matrix.os == 'windows-latest' && 'blacksmith-4vcpu-windows-2025' || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ matrix.os == 'windows-latest' && (vars.RUNNER_CI_WINDOWS || (github.event.repository.visibility == 'public' && 'windows-latest' || 'blacksmith-4vcpu-windows-2025')) || (vars.RUNNER_CI || (github.event.repository.visibility == 'public' && 'ubuntu-latest' || 'blacksmith-4vcpu-ubuntu-2404')) }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -107,7 +107,7 @@ jobs:
     name: ci / checks
     if: always()
     needs: [verify, test]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.RUNNER_CI || (github.event.repository.visibility == 'public' && 'ubuntu-latest' || 'blacksmith-4vcpu-ubuntu-2404') }}
     steps:
       - run: test "$VERIFY" = success && test "$TEST" = success
         env:
@@ -118,14 +118,14 @@ jobs:
     name: checks
     if: always()
     needs: [checks]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.RUNNER_CI || (github.event.repository.visibility == 'public' && 'ubuntu-latest' || 'blacksmith-4vcpu-ubuntu-2404') }}
     steps:
       - run: test "$CHECKS" = success
         env:
           CHECKS: ${{ needs.checks.result }}
 
   docs:
-    runs-on: ${{ matrix.os == 'windows-latest' && 'blacksmith-4vcpu-windows-2025' || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ matrix.os == 'windows-latest' && (vars.RUNNER_CI_WINDOWS || (github.event.repository.visibility == 'public' && 'windows-latest' || 'blacksmith-4vcpu-windows-2025')) || (vars.RUNNER_CI || (github.event.repository.visibility == 'public' && 'ubuntu-latest' || 'blacksmith-4vcpu-ubuntu-2404')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -160,7 +160,7 @@ jobs:
   verdict:
     needs: [verify, test, checks, legacy-checks, docs]
     if: ${{ !cancelled() }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.RUNNER_CI || (github.event.repository.visibility == 'public' && 'ubuntu-latest' || 'blacksmith-4vcpu-ubuntu-2404') }}
     timeout-minutes: 5
     permissions: {}
     steps:
