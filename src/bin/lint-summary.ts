@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { existsSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { runCli } from "../guardrails/cli.ts";
-import { repositoryRoot } from "../guardrails/files.ts";
+import { repositoryPath, repositoryRoot } from "../guardrails/files.ts";
 import { lintSummary } from "../guardrails/oxlint.ts";
 
 runCli(() => {
@@ -13,9 +13,11 @@ runCli(() => {
     strict: true,
   });
   const root = repositoryRoot();
+  const cwd = realpathSync.native(process.cwd());
   const files = positionals.map((path) => {
-    if (!existsSync(path)) throw new Error(`${path} does not exist.`);
-    return relative(root, resolve(path));
+    const absolute = resolve(cwd, path);
+    if (!existsSync(absolute)) throw new Error(`${path} does not exist.`);
+    return repositoryPath(root, absolute);
   });
   const summary = lintSummary(root, files);
   for (const line of summary.lines) process.stdout.write(`${line}\n`);
