@@ -108,7 +108,9 @@ export function affectedTestsFit(root: string): boolean {
   const covered = new Set<string>();
   const seen = new Set<string>();
   const visit = (directory: string, script: string): boolean => {
-    const text = manifests.get(directory)?.scripts?.[script];
+    const scripts = manifests.get(directory)?.scripts;
+    const text =
+      scripts && Object.hasOwn(scripts, script) ? scripts[script] : undefined;
     if (text === undefined || seen.has(`${directory}\0${script}`)) return true;
     seen.add(`${directory}\0${script}`);
     return commands(text).every((words) => {

@@ -17,12 +17,13 @@ import {
   isNeverInherited,
   isStaticKey,
 } from "../key-provenance.ts";
+import { isNullPrototype } from "../null-prototype.ts";
 import {
   isModuleLiteralTable,
   isOpenStringParameter,
+  isUnnarrowedStringKey,
 } from "../parameter-keys.ts";
 import { isOwnKeyGuarded } from "../own-key-guard.ts";
-import { callName } from "../shared.ts";
 
 /** `dictionary`: typed to take any string key; `literal`: an untyped object literal. */
 type TableKind = "dictionary" | "literal";
@@ -111,38 +112,6 @@ function isStringKeyedType(
     default:
       return false;
   }
-}
-
-function isProtoKey(key: ESTree.PropertyKey): boolean {
-  return (
-    (key.type === "Identifier" && key.name === "__proto__") ||
-    (key.type === "Literal" && key.value === "__proto__")
-  );
-}
-
-function isNullPrototype(init: ESTree.Expression): boolean {
-  const value = unwrapExpression(
-    init.type === "TSAsExpression" || init.type === "TSSatisfiesExpression"
-      ? init.expression
-      : init,
-  );
-  if (value.type === "CallExpression")
-    return (
-      callName(value.callee) === "Object.create" &&
-      value.arguments[0]?.type === "Literal" &&
-      value.arguments[0].value === null
-    );
-  return (
-    value.type === "ObjectExpression" &&
-    value.properties.some(
-      (property) =>
-        property.type === "Property" &&
-        !property.computed &&
-        isProtoKey(property.key) &&
-        property.value.type === "Literal" &&
-        property.value.value === null,
-    )
-  );
 }
 
 function initializerKind(
@@ -411,7 +380,7 @@ export const noInheritedKeyLookupRule = defineRule({
     type: "problem",
     docs: {
       description:
-        "Disallow reading a string-keyed object table with a computed key, or testing any object with `in` and a non-literal key, without an own-key check.",
+        "Disallow reading a string-keyed object table with a computed key, or any object with a key declared as `string`, or testing any object with `in` and a non-literal key, without an own-key check.",
     },
     messages: {
       lookup:
@@ -447,13 +416,15 @@ export const noInheritedKeyLookupRule = defineRule({
       const openTable =
         kind === "dictionary" ||
         (kind === "literal" && key.type === "TSAsExpression");
-      if (!openTable && !isModuleLiteralTable(object, environment.source))
-        return;
       const table = context.sourceCode.getText(object);
       if (
         isKnownKey(key, table, context.sourceCode) ||
-        (!openTable &&
-          !isOpenStringParameter(key, environment.source, context.filename))
+        !(
+          openTable ||
+          isUnnarrowedStringKey(node, object, key, environment.source) ||
+          (isModuleLiteralTable(object, environment.source) &&
+            isOpenStringParameter(key, environment.source, context.filename))
+        )
       )
         return;
       report({

@@ -75,7 +75,8 @@ function publishedAt(
   packument: JsonValue,
   version: string,
 ): number | undefined {
-  const moment = child(object(packument, "packument"), "time")[version];
+  const times = child(object(packument, "packument"), "time");
+  const moment = Object.hasOwn(times, version) ? times[version] : undefined;
   return moment === undefined ? undefined : Date.parse(String(moment));
 }
 
