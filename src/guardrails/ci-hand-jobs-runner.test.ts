@@ -193,27 +193,64 @@ test("a runner sync cannot resolve stays and is reported once per job, so an imp
   assert.equal(runnerOf(LINUX), LINUX);
 });
 
-test("a matrix.os job runs on the ternary over the Windows and Linux expressions and its list names GitHub's labels, the Blacksmith labels of an earlier sync included, so a sync that leaves runs-on on matrix.os or Blacksmith labels in the list fails", () => {
-  for (const os of [
-    "[ubuntu-latest, windows-latest]",
-    "[blacksmith-4vcpu-ubuntu-2404, blacksmith-4vcpu-windows-2025]",
-  ]) {
+test("a matrix.os job keeps its list and runs on the ternary keyed on the list's own Windows label, the Blacksmith labels of an earlier sync included, so a sync that leaves runs-on on matrix.os or renames the list fails", () => {
+  for (const [os, windows] of [
+    ["[ubuntu-latest, windows-latest]", "windows-latest"],
+    [
+      "[blacksmith-4vcpu-ubuntu-2404, blacksmith-4vcpu-windows-2025]",
+      "blacksmith-4vcpu-windows-2025",
+    ],
+  ] as const) {
     const text = syncCi(
       workflowWith(
         `  test:\n    runs-on: \${{ matrix.os }}\n    strategy:\n      matrix:\n        os: ${os}\n    steps:\n      - run: pnpm test\n`,
       ),
     );
     const job = jobsOf(text.content).test;
-    assert.equal(job["runs-on"], MATRIX, os);
-    assert.deepEqual(job.strategy, {
-      matrix: { os: ["ubuntu-latest", "windows-latest"] },
-    });
+    assert.equal(
+      job["runs-on"],
+      MATRIX.replace("'windows-latest' &&", `'${windows}' &&`),
+      os,
+    );
+    assert.deepEqual(job.strategy?.matrix?.os, os.slice(1, -1).split(", "));
     assert.deepEqual(
       text.advisories.filter((note) => note.startsWith("Runner:")),
       [],
     );
     assert.equal(syncCi(text.content).content, text.content);
   }
+});
+
+test("dms-database's matrix, whose exclude a step builds from the Blacksmith Windows label, keeps that label and resolves each leg by visibility, so a sync that renames the list under a generated exclude fails", () => {
+  const text = syncCi(
+    workflowWith(
+      `  select:\n    runs-on: blacksmith-4vcpu-ubuntu-2404\n    outputs:\n      exclude-os: \${{ steps.tier.outputs.exclude-os }}\n    steps:\n      - id: tier\n        run: echo 'exclude-os=[{"os":"blacksmith-4vcpu-windows-2025"}]' >> "$GITHUB_OUTPUT"\n  frontend:\n    needs: select\n    strategy:\n      matrix:\n        os: [blacksmith-4vcpu-ubuntu-2404, blacksmith-4vcpu-windows-2025]\n        exclude: \${{ fromJSON(needs.select.outputs.exclude-os) }}\n    runs-on: \${{ matrix.os }}\n    steps:\n      - run: pnpm test:frontend\n`,
+    ),
+  );
+  const job = jobsOf(text.content).frontend;
+  assert.deepEqual(job.strategy?.matrix?.os, [
+    "blacksmith-4vcpu-ubuntu-2404",
+    "blacksmith-4vcpu-windows-2025",
+  ]);
+  const runsOn = String(job["runs-on"]);
+  for (const visibility of ["public", "private"])
+    for (const os of [
+      "blacksmith-4vcpu-ubuntu-2404",
+      "blacksmith-4vcpu-windows-2025",
+    ])
+      assert.equal(
+        resolve(runsOn, { visibility, os }),
+        visibility === "public"
+          ? os.includes("windows")
+            ? "windows-latest"
+            : "ubuntu-latest"
+          : os,
+        `${visibility} ${os}`,
+      );
+  assert.deepEqual(
+    text.advisories.filter((n) => n.startsWith("Runner:")),
+    [],
+  );
 });
 
 test("a matrix of GitHub labels that a step compares or an exclude names keeps its list and gets the ternary, so a sync that renames the labels those comparisons read fails", () => {
@@ -255,10 +292,10 @@ test("the Windows ternary of an earlier sync becomes the expression ternary on t
   assert.equal(syncCi(text.content).content, text.content);
 });
 
-test("a matrix sync cannot read is reported and untouched, so an implementation that rewrites a generated list, renames compared labels or moves macOS to Linux fails", () => {
+test("a matrix sync cannot read is reported and untouched, so an implementation that rewrites a generated list, keys one ternary on two Windows labels or moves macOS to Linux fails", () => {
   for (const job of [
     "  test:\n    runs-on: ${{ matrix.os }}\n    strategy:\n      matrix:\n        os: ${{ fromJSON(vars.OSES) }}\n    steps:\n      - run: pnpm test\n",
-    "  test:\n    runs-on: ${{ matrix.os }}\n    strategy:\n      matrix:\n        os: [ubuntu-22.04, windows-2022]\n    steps:\n      - if: matrix.os == 'windows-2022'\n        run: pnpm win\n",
+    "  test:\n    runs-on: ${{ matrix.os }}\n    strategy:\n      matrix:\n        os: [windows-2022, windows-latest]\n    steps:\n      - run: pnpm win\n",
     "  test:\n    runs-on: ${{ matrix.os }}\n    strategy:\n      matrix:\n        os: [ubuntu-latest, macos-latest]\n    steps:\n      - run: pnpm test\n",
     "  test:\n    runs-on: ${{ matrix.os == 'macos-latest' && 'a' || 'b' }}\n    steps:\n      - run: pnpm test\n",
   ]) {

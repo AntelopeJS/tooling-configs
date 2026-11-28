@@ -5,7 +5,6 @@ import {
   isSeq,
   parseDocument,
   Scalar,
-  visit,
   type Document,
   type YAMLMap,
 } from "yaml";
@@ -210,54 +209,41 @@ function matrixOsNodes(job: YAMLMap): Scalar<string>[] | undefined {
     : undefined;
 }
 
-function readsMatrixOs(job: YAMLMap): boolean {
-  const runsOn = job.get("runs-on", true);
-  let found = false;
-  visit(job, {
-    Scalar(key, node) {
-      if (
-        key !== "key" &&
-        node !== runsOn &&
-        String(node.value).includes("matrix.os")
-      )
-        found = true;
-    },
-  });
-  return found;
-}
-
-function setMatrixLabels(job: YAMLMap): boolean | undefined {
+/**
+ * The `runs-on` a `${{ matrix.os }}` job gets from its literal `os` list, which stays as it is so every comparison and
+ * `exclude` on its labels keeps matching: {@link matrixRunsOn} keyed on the list's Windows label, or the Linux
+ * {@link RUNS_ON} for a list with none. `undefined` for a list sync cannot read, a label of no Linux or Windows runner, or
+ * more than one distinct label of one OS.
+ */
+function matrixListRunsOn(job: YAMLMap): string | undefined {
   const nodes = matrixOsNodes(job);
   if (nodes === undefined) return undefined;
-  const labels: string[] = [];
+  const labels: Record<Os, Set<string>> = {
+    linux: new Set(),
+    windows: new Set(),
+  };
   for (const { value } of nodes) {
     const os = osOf(value);
     if (os === undefined) return undefined;
-    labels.push(RUNNERS[os].public);
+    labels[os].add(value);
   }
-  const renames = nodes.some(({ value }, at) => value !== labels[at]);
-  if (
-    renames &&
-    (readsMatrixOs(job) || job.hasIn(["strategy", "matrix", "exclude"]))
-  )
-    return undefined;
-  return nodes.map((node, at) => setText(node, labels[at])).includes(true);
+  if (labels.linux.size > 1 || labels.windows.size > 1) return undefined;
+  const [windows] = labels.windows;
+  return windows === undefined ? RUNS_ON.linux : matrixRunsOn(windows);
 }
 
 /**
- * Has a matrix job run on {@link matrixRunsOn}. Under `${{ matrix.os }}`, the matrix `os` list moves to GitHub's labels,
- * unless a rename would change a label the job compares or an `exclude` names. A ternary on `matrix.os` against a Windows
- * label whose branches are literals or variables moves to the expression ternary on that label. `undefined` when sync
- * cannot do either.
+ * Has a matrix job run on {@link matrixRunsOn}: a `${{ matrix.os }}` job by {@link matrixListRunsOn}, and a ternary on
+ * `matrix.os` against a Windows label whose branches are literals or variables by the expression ternary on that label.
+ * `undefined` when sync cannot do either.
  */
 function setMatrixRunner(
   job: YAMLMap,
   runsOn: Scalar<string>,
 ): boolean | undefined {
   if (MATRIX_OS.test(runsOn.value)) {
-    const labels = setMatrixLabels(job);
-    if (labels === undefined) return undefined;
-    return setText(runsOn, matrixRunsOn(RUNNERS.windows.public)) || labels;
+    const runner = matrixListRunsOn(job);
+    return runner === undefined ? undefined : setText(runsOn, runner);
   }
   const label = MATRIX_KEY.exec(runsOn.value)?.[1];
   if (label === undefined || osOf(label) !== "windows") return undefined;
