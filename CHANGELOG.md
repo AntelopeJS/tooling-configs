@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.10.16
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.15...v0.10.16)
+
+### 🩹 Fixes
+
+- **guardrails:** Never move a matrix leg to a runner of another OS ([#539](https://github.com/AntelopeJS/tooling-configs/pull/539))
+- **guardrails:** Leave a matrix alone when an os key is spelled in another case ([#540](https://github.com/AntelopeJS/tooling-configs/pull/540))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.10.15
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.14...v0.10.15)
