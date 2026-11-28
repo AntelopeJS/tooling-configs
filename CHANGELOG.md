@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.10.13
+
+[compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.12...v0.10.13)
+
+### 🩹 Fixes
+
+- **guardrails:** Judge no type-aware directive under a tsconfig oxlint cannot load, and run suppressions after lint ([#524](https://github.com/AntelopeJS/tooling-configs/pull/524))
+
+### ❤️ Contributors
+
+- Antony Rizzitelli
+
 ## v0.10.12
 
 [compare changes](https://github.com/AntelopeJS/tooling-configs/compare/v0.10.11...v0.10.12)
