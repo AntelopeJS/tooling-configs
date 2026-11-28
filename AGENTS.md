@@ -3,7 +3,7 @@
 
 ## Guardrails
 
-CI runs `pnpm run checks` in full on every pull request and reports what failed. The commit hook formats and lints the staged files. Locally, check only what you touched, one test file and not the suite, as the [`verify-changes`](.agents/skills/verify-changes/SKILL.md) skill says.
+CI runs `pnpm run checks` in full on every pull request and reports what failed. The commit hook formats and lints the staged files. Locally, check only what you touched, one test file and not the suite, as the [`verify-tooling-configs`](.agents/skills/verify-tooling-configs/SKILL.md) skill says.
 
 ### Comments
 

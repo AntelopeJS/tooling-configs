@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  rmdirSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -152,7 +153,7 @@ export function planDocsSkills(
   return { actions, errors };
 }
 
-/** Applies planned changes; a replaced symlink is unlinked first so a write never goes through it. */
+/** Applies planned changes; a replaced symlink is unlinked first so a write never goes through it, and a removal that empties its folder removes the folder. */
 export function applyDocsSkillActions(
   root: string,
   actions: readonly DocsSkillAction[],
@@ -161,6 +162,7 @@ export function applyDocsSkillActions(
     const path = join(root, action.path);
     if (action.kind === "remove") {
       unlinkSync(path);
+      if (!readdirSync(dirname(path)).length) rmdirSync(dirname(path));
       continue;
     }
     mkdirSync(dirname(path), { recursive: true });
