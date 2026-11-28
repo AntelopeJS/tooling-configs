@@ -79,6 +79,7 @@
   "src/guardrails/ci-formal.test.ts": 0.4,
   "src/guardrails/ci-gate.test.ts": 0.2,
   "src/guardrails/ci-hand-jobs-concurrency.test.ts": 0.2,
+  "src/guardrails/ci-hand-jobs-matrix.test.ts": 0.2,
   "src/guardrails/ci-hand-jobs-pins.test.ts": 0.1,
   "src/guardrails/ci-hand-jobs-runner.test.ts": 0.2,
   "src/guardrails/ci-workflow-aggregator.test.ts": 3,

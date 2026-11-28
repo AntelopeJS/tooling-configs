@@ -4,6 +4,7 @@ import test from "node:test";
 import { matrixRunsOn, RUNS_ON, runsOnFor } from "./ci-hand-jobs.ts";
 import { CI_PATH } from "./ci-workflow.ts";
 import { jobsOf, syncCi, workflowWith } from "./helpers/ci-text.ts";
+import { resolve } from "./helpers/runner-expression.ts";
 
 const LINUX =
   "${{ vars.RUNNER_CI || (github.event.repository.visibility == 'public' && 'ubuntu-latest' || 'blacksmith-4vcpu-ubuntu-2404') }}";
@@ -21,36 +22,10 @@ function runnerOf(runsOn: string): string | undefined {
   return jobsOf(text).lint["runs-on"];
 }
 
-/**
- * The label GitHub resolves a runs-on expression to, for the expressions sync writes: `vars` and the event's visibility
- * substituted, `||` and `&&` with GitHub's falsy empty string and null.
- */
-function resolve(
-  expression: string,
-  {
-    visibility,
-    vars = {},
-    os,
-  }: { visibility?: string; vars?: Record<string, string>; os?: string },
-): string {
-  const body = expression.replace(/^\$\{\{\s*|\s*\}\}$/g, "");
-  const js = body
-    .replace(/vars\.(\w+)/g, (_m, name: string) =>
-      JSON.stringify(vars[name] ?? ""),
-    )
-    .replace(
-      /github\.event\.repository\.visibility/g,
-      JSON.stringify(visibility ?? null),
-    )
-    .replace(/matrix\.os/g, JSON.stringify(os ?? ""))
-    .replaceAll("'", '"');
-  return String(new Function(`return (${js});`)());
-}
-
 test("the Linux and Windows expressions are the shared workflows' shape, so a sync that writes a literal label or another variable fails", () => {
   assert.equal(RUNS_ON.linux, LINUX);
   assert.equal(RUNS_ON.windows, WINDOWS);
-  assert.equal(matrixRunsOn("windows-latest"), MATRIX);
+  assert.equal(matrixRunsOn("windows-latest", "windows"), MATRIX);
 });
 
 test("each expression picks GitHub's runner for a public repository, Blacksmith for a private or internal one or an event without the visibility, and the variable when set, so an expression that lands on an empty label or ignores the override fails", () => {
