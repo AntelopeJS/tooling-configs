@@ -190,6 +190,23 @@ test("a prerelease of the release a hand-written '<' bound excludes fails, and o
   );
 });
 
+test("a range whose set also names a prerelease of the release a '<' bound excludes admits that prerelease, and one without it does not, caught by an implementation that vetoes every prerelease of a bare '<X.Y.Z' whatever its set holds", async (t) => {
+  for (const [range, core, status] of [
+    ["<1.25.0 >=1.25.0-next.1", "1.25.0-next.1", 0],
+    [">=1.20.0 <1.25.0 || >=1.25.0-next.0 <1.25.0", "1.25.0-next.1", 0],
+    [">=1.24.0 <1.25.0", "1.25.0-next.1", 1],
+    ["<2.0.0", "2.0.0-rc.1", 1],
+  ] as const) {
+    const root = template(t, literalSource(ASSISTANT, "0.2.6"), {
+      "@antelopejs/core": core,
+    });
+    const result = await checks(t, root, {
+      [ASSISTANT]: { "0.2.6": corePeer(range) },
+    });
+    assert.equal(result.status, status, `${range} ${core}: ${result.stdout}`);
+  }
+});
+
 test("a source a local function builds with `as const` is read at each call, caught by an implementation that reads only object literals whose fields are strings", async (t) => {
   const config = `function moduleSource(name: string, version: string) {\n  return { type: "package" as const, package: name, version };\n}\n\nexport default {\n  modules: {\n    api: { source: { type: "local", path: "." } },\n    assistant: { source: moduleSource("${ASSISTANT}", "^0.2.1") },\n  },\n};\n`;
   const root = template(t, config, { "@openai/codex": "0.170.0" });

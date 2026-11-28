@@ -380,7 +380,8 @@ async function declaredRanges(
  * Whether `range` admits `version`. A prerelease is ordered among releases, so `1.24.10-next.1` is inside `~1.24.x` and
  * `1.0.0-rc.1` is below `>=1.0.0`; with `releaseLine`, a prerelease counts as the release it leads to, as `ajs-dms build`
  * judges a frontend's range. A hand-written `<1.25.0` excludes the release line it names, so `1.25.0-next.1` is outside
- * it, as it is outside the `<1.25.0-0` that `~1.24.x` stands for.
+ * it, as it is outside the `<1.25.0-0` that `~1.24.x` stands for, unless a comparator of the same set names a prerelease
+ * of 1.25.0, as `<1.25.0 >=1.25.0-next.1` does.
  */
 const admits = (
   range: string,
@@ -392,16 +393,25 @@ const admits = (
       includePrerelease: true,
     });
   const release = coerce(version)?.version;
-  return new Range(range, { includePrerelease: true }).set.some((comparators) =>
-    comparators.every(
-      (comparator) =>
-        comparator.test(version) &&
-        !(
-          comparator.operator === "<" &&
-          comparator.semver.prerelease.length === 0 &&
-          comparator.semver.version === release
-        ),
-    ),
+  return new Range(range, { includePrerelease: true }).set.some(
+    (comparators) => {
+      const namesPrerelease = comparators.some(
+        ({ operator, semver }) =>
+          operator !== "" &&
+          semver.prerelease.length > 0 &&
+          `${semver.major}.${semver.minor}.${semver.patch}` === release,
+      );
+      return comparators.every(
+        (comparator) =>
+          comparator.test(version) &&
+          (namesPrerelease ||
+            !(
+              comparator.operator === "<" &&
+              comparator.semver.prerelease.length === 0 &&
+              comparator.semver.version === release
+            )),
+      );
+    },
   );
 };
 
