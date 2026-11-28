@@ -451,7 +451,9 @@ function interfaceClashes(ranges: readonly InterfaceRange[]): string {
         .filter(
           (second) =>
             second.name === first.name &&
-            !intersects(first.range, second.range),
+            !intersects(first.range, second.range, {
+              includePrerelease: true,
+            }),
         )
         .map(
           (second) =>

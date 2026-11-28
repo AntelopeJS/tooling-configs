@@ -327,3 +327,24 @@ test("a root package.json interface range no range a configured module release d
   });
   assert.equal(met.status, 0, met.stdout);
 });
+
+test("two configured module releases whose interface ranges do not meet fail with no root range, and a prerelease pin inside a prerelease range passes, caught by an implementation that compares only against package.json or intersects without prereleases", async (t) => {
+  const depending = (range: string): StubModuleRelease => ({
+    dependencies: { "@antelopejs/interface-dms": range },
+  });
+  const config = `export default {\n  modules: {\n    dms: { source: { type: "package", package: "@antelopejs/dms", version: "0.23.0" } },\n    assistant: { source: { type: "package", package: "${ASSISTANT}", version: "0.3.4" } },\n  },\n};\n`;
+  const clash = await checks(t, template(t, config, {}), {
+    "@antelopejs/dms": { "0.23.0": depending("^0.16.0") },
+    [ASSISTANT]: { "0.3.4": depending(">=0.17.0 <0.18.0") },
+  });
+  assert.equal(clash.status, 1, clash.stdout);
+  assert.match(
+    clash.stdout,
+    /@antelopejs\/interface-dms: @antelopejs\/dms@0\.23\.0 \(antelope\.config\.ts: "0\.23\.0"\) requires "\^0\.16\.0" and @antelopejs\/dms-assistant@0\.3\.4 \(antelope\.config\.ts: "0\.3\.4"\) requires ">=0\.17\.0 <0\.18\.0"/,
+  );
+  const prerelease = await checks(t, template(t, config, {}), {
+    "@antelopejs/dms": { "0.23.0": depending("^0.17.0-0") },
+    [ASSISTANT]: { "0.3.4": depending("0.17.0-next.1") },
+  });
+  assert.equal(prerelease.status, 0, prerelease.stdout);
+});
