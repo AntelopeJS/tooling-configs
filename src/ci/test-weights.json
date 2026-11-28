@@ -104,6 +104,7 @@
   "src/guardrails/docs-modules.test.ts": 1.8,
   "src/guardrails/docs-node.test.ts": 13.6,
   "src/guardrails/docs-skills.test.ts": 8.5,
+  "src/guardrails/frozen-lockfiles.test.ts": 16.6,
   "src/guardrails/installed-typescript.test.ts": 64.5,
   "src/guardrails/one-range.test.ts": 2.3,
   "src/guardrails/plugin-errors.test.ts": 0.7,
