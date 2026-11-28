@@ -39,6 +39,7 @@ test("full sync preserves handwritten text even behind a CLAUDE symlink, and doe
   );
   symlinkSync("AGENTS.md", join(root, "CLAUDE.md"));
   put(root, "docs/GLOSSARY.md", "Glossary.\n");
+  put(root, "ARCHITECTURE.md", "Architecture.\n");
   put(
     root,
     "package.json",
@@ -63,7 +64,7 @@ test("full sync preserves handwritten text even behind a CLAUDE symlink, and doe
   assert.match(first.stdout, /Run install/);
   assert.equal(
     read(root, "AGENTS.md"),
-    `Handwritten introduction.\n\n${agentsBlock({ profile: "full", glossary: "docs/GLOSSARY.md", verifySkills: [".agents/skills/verify-changes"] }).trimEnd()}\n\nHandwritten footer.\n`,
+    `Handwritten introduction.\n\n${agentsBlock({ profile: "full", glossary: "docs/GLOSSARY.md", architecture: "ARCHITECTURE.md", verifySkills: [".agents/skills/verify-changes"] }).trimEnd()}\n\nHandwritten footer.\n`,
   );
   assert.equal(read(root, "CLAUDE.md"), "@AGENTS.md\n");
   const packageText = read(root, "package.json");

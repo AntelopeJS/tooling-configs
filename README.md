@@ -78,6 +78,10 @@ Both profiles of `antelopejs-sync` keep the shared CI caller on the job id `ci`,
 
 A repository whose checks differ, such as a DMS or a template, writes its own `verify-<repo>` skill. Sync then installs no `verify-changes`, removes a copy it installed before, and points the Guardrails block to the repository's skill.
 
+## Architecture map
+
+A repository that keeps an `ARCHITECTURE.md` at its root, or under `docs/`, gets a line in the Guardrails block of `AGENTS.md` that sends an agent to it before it changes code. The file is hand-written, and sync never touches it. [docs/architecture-convention.md](./docs/architecture-convention.md) says what the file holds, the same five sections in every repository: the runtime pieces, the folder map with one line per `src/` folder, the flows a change crosses, the test tiers with their commands, and the invariants the checks hold.
+
 ## Install
 
 Node.js 24, or at least 22.18: oxlint reads `oxlint.config.ts` and loads JS plugins by executing TypeScript.

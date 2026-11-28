@@ -11,23 +11,48 @@ const SYNCED_VERIFY = [".agents/skills/verify-changes"];
 
 test("the managed block stays within its byte cap for every profile and repository shape", () => {
   for (const profile of ["full", "template"] as const)
-    for (const glossary of [undefined, "docs/GLOSSARY.md"]) {
-      const block = agentsBlock({
-        profile,
-        glossary,
-        verifySkills: SYNCED_VERIFY,
-      });
-      assert.ok(
-        Buffer.byteLength(block) <= MAX_BLOCK_BYTES,
-        `${profile}: ${Buffer.byteLength(block)} bytes`,
-      );
-    }
+    for (const glossary of [undefined, "docs/GLOSSARY.md"])
+      for (const architecture of [undefined, "docs/ARCHITECTURE.md"]) {
+        const block = agentsBlock({
+          profile,
+          glossary,
+          architecture,
+          verifySkills: SYNCED_VERIFY,
+        });
+        assert.ok(
+          Buffer.byteLength(block) <= MAX_BLOCK_BYTES,
+          `${profile}: ${Buffer.byteLength(block)} bytes`,
+        );
+      }
+});
+
+test("a block of either profile points to the repository's ARCHITECTURE.md where it is, and names none without one", () => {
+  for (const profile of ["full", "template"] as const) {
+    const pointed = agentsBlock({
+      profile,
+      glossary: undefined,
+      architecture: "docs/ARCHITECTURE.md",
+      verifySkills: SYNCED_VERIFY,
+    });
+    assert.match(
+      pointed,
+      /Read \[`docs\/ARCHITECTURE\.md`\]\(docs\/ARCHITECTURE\.md\) before you change code/,
+    );
+    const bare = agentsBlock({
+      profile,
+      glossary: undefined,
+      architecture: undefined,
+      verifySkills: SYNCED_VERIFY,
+    });
+    assert.doesNotMatch(bare, /ARCHITECTURE\.md/);
+  }
 });
 
 test("the full block sends the full checks to CI and points to the verification skill for local checks", () => {
   const block = agentsBlock({
     profile: "full",
     glossary: undefined,
+    architecture: undefined,
     verifySkills: SYNCED_VERIFY,
   });
   assert.match(block, /CI runs `pnpm run checks` in full/);
@@ -42,6 +67,7 @@ test("the full block points to every verification skill the repository wrote ins
   const block = agentsBlock({
     profile: "full",
     glossary: undefined,
+    architecture: undefined,
     verifySkills: [".agents/skills/verify-api", ".claude/skills/verify-web"],
   });
   assert.match(
@@ -58,6 +84,7 @@ test("a block of any profile names only commands the pack ships", () => {
     const block = agentsBlock({
       profile,
       glossary: "docs/GLOSSARY.md",
+      architecture: "ARCHITECTURE.md",
       verifySkills: SYNCED_VERIFY,
     });
     assert.doesNotMatch(block, removed, profile);

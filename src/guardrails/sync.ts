@@ -372,6 +372,9 @@ function repositoryContext(
     glossary: ["GLOSSARY.md", "docs/GLOSSARY.md"].find((file) =>
       existsSync(join(root, file)),
     ),
+    architecture: ["ARCHITECTURE.md", "docs/ARCHITECTURE.md"].find((file) =>
+      existsSync(join(root, file)),
+    ),
     verifySkills: verifySkillFolders(root),
     docs:
       profile === "full" && current.has("package.json")

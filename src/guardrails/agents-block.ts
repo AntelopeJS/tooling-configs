@@ -3,6 +3,8 @@ export interface AgentsBlockContext {
   profile: "full" | "template";
   /** Repository-relative path of GLOSSARY.md, when one exists. */
   glossary: string | undefined;
+  /** Repository-relative path of ARCHITECTURE.md, when one exists. */
+  architecture: string | undefined;
   /** Repository-relative folder of each verification skill the full block points to. */
   verifySkills: readonly string[];
 }
@@ -42,6 +44,11 @@ const SUPPRESSIONS = `### Suppressions
 
 function pointers(context: AgentsBlockContext): string[] {
   const lines: string[] = [];
+  if (context.architecture !== undefined) {
+    lines.push(
+      `Read [\`${context.architecture}\`](${context.architecture}) before you change code: the runtime pieces, the folder map, the flows, the test tiers and the invariants the checks hold.`,
+    );
+  }
   if (context.glossary !== undefined) {
     lines.push(
       `Name things with the terms in [\`${context.glossary}\`](${context.glossary}).`,
