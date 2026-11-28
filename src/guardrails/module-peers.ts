@@ -3,7 +3,6 @@ import { join } from "node:path";
 import {
   Range,
   coerce,
-  intersects,
   maxSatisfying,
   satisfies,
   valid,
@@ -18,6 +17,12 @@ import {
   parseJson,
   stringValues,
 } from "../garden/json.ts";
+import {
+  type InterfaceRange,
+  interfaceClashes,
+  interfaceRanges,
+  rootInterfaceRanges,
+} from "./interface-ranges.ts";
 import { Unreadable, keys, mapping, scalar } from "./lockfile-reading.ts";
 import {
   type ListedRelease,
@@ -34,7 +39,6 @@ const MODULE_LOCKS = "antelope-lock";
 const PROJECT_CONFIG = "antelope.config.ts";
 const FRONTEND_MANIFEST = "frontend-vue/package.json";
 const RENDERER = "@antelopejs/dms-frontend";
-const INTERFACE_PREFIX = "@antelopejs/interface-";
 
 /** The importer fields whose versions a project install puts in the root `node_modules`. */
 const LOCKED_FIELDS = [
@@ -411,58 +415,6 @@ const admits = (
   );
 };
 
-/** A range the root `package.json` or an installed module release declares on an `@antelopejs/interface-*` package, and who declares it. */
-interface InterfaceRange {
-  name: string;
-  range: string;
-  holder: string;
-}
-
-function interfaceRanges(
-  dependencies: ReadonlyMap<string, string>,
-  holder: string,
-): InterfaceRange[] {
-  return [...dependencies]
-    .filter(
-      ([name, range]) =>
-        name.startsWith(INTERFACE_PREFIX) && validRange(range) !== null,
-    )
-    .map(([name, range]) => ({ name, range, holder }));
-}
-
-/** The interface ranges the root `package.json` declares under the fields a project install puts in the root `node_modules`. */
-function rootInterfaceRanges(root: string): InterfaceRange[] {
-  const path = join(root, "package.json");
-  const manifest = existsSync(path)
-    ? parseJson(readFileSync(path, "utf8"))
-    : undefined;
-  if (manifest === undefined || !isObject(manifest)) return [];
-  return LOCKED_FIELDS.flatMap((field) =>
-    interfaceRanges(stringValues(optChild(manifest, field)), "package.json"),
-  );
-}
-
-/** A failure line for each two ranges on the same interface that no version satisfies together. */
-function interfaceClashes(ranges: readonly InterfaceRange[]): string {
-  return ranges
-    .flatMap((first, index) =>
-      ranges
-        .slice(index + 1)
-        .filter(
-          (second) =>
-            second.name === first.name &&
-            !intersects(first.range, second.range, {
-              includePrerelease: true,
-            }),
-        )
-        .map(
-          (second) =>
-            `${first.name}: ${first.holder} requires "${first.range}" and ${second.holder} requires "${second.range}"; no copy satisfies both, so the project stops at boot with "Incompatible interface package resolution". Move one of them to a release whose range meets the other.\n`,
-        ),
-    )
-    .join("");
-}
-
 /** What the check of one installed module found: its failure lines, and the interface ranges its release depends on. */
 interface ModuleReport {
   report: string;
@@ -559,7 +511,7 @@ export async function checkModulePeers(root: string): Promise<string> {
     failure +
     reports.map(({ report }) => report).join("") +
     interfaceClashes([
-      ...rootInterfaceRanges(root),
+      ...rootInterfaceRanges(root, LOCKED_FIELDS),
       ...reports.flatMap(({ interfaces }) => interfaces),
     ])
   );
