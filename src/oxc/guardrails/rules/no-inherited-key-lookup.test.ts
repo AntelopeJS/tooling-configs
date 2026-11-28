@@ -1,8 +1,10 @@
 import { RuleTester } from "oxlint/plugins-dev";
 
+import { typedCwd } from "../../helpers/typed-cwd.ts";
 import { noInheritedKeyLookupRule } from "./no-inherited-key-lookup.ts";
 
 const tester = new RuleTester({
+  cwd: typedCwd(),
   languageOptions: { parserOptions: { lang: "ts" } },
 });
 const lookup = { messageId: "lookup" };

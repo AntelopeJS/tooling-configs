@@ -1,92 +1,54 @@
 import type { ESTree, SourceCode } from "@oxlint/plugins";
-import {
-  referenceName,
-  resolveVariable,
-  unwrapExpression,
-  type LocalTypes,
-} from "./local-types.ts";
+import ts from "../../typescript6.ts";
 
-const MAX_DEPTH = 8;
+import { resolveVariable, unwrapExpression } from "./local-types.ts";
+import { nodeAt, typedFile } from "./type-checker.ts";
+import { lintedSource } from "./vue-script.ts";
 
-function enclosingTypeParameter(
-  node: ESTree.Node,
-  name: string,
-): ESTree.TSTypeParameter | null {
-  let current: ESTree.Node | null = node;
-  while (current !== null) {
-    if (
-      "typeParameters" in current &&
-      current.typeParameters?.type === "TSTypeParameterDeclaration"
-    ) {
-      const parameter = current.typeParameters.params.find(
-        (candidate) => candidate.name.name === name,
-      );
-      if (parameter !== undefined) return parameter;
-    }
-    current = current.parent;
-  }
-  return null;
+const CLOSED_KEY =
+  ts.TypeFlags.StringLiteral |
+  ts.TypeFlags.NumberLiteral |
+  ts.TypeFlags.EnumLiteral;
+
+/** Whether the checker types `key` as anything but a union of string, number and enum literals, a type parameter standing for its base constraint and one with no constraint for any value. */
+function isOpenKeyType(checker: ts.TypeChecker, key: ts.Identifier): boolean {
+  const declared = checker.getTypeAtLocation(key);
+  const type = declared.isTypeParameter()
+    ? checker.getBaseConstraintOfType(declared)
+    : declared;
+  if (type === undefined) return true;
+  const members = type.isUnion() ? type.types : [type];
+  return members.some((member) => (member.flags & CLOSED_KEY) === 0);
 }
 
-function mayBeArbitraryString(
-  type: ESTree.TSType,
-  fn: ESTree.Node,
-  types: LocalTypes,
-  depth = 0,
-): boolean {
-  if (depth > MAX_DEPTH) return false;
-  switch (type.type) {
-    case "TSStringKeyword":
-      return true;
-    case "TSParenthesizedType":
-      return mayBeArbitraryString(type.typeAnnotation, fn, types, depth + 1);
-    case "TSUnionType":
-      return type.types.some((part) =>
-        mayBeArbitraryString(part, fn, types, depth + 1),
-      );
-    case "TSTypeReference": {
-      const name = referenceName(type);
-      if (name === null) return false;
-      if (name === "PropertyKey") return true;
-      const parameter = enclosingTypeParameter(fn, name);
-      if (parameter !== null)
-        return (
-          parameter.constraint === null ||
-          mayBeArbitraryString(
-            parameter.constraint,
-            parameter,
-            types,
-            depth + 1,
-          )
-        );
-      const alias = types.aliases.get(name);
-      if (alias !== undefined)
-        return mayBeArbitraryString(alias, fn, types, depth + 1);
-      return !types.interfaces.has(name) && !types.enums.has(name);
-    }
-    default:
-      return false;
-  }
-}
-
-/** A parameter declared with a type that can hold an arbitrary string: `string`, `PropertyKey`, a type parameter whose constraint is open or missing, or a type this file cannot resolve. */
+/**
+ * A key read from an annotated parameter whose type, as the program of the
+ * file's tsconfig checks it, can hold a string outside a closed set of
+ * literals. False in a file no tsconfig lists.
+ */
 export function isOpenStringParameter(
   key: ESTree.Node,
   source: SourceCode,
-  types: LocalTypes,
+  filename: string,
 ): boolean {
   if (key.type !== "Identifier") return false;
   const [definition] = resolveVariable(source, key)?.defs ?? [];
-  if (definition?.type !== "Parameter") return false;
-  const name = definition.name;
-  const annotation =
-    name.type === "Identifier"
-      ? name.typeAnnotation?.typeAnnotation
-      : undefined;
-  return (
-    annotation !== undefined &&
-    mayBeArbitraryString(annotation, definition.node, types)
+  if (
+    definition?.type !== "Parameter" ||
+    definition.name.type !== "Identifier" ||
+    definition.name.typeAnnotation == null
+  )
+    return false;
+  const linted = lintedSource(filename, source.text);
+  const typed = linted && typedFile(filename, linted.text);
+  if (linted === undefined || typed === undefined) return false;
+  const [start, end] = key.range;
+  const node = nodeAt(
+    typed.sourceFile,
+    { range: [start + linted.offset, end + linted.offset] },
+    ts.isIdentifier,
   );
+  return node !== undefined && isOpenKeyType(typed.checker, node);
 }
 
 function hasNullPrototype(object: ESTree.ObjectExpression): boolean {
