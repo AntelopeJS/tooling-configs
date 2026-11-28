@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { isMap, isScalar, isSeq, parseDocument, type YAMLMap } from "yaml";
 
+import { parseManifest } from "./package.ts";
 import type { PlannedArtifact } from "./sync.ts";
 import { sharedWorkflow } from "./workflow.ts";
 
@@ -220,22 +221,72 @@ function jobId(release: ReleasePackage, several: boolean): string {
     : `release-${release.directory.replaceAll("/", "-")}`;
 }
 
-/** The condition under which a release-train dispatch is for `directory`; the train leaves `package-directory` out for the root package. */
+/** The condition under which a dispatch runs the job of `directory`: a release-train dispatch for it, which leaves `package-directory` out for the root package, or a preview dispatch that names no package. */
 function dispatched(directory: string): string {
   return directory === "."
     ? "inputs.package-directory == '' || inputs.package-directory == '.'"
-    : `inputs.package-directory == '${directory}'`;
+    : `inputs.package-directory == '${directory}' || inputs.preview == true && inputs.package-directory == ''`;
 }
 
-function releaseJob(release: ReleasePackage, several: boolean): string {
+const RUNTIME_FIELDS = [
+  "dependencies",
+  "peerDependencies",
+  "optionalDependencies",
+] as const;
+
+/** The released siblings each package depends on at runtime, by directory, read from the package manifests under `root`. */
+function siblingsOf(
+  root: string,
+  packages: readonly ReleasePackage[],
+): Map<string, ReleasePackage[]> {
+  const manifests = packages.map((release) => {
+    const path = join(root, release.directory, "package.json");
+    return {
+      release,
+      manifest: existsSync(path)
+        ? parseManifest(readFileSync(path, "utf8"))
+        : {},
+    };
+  });
+  return new Map(
+    manifests.map(({ release, manifest }) => {
+      const names = new Set(
+        RUNTIME_FIELDS.flatMap((field) => Object.keys(manifest[field] ?? {})),
+      );
+      return [
+        release.directory,
+        manifests.flatMap((other) =>
+          other.release !== release &&
+          other.manifest.name !== undefined &&
+          names.has(other.manifest.name)
+            ? [other.release]
+            : [],
+        ),
+      ];
+    }),
+  );
+}
+
+/** The `needs` and `if` of a job among several: it waits for the siblings it depends on, and runs when none of them failed, so a skipped sibling leaves it free. */
+function gate(release: ReleasePackage, siblings: ReleasePackage[]): string[] {
+  const condition = `github.event_name != 'workflow_dispatch' || ${dispatched(release.directory)}`;
+  if (!siblings.length) return [`    if: ${condition}`];
+  return [
+    "    needs:",
+    ...siblings.map((sibling) => `      - ${jobId(sibling, true)}`),
+    `    if: \${{ !failure() && !cancelled() && (${condition}) }}`,
+  ];
+}
+
+function releaseJob(
+  release: ReleasePackage,
+  siblings: ReleasePackage[] | undefined,
+): string {
+  const several = siblings !== undefined;
   const nested = release.directory !== ".";
   const lines = [
     `  ${jobId(release, several)}:`,
-    ...(several
-      ? [
-          `    if: github.event_name != 'workflow_dispatch' || ${dispatched(release.directory)}`,
-        ]
-      : []),
+    ...(several ? gate(release, siblings) : []),
     `    uses: ${sharedWorkflow(`release-npm-${release.registry}.yml`)}`,
     "    with:",
     "      release-version: ${{ inputs.release-version }}",
@@ -267,10 +318,14 @@ function releaseJob(release: ReleasePackage, several: boolean): string {
  * each label, push or reopen of a pull request that carries the `preview` label, and the stable version the release train
  * dispatches on the default branch with `release-version`, `release-commit`, `dependency-ranges` and, when a package is
  * not at the root, `package-directory`. The shared workflow skips a pull request without the `preview` label. With several
- * packages, each has its own job, which a dispatch runs only for the `package-directory` it names. A single root package
+ * packages, each has its own job, which a dispatch runs only for the `package-directory` it names, or, on a preview
+ * dispatch that names none, for every package, each after the siblings it depends on at runtime. A single root package
  * gets AntelopeJS/.github's scripts/release-train/frozen-caller.yml byte for byte.
  */
-function releaseCaller(packages: readonly ReleasePackage[]): string {
+function releaseCaller(
+  packages: readonly ReleasePackage[],
+  siblings: Map<string, ReleasePackage[]>,
+): string {
   const several = packages.length > 1;
   const nested = packages.some(({ directory }) => directory !== ".");
   const directoryInput = nested
@@ -313,7 +368,7 @@ permissions:
   contents: write
 ${idToken}
 jobs:
-${packages.map((release) => releaseJob(release, several)).join("\n")}`;
+${packages.map((release) => releaseJob(release, several ? (siblings.get(release.directory) ?? []) : undefined)).join("\n")}`;
 }
 
 /**
@@ -332,7 +387,10 @@ export function releaseArtifacts(root: string): PlannedArtifact[] {
       message,
     }));
   if (!found.packages.length) return [];
-  const content = releaseCaller(found.packages);
+  const content = releaseCaller(
+    found.packages,
+    siblingsOf(root, found.packages),
+  );
   const removed = [...found.files.keys()].filter(
     (file) => file !== RELEASE_PATH,
   );
