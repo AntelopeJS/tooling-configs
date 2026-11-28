@@ -64,6 +64,7 @@
   "src/guardrails/api-diff-workspace-members.test.ts": 35.9,
   "src/guardrails/api-diff.test.ts": 65.6,
   "src/guardrails/backend-boundary.test.ts": 9.5,
+  "src/guardrails/checks-antelopejs-peers.test.ts": 1.8,
   "src/guardrails/checks-concurrency.test.ts": 7.9,
   "src/guardrails/checks-dependency-ranges.test.ts": 74.4,
   "src/guardrails/checks-git-identity.test.ts": 4.2,

@@ -10,7 +10,7 @@ import { binAsync, put, testRepo } from "./helpers/test-repo.ts";
 
 /** Every step but `lockfile:module-peers`, so it alone decides the run. */
 const OTHER_STEPS =
-  "typecheck,lint,format:check,knip,test,size,suppressions,sync:check,lockfile:singletons,pnpm:release-age,dependency:ranges,dependency:one-range,git:identity,readme:version,published:types";
+  "typecheck,lint,format:check,knip,test,size,suppressions,sync:check,lockfile:singletons,lockfile:antelopejs-peers,pnpm:release-age,dependency:ranges,dependency:one-range,git:identity,readme:version,published:types";
 
 const ASSISTANT = "@antelopejs/dms-assistant";
 
@@ -86,7 +86,7 @@ test("a lockfile holding a renderer below the frontend range of the newest relea
   assert.equal(result.status, 1, result.stdout);
   assert.equal(
     result.stdout,
-    '[lockfile:module-peers]\npnpm-lock.yaml locks "@antelopejs/dms-frontend" at 0.11.4, outside ">=0.11.6 <0.12.0", the range @antelopejs/dms-assistant@0.2.6 (antelope.config.ts: ">=0.2.1 <0.3.0") declares in frontend-vue/package.json engines.\n  Set "@antelopejs/dms-frontend" in package.json to a version in ">=0.11.6 <0.12.0", then run `pnpm install`.\nChecks: 0 passed, 1 failed, 11 skipped.\n',
+    '[lockfile:module-peers]\npnpm-lock.yaml locks "@antelopejs/dms-frontend" at 0.11.4, outside ">=0.11.6 <0.12.0", the range @antelopejs/dms-assistant@0.2.6 (antelope.config.ts: ">=0.2.1 <0.3.0") declares in frontend-vue/package.json engines.\n  Set "@antelopejs/dms-frontend" in package.json to a version in ">=0.11.6 <0.12.0", then run `pnpm install`.\nChecks: 0 passed, 1 failed, 12 skipped.\n',
   );
 });
 
@@ -255,7 +255,7 @@ test("locked versions inside every range pass, and a frontend-vue peerDependency
     },
   });
   assert.equal(result.status, 0, result.stdout);
-  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 11 skipped.\n");
+  assert.equal(result.stdout, "Checks: 1 passed, 0 failed, 12 skipped.\n");
 });
 
 test("a package source whose package is not a string fails and names its line, caught by an implementation that skips a source it cannot read", async (t) => {

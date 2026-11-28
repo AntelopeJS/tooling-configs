@@ -13,7 +13,7 @@ import { writeTool } from "./helpers/shell.ts";
 
 /** Every step but `published:types`, so it alone decides the run. */
 const OTHER_STEPS =
-  "typecheck,lint,format:check,knip,test,size,suppressions,sync:check,git:identity,lockfile:singletons,pnpm:release-age";
+  "typecheck,lint,format:check,knip,test,size,suppressions,sync:check,git:identity,lockfile:singletons,lockfile:antelopejs-peers,pnpm:release-age";
 
 /** The `package.json` fields a fixture sets beside its name, version and `types`. */
 interface FixtureFields {
