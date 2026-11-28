@@ -36,6 +36,7 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 | bin                | `antelopejs-checks [--no-services]`                                       | Runs every check and prints only the failures and the errors `published:types` declares as known; starts `.github/compose.yml` services around them |
 | bin                | `antelopejs-suppressions`                                                 | Fails when suppressions exceed their budget or a directive suppresses nothing; `--update` lowers the budget                                         |
 | bin                | `antelopejs-lint-staged <files>`                                          | The commit hook's oxlint; files whose tsconfig cannot load skip only the type-aware rules, with a note that CI runs them                            |
+| bin                | `antelopejs-lint-summary [paths]`                                         | Runs oxlint once and prints one line per finding, then the counts per rule with the page that documents it and per file                             |
 | bin                | `antelopejs-check-size`                                                   | Fails on authored files over 20,000 bytes and on blanket disable directives                                                                         |
 | bin                | `antelopejs-api-diff <base-ref>`                                          | Compares published declaration bundles against committed HEAD                                                                                       |
 | bin                | `antelopejs-comment-proof <base-ref>`                                     | Compares comment-free JavaScript emit against committed HEAD                                                                                        |
@@ -59,6 +60,24 @@ The AntelopeJS guardrail pack: shared lint, format and dead-code presets, the co
 - The `stale-branches` check lists, in one finding per repository, the branches other than the default, `next`, `develop`, protected and `assets/*` ones that head a merged or closed pull request at their current commit, or have no open pull request and no commit for 30 days. A branch that heads or receives an open pull request is never listed. `prunes` holds one `{ repo, branch, reason }` per listed branch, and `--apply-prunes` deletes exactly those refs.
 
 Both profiles of `antelopejs-sync` keep the shared CI caller on the job id `ci`, so the check is reported as `ci / checks`. The `ci` job is read-only (`contents: read`) and passes `renovate-sync: false` and `test-job: true`, an input ci-node.yml v2 accepts and ignores, since `single-job` alone picks the jobs (sync adds `test-job: true` to a caller that does not set it and keeps a value the caller set); it passes no secret, since ci-node.yml v2 ignores `NOTION_TOKEN` (sync removes a `NOTION_TOKEN` the caller passes, drops a `secrets` map that leaves empty and keeps `secrets: inherit`), and dms, antelopejs, dms-frontend, mongodb and dms-assistant, whose tests take minutes, also pass `single-job: false` so checks and tests run in parallel jobs; a single package, and a workspace whose root `test` script reaches every package `test` script through `pnpm -r`, `--dir` or `--filter`, also pass `affected-tests: true`, so a pull request runs only the affected tests (sync keeps the input when a repository sets it and never writes it for a workspace whose tests sit at the root or whose packages test more than the root runs, such as dms, dms-saas, dms-mailing, agent-skills and antelope-web); the `contents: write`, `actions: write` and `statuses: write` grants that let the Renovate sync push its commit, dispatch the caller and set the `ci / checks` status live on a separate `renovate-sync` job calling `ci-renovate-sync.yml`, which sync adds when it is missing and never re-pins. That job forwards the `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` secrets, which sync adds beside any secret of its own and skips under `secrets: inherit`, so the sync pushes with the release app's token and the push starts the pull request's checks. Under the full profile it also sets the `docs-files` input of every ci-node caller to the existing `README.md` and `docs` of the root and of each workspace package that is not private, then keeps the caller's other listed paths that still exist. Renaming a caller to `ci` also rewrites `needs:` lists and `needs.<old-id>` reads in expressions, and sync (and `--check`) fails a caller in which a job needs a job that does not exist or reads `needs.<id>` of a job missing from its own `needs:`, since GitHub evaluates that read to null and a gate like `needs.checks.result == 'skipped'` then never fails.
+
+## antelopejs-lint-summary
+
+`antelopejs-lint-summary [paths]` runs oxlint once, on the named paths or on the repository as configured, and prints one line per finding: `file:line:column rule message`, sorted by file, line and column. A blank line follows, then the count per rule with the page that documents it, then a blank line and the count per file, each most frequent first.
+
+```txt
+src/a.ts:1:1 antelopejs/no-comments Comments rot. …
+src/a.ts:9:3 eslint/no-debugger `debugger` statement is not allowed Remove the debugger statement
+src/b.ts:4:7 antelopejs/no-comments Comments rot. …
+
+2 antelopejs/no-comments node_modules/@antelopejs/tooling-configs/docs/rules/no-comments.md
+1 eslint/no-debugger https://oxc.rs/docs/guide/usage/linter/rules/eslint/no-debugger.html
+
+2 src/a.ts
+1 src/b.ts
+```
+
+It prints nothing and exits 0 when oxlint reports nothing. It exits 1 when any finding is an error, and 0 when every finding is a warning. If oxlint cannot run, it prints the error on stderr and exits 1.
 
 ## antelopejs-triage
 

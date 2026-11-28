@@ -20,6 +20,7 @@ export default {
     "./src/bin/triage.ts",
     "./src/bin/lease.ts",
     "./src/bin/lint-staged.ts",
+    "./src/bin/lint-summary.ts",
     "./src/bin/capture.ts",
     "./src/bin/readme-strip.ts",
     "./src/bin/tsc.ts",
