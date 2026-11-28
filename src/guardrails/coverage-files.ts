@@ -7,6 +7,8 @@ import { gitFiles } from "./files.ts";
 /** The files one coverage run reads, the repository paths git does not ignore, and the reads that failed. */
 export interface CoverageFiles {
   root: string;
+  /** The files git tracks or would not ignore; empty when git cannot list them. */
+  tracked: readonly string[];
   /** Whether git tracks the file or would not ignore it; an ignored file is generated, and no edit to it lasts. */
   isTracked: (file: string) => boolean;
   /** Files that exist but could not be read, with the error code. */
@@ -15,14 +17,16 @@ export interface CoverageFiles {
 
 export function coverageFiles(root: string): CoverageFiles {
   try {
-    const tracked = new Set(gitFiles(root));
+    const tracked = gitFiles(root);
+    const listed = new Set(tracked);
     return {
       root,
-      isTracked: (file) => tracked.has(file),
+      tracked,
+      isTracked: (file) => listed.has(file),
       unreadable: new Map(),
     };
   } catch {
-    return { root, isTracked: () => true, unreadable: new Map() };
+    return { root, tracked: [], isTracked: () => true, unreadable: new Map() };
   }
 }
 
